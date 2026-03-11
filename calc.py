@@ -301,8 +301,9 @@ def calculate(inp: dict) -> dict:
     other_costs = inp.get("other_costs", [])
     other_cost_rows = []
     for i, oc in enumerate(other_costs):
-        desc = other_netouts[i].get("desc", "") if i < len(other_netouts) else ""
-        acres = safe(other_netouts[i].get("acres")) if i < len(other_netouts) else 0
+        no = other_netouts[i] if i < len(other_netouts) else {}
+        desc = no.get("desc") or no.get("description", "")
+        acres = safe(no.get("acres")) if i < len(other_netouts) else 0
         base = safe(oc.get("base_cost"))
         other_p = safe(oc.get("other_pct", default_other_pct))
         total = base * (1 + other_p) if base else 0
@@ -758,5 +759,31 @@ def calculate(inp: dict) -> dict:
     out["infra_per_dev_acre"]    = round(infra_per_dev_ac)
     out["gm_per_acre"]           = round(gm_per_ac)
     out["below_line_total"]      = round(below_line)
+
+    # ── 6. CASHFLOW DETAIL (for Cashflows tab) ───────────────────────────────
+    # Monthly detail limited to project length
+    out["cf_monthly"] = [
+        {
+            "month": m,
+            "yr": (m - 1) // 12 + 1,
+            "revenue": round(rev_monthly[m]),
+            "cost": round(cost_monthly[m]),
+            "net": round(rev_monthly[m] - cost_monthly[m]),
+        }
+        for m in range(1, proj_months + 1)
+    ]
+    # Quarterly aggregation for chart
+    q_data = {}
+    for m in range(1, proj_months + 1):
+        q = (m - 1) // 3 + 1
+        if q not in q_data:
+            q_data[q] = {"q": q, "yr": (q - 1) // 4 + 1, "qtr": (q - 1) % 4 + 1, "revenue": 0, "cost": 0}
+        q_data[q]["revenue"] += rev_monthly[m]
+        q_data[q]["cost"] += cost_monthly[m]
+    for q in q_data:
+        q_data[q]["net"] = round(q_data[q]["revenue"] - q_data[q]["cost"])
+        q_data[q]["revenue"] = round(q_data[q]["revenue"])
+        q_data[q]["cost"] = round(q_data[q]["cost"])
+    out["cf_quarterly"] = [v for _, v in sorted(q_data.items())]
 
     return out
