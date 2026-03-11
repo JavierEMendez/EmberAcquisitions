@@ -359,6 +359,31 @@ def default_inputs(name="New Project"):
         "bookkeeping_monthly": 0,
     }
 
+@app.route("/api/projects/<int:pid>/export_excel", methods=["GET"])
+def export_excel(pid):
+    if "user_id" not in session:
+        return jsonify({"error": "unauthorized"}), 401
+    try:
+        from excel_export import export_excel as _export
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT * FROM projects WHERE id=%s AND user_id=%s", (pid, session["user_id"]))
+        proj = cur.fetchone()
+        if not proj:
+            return jsonify({"error": "not found"}), 404
+        inputs = proj["inputs"] or {}
+        excel_bytes = _export(inputs)
+        name = (proj.get("name") or "project").replace(" ", "_")
+        return send_file(
+            io.BytesIO(excel_bytes),
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name=f"{name}_Underwriting.xlsx"
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
     init_db()
     app.run(debug=True, port=5001)
