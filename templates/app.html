@@ -1312,22 +1312,83 @@ async function loadInputs() {
   const c = proj.outputs || {};  // calc outputs (for derived/computed fields in cost tab)
   // Backfill arrays missing from older projects
   const _df = (key, val) => { if (!inputs[key] || !inputs[key].length) inputs[key] = val; };
+  // Land takedown defaults from Excel: Take1 period=0 50%, Take2 period=36 50%
+  _df('takedowns', [
+    {period: 0,  pct: 0.50},
+    {period: 36, pct: 0.50},
+    {period: 0,  pct: 0.00},
+  ]);
   _df('plants',        Array.from({length:8}, ()=>({type:'None',notes:''})));
   _df('amenities',     Array.from({length:6}, ()=>({type:'None',acres:0})));
   _df('other_netouts', Array.from({length:6}, ()=>({description:'',acres:0})));
   _df('roads',         Array.from({length:6}, ()=>({type:'',linear_feet:0,width:0,road_setback:0,landscaping_setback:0})));
-  _df('plant_costs',   Array.from({length:8}, ()=>({base_cost:0,other_pct:0.17,start_month:1,ph2_base_cost:0,ph2_other_pct:0.17,ph2_start_month:37})));
-  _df('amenity_costs', Array.from({length:6}, ()=>({base_cost:0,other_pct:0.17,start_month:1})));
-  _df('det_costs',     Array.from({length:6}, ()=>({base_cost_per_cyd:0,other_pct:0.17,landscaping_per_foot:0})));
+  // Plant cost defaults from Excel (base costs entered manually, other% = 17%)
+  const PLT_DEFAULTS = [
+    {base_cost:6000000, other_pct:0.17, start_month:1,  ph2_base_cost:3000000, ph2_other_pct:0.17, ph2_start_month:37},
+    {base_cost:1500000, other_pct:0.17, start_month:1,  ph2_base_cost:0,       ph2_other_pct:0.17, ph2_start_month:37},
+    {base_cost:1500000, other_pct:0.17, start_month:24, ph2_base_cost:0,       ph2_other_pct:0.17, ph2_start_month:37},
+    {base_cost:9000000, other_pct:0.17, start_month:1,  ph2_base_cost:4000000, ph2_other_pct:0.17, ph2_start_month:37},
+    {base_cost:1500000, other_pct:0.17, start_month:48, ph2_base_cost:0,       ph2_other_pct:0.17, ph2_start_month:37},
+    {base_cost:0,       other_pct:0.17, start_month:1,  ph2_base_cost:0,       ph2_other_pct:0.17, ph2_start_month:37},
+    {base_cost:0,       other_pct:0.17, start_month:1,  ph2_base_cost:0,       ph2_other_pct:0.17, ph2_start_month:37},
+    {base_cost:0,       other_pct:0.17, start_month:1,  ph2_base_cost:0,       ph2_other_pct:0.17, ph2_start_month:37},
+  ];
+  const AMN_DEFAULTS = [
+    {base_cost:8000000, other_pct:0.17, start_month:12},
+    {base_cost:5000000, other_pct:0.17, start_month:60},
+    {base_cost:500000,  other_pct:0.17, start_month:80},
+    {base_cost:500000,  other_pct:0.17, start_month:100},
+    {base_cost:500000,  other_pct:0.17, start_month:120},
+    {base_cost:4000000, other_pct:0.17, start_month:100},
+  ];
+  _df('plant_costs',   PLT_DEFAULTS);
+  _df('amenity_costs', AMN_DEFAULTS);
+  _df('det_costs',     Array.from({length:6}, ()=>({other_pct:0.17,landscaping_per_foot:2})));
   _df('other_costs',   Array.from({length:6}, ()=>({base_cost:0,other_pct:0.17,start_month:1,duration:1})));
   _df('road_costs',    Array.from({length:6}, ()=>({other_pct:0.17,start_month:1,landscaping_per_sf:0,light_spacing:0})));
   // Standard FF lot size categories (25–100 FF in steps of 5)
   const STD_FF = [25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100];
-  _df('lot_sizes', STD_FF.map(ff => ({ff, on:0, lot_sf: ff*120, depth:120, yield_per_ac:0, pace:0, home_price:0, wsd_per_ff:0, paving_per_ff:0, dev_start_month:1, landscaping_per_lot:0, urd_per_lot:0, lots_per_streetlight:0, fence_cost_per_ff:0})));
+  // Standard lot size defaults from Excel (Cost Inputs + Revenue Inputs)
+  const STD_LS_DEFAULTS = [
+    {ff:25, on:0, lot_sf:25*120, depth:120, yield_per_ac:0, pace:0, home_price:200000, wsd_per_ff:290, paving_per_ff:220, dev_start_month:1, landscaping_per_lot:0, urd_per_lot:0, lots_per_streetlight:0, fence_cost_per_ff:0, build_time:3, av_pct:0.85, premium_per_ff:25, escalation:0.06, fence_per_ff:65, marketing_fee:2000, lot_av_pct:0.50, lot_tax_rate:0.02},
+    {ff:30, on:0, lot_sf:30*120, depth:120, yield_per_ac:0, pace:0, home_price:360000, wsd_per_ff:290, paving_per_ff:220, dev_start_month:1, landscaping_per_lot:0, urd_per_lot:0, lots_per_streetlight:0, fence_cost_per_ff:0, build_time:3, av_pct:0.85, premium_per_ff:25, escalation:0.06, fence_per_ff:65, marketing_fee:3600, lot_av_pct:0.50, lot_tax_rate:0.02},
+    {ff:35, on:0, lot_sf:35*120, depth:120, yield_per_ac:0, pace:0, home_price:275000, wsd_per_ff:290, paving_per_ff:220, dev_start_month:1, landscaping_per_lot:0, urd_per_lot:0, lots_per_streetlight:0, fence_cost_per_ff:0, build_time:3, av_pct:0.85, premium_per_ff:25, escalation:0.06, fence_per_ff:65, marketing_fee:2800, lot_av_pct:0.50, lot_tax_rate:0.02},
+    {ff:40, on:0, lot_sf:40*120, depth:120, yield_per_ac:0, pace:0, home_price:330168.35, wsd_per_ff:290, paving_per_ff:220, dev_start_month:1, landscaping_per_lot:0, urd_per_lot:0, lots_per_streetlight:0, fence_cost_per_ff:0, build_time:3, av_pct:0.85, premium_per_ff:25, escalation:0.06, fence_per_ff:65, marketing_fee:3300, lot_av_pct:0.50, lot_tax_rate:0.02},
+    {ff:45, on:0, lot_sf:45*120, depth:120, yield_per_ac:0, pace:0, home_price:380000, wsd_per_ff:290, paving_per_ff:220, dev_start_month:1, landscaping_per_lot:0, urd_per_lot:0, lots_per_streetlight:0, fence_cost_per_ff:0, build_time:4, av_pct:0.85, premium_per_ff:25, escalation:0.06, fence_per_ff:65, marketing_fee:3800, lot_av_pct:0.50, lot_tax_rate:0.02},
+    {ff:50, on:0, lot_sf:50*120, depth:120, yield_per_ac:0, pace:0, home_price:430000, wsd_per_ff:290, paving_per_ff:220, dev_start_month:1, landscaping_per_lot:0, urd_per_lot:0, lots_per_streetlight:0, fence_cost_per_ff:0, build_time:4, av_pct:0.85, premium_per_ff:25, escalation:0.06, fence_per_ff:65, marketing_fee:4300, lot_av_pct:0.50, lot_tax_rate:0.02},
+    {ff:55, on:0, lot_sf:55*120, depth:120, yield_per_ac:0, pace:0, home_price:500000, wsd_per_ff:290, paving_per_ff:220, dev_start_month:1, landscaping_per_lot:0, urd_per_lot:0, lots_per_streetlight:0, fence_cost_per_ff:0, build_time:4, av_pct:0.85, premium_per_ff:25, escalation:0.06, fence_per_ff:65, marketing_fee:5000, lot_av_pct:0.50, lot_tax_rate:0.02},
+    {ff:60, on:0, lot_sf:60*120, depth:120, yield_per_ac:0, pace:0, home_price:580000, wsd_per_ff:290, paving_per_ff:220, dev_start_month:1, landscaping_per_lot:0, urd_per_lot:0, lots_per_streetlight:0, fence_cost_per_ff:0, build_time:5, av_pct:0.85, premium_per_ff:25, escalation:0.06, fence_per_ff:65, marketing_fee:5800, lot_av_pct:0.50, lot_tax_rate:0.02},
+    {ff:65, on:0, lot_sf:65*120, depth:120, yield_per_ac:0, pace:0, home_price:615000, wsd_per_ff:290, paving_per_ff:220, dev_start_month:1, landscaping_per_lot:0, urd_per_lot:0, lots_per_streetlight:0, fence_cost_per_ff:0, build_time:5, av_pct:0.85, premium_per_ff:25, escalation:0.06, fence_per_ff:65, marketing_fee:6200, lot_av_pct:0.50, lot_tax_rate:0.02},
+    {ff:70, on:0, lot_sf:70*120, depth:120, yield_per_ac:0, pace:0, home_price:675000, wsd_per_ff:290, paving_per_ff:220, dev_start_month:1, landscaping_per_lot:0, urd_per_lot:0, lots_per_streetlight:0, fence_cost_per_ff:0, build_time:6, av_pct:0.85, premium_per_ff:25, escalation:0.06, fence_per_ff:65, marketing_fee:6800, lot_av_pct:0.50, lot_tax_rate:0.02},
+    {ff:75, on:0, lot_sf:75*120, depth:120, yield_per_ac:0, pace:0, home_price:720000, wsd_per_ff:290, paving_per_ff:220, dev_start_month:1, landscaping_per_lot:0, urd_per_lot:0, lots_per_streetlight:0, fence_cost_per_ff:0, build_time:6, av_pct:0.85, premium_per_ff:25, escalation:0.06, fence_per_ff:65, marketing_fee:7200, lot_av_pct:0.50, lot_tax_rate:0.02},
+    {ff:80, on:0, lot_sf:80*120, depth:120, yield_per_ac:0, pace:0, home_price:750000, wsd_per_ff:290, paving_per_ff:220, dev_start_month:1, landscaping_per_lot:0, urd_per_lot:0, lots_per_streetlight:0, fence_cost_per_ff:0, build_time:7, av_pct:0.85, premium_per_ff:25, escalation:0.06, fence_per_ff:65, marketing_fee:7500, lot_av_pct:0.50, lot_tax_rate:0.02},
+    {ff:85, on:0, lot_sf:85*120, depth:120, yield_per_ac:0, pace:0, home_price:325000, wsd_per_ff:290, paving_per_ff:220, dev_start_month:1, landscaping_per_lot:0, urd_per_lot:0, lots_per_streetlight:0, fence_cost_per_ff:0, build_time:7, av_pct:0.85, premium_per_ff:25, escalation:0.06, fence_per_ff:65, marketing_fee:3200, lot_av_pct:0.50, lot_tax_rate:0.02},
+    {ff:90, on:0, lot_sf:90*120, depth:120, yield_per_ac:0, pace:0, home_price:360000, wsd_per_ff:290, paving_per_ff:220, dev_start_month:1, landscaping_per_lot:0, urd_per_lot:0, lots_per_streetlight:0, fence_cost_per_ff:0, build_time:8, av_pct:0.85, premium_per_ff:25, escalation:0.06, fence_per_ff:65, marketing_fee:3600, lot_av_pct:0.50, lot_tax_rate:0.02},
+    {ff:95, on:0, lot_sf:95*120, depth:120, yield_per_ac:0, pace:0, home_price:385000, wsd_per_ff:290, paving_per_ff:220, dev_start_month:1, landscaping_per_lot:0, urd_per_lot:0, lots_per_streetlight:0, fence_cost_per_ff:0, build_time:8, av_pct:0.85, premium_per_ff:25, escalation:0.06, fence_per_ff:65, marketing_fee:3800, lot_av_pct:0.50, lot_tax_rate:0.02},
+    {ff:100, on:0, lot_sf:100*120, depth:120, yield_per_ac:0, pace:0, home_price:410000, wsd_per_ff:290, paving_per_ff:220, dev_start_month:1, landscaping_per_lot:0, urd_per_lot:0, lots_per_streetlight:0, fence_cost_per_ff:0, build_time:8, av_pct:0.85, premium_per_ff:25, escalation:0.06, fence_per_ff:65, marketing_fee:4100, lot_av_pct:0.50, lot_tax_rate:0.02}
+  ];
+  _df('lot_sizes', STD_LS_DEFAULTS);
   // Ensure existing lot_sizes rows always have ff set (backfill if missing)
   inputs.lot_sizes = inputs.lot_sizes.map((ls, i) => ({...ls, ff: ls.ff ?? STD_FF[i] ?? (i+1)*5+35}));
-  _df('res_pods',      Array.from({length:6}, ()=>({acres:0,price_per_acre:0,closing_costs_pct:0.01,implied_lots_per_acre:0,impact_fee_per_lot:0,sale_period:0})));
-  _df('comm_pods',     Array.from({length:6}, ()=>({acres:0,price_per_sf:0,closing_costs_pct:0.01,sale_period:0,av_per_acre:0,av_delay_months:0})));
+  // Res/Comm pods defaults from Excel
+  const RES_POD_DEFAULTS = [
+    {acres:0,price_per_acre:120000,closing_costs_pct:0.045,implied_lots_per_acre:3.5,impact_fee_per_lot:10000,sale_period:12},
+    {acres:0,price_per_acre:120000,closing_costs_pct:0.045,implied_lots_per_acre:3.5,impact_fee_per_lot:10000,sale_period:36},
+    {acres:0,price_per_acre:120000,closing_costs_pct:0.045,implied_lots_per_acre:3.5,impact_fee_per_lot:10000,sale_period:60},
+    {acres:0,price_per_acre:120000,closing_costs_pct:0.045,implied_lots_per_acre:3.5,impact_fee_per_lot:10000,sale_period:84},
+    {acres:0,price_per_acre:120000,closing_costs_pct:0.045,implied_lots_per_acre:3.5,impact_fee_per_lot:10000,sale_period:108},
+    {acres:0,price_per_acre:120000,closing_costs_pct:0.045,implied_lots_per_acre:3.5,impact_fee_per_lot:10000,sale_period:132},
+  ];
+  const COMM_POD_DEFAULTS = [
+    {acres:0,price_per_sf:8,closing_costs_pct:0.045,sale_period:12, av_per_acre:1200000,av_delay_months:18},
+    {acres:0,price_per_sf:8,closing_costs_pct:0.045,sale_period:36, av_per_acre:1200000,av_delay_months:18},
+    {acres:0,price_per_sf:8,closing_costs_pct:0.045,sale_period:60, av_per_acre:1200000,av_delay_months:18},
+    {acres:0,price_per_sf:8,closing_costs_pct:0.045,sale_period:84, av_per_acre:1200000,av_delay_months:18},
+    {acres:0,price_per_sf:8,closing_costs_pct:0.045,sale_period:108,av_per_acre:1200000,av_delay_months:18},
+    {acres:0,price_per_sf:8,closing_costs_pct:0.045,sale_period:132,av_per_acre:1200000,av_delay_months:18},
+  ];
+  _df('res_pods',  RES_POD_DEFAULTS);
+  _df('comm_pods', COMM_POD_DEFAULTS);
   // ── CALC LOOKUPS: pre-fill with standard Excel model assumptions ──
   const STD_LK_PLANTS = [
     {type:'WWTP',                 acres:10,   duration:8},
@@ -1437,15 +1498,15 @@ async function loadInputs() {
     else el.textContent = val ?? '—';
   };
 
-  svp('ci-default_other_pct', t.default_other_pct);
-  svp('ci-default_sectional_other_pct', t.sectional_other_pct);
-  svp('ci-landscaping_other_pct', t.landscaping_other_pct);
-  svp('ci-contingency', t.contingency);
-  svp('ci-site_work_pct', t.site_work_pct);
-  svp('ci-fenced_pct', t.fenced_pct);
-  sv('ci-cost_per_mailbox', t.cost_per_mailbox);
-  sv('ci-cost_per_streetlight', t.cost_per_streetlight);
-  sv('ci-default_start_month', t.default_start_month);
+  svp('ci-default_other_pct',           t.default_other_pct      ?? 0.17);
+  svp('ci-default_sectional_other_pct', t.sectional_other_pct    ?? 0.17);
+  svp('ci-landscaping_other_pct',       t.landscaping_other_pct  ?? 0.12);
+  svp('ci-contingency',                 t.contingency            ?? 0.05);
+  svp('ci-site_work_pct',               t.site_work_pct          ?? 0.01);
+  svp('ci-fenced_pct',                  t.fenced_pct             ?? 0.25);
+  sv('ci-cost_per_mailbox',             t.cost_per_mailbox       ?? 200);
+  sv('ci-cost_per_streetlight',         t.cost_per_streetlight   ?? 1700);
+  sv('ci-default_start_month',          t.default_start_month    ?? 1);
 
   // Land Takedowns — full table with computed rows
   // editable fields (period, pct) come from t.takedowns; computed fields come from c.takedown_rows
@@ -1670,49 +1731,49 @@ async function loadInputs() {
 
   // Professional Services
   setCalc('ci-ps-total', c.prof_services_total);
-  svp('ci-prof_services_pct', t.prof_svc_pct);
+  svp('ci-prof_services_pct', t.prof_svc_pct ?? 0.015);
   setCalc('ci-ps-permonth', c.prof_services_per_month);
   setCalc('ci-ps-period', c.prof_services_final_period, 'mo');
 
   // DMF
   setCalc('ci-dmf-total', c.dmf_total);
-  svp('ci-dmf_pct', t.dmf_pct);
+  svp('ci-dmf_pct', t.dmf_pct ?? 0.025);
 
   // Personnel
   setCalc('ci-gen-total', c.personnel?.general_total);
-  sv('ci-general_monthly', t.personnel_monthly);
+  sv('ci-general_monthly', t.personnel_monthly ?? 50000);
   setCalc('ci-general_end', c.general_final_period, 'mo');
   setCalc('ci-mktpers-total', c.personnel?.marketing_total);
-  sv('ci-marketing_monthly', 0);
+  sv('ci-marketing_monthly', t.marketing_monthly ?? 15000);  // Excel: $15K/mo
   setCalc('ci-marketing_end', c.marketing_pers_final_period, 'mo');
 
   // Legal
   setCalc('ci-legal-total', c.legal_total);
-  sv('ci-legal_monthly', t.legal_monthly);
+  sv('ci-legal_monthly', t.legal_monthly ?? 10000);
   setCalc('ci-legal_end', c.legal_final_period, 'mo');
 
   // MUD & HOA
   setCalc('ci-mud-total', c.mud_hoa_total);
-  sv('ci-mud_hoa_monthly', t.mud_monthly);
+  sv('ci-mud_hoa_monthly', t.mud_monthly ?? 35000);
   svp('ci-mud_hoa_pct', t.mud_pct);
   setCalc('ci-mud_hoa_end', c.mud_hoa_final_period, 'mo');
 
   // Insurance
   setCalc('ci-ins-total', c.insurance_total);
-  sv('ci-insurance_monthly', t.insurance_monthly);
+  sv('ci-insurance_monthly', t.insurance_monthly ?? 10000);
   setCalc('ci-insurance_end', c.insurance_final_period, 'mo');
 
   // Bookkeeping
   setCalc('ci-bk-total', c.bookkeeping_total);
-  sv('ci-bookkeeping_monthly', t.bookkeeping_monthly);
+  sv('ci-bookkeeping_monthly', t.bookkeeping_monthly ?? 10000);
   setCalc('ci-bookkeeping_end', c.bookkeeping_final_period, 'mo');
 
   // Revenue inputs
   sv('ri-timing_method', t.timing_method);
   sv('ri-bem_period', t.bem_period);
-  svp('ri-bem_pct', t.bem_pct);
-  svp('ri-brokerage_fees', t.brokerage_fees);
-  svp('ri-lot_closing_costs', t.lot_closing_costs);
+  svp('ri-bem_pct',          t.bem_pct          ?? 0.18);
+  svp('ri-brokerage_fees',   t.brokerage_fees   ?? 0.03);
+  svp('ri-lot_closing_costs',t.lot_closing_costs?? 0.015);
   updateTakeWeights(); // derive from timing_method dropdown
 
   // $/FF table
@@ -1721,7 +1782,7 @@ async function loadInputs() {
   for (let yr = 0; yr <= 10; yr++) {
     ppffBody.innerHTML += `<tr>
       <td class="row-num">${yr}</td>
-      <td><input type="number" id="ri-ppff-${yr}" value="${t?.[yr.toString()] || ''}" class="mono" oninput="markDirty()"></td>
+      <td><input type="number" id="ri-ppff-${yr}" value="${t.price_per_ff?.[yr] ?? 1800}" class="mono" oninput="markDirty()"></td>
     </tr>`;
   }
 
@@ -1729,23 +1790,29 @@ async function loadInputs() {
   const homeBody = document.getElementById('ri-home-body');
   const fmtCalc = v => v != null ? '$'+Math.round(v).toLocaleString('en-US') : '—';
   const fmtCalcSm = v => v != null ? '$'+Math.round(v).toLocaleString('en-US') : '—';
-  homeBody.innerHTML = (t.lot_sizes||[]).map((ht,i) => `
-    <tr>
+  homeBody.innerHTML = (t.lot_sizes||[]).map((ht,i) => {
+    // ht is from lot_sizes which has all defaults pre-populated from Excel
+    const avPct = ht.av_pct ?? 0.85;
+    const esc = ht.escalation ?? 0.06;
+    const lotAvPct = ht.lot_av_pct ?? 0.50;
+    const lotTax = ht.lot_tax_rate ?? 0.02;
+    return `<tr>
       <td><span class="acre-badge">${ht.ff} FF</span></td>
       <td><input type="number" id="ri-ht-bt-${i}" value="${ht.build_time||''}" class="mono" style="width:70px" oninput="markDirty()"></td>
       <td><input type="number" id="ri-ht-hp-${i}" value="${ht.home_price||''}" class="mono" style="width:110px" oninput="markDirty()"></td>
-      <td><div class="pct-wrap" style="width:80px"><input type="number" step="1" id="ri-ht-av-${i}" value="${+(ht.av_pct*100).toPrecision(4)||''}" class="mono" oninput="markDirty()"></div></td>
-      <td style="background:rgba(123,143,212,.04)"><span class="calc-cell">${fmtCalc(ht.av)}</span></td>
+      <td><div class="pct-wrap" style="width:80px"><input type="number" step="1" id="ri-ht-av-${i}" value="${+(avPct*100).toPrecision(4)}" class="mono" oninput="markDirty()"></div></td>
+      <td style="background:rgba(123,143,212,.04)"><span class="calc-cell">${fmtCalc(ht.av || (ht.home_price||0)*(avPct))}</span></td>
       <td><input type="number" id="ri-ht-prem-${i}" value="${ht.premium_per_ff||''}" class="mono" style="width:80px" oninput="markDirty()"></td>
-      <td><div class="pct-wrap" style="width:80px"><input type="number" step="0.5" id="ri-ht-esc-${i}" value="${+(ht.escalation*100).toPrecision(4)||''}" class="mono" oninput="markDirty()"></div></td>
+      <td><div class="pct-wrap" style="width:80px"><input type="number" step="0.5" id="ri-ht-esc-${i}" value="${+(esc*100).toPrecision(4)}" class="mono" oninput="markDirty()"></div></td>
       <td><input type="number" id="ri-ht-fence-${i}" value="${ht.fence_per_ff||''}" class="mono" style="width:70px" oninput="markDirty()"></td>
       <td><input type="number" id="ri-ht-mktg-${i}" value="${ht.marketing_fee||''}" class="mono" style="width:100px" oninput="markDirty()"></td>
-      <td style="background:rgba(123,143,212,.04)"><span class="calc-cell">${fmtCalc(ht.implied_lot_price)}</span></td>
-      <td><div class="pct-wrap" style="width:80px"><input type="number" step="1" id="ri-ht-lotav-${i}" value="${+(ht.lot_av_pct*100).toPrecision(4)||''}" class="mono" oninput="markDirty()"></div></td>
-      <td style="background:rgba(123,143,212,.04)"><span class="calc-cell">${fmtCalc(ht.lot_av)}</span></td>
-      <td><div class="pct-wrap" style="width:80px"><input type="number" step="0.1" id="ri-ht-ltax-${i}" value="${+(ht.lot_tax_rate*100).toPrecision(4)||''}" class="mono" oninput="markDirty()"></div></td>
+      <td style="background:rgba(123,143,212,.04)"><span class="calc-cell">${fmtCalc(ht.implied_lot_price || 1800*(ht.ff||0))}</span></td>
+      <td><div class="pct-wrap" style="width:80px"><input type="number" step="1" id="ri-ht-lotav-${i}" value="${+(lotAvPct*100).toPrecision(4)}" class="mono" oninput="markDirty()"></div></td>
+      <td style="background:rgba(123,143,212,.04)"><span class="calc-cell">${fmtCalc(ht.lot_av || 1800*(ht.ff||0)*lotAvPct)}</span></td>
+      <td><div class="pct-wrap" style="width:80px"><input type="number" step="0.1" id="ri-ht-ltax-${i}" value="${+(lotTax*100).toPrecision(4)}" class="mono" oninput="markDirty()"></div></td>
       <td style="background:rgba(123,143,212,.04)"><span class="calc-cell">${fmtCalcSm(ht.lot_taxes)}</span></td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 
   // Res pods
   sv('ri-res_pod_acreage', t.res_pod_acreage);
@@ -1869,22 +1936,22 @@ function collectInputs() {
     drill_site_acres: gn('ti-drill_site_acres'),
     commercial_pod_acres: gn('ti-commercial_pod_acres'),
     residential_pod_acres: gn('ti-residential_pod_acres'),
-    plants: (t.plants||[]).map((_,i) => ({
+    plants: Array.from({length:8}, (_,i) => ({
       num: i+1,
       type: gv(`ti-plant-type-${i}`) || 'None',
       notes: gv(`ti-plant-notes-${i}`) || ''
     })),
-    amenities: (t.amenities||[]).map((_,i) => ({
+    amenities: Array.from({length:6}, (_,i) => ({
       num: i+1,
       type: gv(`ti-am-type-${i}`) || 'None',
       acres: gn(`ti-am-acres-${i}`) || 0
     })),
-    other_netouts: (t.other_netouts||[]).map((_,i) => ({
+    other_netouts: Array.from({length:6}, (_,i) => ({
       num: i+1,
       description: gv(`ti-ot-desc-${i}`) || '',
       acres: gn(`ti-ot-acres-${i}`) || 0
     })),
-    roads: (t.roads||[]).map((_,i) => ({
+    roads: Array.from({length:6}, (_,i) => ({
       num: i+1,
       type: gv(`ti-rd-type-${i}`) || '',
       linear_feet: gn(`ti-rd-lf-${i}`) || 0,
@@ -1957,7 +2024,7 @@ function collectInputs() {
       light_spacing: gn(`ci-rd2-lsp-${i}`)
     })),
     prof_services_pct: gnp('ci-prof_services_pct'),
-    lot_sizes: (t.lot_sizes||[]).map((ls,i) => {
+    lot_sizes: Array.from({length:16}, (_i,i) => { const ls = (inputs.lot_sizes||[])[i] || {};
       const onVal = gi(`ci-ls-on-${i}`);
       const isOn = onVal !== 0;
       const getSaved = (fieldId) => {
@@ -1979,7 +2046,17 @@ function collectInputs() {
         landscaping_per_lot: getSaved(`ci-ls-lpl-${i}`),
         urd_per_lot: getSaved(`ci-ls-urd-${i}`),
         lots_per_streetlight: getSaved(`ci-ls-lsl-${i}`),
-        fence_cost_per_ff: getSaved(`ci-ls-fen-${i}`)
+        fence_cost_per_ff: getSaved(`ci-ls-fen-${i}`),
+        // Revenue Inputs: home build table (merged into lot_sizes)
+        build_time: gi(`ri-ht-bt-${i}`) ?? (inputs.lot_sizes||[])[i]?.build_time,
+        home_price: gn(`ri-ht-hp-${i}`) ?? (inputs.lot_sizes||[])[i]?.home_price,
+        av_pct: gnp(`ri-ht-av-${i}`) ?? (inputs.lot_sizes||[])[i]?.av_pct ?? 0.85,
+        premium_per_ff: gn(`ri-ht-prem-${i}`) ?? (inputs.lot_sizes||[])[i]?.premium_per_ff ?? 25,
+        escalation: gnp(`ri-ht-esc-${i}`) ?? (inputs.lot_sizes||[])[i]?.escalation ?? 0.06,
+        fence_per_ff: gn(`ri-ht-fence-${i}`) ?? (inputs.lot_sizes||[])[i]?.fence_per_ff ?? 65,
+        marketing_fee: gn(`ri-ht-mktg-${i}`) ?? (inputs.lot_sizes||[])[i]?.marketing_fee,
+        lot_av_pct: gnp(`ri-ht-lotav-${i}`) ?? (inputs.lot_sizes||[])[i]?.lot_av_pct ?? 0.50,
+        lot_tax_rate: gnp(`ri-ht-ltax-${i}`) ?? (inputs.lot_sizes||[])[i]?.lot_tax_rate ?? 0.02,
       };
     }),
   };
@@ -1997,21 +2074,11 @@ function collectInputs() {
     take2_pct: {'1 Takedown':0,'50/50':0.5,'50/25/25':0.25}[gv('ri-timing_method')] ?? 0.25,
     take3_pct: {'1 Takedown':0,'50/50':0,'50/25/25':0.25}[gv('ri-timing_method')] ?? 0.25,
     price_per_ff: ppff,
-    home_table: (t.lot_sizes||[]).map((_,i) => ({
-      ff: t.lot_sizes[i]?.ff,
-      build_time: gi(`ri-ht-bt-${i}`),
-      home_price: gn(`ri-ht-hp-${i}`),
-      av_pct: gnp(`ri-ht-av-${i}`),
-      premium_per_ff: gn(`ri-ht-prem-${i}`),
-      escalation: gnp(`ri-ht-esc-${i}`),
-      fence_per_ff: gn(`ri-ht-fence-${i}`),
-      marketing_fee: gn(`ri-ht-mktg-${i}`),
-      lot_av_pct: gnp(`ri-ht-lotav-${i}`),
-      lot_tax_rate: gnp(`ri-ht-ltax-${i}`),
-    })),
+    // home_table fields are merged directly into lot_sizes rows
+    // (handled by lot_sizes collection which also reads ht fields)
     res_pod_acreage: gn('ri-res_pod_acreage'),
     res_pod_count: gi('ri-res_pod_count'),
-    res_pods: (t.res_pods||[]).map((_,i) => ({
+    res_pods: Array.from({length:6}, (_,i) => ({
       pod: i+1,
       price_per_acre: gn(`ri-rp-price-${i}`),
       closing_costs: gnp(`ri-rp-cc-${i}`),
@@ -2021,7 +2088,7 @@ function collectInputs() {
     })),
     comm_pod_acreage: gn('ri-comm_pod_acreage'),
     comm_pod_count: gi('ri-comm_pod_count'),
-    comm_pods: (t.comm_pods||[]).map((_,i) => ({
+    comm_pods: Array.from({length:6}, (_,i) => ({
       pod: i+1,
       price_per_sf: gn(`ri-cp-price-${i}`),
       closing_costs: gnp(`ri-cp-cc-${i}`),
@@ -2113,6 +2180,7 @@ function collectInputs() {
     mud_pct: costs.mud_hoa_pct,
     insurance_monthly: costs.insurance_monthly,
     bookkeeping_monthly: costs.bookkeeping_monthly,
+    // home_table now merged into lot_sizes (see costs.lot_sizes above)
     // Revenues
     timing_method: revenues.timing_method,
     bem_period: revenues.bem_period,
@@ -2122,17 +2190,7 @@ function collectInputs() {
     take1_pct: revenues.take1_pct,
     take2_pct: revenues.take2_pct,
     take3_pct: revenues.take3_pct,
-    ff_year_0: revenues.t?.ff_year_0 || 0,
-    ff_year_1: revenues.t?.ff_year_1 || 0,
-    ff_year_2: revenues.t?.ff_year_2 || 0,
-    ff_year_3: revenues.t?.ff_year_3 || 0,
-    ff_year_4: revenues.t?.ff_year_4 || 0,
-    ff_year_5: revenues.t?.ff_year_5 || 0,
-    ff_year_6: revenues.t?.ff_year_6 || 0,
-    ff_year_7: revenues.t?.ff_year_7 || 0,
-    ff_year_8: revenues.t?.ff_year_8 || 0,
-    ff_year_9: revenues.t?.ff_year_9 || 0,
-    ff_year_10: revenues.t?.ff_year_10 || 0,
+    price_per_ff: revenues.price_per_ff || {},
     res_pods: revenues.res_pods,
     comm_pods: revenues.comm_pods,
     mud_bond: revenues.mud_bond || {},
