@@ -1171,6 +1171,46 @@ function markClean() {
   document.getElementById('save-text').textContent = 'Saved';
 }
 
+// Live-link plant type changes → update Cost Inputs plant table immediately
+function syncPlantTypeToCosts(idx, newType) {
+  // Update the type cell in the plant cost table row
+  const typeCell = document.getElementById(`ci-plant-type-${idx}`);
+  if (typeCell) typeCell.textContent = newType;
+  // Update acres from lookup
+  const acresCell = document.getElementById(`ci-plant-acres-${idx}`);
+  if (acresCell) {
+    const lkAc = {'WWTP':10, 'Water Plant':3.5, 'Lift Station':0.75, 'None':0};
+    acresCell.textContent = lkAc[newType] ?? 0;
+  }
+  // Update duration from lookup
+  const durCell = document.getElementById(`ci-plant-dur-${idx}`);
+  if (durCell) {
+    const lkDur = {'WWTP':8, 'Water Plant':8, 'Lift Station':3, 'None':0};
+    durCell.textContent = lkDur[newType] ?? 0;
+  }
+  // Hide/show row based on type
+  const row = document.getElementById(`ci-plant-row-${idx}`);
+  if (row) row.style.opacity = newType === 'None' ? '0.35' : '1';
+}
+
+// Live-link amenity type changes → update Cost Inputs amenity table immediately
+function syncAmenityTypeToCosts(idx, newType) {
+  const typeCell = document.getElementById(`ci-amenity-type-${idx}`);
+  if (typeCell) typeCell.textContent = newType;
+  const acresCell = document.getElementById(`ci-amenity-acres-${idx}`);
+  if (acresCell) {
+    const lkAc = {'Large Amenity Center':6, 'Small Amenity Center':3, 'Pocket Park':0.5, 'None':0};
+    acresCell.textContent = lkAc[newType] ?? 0;
+  }
+  const durCell = document.getElementById(`ci-amenity-dur-${idx}`);
+  if (durCell) {
+    const lkDur = {'Large Amenity Center':12, 'Small Amenity Center':8, 'Pocket Park':2, 'None':0};
+    durCell.textContent = lkDur[newType] ?? 0;
+  }
+  const row = document.getElementById(`ci-amenity-row-${idx}`);
+  if (row) row.style.opacity = newType === 'None' ? '0.35' : '1';
+}
+
 // ── TAKE WEIGHTS DISPLAY ──────────────────────────────────────────
 function updateTakeWeights() {
   const method = document.getElementById('ri-timing_method')?.value || '';
@@ -1311,7 +1351,13 @@ async function loadInputs() {
   inputs = proj.inputs || {};  // flat inputs dict
   const c = proj.outputs || {};  // calc outputs (for derived/computed fields in cost tab)
   // Backfill arrays missing from older projects
-  const _df = (key, val) => { if (!inputs[key] || !inputs[key].length) inputs[key] = val; };
+  const _df = (key, val) => {
+    const v = inputs[key];
+    // Use default if: missing, null, empty array, or array of all-null/empty objects
+    if (v === undefined || v === null) { inputs[key] = val; return; }
+    if (Array.isArray(v) && v.length === 0) { inputs[key] = val; return; }
+    if (Array.isArray(v) && Array.isArray(val) && v.length < val.length) { inputs[key] = val; return; }
+  };
   // Land takedown defaults from Excel: Take1 period=0 50%, Take2 period=36 50%
   _df('takedowns', [
     {period: 0,  pct: 0.50},
@@ -1429,8 +1475,8 @@ async function loadInputs() {
   sv('ti-address', t.address);
   sv('ti-gross_acreage', t.gross_acreage);
   sv('ti-purchase_price_per_acre', t.purchase_price_per_acre);
-  svp('ti-closing_costs_pct', t.closing_costs_pct);
-  svp('ti-land_escalator', t.land_escalator);
+  svp('ti-closing_costs_pct', t.closing_costs_pct ?? 0.045);  // Excel: 4.5%
+  svp('ti-land_escalator',   t.land_escalator   ?? 0.05);    // Excel: 5%
   sv('ti-closing_date', t.closing_date ? t.closing_date.substring(0,10) : '');
   sv('ti-det_storage_rate', t.det_storage_rate);
   sv('ti-det_depth', t.det_depth);
@@ -1446,7 +1492,7 @@ async function loadInputs() {
   pb.innerHTML = (t.plants||[]).map((p,i) => `
     <tr>
       <td class="row-num">${p.num||i+1}</td>
-      <td><select id="ti-plant-type-${i}" onchange="markDirty()">${plantTypes.map(pt=>`<option value="${pt}" ${p.type===pt?'selected':''}>${pt}</option>`).join('')}</select></td>
+      <td><select id="ti-plant-type-${i}" onchange="markDirty(); syncPlantTypeToCosts(${i}, this.value)">${plantTypes.map(pt=>`<option value="${pt}" ${p.type===pt?'selected':''}>${pt}</option>`).join('')}</select></td>
       <td><input type="text" id="ti-plant-notes-${i}" value="${p.notes||''}" oninput="markDirty()"></td>
     </tr>`).join('');
 
@@ -1456,7 +1502,7 @@ async function loadInputs() {
   ab.innerHTML = (t.amenities||[]).map((a,i) => `
     <tr>
       <td class="row-num">${a.num||i+1}</td>
-      <td><select id="ti-am-type-${i}" onchange="markDirty()">${amenityTypes.map(at=>`<option value="${at}" ${a.type===at?'selected':''}>${at}</option>`).join('')}</select></td>
+      <td><select id="ti-am-type-${i}" onchange="markDirty(); syncAmenityTypeToCosts(${i}, this.value)">${amenityTypes.map(at=>`<option value="${at}" ${a.type===at?'selected':''}>${at}</option>`).join('')}</select></td>
       <td><input type="number" id="ti-am-acres-${i}" value="${a.acres}" class="mono" oninput="markDirty()"></td>
     </tr>`).join('');
 
@@ -1486,7 +1532,8 @@ async function loadInputs() {
     </tr>`).join('');
 
   // ── COST INPUTS ─────────────────────────────────────────────────────
-  const fmtC = v => (v == null || v === 0) ? '—' : '$' + Math.round(v).toLocaleString('en-US');
+  const fmtC = v => (v == null || v === undefined) ? '—' : '$' + Math.round(v).toLocaleString('en-US');
+  const fmtCOrDash = v => (v == null || v === undefined || v === 0) ? '—' : '$' + Math.round(v).toLocaleString('en-US');
   const fmtN = v => (v == null || v === 0) ? '—' : (+v).toLocaleString('en-US');
   const fmtPct = v => (v == null) ? '—' : (v*100).toFixed(1) + '%';
   const setCalc = (id, val, fmt='$') => {
@@ -1526,7 +1573,8 @@ async function loadInputs() {
     total_land_cost:calcTds[i]?.total    ?? null,
   }));
   const tdTotal = calcTds.reduce((s,r) => s + (r?.total||0), 0);
-  const checkVals = { period: null, purchase_price: c.land_total_purchase, closing_costs: c.land_total_closing, total_land_cost: c.land_total_cost };
+  const pctCheck = (rawTds||[]).reduce((s,td)=>s+(td?.pct||0), 0);
+  const checkVals = { period: null, pct: pctCheck, purchase_price: c.land_total_purchase, closing_costs: c.land_total_closing, total_land_cost: c.land_total_cost };
   tb.innerHTML = tdLabels.map((lbl,ri) => {
     const key = tdKeys[ri];
     const isInput = tdInputs[ri];
@@ -1554,36 +1602,47 @@ async function loadInputs() {
   const mergedPlants = Array.from({length: Math.max(calcPlants.length, rawPlants.length, 8)}, (_,i) => {
     const cp = calcPlants[i] || {};
     const rp = rawPlants[i] || {};
+    // Use type from Tract Inputs dropdown if available (most up-to-date)
+    const tractType = document.getElementById(`ti-plant-type-${i}`)?.value;
+    const type = tractType || cp.type || rp.type || 'None';
+    // Lookup acres and duration from type (live, no server needed)
+    const lkAc  = {'WWTP':10,'Water Plant':3.5,'Lift Station':0.75,'None':0};
+    const lkDur = {'WWTP':8,'Water Plant':8,'Lift Station':3,'None':0};
+    const base   = rp.base_cost ?? cp.base_cost ?? 0;
+    const opct   = rp.other_pct ?? cp.other_pct ?? 0.17;
+    const ph2b   = rp.ph2_base_cost ?? cp.ph2_base_cost ?? 0;
+    const ph2op  = rp.ph2_other_pct ?? cp.ph2_other_pct ?? 0.17;
     return {
       num: i+1,
-      type: cp.type || rp.type || 'None',
-      acres: cp.acres ?? rp.acres ?? 0,
-      base_cost: rp.base_cost ?? cp.base_cost,
-      other_pct: rp.other_pct ?? cp.other_pct,
-      total_cost: cp.total_cost,
+      type,
+      acres: lkAc[type] ?? cp.acres ?? 0,                // live from lookup
+      base_cost: base,
+      other_pct: opct,
+      // Compute total cost client-side — no waiting for server recalc
+      total_cost: (type !== 'None' && base > 0) ? base * (1 + opct) : (cp.total_cost ?? null),
       start_month: rp.start_month ?? cp.start_month,
-      duration: cp.duration ?? rp.duration,
+      duration: lkDur[type] ?? cp.duration ?? 0,          // live from lookup
       notes: rp.notes || '',
-      ph2_base_cost: rp.ph2_base_cost ?? cp.ph2_base_cost,
-      ph2_other_pct: rp.ph2_other_pct ?? cp.ph2_other_pct,
-      ph2_total_cost: cp.ph2_total_cost,
+      ph2_base_cost: ph2b,
+      ph2_other_pct: ph2op,
+      ph2_total_cost: (type !== 'None' && ph2b > 0) ? ph2b * (1 + ph2op) : (cp.ph2_total_cost ?? null),
       ph2_start_month: rp.ph2_start_month ?? cp.ph2_start_month,
-      ph2_duration: cp.ph2_duration ?? rp.ph2_duration,
+      ph2_duration: lkDur[type] ?? cp.ph2_duration ?? 0,
     };
   });
   const cpb = document.getElementById('ci-plants-body');
   cpb.innerHTML = mergedPlants.map((p,i) => {
     const nm = p.type || '—';
     const ph2border = 'border-left:2px solid rgba(200,169,110,.3)';
-    return `<tr>
+    return `<tr id="ci-plant-row-${i}" style="opacity:${p.type==='None'?'0.45':'1'}">
       <td class="row-num">${p.num||i+1}</td>
-      <td style="color:var(--text-dim);font-size:12px;white-space:nowrap">${nm}</td>
-      <td class="calc-col"><span class="calc-cell">${p.acres||0}</span></td>
+      <td id="ci-plant-type-${i}" style="color:var(--text-dim);font-size:12px;white-space:nowrap">${nm}</td>
+      <td id="ci-plant-acres-${i}" class="calc-col"><span class="calc-cell">${p.acres||0}</span></td>
       <td><input type="number" id="ci-pl-cost-${i}" value="${p.base_cost||''}" class="mono" oninput="markDirty()"></td>
       <td><div class="pct-wrap"><input type="number" step="1" id="ci-pl-opct-${i}" value="${p.other_pct!=null?+(p.other_pct*100).toPrecision(4):''}" class="mono" oninput="markDirty()"></div></td>
       <td class="calc-col"><span class="calc-cell">${fmtC(p.total_cost)}</span></td>
       <td><input type="number" id="ci-pl-sm-${i}" value="${p.start_month||''}" class="mono" oninput="markDirty()"></td>
-      <td class="calc-col"><span class="calc-cell">${p.duration||'—'}</span></td>
+      <td id="ci-plant-dur-${i}" class="calc-col"><span class="calc-cell">${p.duration||'—'}</span></td>
       <td><input type="text" id="ci-pl-notes-${i}" value="${p.notes||''}" class="mono" oninput="markDirty()"></td>
       <td style="${ph2border}"><input type="number" id="ci-pl2-cost-${i}" value="${p.ph2_base_cost||''}" class="mono" oninput="markDirty()"></td>
       <td><div class="pct-wrap"><input type="number" step="1" id="ci-pl2-opct-${i}" value="${p.ph2_other_pct!=null?+(p.ph2_other_pct*100).toPrecision(4):''}" class="mono" oninput="markDirty()"></div></td>
@@ -1599,23 +1658,29 @@ async function loadInputs() {
   const mergedAmenities = Array.from({length: Math.max(calcAmenities.length, rawAmenities.length, 6)}, (_,i) => {
     const ca = calcAmenities[i] || {};
     const ra = rawAmenities[i] || {};
+    const tractType = document.getElementById(`ti-am-type-${i}`)?.value;
+    const type = tractType || ca.type || ra.type || 'None';
+    const lkAc  = {'Large Amenity Center':6,'Small Amenity Center':3,'Pocket Park':0.5,'None':0};
+    const lkDur = {'Large Amenity Center':12,'Small Amenity Center':8,'Pocket Park':2,'None':0};
+    const base  = ra.base_cost ?? ca.base_cost ?? 0;
+    const opct  = ra.other_pct ?? ca.other_pct ?? 0.17;
+    const tractAcres = parseFloat(document.getElementById(`ti-am-acres-${i}`)?.value) || 0;
+    const acres = tractAcres || ca.acres || lkAc[type] || 0;
     return {
-      num: i+1,
-      type: ca.type || ra.type || 'None',
-      acres: ca.acres ?? ra.acres ?? 0,
-      base_cost: ra.base_cost ?? ca.base_cost,
-      other_pct: ra.other_pct ?? ca.other_pct,
-      total_cost: ca.total_cost,
+      num: i+1, type, acres,
+      base_cost: base,
+      other_pct: opct,
+      total_cost: (type !== 'None' && base > 0) ? base * (1 + opct) : (ca.total_cost ?? null),
       start_month: ra.start_month ?? ca.start_month,
-      duration: ca.duration ?? ra.duration,
+      duration: lkDur[type] ?? ca.duration ?? 0,
       notes: ra.notes || '',
     };
   });
   const cab = document.getElementById('ci-amenities-body');
-  cab.innerHTML = mergedAmenities.map((a,i) => `<tr>
+  cab.innerHTML = mergedAmenities.map((a,i) => `<tr id="ci-amenity-row-${i}" style="opacity:${a.type==='None'?'0.45':'1'}">
       <td class="row-num">${a.num||i+1}</td>
-      <td style="color:var(--text-dim);font-size:12px;white-space:nowrap">${a.type||'—'}</td>
-      <td class="calc-col"><span class="calc-cell">${a.acres||0}</span></td>
+      <td id="ci-amenity-type-${i}" style="color:var(--text-dim);font-size:12px;white-space:nowrap">${a.type||'—'}</td>
+      <td id="ci-amenity-acres-${i}" class="calc-col"><span class="calc-cell">${a.acres||0}</span></td>
       <td><input type="number" id="ci-am-cost-${i}" value="${a.base_cost||''}" class="mono" oninput="markDirty()"></td>
       <td><div class="pct-wrap"><input type="number" step="1" id="ci-am-opct-${i}" value="${a.other_pct!=null?+(a.other_pct*100).toPrecision(4):''}" class="mono" oninput="markDirty()"></div></td>
       <td class="calc-col"><span class="calc-cell">${fmtC(a.total_cost)}</span></td>
@@ -1628,23 +1693,31 @@ async function loadInputs() {
   // Merge: acres/base_cost/duration/delivery from calc outputs; editable other_pct/start_month/landscaping from raw inputs
   const calcDet = c.det_cost_rows || [];
   const rawDet  = t.det_costs || [];
-  const mergedDet = calcDet.length > 0
-    ? calcDet.map((cd, i) => {
-        const rd = rawDet[i] || {};
-        return {
-          num: i+1,
-          acres: cd.acres,
-          base_cost: cd.base_cost,
-          other_pct: rd.other_pct ?? cd.other_pct,
-          total_cost: cd.total_cost,
-          start_month: rd.start_month ?? cd.start_month,
-          duration: cd.duration,
-          delivery_period: cd.delivery_period,
-          landscaping_per_foot: rd.landscaping_per_foot ?? cd.landscaping_per_foot,
-          total_landscaping: cd.total_landscaping,
-        };
-      })
-    : rawDet;
+  // Build det rows from calc output (base_cost/acres computed server-side from volume formula)
+  // If no calc output yet, build placeholder rows from num_projects input
+  const numDetProj = parseInt(document.getElementById('ti-det_num_projects')?.value) || 0;
+  const detRowCount = Math.max(calcDet.length, numDetProj);
+  const mergedDet = Array.from({length: detRowCount}, (_, i) => {
+    const cd = calcDet[i] || {};
+    const rd = rawDet[i] || {};
+    const base   = cd.base_cost ?? 0;
+    const opct   = rd.other_pct ?? cd.other_pct ?? 0.17;
+    const lpf    = rd.landscaping_per_foot ?? cd.landscaping_per_foot ?? 2;
+    const acres  = cd.acres ?? 0;
+    const sm     = rd.start_month ?? cd.start_month ?? (1 + i * 15);
+    const dur    = cd.duration ?? 9;
+    return {
+      num: i+1, acres,
+      base_cost: base,
+      other_pct: opct,
+      total_cost: base > 0 ? base * (1 + opct) : null,
+      start_month: sm,
+      duration: dur,
+      delivery_period: cd.delivery_period ?? (sm + dur - 1),
+      landscaping_per_foot: lpf,
+      total_landscaping: cd.total_landscaping ?? null,
+    };
+  });
   const dtb = document.getElementById('ci-detention-body');
   dtb.innerHTML = mergedDet.map((d,i) => `<tr>
       <td class="row-num">${d.num||i+1}</td>
