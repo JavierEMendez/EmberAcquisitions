@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ember — Sign In</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0d0f13;--card:#151921;--border:#1e2535;
+    --accent:#c8a96e;--text:#e8eaf0;--text-muted:#8b95a8;--text-dim:#4a5568;
+    --teal:#5e9e8c;--error:#e05555;
+  }
+  body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;
+    min-height:100vh;display:flex;align-items:center;justify-content:center;}
+  .login-wrap{width:100%;max-width:400px;padding:24px;}
+  .logo-area{text-align:center;margin-bottom:40px;}
+  .logo-area img{height:36px;margin-bottom:16px;}
+  .logo-area .tagline{font-family:'Instrument Serif',serif;font-size:15px;
+    color:var(--text-muted);font-style:italic;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:36px;}
+  .card h2{font-size:18px;font-weight:600;margin-bottom:6px;color:var(--text);}
+  .card .sub{font-size:13px;color:var(--text-muted);margin-bottom:28px;}
+  .field{margin-bottom:18px;}
+  label{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--text-muted);font-weight:500;margin-bottom:6px;}
+  input[type=text],input[type=password]{
+    width:100%;background:#0d0f13;border:1px solid var(--border);border-radius:8px;
+    color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;
+    padding:10px 14px;outline:none;transition:border-color .15s;
+  }
+  input:focus{border-color:var(--teal);}
+  .error-msg{background:rgba(224,85,85,.1);border:1px solid rgba(224,85,85,.3);
+    border-radius:8px;padding:10px 14px;font-size:13px;color:var(--error);margin-bottom:18px;}
+  button{width:100%;background:var(--accent);color:#0d0f13;border:none;border-radius:8px;
+    padding:12px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;
+    cursor:pointer;transition:opacity .15s;}
+  button:hover{opacity:.88;}
+  .footer-note{text-align:center;margin-top:20px;font-size:12px;color:var(--text-dim);}
+</style>
+</head>
+<body>
+<div class="login-wrap">
+  <div class="logo-area">
+    <img src="/static/img/ember_logo.png" alt="Ember">
+    <div class="tagline">Land Acquisition Underwriting</div>
+  </div>
+  <div class="card">
+    <h2>Sign in</h2>
+    <div class="sub">Enter your credentials to access the platform.</div>
+    {% if error %}
+    <div class="error-msg">{{ error }}</div>
+    {% endif %}
+    <form method="POST" action="/login">
+      <div class="field">
+        <label>Username</label>
+        <input type="text" name="username" autocomplete="username" autofocus required>
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" name="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit">Sign In</button>
+    </form>
+  </div>
+  <div class="footer-note">Contact your administrator to request access.</div>
+</div>
+</body>
+</html>
