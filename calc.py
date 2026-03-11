@@ -33,6 +33,13 @@ def safe(v, default=0):
     except (TypeError, ValueError):
         return default
 
+def getd(inp, key, default=0):
+    """Get input value treating None/missing/empty string as default (not 0)."""
+    v = inp.get(key)
+    if v is None or v == "":
+        return default
+    return safe(v, default)
+
 def mround(v, multiple):
     """Excel MROUND equivalent."""
     if multiple == 0:
@@ -77,10 +84,10 @@ def calculate(inp: dict) -> dict:
     out = {}
 
     # ── 1. TRACT INPUTS derived values ───────────────────────────────────────
-    gross_ac      = safe(inp.get("gross_acreage"))
-    ppa           = safe(inp.get("purchase_price_per_acre"))
-    escalator     = safe(inp.get("land_escalator"))      # decimal e.g. 0.03
-    closing_pct   = safe(inp.get("closing_costs_pct"))   # decimal e.g. 0.015
+    gross_ac      = getd(inp, "gross_acreage",          0)
+    ppa           = getd(inp, "purchase_price_per_acre", 0)
+    escalator     = getd(inp, "land_escalator",          0.05)   # Excel default 5%
+    closing_pct   = getd(inp, "closing_costs_pct",       0.045)  # Excel default 4.5%
 
     purchase_price = ppa * gross_ac                        # B10
     closing_costs  = closing_pct * purchase_price          # B12
@@ -115,11 +122,11 @@ def calculate(inp: dict) -> dict:
     total_plant_acres = sum(plant_acres_list)
 
     # Detention
-    det_rate        = safe(inp.get("det_storage_rate", 0.5))
-    det_depth       = safe(inp.get("det_depth", 3))
-    det_num         = safe(inp.get("det_num_projects", 1))
-    parks_pct       = safe(inp.get("parks_pct", 0.02))
-    drill_site_ac   = safe(inp.get("drill_site_acres", 0))
+    det_rate        = getd(inp, "det_storage_rate", 0)   # user must enter
+    det_depth       = getd(inp, "det_depth",         0)   # user must enter
+    det_num         = getd(inp, "det_num_projects",  0)
+    parks_pct       = getd(inp, "parks_pct",         0.03)  # Excel: 3%
+    drill_site_ac   = getd(inp, "drill_site_acres",  0)
 
     # Net-out area (B72): plants + detention + amenities + other + roads
     amenities = inp.get("amenities", [])  # list of {type, acres}
@@ -168,15 +175,15 @@ def calculate(inp: dict) -> dict:
     out["road_acres_list"]  = road_acres_list
 
     # ── 2. COST INPUTS derived values ─────────────────────────────────────────
-    default_other_pct      = safe(inp.get("default_other_pct", 0.17))
-    contingency            = safe(inp.get("contingency", 0.05))
-    cost_per_mailbox       = safe(inp.get("cost_per_mailbox", 300))
-    cost_per_streetlight   = safe(inp.get("cost_per_streetlight", 5000))
-    default_start_month    = safe(inp.get("default_start_month", 1))
-    site_work_pct          = safe(inp.get("site_work_pct", 0.10))
-    fenced_pct             = safe(inp.get("fenced_pct", 0.50))
-    sectional_other_pct    = safe(inp.get("sectional_other_pct", 0.20))
-    landscaping_other_pct  = safe(inp.get("landscaping_other_pct", 0.10))
+    default_other_pct      = getd(inp, "default_other_pct",     0.17)
+    contingency            = getd(inp, "contingency",            0.05)
+    cost_per_mailbox       = getd(inp, "cost_per_mailbox",       200)    # Excel: $200
+    cost_per_streetlight   = getd(inp, "cost_per_streetlight",   1700)   # Excel: $1,700
+    default_start_month    = getd(inp, "default_start_month",    1)
+    site_work_pct          = getd(inp, "site_work_pct",          0.01)   # Excel: 1%
+    fenced_pct             = getd(inp, "fenced_pct",             0.25)   # Excel: 25%
+    sectional_other_pct    = getd(inp, "sectional_other_pct",    0.17)
+    landscaping_other_pct  = getd(inp, "landscaping_other_pct",  0.12)  # Excel: 12%
 
     # Land cost takedowns — matching Excel Cost Inputs rows 17-21
     # Take 1 (period 0): no escalation on purchase; closings also no escalation
