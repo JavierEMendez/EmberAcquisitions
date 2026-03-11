@@ -898,7 +898,7 @@ tr.pod-inactive input { pointer-events: none; }
           <div class="lookup-section">
             <div class="lookup-title">Amenity Types</div>
             <table class="data-table">
-              <thead><tr><th>Type</th><th>Duration (months)</th></tr></thead>
+              <thead><tr><th>Type</th><th>Acres</th><th>Duration (months)</th></tr></thead>
               <tbody id="lk-amenities-body"></tbody>
             </table>
           </div>
@@ -1328,9 +1328,36 @@ async function loadInputs() {
   inputs.lot_sizes = inputs.lot_sizes.map((ls, i) => ({...ls, ff: ls.ff ?? STD_FF[i] ?? (i+1)*5+35}));
   _df('res_pods',      Array.from({length:6}, ()=>({acres:0,price_per_acre:0,closing_costs_pct:0.01,implied_lots_per_acre:0,impact_fee_per_lot:0,sale_period:0})));
   _df('comm_pods',     Array.from({length:6}, ()=>({acres:0,price_per_sf:0,closing_costs_pct:0.01,sale_period:0,av_per_acre:0,av_delay_months:0})));
-  _df('lk_plants',    Array.from({length:8}, ()=>({type:'',acres:0,duration:0})));
-  _df('lk_amenities', Array.from({length:6}, ()=>({type:'',duration:0})));
-  _df('lk_roads',     Array.from({length:6}, ()=>({type:'',wsd:0,paving:0})));
+  // ── CALC LOOKUPS: pre-fill with standard Excel model assumptions ──
+  const STD_LK_PLANTS = [
+    {type:'WWTP',                 acres:10,   duration:8},
+    {type:'Water Plant',          acres:3.5,  duration:8},
+    {type:'Lift Station',         acres:0.75, duration:3},
+    {type:'None',                 acres:0,    duration:0},
+    {type:'',                     acres:0,    duration:0},
+    {type:'',                     acres:0,    duration:0},
+    {type:'',                     acres:0,    duration:0},
+    {type:'',                     acres:0,    duration:0},
+  ];
+  const STD_LK_AMENITIES = [
+    {type:'Large Amenity Center', acres:6.0, duration:12},
+    {type:'Small Amenity Center', acres:3.0, duration:8},
+    {type:'Pocket Park',          acres:0.5, duration:2},
+    {type:'None',                 acres:0,   duration:0},
+    {type:'',                     acres:0,   duration:0},
+    {type:'',                     acres:0,   duration:0},
+  ];
+  const STD_LK_ROADS = [
+    {type:'2 Lane', wsd:450, paving:343},
+    {type:'4 Lane', wsd:460, paving:663},
+    {type:'', wsd:0, paving:0},
+    {type:'', wsd:0, paving:0},
+    {type:'', wsd:0, paving:0},
+    {type:'', wsd:0, paving:0},
+  ];
+  _df('lk_plants',    STD_LK_PLANTS);
+  _df('lk_amenities', STD_LK_AMENITIES);
+  _df('lk_roads',     STD_LK_ROADS);
   const t = inputs;  // everything is now flat
 
   // Header
@@ -1786,6 +1813,7 @@ async function loadInputs() {
   lka.innerHTML = (t.lk_amenities||[]).map((a,i) => `
     <tr>
       <td><input type="text" id="lk-am-type-${i}" value="${a.type||''}" oninput="markDirty()"></td>
+      <td><input type="number" step="0.01" id="lk-am-acres-${i}" value="${a.acres||0}" class="mono" oninput="markDirty()"></td>
       <td><input type="number" id="lk-am-dur-${i}" value="${a.duration}" class="mono" oninput="markDirty()"></td>
     </tr>`).join('');
 
@@ -1913,7 +1941,7 @@ function collectInputs() {
       start_month: gi(`ci-det-sm-${i}`),
       landscaping_per_foot: gn(`ci-det-lpf-${i}`)
     })),
-    other_items: (t.other_costs||[]).map((_,i) => ({
+    other_items: Array.from({length:6}, (_,i) => ({
       num: i+1,
       base_cost: gn(`ci-ot-cost-${i}`) || 0,
       other_pct: gnp(`ci-ot-opct-${i}`),
@@ -1921,7 +1949,7 @@ function collectInputs() {
       duration: gi(`ci-ot-dur-${i}`),
       notes: gv(`ci-ot-notes-${i}`) || ''
     })),
-    roads_costs: (t.road_costs||[]).map((_,i) => ({
+    roads_costs: Array.from({length:6}, (_,i) => ({
       num: i+1,
       other_pct: gnp(`ci-rd2-opct-${i}`),
       start_month: gi(`ci-rd2-sm-${i}`),
@@ -2020,16 +2048,17 @@ function collectInputs() {
   };
 
   const lookups = {
-    plants: (t.lk_plants||[]).map((_,i) => ({
+    plants: Array.from({length:8}, (_,i) => ({
       type: gv(`lk-pl-type-${i}`),
       acres: gn(`lk-pl-acres-${i}`),
       duration: gi(`lk-pl-dur-${i}`)
     })),
-    amenities: (t.lk_amenities||[]).map((_,i) => ({
+    amenities: Array.from({length:6}, (_,i) => ({
       type: gv(`lk-am-type-${i}`),
+      acres: gn(`lk-am-acres-${i}`),
       duration: gi(`lk-am-dur-${i}`)
     })),
-    roads: (t.lk_roads||[]).map((_,i) => ({
+    roads: Array.from({length:6}, (_,i) => ({
       type: gv(`lk-rd-type-${i}`),
       wsd: gn(`lk-rd-wsd-${i}`),
       paving: gn(`lk-rd-paving-${i}`)
