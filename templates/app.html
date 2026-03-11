@@ -1024,6 +1024,7 @@ async function selectProject(id) {
   document.getElementById('save-indicator').style.display = 'flex';
   await loadInputs();
   showTab('tab-outputs');
+  loadOutputs();
 }
 
 function navTo(view) {
@@ -1817,7 +1818,7 @@ async function loadInputs() {
   sv('ci-general_monthly', t.personnel_monthly ?? 50000);
   setCalc('ci-general_end', c.general_final_period, 'mo');
   setCalc('ci-mktpers-total', c.personnel?.marketing_total);
-  sv('ci-marketing_monthly', t.marketing_monthly ?? 15000);  // Excel: $15K/mo
+  sv('ci-marketing_monthly', t.marketing_personnel_monthly ?? t.marketing_monthly ?? 15000);  // Excel: $15K/mo
   setCalc('ci-marketing_end', c.marketing_pers_final_period, 'mo');
 
   // Legal
@@ -1897,7 +1898,7 @@ async function loadInputs() {
     return `<tr id="ri-rp-row-${i}" class="${active ? '' : 'pod-inactive'}">
       <td class="row-num" style="color:${active?'var(--accent2)':'var(--text-dim)'}">Pod ${rp.pod||i+1}</td>
       <td><input type="number" id="ri-rp-price-${i}" value="${active ? (rp.price_per_acre||'') : 0}" class="mono" oninput="markDirty()" ${active?'':'tabindex="-1"'}></td>
-      <td><div class="pct-wrap"><input type="number" step="0.1" id="ri-rp-cc-${i}" value="${active ? +(rp.closing_costs*100).toPrecision(4) : 0}" class="mono" oninput="markDirty()" ${active?'':'tabindex="-1"'}></div></td>
+      <td><div class="pct-wrap"><input type="number" step="0.1" id="ri-rp-cc-${i}" value="${active ? +((rp.closing_costs_pct??rp.closing_costs??0.045)*100).toPrecision(4) : 0}" class="mono" oninput="markDirty()" ${active?'':'tabindex="-1"'}></div></td>
       <td><input type="number" step="0.1" id="ri-rp-lpa-${i}" value="${active ? (rp.implied_lots_per_acre||'') : 0}" class="mono" oninput="markDirty()" ${active?'':'tabindex="-1"'}></td>
       <td><input type="number" id="ri-rp-impact-${i}" value="${active ? (rp.impact_fee_per_lot||'') : 0}" class="mono" oninput="markDirty()" ${active?'':'tabindex="-1"'}></td>
       <td style="background:rgba(123,143,212,.04)"><span class="calc-cell">${active && rp.net_proceeds ? '$'+Math.round(rp.net_proceeds).toLocaleString('en-US') : '—'}</span></td>
@@ -1914,7 +1915,7 @@ async function loadInputs() {
     return `<tr id="ri-cp-row-${i}" class="${active ? '' : 'pod-inactive'}">
       <td class="row-num" style="color:${active?'var(--accent2)':'var(--text-dim)'}">Pod ${cp.pod||i+1}</td>
       <td><input type="number" step="0.01" id="ri-cp-price-${i}" value="${active ? (cp.price_per_sf||'') : 0}" class="mono" oninput="markDirty()" ${active?'':'tabindex="-1"'}></td>
-      <td><div class="pct-wrap"><input type="number" step="0.1" id="ri-cp-cc-${i}" value="${active ? +(cp.closing_costs*100).toPrecision(4) : 0}" class="mono" oninput="markDirty()" ${active?'':'tabindex="-1"'}></div></td>
+      <td><div class="pct-wrap"><input type="number" step="0.1" id="ri-cp-cc-${i}" value="${active ? +((cp.closing_costs_pct??cp.closing_costs??0.045)*100).toPrecision(4) : 0}" class="mono" oninput="markDirty()" ${active?'':'tabindex="-1"'}></div></td>
       <td style="background:rgba(123,143,212,.04)"><span class="calc-cell">${active && cp.net_proceeds ? '$'+Math.round(cp.net_proceeds).toLocaleString('en-US') : '—'}</span></td>
       <td><input type="number" id="ri-cp-sp-${i}" value="${active ? (cp.sale_period||'') : 0}" class="mono" oninput="markDirty()" ${active?'':'tabindex="-1"'}></td>
       <td><input type="number" id="ri-cp-av-${i}" value="${active ? (cp.av_per_acre||'') : 0}" class="mono" oninput="markDirty()" ${active?'':'tabindex="-1"'}></td>
@@ -2154,7 +2155,7 @@ function collectInputs() {
     res_pods: Array.from({length:6}, (_,i) => ({
       pod: i+1,
       price_per_acre: gn(`ri-rp-price-${i}`),
-      closing_costs: gnp(`ri-rp-cc-${i}`),
+      closing_costs_pct: gnp(`ri-rp-cc-${i}`),
       implied_lots_per_acre: gn(`ri-rp-lpa-${i}`),
       impact_fee_per_lot: gn(`ri-rp-impact-${i}`),
       sale_period: gi(`ri-rp-sp-${i}`),
@@ -2164,7 +2165,7 @@ function collectInputs() {
     comm_pods: Array.from({length:6}, (_,i) => ({
       pod: i+1,
       price_per_sf: gn(`ri-cp-price-${i}`),
-      closing_costs: gnp(`ri-cp-cc-${i}`),
+      closing_costs_pct: gnp(`ri-cp-cc-${i}`),
       sale_period: gi(`ri-cp-sp-${i}`),
       av_per_acre: gn(`ri-cp-av-${i}`),
       av_delay_months: gi(`ri-cp-avd-${i}`),
@@ -2247,7 +2248,8 @@ function collectInputs() {
     dmf_pct: costs.dmf_pct,
     prof_svc_pct: costs.prof_services_pct,
     marketing_pct: 0.02,
-    personnel_monthly: costs.personnel_monthly || 0,
+    personnel_monthly: costs.personnel?.general_monthly ?? 0,
+    marketing_personnel_monthly: costs.personnel?.marketing_monthly ?? 0,
     legal_monthly: costs.legal_monthly,
     mud_monthly: costs.mud_hoa_monthly,
     mud_pct: costs.mud_hoa_pct,
@@ -2264,10 +2266,14 @@ function collectInputs() {
     take2_pct: revenues.take2_pct,
     take3_pct: revenues.take3_pct,
     price_per_ff: revenues.price_per_ff || {},
+    res_pod_acreage: revenues.res_pod_acreage,
+    res_pod_count: revenues.res_pod_count,
     res_pods: revenues.res_pods,
+    comm_pod_acreage: revenues.comm_pod_acreage,
+    comm_pod_count: revenues.comm_pod_count,
     comm_pods: revenues.comm_pods,
-    mud_bond: revenues.mud_bond || {},
-    wcid_bond: revenues.wcid_bond || {},
+    mud_bond: revenues.mud || {},
+    wcid_bond: revenues.wcid || {},
     // Lookups
     lk_plants: lookups.plants,
     lk_amenities: lookups.amenities,
