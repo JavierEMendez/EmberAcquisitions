@@ -14,10 +14,10 @@ PLANT_LOOKUPS = {
     "None":        {"acres": 0.0,   "duration": 0},
 }
 AMENITY_LOOKUPS = {
-    "Pocket Park":          {"duration": 2},
-    "Small Amenity Center": {"duration": 8},
-    "Large Amenity Center": {"duration": 12},
-    "None":                 {"duration": 0},
+    "Pocket Park":          {"duration": 2,  "acres": 0.5},
+    "Small Amenity Center": {"duration": 8,  "acres": 3.0},
+    "Large Amenity Center": {"duration": 12, "acres": 6.0},
+    "None":                 {"duration": 0,  "acres": 0.0},
 }
 ROAD_LOOKUPS = {
     "2 Lane": {"wsd": 450, "paving": 343},
@@ -86,9 +86,32 @@ def calculate(inp: dict) -> dict:
     closing_costs  = closing_pct * purchase_price          # B12
     total_land     = purchase_price + closing_costs         # B13
 
+    # Build effective lookups — user-editable lk_ inputs override hardcoded constants
+    lk_plants_inp = inp.get("lk_plants", [])
+    eff_plant_lk = dict(PLANT_LOOKUPS)
+    for row in lk_plants_inp:
+        pt = row.get("type","").strip()
+        if pt:
+            eff_plant_lk[pt] = {"acres": safe(row.get("acres",0)), "duration": int(safe(row.get("duration",0)))}
+
+    lk_amenities_inp = inp.get("lk_amenities", [])
+    eff_amenity_lk = dict(AMENITY_LOOKUPS)
+    for row in lk_amenities_inp:
+        pt = row.get("type","").strip()
+        if pt:
+            acres_val = safe(row.get("acres", AMENITY_LOOKUPS.get(pt, {}).get("acres", 0)))
+            eff_amenity_lk[pt] = {"duration": int(safe(row.get("duration",0))), "acres": acres_val}
+
+    lk_roads_inp = inp.get("lk_roads", [])
+    eff_road_lk = dict(ROAD_LOOKUPS)
+    for row in lk_roads_inp:
+        pt = row.get("type","").strip()
+        if pt:
+            eff_road_lk[pt] = {"wsd": safe(row.get("wsd",0)), "paving": safe(row.get("paving",0))}
+
     # Plant acres lookup
     plants = inp.get("plants", [])  # list of {type, notes}
-    plant_acres_list = [PLANT_LOOKUPS.get(p.get("type","None"), {"acres":0})["acres"] for p in plants]
+    plant_acres_list = [eff_plant_lk.get(p.get("type","None"), {"acres":0})["acres"] for p in plants]
     total_plant_acres = sum(plant_acres_list)
 
     # Detention
@@ -174,7 +197,7 @@ def calculate(inp: dict) -> dict:
     for i in range(max(len(plants), len(plant_costs), 8)):
         pc = plant_costs[i] if i < len(plant_costs) else {}
         ptype = plants[i].get("type", "None") if i < len(plants) else "None"
-        dur = PLANT_LOOKUPS.get(ptype, {"duration": 0})["duration"]
+        dur = eff_plant_lk.get(ptype, {"duration": 0})["duration"]
         base = safe(pc.get("base_cost"))
         other_p = safe(pc.get("other_pct", default_other_pct))
         total = base * (1 + other_p) if base else 0
@@ -199,14 +222,18 @@ def calculate(inp: dict) -> dict:
     for i in range(max(len(amenities), len(amenity_costs), 6)):
         ac = amenity_costs[i] if i < len(amenity_costs) else {}
         atype = amenities[i].get("type", "None") if i < len(amenities) else "None"
-        dur = AMENITY_LOOKUPS.get(atype, {"duration": 0})["duration"]
+        dur = eff_amenity_lk.get(atype, {"duration": 0})["duration"]
         base = safe(ac.get("base_cost"))
         other_p = safe(ac.get("other_pct", default_other_pct))
         total = base * (1 + other_p) if base else 0
         sm = safe(ac.get("start_month", default_start_month))
+        # Use user-entered acres if set, otherwise fall back to lookup default acres
+        user_acres = safe(amenities[i].get("acres")) if i < len(amenities) else 0
+        lookup_acres = eff_amenity_lk.get(atype, {}).get("acres", 0)
+        amenity_acres = user_acres if user_acres else lookup_acres
         amenity_cost_rows.append({
             "type": atype,
-            "acres": safe(amenities[i].get("acres")) if i < len(amenities) else 0,
+            "acres": amenity_acres,
             "base_cost": base, "other_pct": other_p, "total_cost": total,
             "start_month": sm, "duration": dur,
         })
@@ -266,7 +293,7 @@ def calculate(inp: dict) -> dict:
         rtype = roads[i].get("type", "") if i < len(roads) else ""
         lf = safe(roads[i].get("lf")) if i < len(roads) else 0
         ls_setback = safe(roads[i].get("landscaping_setback")) if i < len(roads) else 0
-        rl = ROAD_LOOKUPS.get(rtype, {"wsd": 0, "paving": 0})
+        rl = eff_road_lk.get(rtype, {"wsd": 0, "paving": 0})
         wsd_per_lf  = rl["wsd"]
         pave_per_lf = rl["paving"]
         base_cost = lf * (wsd_per_lf + pave_per_lf) if lf else 0
