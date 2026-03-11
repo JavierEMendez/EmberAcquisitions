@@ -141,9 +141,11 @@ def calculate(inp: dict) -> dict:
             road_acres_list.append(0)
     road_acres_total = sum(road_acres_list)
 
-    # Detention acres: (det_rate * gross_ac) / det_depth * 1.3
-    det_acres_each = (det_rate * gross_ac / det_depth * 1.3) if det_depth else 0
-    det_total_acres = det_acres_each * det_num
+    # Detention acres: Excel B32 = (storage_rate * gross_ac / depth) * 1.3 = total footprint
+    # Excel B45 (each project) = B32 / num_projects
+    det_total_footprint = (det_rate * gross_ac / det_depth * 1.3) if det_depth else 0
+    det_acres_each = det_total_footprint / det_num if det_num else 0
+    det_total_acres = det_total_footprint  # Total detention acres for net-outs = B32
 
     parks_acres = parks_pct * gross_ac
     net_out_total = total_plant_acres + det_total_acres + amenity_acres_total + parks_acres + drill_site_ac + other_acres_total + road_acres_total  # B72
@@ -160,6 +162,8 @@ def calculate(inp: dict) -> dict:
     out["dev_acres"]      = dev_acres
     out["residential_dev_acres"] = residential_dev_acres
     out["det_acres_each"] = det_acres_each
+    out["det_total_acres"] = det_total_acres
+    out["det_total_footprint"] = det_total_footprint
     out["plant_acres_list"] = plant_acres_list
     out["road_acres_list"]  = road_acres_list
 
@@ -174,22 +178,33 @@ def calculate(inp: dict) -> dict:
     sectional_other_pct    = safe(inp.get("sectional_other_pct", 0.20))
     landscaping_other_pct  = safe(inp.get("landscaping_other_pct", 0.10))
 
-    # Land cost takedowns — default to 1 takedown at 100% period 0 if none entered
+    # Land cost takedowns — matching Excel Cost Inputs rows 17-21
+    # Take 1 (period 0): no escalation on purchase; closings also no escalation
+    # Take 2+: purchase escalated by (1+escalator)^(period/12)
+    # Closing costs never escalate (Excel B20=closing_total*pct, no escalator)
     takedowns = inp.get("takedowns", [])
-    if not takedowns or all(safe(td.get("pct", 0)) == 0 for td in takedowns):
-        takedowns = [{"period": 0, "pct": 1.0}]
+    # Filter out zero-pct takedowns but keep at least one
+    valid_tds = [td for td in takedowns if safe(td.get("pct", 0)) > 0]
+    if not valid_tds:
+        valid_tds = [{"period": 0, "pct": 1.0}]
     td_rows = []
-    for i, td in enumerate(takedowns):
+    total_td_purchase = 0
+    total_td_closing = 0
+    for i, td in enumerate(valid_tds):
         period = safe(td.get("period"))
         pct    = safe(td.get("pct"))
-        if i == 0:
+        if period == 0 or i == 0:
             purchase = purchase_price * pct
-            closing  = closing_costs * pct
         else:
             purchase = purchase_price * pct * (1 + escalator) ** (period / 12)
-            closing  = closing_costs * pct
+        closing = closing_costs * pct  # closing costs never escalated
+        total_td_purchase += purchase
+        total_td_closing  += closing
         td_rows.append({"period": period, "pct": pct, "purchase": purchase, "closing": closing, "total": purchase + closing})
     out["takedown_rows"] = td_rows
+    out["land_total_purchase"] = total_td_purchase
+    out["land_total_closing"]  = total_td_closing
+    out["land_total_cost"]     = total_td_purchase + total_td_closing
 
     # Plant cost rows
     plant_costs = inp.get("plant_costs", [])  # {base_cost, other_pct, start_month, ph2_base_cost, ph2_other_pct, ph2_start_month}
@@ -240,24 +255,30 @@ def calculate(inp: dict) -> dict:
     out["amenity_cost_rows"] = amenity_cost_rows
     total_amenity_cost = sum(r["total_cost"] for r in amenity_cost_rows)
 
-    # Detention cost rows
-    det_costs = inp.get("det_costs", [])  # list per detention project
-    det_sq_ft = det_acres_each * 43560
-    det_cu_yd = det_sq_ft / 27
+    # Detention cost rows — replicating Excel Cost Inputs formulas exactly
+    # Excel: Footprint = storage_rate * gross_ac / depth * 1.3  (B32)
+    # Excel: Volume CY = storage_rate * gross_ac * 43560 / 27   (B36)
+    # Excel: Total base cost = volume_cy * $10/CY               (B37, A37=10 hardcoded)
+    # Excel: Per-project acres = footprint / num_projects       (B45=B32/B34)
+    # Excel: Per-project base cost = B37 / num_projects
+    # Excel: Landscaping = lpf * 43560 * acres * (1+landscaping_other_pct) * 0.30
+    DET_COST_PER_CY = 10.0  # hardcoded in Excel cell A37
+    det_volume_cy = safe(inp.get("det_storage_rate", 0)) * gross_ac * 43560 / 27 if gross_ac else 0
+    det_total_base = det_volume_cy * DET_COST_PER_CY
+    det_base_per_proj = det_total_base / det_num if det_num else 0
+    det_costs = inp.get("det_costs", [])
     det_cost_rows = []
+    sm_base = safe(inp.get("default_start_month", 1))
     for idx in range(int(det_num)):
         dc = det_costs[idx] if idx < len(det_costs) else {}
-        base_cost_per_cyd = safe(dc.get("base_cost_per_cyd", 0))
         other_p = safe(dc.get("other_pct", default_other_pct))
-        base_cost = det_cu_yd * base_cost_per_cyd * (1 + safe(inp.get("land_escalator", 0))) * 0.3  # ~Excel J45 pattern
+        base_cost = det_base_per_proj
         total_cost = base_cost * (1 + other_p)
-        sm_base = safe(inp.get("default_start_month", 1))
-        sm = sm_base + idx * 15  # each project offset by 15 months
-        dur = 9  # typical detention duration
+        sm = sm_base + idx * 15  # each project offset +15 months (Excel F46=F45+15)
+        dur = 9  # fixed 9-month duration (Excel G45=9)
         delivery = dur + sm - 1
-        lsf = safe(dc.get("landscaping_per_foot", 0))
-        perimeter = det_sq_ft ** 0.5 * 4 if det_sq_ft else 0
-        total_landscaping = lsf * perimeter
+        lsf = safe(dc.get("landscaping_per_foot", 2))  # default $2/LF from Excel I45
+        total_landscaping = lsf * 43560 * det_acres_each * (1 + landscaping_other_pct) * 0.30
         det_cost_rows.append({
             "acres": det_acres_each, "base_cost": base_cost, "other_pct": other_p,
             "total_cost": total_cost, "start_month": sm, "duration": dur,
@@ -286,12 +307,13 @@ def calculate(inp: dict) -> dict:
     out["other_cost_rows"] = other_cost_rows
     total_other_cost = sum(r["total_cost"] for r in other_cost_rows)
 
-    # Road cost rows
+    # Road cost rows — always 6 rows driven by tract road inputs
     road_costs = inp.get("road_costs", [])
     road_cost_rows = []
-    for i, rc in enumerate(road_costs):
+    for i in range(max(len(roads), len(road_costs), 6)):
+        rc = road_costs[i] if i < len(road_costs) else {}
         rtype = roads[i].get("type", "") if i < len(roads) else ""
-        lf = safe(roads[i].get("lf")) if i < len(roads) else 0
+        lf = safe(roads[i].get("linear_feet") or roads[i].get("lf")) if i < len(roads) else 0
         ls_setback = safe(roads[i].get("landscaping_setback")) if i < len(roads) else 0
         rl = eff_road_lk.get(rtype, {"wsd": 0, "paving": 0})
         wsd_per_lf  = rl["wsd"]
@@ -299,7 +321,10 @@ def calculate(inp: dict) -> dict:
         base_cost = lf * (wsd_per_lf + pave_per_lf) if lf else 0
         other_p = safe(rc.get("other_pct", default_other_pct))
         total_cost = base_cost * (1 + other_p) if base_cost else 0
-        sm = safe(rc.get("start_month", default_start_month))
+        # Excel default start months for roads: 1, 12, 48, 72, 96, 1
+        rd_default_sms = [default_start_month, 12, 48, 72, 96, default_start_month]
+        sm_default = rd_default_sms[i] if i < len(rd_default_sms) else default_start_month
+        sm = safe(rc.get("start_month")) or sm_default
         dur = int(mround(lf / 300 + 6, 1)) if lf else 6
         delivery = dur + sm - 1
         lsf = safe(rc.get("landscaping_per_sf", 0))
@@ -381,7 +406,9 @@ def calculate(inp: dict) -> dict:
     bem_pct           = safe(inp.get("bem_pct", 0))
 
     # $/FF by year
-    ff_by_year = [safe(inp.get(f"ff_year_{y}", 0)) for y in range(11)]  # years 0–10
+    # Price per FF by year — stored as price_per_ff dict {"0":1800, "1":1800, ...}
+    ppff_dict = inp.get("price_per_ff", {})
+    ff_by_year = [safe(ppff_dict.get(str(y), ppff_dict.get(y, 1800))) for y in range(11)]
 
     # Home build table (lot sizes → home revenue)
     home_price_per_row = [safe(ls.get("home_price", 0)) for ls in lot_sizes]

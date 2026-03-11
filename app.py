@@ -299,18 +299,18 @@ def default_inputs(name="New Project"):
         "project_name": name,
         "address": "",
         "gross_acreage": 0,
-        "land_escalator": 0.03,
+        "land_escalator": 0.05,  # Excel default: 5%
         "purchase_price_per_acre": 0,
-        "closing_costs_pct": 0.015,
+        "closing_costs_pct": 0.045,  # Excel default: 4.5%
         "closing_date": "",
         "default_other_pct": 0.17,
         "sectional_other_pct": 0.20,
-        "landscaping_other_pct": 0.10,
+        "landscaping_other_pct": 0.12,  # Excel default: 12%
         "contingency": 0.05,
-        "site_work_pct": 0.10,
-        "fenced_pct": 0.50,
-        "cost_per_mailbox": 300,
-        "cost_per_streetlight": 5000,
+        "site_work_pct": 0.01,  # Excel default: 1%
+        "fenced_pct": 0.25,  # Excel default: 25%
+        "cost_per_mailbox": 200,  # Excel default: $200
+        "cost_per_streetlight": 1700,  # Excel default: $1700,
         "default_start_month": 1,
         "det_storage_rate": 0.5,
         "det_depth": 3,
@@ -339,24 +339,23 @@ def default_inputs(name="New Project"):
         "bem_pct": 0,
         "brokerage_fees": 0.03,
         "lot_closing_costs": 0.01,
-        "take1_pct": 1.0,
-        "take2_pct": 0.0,
-        "take3_pct": 0.0,
-        "ff_year_0":0,"ff_year_1":0,"ff_year_2":0,"ff_year_3":0,"ff_year_4":0,
-        "ff_year_5":0,"ff_year_6":0,"ff_year_7":0,"ff_year_8":0,"ff_year_9":0,"ff_year_10":0,
+        "take1_pct": 0.50,  # Excel: 50/25/25
+        "take2_pct": 0.25,
+        "take3_pct": 0.25,
+        "price_per_ff": {str(yr): 1800 for yr in range(11)},  # Excel defaults: $1800/FF all years
         "res_pods": [{"acres":0,"price_per_acre":0,"closing_costs_pct":0.01,"implied_lots_per_acre":0,"impact_fee_per_lot":0,"sale_period":0} for _ in range(6)],
         "comm_pods": [{"acres":0,"price_per_sf":0,"closing_costs_pct":0.01,"sale_period":0,"av_per_acre":0,"av_delay_months":0} for _ in range(6)],
         "mud_bond": {"amount":0,"reimbursement_pct":0.8,"period":0,"rate":0,"term":0,"annual_payment":0},
         "wcid_bond": {"amount":0,"reimbursement_pct":0.8,"period":0,"rate":0,"term":0,"annual_payment":0},
         "marketing_pct": 0.02,
-        "prof_svc_pct": 0.02,
-        "dmf_pct": 0.005,
-        "personnel_monthly": 0,
-        "legal_monthly": 0,
-        "mud_monthly": 0,
+        "prof_svc_pct": 0.015,  # Excel default: 1.5%
+        "dmf_pct": 0.025,  # Excel default: 2.5%
+        "personnel_monthly": 50000,  # Excel: $50K/mo general
+        "legal_monthly": 10000,  # Excel: $10K/mo
+        "mud_monthly": 35000,  # Excel: $35K/mo
         "mud_pct": 0,
-        "insurance_monthly": 0,
-        "bookkeeping_monthly": 0,
+        "insurance_monthly": 10000,  # Excel: $10K/mo
+        "bookkeeping_monthly": 10000,  # Excel: $10K/mo
     }
 
 @app.route("/api/projects/<int:pid>/export_excel", methods=["GET"])
