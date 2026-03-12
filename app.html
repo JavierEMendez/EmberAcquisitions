@@ -1488,9 +1488,9 @@ async function loadInputs() {
       <td class="calc-col"><span id="ci-ls-total-${i}" class="calc-cell">${isOn&&ls.total_lots?ls.total_lots.toFixed(0):'—'}</span></td>
       <td class="calc-col"><span class="calc-cell">${isOn&&ls.pace&&ls.yield_per_ac?((ls.pace*18)/ls.yield_per_ac).toFixed(1):'—'}</span></td>
       <td><input type="number" id="ci-ls-hp-${i}" value="${sv2(ls.home_price)}" data-saved="${ds(ls.home_price)}" class="mono" oninput="markDirty()" ${dis}></td>
-      <td class="calc-col"><span class="calc-cell">${isOn&&ls.wsd_per_ff?fmtC(ls.wsd_per_ff):'—'}</span></td>
-      <td class="calc-col"><span class="calc-cell">${isOn&&ls.paving_per_ff?fmtC(ls.paving_per_ff):'—'}</span></td>
-      <td class="calc-col"><span class="calc-cell">${isOn&&ls.dev_cost_per_lot?fmtC(ls.dev_cost_per_lot):'—'}</span></td>
+      <td><input type="number" step="1" id="ci-ls-wsd-${i}" value="${sv2(ls.wsd_per_ff)}" data-saved="${ds(ls.wsd_per_ff)}" class="mono" oninput="markDirty()" ${dis}></td>
+      <td><input type="number" step="1" id="ci-ls-pave-${i}" value="${sv2(ls.paving_per_ff)}" data-saved="${ds(ls.paving_per_ff)}" class="mono" oninput="markDirty()" ${dis}></td>
+      <td class="calc-col"><span class="calc-cell">${isOn&&ls.ff&&(ls.wsd_per_ff||ls.paving_per_ff)?fmtC(ls.ff*((ls.wsd_per_ff||0)+(ls.paving_per_ff||0))):'—'}</span></td>
       <td><input type="number" id="ci-ls-dsm-${i}" value="${sv2(ls.dev_start_month)}" data-saved="${ds(ls.dev_start_month)}" class="mono" oninput="markDirty()" ${dis}></td>
       <td><input type="number" id="ci-ls-lpl-${i}" value="${sv2(ls.landscaping_per_lot)}" data-saved="${ds(ls.landscaping_per_lot)}" class="mono" oninput="markDirty()" ${dis}></td>
       <td><input type="number" id="ci-ls-urd-${i}" value="${sv2(ls.urd_per_lot)}" data-saved="${ds(ls.urd_per_lot)}" class="mono" oninput="markDirty()" ${dis}></td>
@@ -1814,6 +1814,8 @@ function collectInputs() {
         yield_per_ac: getSaved(`ci-ls-yield-${i}`),
         pace: getSaved(`ci-ls-pace-${i}`),
         home_price: getSaved(`ci-ls-hp-${i}`),
+        wsd_per_ff: getSaved(`ci-ls-wsd-${i}`),
+        paving_per_ff: getSaved(`ci-ls-pave-${i}`),
         dev_start_month: getSaved(`ci-ls-dsm-${i}`),
         landscaping_per_lot: getSaved(`ci-ls-lpl-${i}`),
         urd_per_lot: getSaved(`ci-ls-urd-${i}`),

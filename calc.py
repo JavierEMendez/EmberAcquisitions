@@ -368,60 +368,74 @@ def calculate(inp: dict) -> dict:
     total_road_landscaping = sum(r["total_landscaping"] for r in road_cost_rows)
     total_streetlights = sum(r["total_lights"] for r in road_cost_rows)
 
-    # Lot size mix
-    # Lot sizes are 16 rows corresponding to FF 25, 30, 35, ..., 100 (5 FF increments)
-    # Column A in Excel is the FF directly — use index-based lookup
+    # ── LOT SIZE SECTION SCHEDULE SETUP (matches Excel Calc_Costs rows 32-53) ─────
+    # Excel allocates residential_dev_acres proportionally by each lot type's acres_18mo.
+    # acres_18mo = pace*18 / yield_per_ac  (the acres consumed in one 18-month section)
+    # share_i    = acres_18mo_i / sum(acres_18mo_j for all active j)
+    # alloc_acres = residential_dev_acres * share
+    # full_secs  = INT(alloc_acres / acres_18mo)     ← Excel INT() = truncate
+    # last_acres = alloc_acres - full_secs * acres_18mo
+    # total_lots = ROUNDDOWN(full_secs * lots_18mo + last_acres * yield, 0)
     lot_sizes = inp.get("lot_sizes", [])
 
-    # Pre-compute mix percentages so each active lot type gets a share of residential_dev_acres.
-    # Use explicit pct_mix if provided; otherwise divide equally among active types.
-    active_lot_idx = [i for i, ls in enumerate(lot_sizes) if safe(ls.get("on", 0))]
-    explicit_mixes = {i: safe(lot_sizes[i].get("pct_mix", 0)) for i in active_lot_idx}
-    total_explicit = sum(explicit_mixes.values())
-    if total_explicit > 0:
-        lot_mix_pcts = {i: explicit_mixes[i] / total_explicit for i in active_lot_idx}
-    else:
-        n_active = len(active_lot_idx)
-        lot_mix_pcts = {i: 1.0 / n_active for i in active_lot_idx} if n_active else {}
+    sum_18mo_acres = sum(
+        (safe(ls.get("pace", 0)) * 18 / safe(ls.get("yield_per_ac", 1)))
+        for ls in lot_sizes
+        if safe(ls.get("on", 0)) and safe(ls.get("pace", 0)) > 0 and safe(ls.get("yield_per_ac", 0)) > 0
+    )
 
     lot_rows = []
     for i, ls in enumerate(lot_sizes):
-        # Front footage: use stored value if available, else derive from index
         ff = safe(ls.get("front_footage", LOT_FF_BY_INDEX[i] if i < len(LOT_FF_BY_INDEX) else 25 + 5 * i))
         if ff <= 0:
             ff = LOT_FF_BY_INDEX[i] if i < len(LOT_FF_BY_INDEX) else 25 + 5 * i
 
         if not safe(ls.get("on", 0)):
             lot_rows.append({**ls, "lots_18mo": 0, "total_lots": 0, "acres_18mo": 0,
-                             "dev_cost_per_lot": 0, "ff": ff})
+                             "dev_cost_per_lot": 0, "ff": ff,
+                             "full_sections": 0, "last_lots": 0, "last_section_acres": 0})
             continue
-        yield_ac = safe(ls.get("yield_per_ac"))
-        pace     = safe(ls.get("pace"))  # lots/month
-        pct_this = lot_mix_pcts.get(i, 0)
-        lot_acres_this = residential_dev_acres * pct_this
-        total_lots_this = int(lot_acres_this * yield_ac) if yield_ac else 0
-        lots_18mo = pace * 18 if pace else 0
-        acres_18mo = lots_18mo / yield_ac if yield_ac else 0
-        # Dev cost per lot — Excel K col = FF*(WSD+Paving) + URD + fence
-        # Landscaping is tracked separately and hits at section delivery
-        wsd_ff    = safe(ls.get("wsd_per_ff", 0))
-        pave_ff   = safe(ls.get("paving_per_ff", 0))
-        urd_lot   = safe(ls.get("urd_per_lot", 0))
-        fence_ff  = safe(ls.get("fence_cost_per_ff", 0))
-        dev_cost  = (wsd_ff + pave_ff) * ff + urd_lot + fence_ff * ff * fenced_pct
+
+        yield_ac  = safe(ls.get("yield_per_ac", 0))
+        pace      = safe(ls.get("pace", 0))
+        lots_18mo = pace * 18          # float — e.g. 13.5 for 80FF (Excel E col)
+        acres_18mo = lots_18mo / yield_ac if yield_ac else 0   # Excel G col
+
+        # Acreage allocation (Excel Calc_Costs rows 38-53)
+        if sum_18mo_acres > 0 and acres_18mo > 0:
+            alloc_acres = residential_dev_acres * (acres_18mo / sum_18mo_acres)
+        else:
+            alloc_acres = 0
+
+        full_secs  = int(alloc_acres / acres_18mo) if acres_18mo > 0 else 0  # Excel INT()
+        last_acres = alloc_acres - full_secs * acres_18mo if acres_18mo > 0 else 0
+        last_lots  = math.floor(last_acres * yield_ac) if yield_ac else 0    # Excel ROUNDDOWN
+        # Excel total_lots = ROUNDDOWN(full_secs*lots_18mo + last_acres*yield, 0)
+        total_lots_this = math.floor(full_secs * lots_18mo + (last_acres * yield_ac if yield_ac else 0))
+
+        # Dev cost per lot — Excel Cost Inputs K col = FF*(WSD+Paving) + URD + fence (no contingency)
+        # Contingency (sectional_other_pct) is applied per-section in the schedule, matching Excel.
+        wsd_ff   = safe(ls.get("wsd_per_ff", 0))
+        pave_ff  = safe(ls.get("paving_per_ff", 0))
+        urd_lot  = safe(ls.get("urd_per_lot", 0))
+        fence_ff = safe(ls.get("fence_cost_per_ff", 0))
+        dev_cost = (wsd_ff + pave_ff) * ff + urd_lot + fence_ff * ff * fenced_pct
+
         lot_rows.append({
             **ls,
-            "total_lots": total_lots_this,
-            "lots_18mo": lots_18mo,
-            "acres_18mo": acres_18mo,
-            "dev_cost_per_lot": dev_cost,
-            "ff": ff,
+            "total_lots":         total_lots_this,
+            "lots_18mo":          lots_18mo,
+            "acres_18mo":         acres_18mo,
+            "dev_cost_per_lot":   dev_cost,
+            "ff":                 ff,
+            "full_sections":      full_secs,
+            "last_lots":          last_lots,
+            "last_section_acres": last_acres,
         })
     out["lot_rows"] = lot_rows
 
     total_lots = sum(r.get("total_lots", 0) for r in lot_rows)
-    total_dev_cost = sum(r.get("dev_cost_per_lot", 0) * r.get("total_lots", 0) for r in lot_rows)
-    total_lot_landscaping = sum(safe(r.get("landscaping_per_lot")) * r.get("total_lots", 0) for r in lot_rows)
+    # total_dev_cost and total_lot_landscaping are accumulated in the section loop below
 
     out["total_lots"] = total_lots
 
@@ -491,16 +505,16 @@ def calculate(inp: dict) -> dict:
         max_lot_months = 0
         for lr in lot_rows:
             if lr.get("total_lots", 0) > 0:
-                pace = safe(lr.get("pace", 0))
-                sm   = int(safe(lr.get("dev_start_month", default_start_month)))
-                lots = lr.get("total_lots", 0)
+                pace       = safe(lr.get("pace", 0))
+                sm         = int(safe(lr.get("dev_start_month", default_start_month)))
                 build_time = max(0, int(safe(lr.get("build_time", 12))))
+                full_secs  = lr.get("full_sections", 0)
+                last_lots  = lr.get("last_lots", 0)
                 if pace > 0:
-                    lots_per_sec = max(1, int(round(pace * 18)))
-                    sec_count = math.ceil(lots / lots_per_sec)
-                    last_t3 = sm + sec_count * 18 + 9
-                    # account for home sales continuing after last T3
-                    last_home_sale = sm + sec_count * 18 + build_time + max(1, int(round(lots_per_sec / pace)))
+                    sec_count = full_secs + (1 if last_lots > 0 else 0)
+                    last_t3   = sm + sec_count * 18 + 9
+                    # Home sales continue after last delivery + build_time
+                    last_home_sale = sm + sec_count * 18 + build_time + max(1, int(round(pace * 18 / pace)))
                     max_lot_months = max(max_lot_months, last_t3, last_home_sale)
         all_deliveries.append(max_lot_months)
 
@@ -547,73 +561,73 @@ def calculate(inp: dict) -> dict:
         if 1 <= dp <= MAX_MONTHS and r["total_landscaping"] > 0:
             cost_monthly[dp] += r["total_landscaping"]
 
-    # Lot development costs + revenues
-    lot_rev_by_month = [0.0] * (MAX_MONTHS + 1)
-    lot_cost_by_month = [0.0] * (MAX_MONTHS + 1)
-    lot_count_by_month = [0] * (MAX_MONTHS + 1)
-
-    for lr in lot_rows:
-        if not safe(lr.get("on", 0)) or lr.get("total_lots", 0) == 0:
-            continue
-        pace = safe(lr.get("pace", 0))
-        if pace <= 0:
-            continue
-        total = int(lr["total_lots"])
-        sm    = int(safe(lr.get("dev_start_month", default_start_month)))
-
-        # Track lot delivery counts (for AV buildup / revenue timing)
-        delivered = 0
-        m = sm
-        while delivered < total and m <= MAX_MONTHS:
-            batch = min(int(pace), total - delivered)
-            lot_count_by_month[m] += batch
-            delivered += batch
-            m += 1
-
-    # Lot dev costs: 18-month section schedule matching Excel
-    # Phase 1 (months 0–11): 10% of section dev cost spread evenly = section_cost*0.10/12 per month
-    # Phase 2 (months 12–17): 90% of section dev cost spread evenly = section_cost*0.90/6 per month
-    # Landscaping (lot_landscaping_by_month): lump sum at section delivery = section_start + 18
+    # ── LOT SECTION SCHEDULE (matches Excel Calc_Costs rows 57-679) ─────────────
+    # Section k of lot type i:
+    #   start_month  = dev_start + (k-1)*18
+    #   delivery_m   = start_month + 18
+    #   lots         = lots_18mo (full sections) or last_lots (partial)
+    #   dev_cost     = lots * dev_cost_per_lot * (1 + sectional_other_pct)  [Excel F col]
+    #   Phase 1 cost = dev_cost * 0.10 / 12  per month, months 0-11 of section
+    #   Phase 2 cost = dev_cost * 0.90 / 6   per month, months 12-17 of section
+    #   landscaping  = lots * ls_per_lot * (1 + landscaping_other_pct)  [Excel I col]
+    #   lot delivery tracked at delivery_m  [lot_count_by_month]
+    lot_rev_by_month       = [0.0] * (MAX_MONTHS + 1)
+    lot_cost_by_month      = [0.0] * (MAX_MONTHS + 1)
+    lot_count_by_month     = [0.0] * (MAX_MONTHS + 1)
     lot_landscaping_by_month = [0.0] * (MAX_MONTHS + 1)
+    total_dev_cost         = 0.0
+    total_lot_landscaping  = 0.0
+
     for lr in lot_rows:
         if not safe(lr.get("on", 0)) or lr.get("total_lots", 0) == 0:
             continue
         pace = safe(lr.get("pace", 0))
         if pace <= 0:
             continue
-        total            = int(lr["total_lots"])
-        sm               = int(safe(lr.get("dev_start_month", default_start_month)))
-        dev_cost_per_lot = lr.get("dev_cost_per_lot", 0)   # excl landscaping
+        sm              = int(safe(lr.get("dev_start_month", default_start_month)))
+        lots_18mo       = pace * 18                   # float (e.g. 13.5 for 80FF)
+        full_secs       = lr.get("full_sections", 0)
+        last_lots       = lr.get("last_lots", 0)
+        dev_cost_per_lot = lr.get("dev_cost_per_lot", 0)
         ls_per_lot       = safe(lr.get("landscaping_per_lot", 0))
-        lots_per_section = max(1, int(pace * 18))  # Excel lots_18mo
 
-        remaining      = total
-        section_start  = sm
-        while remaining > 0:
-            section_lots  = min(lots_per_section, remaining)
-            section_cost  = section_lots * dev_cost_per_lot
+        # Build section list: full sections + optional partial section
+        sections = [(k, lots_18mo) for k in range(1, full_secs + 1)]
+        if last_lots > 0:
+            sections.append((full_secs + 1, float(last_lots)))
 
-            # Phase 1: 10% spread over months 0–11
+        for k, section_lots in sections:
+            section_start = sm + (k - 1) * 18
+            delivery_m    = section_start + 18
+
+            # Dev cost with sectional contingency (Excel: lots * K_col * (1+B6))
+            section_cost  = section_lots * dev_cost_per_lot * (1 + sectional_other_pct)
+            total_dev_cost += section_cost
+
+            # Phase 1: months 0-11 relative to section_start
             ph1_per_month = section_cost * 0.10 / 12
             for mo in range(12):
                 m = section_start + mo
                 if 1 <= m <= MAX_MONTHS:
                     lot_cost_by_month[m] += ph1_per_month
 
-            # Phase 2: 90% spread over months 12–17
+            # Phase 2: months 12-17 relative to section_start
             ph2_per_month = section_cost * 0.90 / 6
             for mo in range(12, 18):
                 m = section_start + mo
                 if 1 <= m <= MAX_MONTHS:
                     lot_cost_by_month[m] += ph2_per_month
 
-            # Landscaping: lump sum at delivery (section_start + 18)
-            delivery_m = section_start + 18
-            if 1 <= delivery_m <= MAX_MONTHS and ls_per_lot:
-                lot_landscaping_by_month[delivery_m] += section_lots * ls_per_lot
+            # Landscaping lump sum at delivery with landscaping contingency (Excel I col)
+            if ls_per_lot:
+                ls_amount = section_lots * ls_per_lot * (1 + landscaping_other_pct)
+                total_lot_landscaping += ls_amount
+                if 1 <= delivery_m <= MAX_MONTHS:
+                    lot_landscaping_by_month[delivery_m] += ls_amount
 
-            remaining     -= section_lots
-            section_start += 18
+            # Lot delivery tracking (lump sum at delivery month)
+            if 1 <= delivery_m <= MAX_MONTHS:
+                lot_count_by_month[delivery_m] += section_lots
 
     # Lot revenue: section lump-sum delivery matching Excel Calc_Revenues
     # Each section delivers ALL its lots as a lump sum at section_delivery (sm+(k+1)*18).
@@ -641,12 +655,16 @@ def calculate(inp: dict) -> dict:
         lot_tax_rate = safe(lr.get("lot_tax_rate", 0.022))
         lot_tax_per_lot = ff_by_year[0] * ff * lot_av_pct_t * lot_tax_rate
 
-        lots_per_section = max(1, int(round(pace * 18)))
-        remaining = total
-        k = 0
-        while remaining > 0:
-            batch = min(lots_per_section, remaining)
-            t1_m  = sm + (k + 1) * 18        # T1 = section delivery month
+        # Use exact section structure (matches dev cost loop above)
+        lots_18mo_r  = pace * 18            # float
+        full_secs_r  = lr.get("full_sections", 0)
+        last_lots_r  = lr.get("last_lots", 0)
+        rev_sections = [(k, lots_18mo_r) for k in range(1, full_secs_r + 1)]
+        if last_lots_r > 0:
+            rev_sections.append((full_secs_r + 1, float(last_lots_r)))
+
+        for k, batch in rev_sections:
+            t1_m  = sm + k * 18              # T1 = section delivery month
             t2_m  = t1_m + 6
             t3_m  = t1_m + 9
 
@@ -743,9 +761,6 @@ def calculate(inp: dict) -> dict:
                 if t3_m <= MAX_MONTHS:
                     lot_rev_by_month[t3_m] += batch * take3_pct * mktg_fee_lot
 
-            remaining -= batch
-            k += 1
-
     for m in range(1, MAX_MONTHS + 1):
         rev_monthly[m]  += lot_rev_by_month[m]
         cost_monthly[m] += lot_cost_by_month[m]
@@ -808,20 +823,20 @@ def calculate(inp: dict) -> dict:
         if av_per_lot <= 0:
             continue
 
-        # Section-based home completion schedule (section k delivers at sm+18*(k+1))
-        # Each section holds pace*18 lots; homes complete build_time months later.
-        completions = [0.0] * (MAX_MONTHS + 2)
-        lots_per_section = max(1, int(round(pace_lr * 18)))
-        remaining = total_lr
-        k = 0
-        while remaining > 0:
-            lots_this = min(lots_per_section, remaining)
-            section_delivery = sm_lr + (k + 1) * 18
+        # Section-based home completion schedule — use same section structure as dev cost loop
+        completions  = [0.0] * (MAX_MONTHS + 2)
+        lots_18mo_av = pace_lr * 18              # float
+        full_secs_av = lr.get("full_sections", 0)
+        last_lots_av = lr.get("last_lots", 0)
+        av_sections  = [(k, lots_18mo_av) for k in range(1, full_secs_av + 1)]
+        if last_lots_av > 0:
+            av_sections.append((full_secs_av + 1, float(last_lots_av)))
+
+        for k, lots_this in av_sections:
+            section_delivery = sm_lr + k * 18
             comp_m = section_delivery + build_time
             if 1 <= comp_m <= MAX_MONTHS:
                 completions[comp_m] += lots_this
-            remaining -= lots_this
-            k += 1
 
         # Inventory-based home sales: pace-limited, inventory-capped (row 783)
         cum_comp = 0.0
