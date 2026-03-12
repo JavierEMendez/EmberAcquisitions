@@ -413,13 +413,12 @@ def calculate(inp: dict) -> dict:
         # Excel total_lots = ROUNDDOWN(full_secs*lots_18mo + last_acres*yield, 0)
         total_lots_this = math.floor(full_secs * lots_18mo + (last_acres * yield_ac if yield_ac else 0))
 
-        # Dev cost per lot — Excel Cost Inputs K col = FF*(WSD+Paving) + URD + fence (no contingency)
+        # Dev cost per lot — Excel Cost Inputs K col = FF*(WSD+Paving) ONLY
+        # URD, Fencing, and Streetlights are separate delivery-timed costs (not phase-scheduled)
         # Contingency (sectional_other_pct) is applied per-section in the schedule, matching Excel.
         wsd_ff   = safe(ls.get("wsd_per_ff", 0))
         pave_ff  = safe(ls.get("paving_per_ff", 0))
-        urd_lot  = safe(ls.get("urd_per_lot", 0))
-        fence_ff = safe(ls.get("fence_cost_per_ff", 0))
-        dev_cost = (wsd_ff + pave_ff) * ff + urd_lot + fence_ff * ff * fenced_pct
+        dev_cost = (wsd_ff + pave_ff) * ff
 
         lot_rows.append({
             **ls,
@@ -575,8 +574,14 @@ def calculate(inp: dict) -> dict:
     lot_cost_by_month      = [0.0] * (MAX_MONTHS + 1)
     lot_count_by_month     = [0.0] * (MAX_MONTHS + 1)
     lot_landscaping_by_month = [0.0] * (MAX_MONTHS + 1)
+    fencing_by_month       = [0.0] * (MAX_MONTHS + 1)   # Fencing cost, delivery-timed
+    urd_by_month           = [0.0] * (MAX_MONTHS + 1)   # Dry utilities (URD), delivery-timed
+    lot_streetlight_by_month = [0.0] * (MAX_MONTHS + 1) # Lot-level streetlights, delivery-timed
     total_dev_cost         = 0.0
     total_lot_landscaping  = 0.0
+    total_fencing_cost     = 0.0
+    total_urd_cost         = 0.0
+    total_lot_streetlight_cost = 0.0
 
     for lr in lot_rows:
         if not safe(lr.get("on", 0)) or lr.get("total_lots", 0) == 0:
@@ -590,6 +595,12 @@ def calculate(inp: dict) -> dict:
         last_lots       = lr.get("last_lots", 0)
         dev_cost_per_lot = lr.get("dev_cost_per_lot", 0)
         ls_per_lot       = safe(lr.get("landscaping_per_lot", 0))
+        ff_lr            = lr.get("ff", 0)
+
+        # Separate delivery-timed costs per lot (NOT in dev_cost, NOT phase-scheduled)
+        fence_cost_ff  = safe(lr.get("fence_cost_per_ff", 0))
+        urd_per_lot    = safe(lr.get("urd_per_lot", 0))
+        lots_per_sl    = safe(lr.get("lots_per_streetlight", 0))  # "Lots per Street Light" spacing
 
         # Build section list: full sections + optional partial section
         sections = [(k, lots_18mo) for k in range(1, full_secs + 1)]
@@ -601,6 +612,7 @@ def calculate(inp: dict) -> dict:
             delivery_m    = section_start + 18
 
             # Dev cost with sectional contingency (Excel: lots * K_col * (1+B6))
+            # K = FF*(WSD+Paving) only — no URD, no fence
             section_cost  = section_lots * dev_cost_per_lot * (1 + sectional_other_pct)
             total_dev_cost += section_cost
 
@@ -624,6 +636,30 @@ def calculate(inp: dict) -> dict:
                 total_lot_landscaping += ls_amount
                 if 1 <= delivery_m <= MAX_MONTHS:
                     lot_landscaping_by_month[delivery_m] += ls_amount
+
+            # Fencing cost: lump sum at delivery (Excel Calc_Revenues rows 244-479 / Cashflow B14)
+            # = fence_cost_per_FF * lots * FF * fenced_pct
+            if fence_cost_ff and ff_lr and fenced_pct:
+                fence_amt = section_lots * fence_cost_ff * ff_lr * fenced_pct
+                total_fencing_cost += fence_amt
+                if 1 <= delivery_m <= MAX_MONTHS:
+                    fencing_by_month[delivery_m] += fence_amt
+
+            # URD (dry utilities): lump sum at delivery (Excel Calc_Costs rows 988-1003)
+            # = lots * URD_per_lot
+            if urd_per_lot:
+                urd_amt = section_lots * urd_per_lot
+                total_urd_cost += urd_amt
+                if 1 <= delivery_m <= MAX_MONTHS:
+                    urd_by_month[delivery_m] += urd_amt
+
+            # Lot-level streetlights: lump sum at delivery (Excel Calc_Costs rows 988-1003)
+            # = lots / lots_per_streetlight * cost_per_streetlight
+            if lots_per_sl and lots_per_sl > 0:
+                sl_amt = (section_lots / lots_per_sl) * cost_per_streetlight
+                total_lot_streetlight_cost += sl_amt
+                if 1 <= delivery_m <= MAX_MONTHS:
+                    lot_streetlight_by_month[delivery_m] += sl_amt
 
             # Lot delivery tracking (lump sum at delivery month)
             if 1 <= delivery_m <= MAX_MONTHS:
@@ -653,7 +689,7 @@ def calculate(inp: dict) -> dict:
         mktg_fee_lot = safe(lr.get("marketing_fee", 0))
         lot_av_pct_t = safe(lr.get("lot_av_pct", 0.5))
         lot_tax_rate = safe(lr.get("lot_tax_rate", 0.022))
-        # lot_tax_per_lot is computed per-section using the year-appropriate ff_rate (see inside loop)
+        # lot_tax_per_lot uses base $/FF (Year 0), not year-specific — matches Excel N27 = $B$13*A27*K27*M27
 
         # Use exact section structure (matches dev cost loop above)
         lots_18mo_r  = pace * 18            # float
@@ -670,7 +706,8 @@ def calculate(inp: dict) -> dict:
 
             year_idx = min(max(int((t1_m - 1) / 12), 0), 10)
             ff_rate = ff_by_year[year_idx] if year_idx < len(ff_by_year) else ff_by_year[-1]
-            lot_tax_per_lot = ff_rate * ff * lot_av_pct_t * lot_tax_rate
+            # Lot tax uses base $/FF (Year 0) per Excel N27 = $B$13 * A27 * K27 * M27
+            lot_tax_per_lot = ff_by_year[0] * ff * lot_av_pct_t * lot_tax_rate
             gross_lot_rev = batch * ff * ff_rate
 
             # BEM: received bem_period months before T1
@@ -743,9 +780,9 @@ def calculate(inp: dict) -> dict:
                 if escal_t3 > 0 and t3_m <= MAX_MONTHS:
                     lot_rev_by_month[t3_m] += escal_t3
 
-            # Fence fees (revenue)
-            if fence_fee_pff and ff:
-                fence_rev = batch * ff * fence_fee_pff
+            # Fence fees (revenue) — Excel: fence_rev_per_FF * lots * FF * fenced_pct
+            if fence_fee_pff and ff and fenced_pct:
+                fence_rev = batch * ff * fence_fee_pff * fenced_pct
                 if t1_m <= MAX_MONTHS:
                     lot_rev_by_month[t1_m] += fence_rev * take1_pct
                 if t2_m <= MAX_MONTHS:
@@ -766,6 +803,9 @@ def calculate(inp: dict) -> dict:
         rev_monthly[m]  += lot_rev_by_month[m]
         cost_monthly[m] += lot_cost_by_month[m]
         cost_monthly[m] += lot_landscaping_by_month[m]
+        cost_monthly[m] += fencing_by_month[m]
+        cost_monthly[m] += urd_by_month[m]
+        cost_monthly[m] += lot_streetlight_by_month[m]
         cost_monthly[m] += lot_brokerage_by_month[m]
         cost_monthly[m] += lot_closing_by_month[m]
         cost_monthly[m] += lot_tax_by_month[m]
@@ -861,10 +901,12 @@ def calculate(inp: dict) -> dict:
             break
         av_per_acre = safe(cp.get("av_per_acre", 0))
         sale_period = int(safe(cp.get("sale_period", proj_months)))
+        av_delay    = int(safe(cp.get("av_delay_months") or cp.get("av_delay", 18)))  # Excel K55=18 months after sale
         pod_av = acres_per_comm_pod * av_per_acre
         comm_av += pod_av
-        if pod_av > 0 and 1 <= sale_period <= MAX_MONTHS:
-            av_by_month[sale_period] += pod_av
+        av_period = sale_period + av_delay  # Excel L55 = I55 + K55
+        if pod_av > 0 and 1 <= av_period <= MAX_MONTHS:
+            av_by_month[av_period] += pod_av
 
     # Cumulative AV array (row 840 analogue: SUM of all prior months)
     cum_av_monthly = [0.0] * (MAX_MONTHS + 2)
@@ -909,10 +951,21 @@ def calculate(inp: dict) -> dict:
     # MUD/WCID bond revenues — Excel cumulative-AV method
     mud_issuances  = _compute_bond_issuances_excel(mud_row)
     wcid_issuances = _compute_bond_issuances_excel(wcid_row)
+    mud_recv_fee_by_month  = [0.0] * (MAX_MONTHS + 1)
+    wcid_recv_fee_by_month = [0.0] * (MAX_MONTHS + 1)
+    mud_recv_fee_pct  = safe(mud_row.get("receivables_fee") or mud_row.get("receivables_fee_pct", 0.025)) if mud_row else 0
+    wcid_recv_fee_pct = safe(wcid_row.get("receivables_fee") or wcid_row.get("receivables_fee_pct", 0.025)) if wcid_row else 0
     for bp, amt in mud_issuances:
         rev_monthly[bp] += amt
+        # Receivables fee is a cost (Excel Calc_Revenues row 868)
+        fee = amt * mud_recv_fee_pct
+        mud_recv_fee_by_month[bp] += fee
+        cost_monthly[bp] += fee
     for bp, amt in wcid_issuances:
         rev_monthly[bp] += amt
+        fee = amt * wcid_recv_fee_pct
+        wcid_recv_fee_by_month[bp] += fee
+        cost_monthly[bp] += fee
 
     # Operating costs — Excel-precise end periods
     # last_delivery_period = last month where lots are DELIVERED (T1 = section delivery month)
@@ -931,14 +984,37 @@ def calculate(inp: dict) -> dict:
 
     total_det_landscaping = sum(r.get("total_landscaping", 0) for r in det_cost_rows)
 
-    # DMF: % of total hard costs (Excel A99 = total_cost * 2.5%)
-    hard_costs = (total_land + total_plant_cost + total_amenity_cost + total_det_cost +
-                  total_det_landscaping + total_other_cost + total_road_cost +
-                  total_road_landscaping + total_dev_cost + total_lot_landscaping)
-    dmf_total = hard_costs * dmf_pct
-
-    # Site work: % of lot revenues
-    site_work_total = site_work_pct * total_lot_revenue_gross
+    # Site work: per-section cost at BEM month (Excel Cashflow B15)
+    # Excel: SUMIF(Revenue_Inputs!K71:K306, month, Revenue_Inputs!O71:O306)
+    # K = BEM month (T1 - BEM_period), O = gross_section_revenue * site_work_pct
+    site_work_by_month = [0.0] * (MAX_MONTHS + 1)
+    site_work_total = 0.0
+    for lr in lot_rows:
+        if not safe(lr.get("on", 0)) or lr.get("total_lots", 0) == 0:
+            continue
+        pace_sw = safe(lr.get("pace", 0))
+        if pace_sw <= 0:
+            continue
+        sm_sw = int(safe(lr.get("dev_start_month", default_start_month)))
+        ff_sw = lr.get("ff", 0)
+        lots_18mo_sw = pace_sw * 18
+        full_secs_sw = lr.get("full_sections", 0)
+        last_lots_sw = lr.get("last_lots", 0)
+        sw_sections = [(k, lots_18mo_sw) for k in range(1, full_secs_sw + 1)]
+        if last_lots_sw > 0:
+            sw_sections.append((full_secs_sw + 1, float(last_lots_sw)))
+        for k, batch_sw in sw_sections:
+            t1_sw = sm_sw + k * 18
+            yr_sw = min(max(int((t1_sw - 1) / 12), 0), 10)
+            ff_rate_sw = ff_by_year[yr_sw] if yr_sw < len(ff_by_year) else ff_by_year[-1]
+            gross_sw = batch_sw * ff_sw * ff_rate_sw
+            sw_amt = gross_sw * site_work_pct
+            site_work_total += sw_amt
+            bem_m_sw = max(1, t1_sw - bem_period)
+            if 1 <= bem_m_sw <= MAX_MONTHS:
+                site_work_by_month[bem_m_sw] += sw_amt
+    for m in range(1, MAX_MONTHS + 1):
+        cost_monthly[m] += site_work_by_month[m]
 
     # Marketing: C91 = total / (B91+1) months. B91 = last_home_period-1 (0-indexed).
     # Runs last_home_period months (months 1..last_home_period in Python).
@@ -951,10 +1027,6 @@ def calculate(inp: dict) -> dict:
     ps_dur    = max(1, last_delivery_period)
     ps_per_m  = prof_svc_total / ps_dur
     spread_cost(cost_monthly, prof_svc_total, 1, ps_dur)
-
-    # DMF: spread over project length
-    spread_cost(cost_monthly, dmf_total, 1, proj_months)
-    spread_cost(cost_monthly, site_work_total, 1, proj_months)
 
     # General Personnel: Excel D103=D95 (0-indexed). Runs (D95+1)=last_delivery_period months.
     gen_pers_end = max(1, last_delivery_period)
@@ -995,9 +1067,127 @@ def calculate(inp: dict) -> dict:
             cost_monthly[m] += mud_mo
     mud_total = mud_mo * mud_run_months
 
-    # Streetlight cost
-    streetlight_total = total_streetlights * cost_per_streetlight
-    spread_cost(cost_monthly, streetlight_total, 1, max(proj_months, 1))
+    # Road-level streetlights: at road delivery period (Excel Cashflow B17, SUMIF term)
+    road_streetlight_by_month = [0.0] * (MAX_MONTHS + 1)
+    road_streetlight_total = 0.0
+    for r in road_cost_rows:
+        sl_cost = r["total_lights"] * cost_per_streetlight if r.get("total_lights") else 0
+        if sl_cost > 0:
+            road_streetlight_total += sl_cost
+            dp = int(r["delivery_period"])
+            if 1 <= dp <= MAX_MONTHS:
+                road_streetlight_by_month[dp] += sl_cost
+    for m in range(1, MAX_MONTHS + 1):
+        cost_monthly[m] += road_streetlight_by_month[m]
+
+    # Total streetlight cost = road-level + lot-level
+    streetlight_total = road_streetlight_total + total_lot_streetlight_cost
+
+    # DMF: monthly proportional — Excel Cashflow B18 = 2.5% * SUM(that month's other costs)
+    # Included in DMF base: Plants + Amenities + Detention + Other + Roads + Fencing + SiteWork
+    #   + Landscaping + MUD&HOA + Insurance + Legal + Taxes + ProfSvc + SectionDev
+    # We need category-level monthly totals. Build them here for DMF + cashflow detail.
+    # Most are already tracked. For operating costs we need per-month arrays:
+    op_mud_m      = [0.0] * (MAX_MONTHS + 1)
+    op_insurance_m = [0.0] * (MAX_MONTHS + 1)
+    op_legal_m     = [0.0] * (MAX_MONTHS + 1)
+    op_prof_svc_m  = [0.0] * (MAX_MONTHS + 1)
+    op_mkt_exp_m   = [0.0] * (MAX_MONTHS + 1)
+    for m in range(1, mud_run_months + 1):
+        if m <= MAX_MONTHS: op_mud_m[m] = mud_mo
+    for m in range(1, ins_end + 1):
+        if m <= MAX_MONTHS: op_insurance_m[m] = insurance_mo
+    for m in range(1, legal_end + 1):
+        if m <= MAX_MONTHS: op_legal_m[m] = legal_mo
+    if ps_dur > 0:
+        for m in range(1, ps_dur + 1):
+            if m <= MAX_MONTHS: op_prof_svc_m[m] = ps_per_m
+    if mkt_dur > 0:
+        for m in range(1, mkt_dur + 1):
+            if m <= MAX_MONTHS: op_mkt_exp_m[m] = mkt_per_m
+
+    # Reconstruct monthly infrastructure arrays (same as cashflow detail, but needed now for DMF)
+    _Z = lambda: [0.0] * (MAX_MONTHS + 1)
+    _cc_plants = _Z(); _cc_amen = _Z(); _cc_det = _Z(); _cc_other = _Z(); _cc_roads = _Z()
+    for r in plant_cost_rows:
+        if r["total_cost"] > 0:
+            per = r["total_cost"] / r["duration"] if r["duration"] > 0 else 0
+            for mm in range(int(r["start_month"]), int(r["start_month"]) + int(r["duration"])):
+                if 1 <= mm <= MAX_MONTHS: _cc_plants[mm] += per
+        if r["ph2_total_cost"] > 0 and r["ph2_duration"] > 0:
+            per2 = r["ph2_total_cost"] / r["ph2_duration"]
+            for mm in range(int(r["ph2_start_month"]), int(r["ph2_start_month"]) + int(r["ph2_duration"])):
+                if 1 <= mm <= MAX_MONTHS: _cc_plants[mm] += per2
+    for r in amenity_cost_rows:
+        if r["total_cost"] > 0 and r["duration"] > 0:
+            per = r["total_cost"] / r["duration"]
+            for mm in range(int(r["start_month"]), int(r["start_month"]) + int(r["duration"])):
+                if 1 <= mm <= MAX_MONTHS: _cc_amen[mm] += per
+    for r in det_cost_rows:
+        if r["total_cost"] > 0 and r["duration"] > 0:
+            per = r["total_cost"] / r["duration"]
+            for mm in range(int(r["start_month"]), int(r["start_month"]) + int(r["duration"])):
+                if 1 <= mm <= MAX_MONTHS: _cc_det[mm] += per
+        dp = int(r["delivery_period"])
+        if 1 <= dp <= MAX_MONTHS and r.get("total_landscaping", 0) > 0:
+            _cc_det[dp] += r["total_landscaping"]
+    for r in other_cost_rows:
+        dur_r = max(r["duration"], 1)
+        if r["total_cost"] > 0:
+            per = r["total_cost"] / dur_r
+            for mm in range(int(r["start_month"]), int(r["start_month"]) + int(dur_r)):
+                if 1 <= mm <= MAX_MONTHS: _cc_other[mm] += per
+    for r in road_cost_rows:
+        if r["total_cost"] > 0 and r["duration"] > 0:
+            per = r["total_cost"] / r["duration"]
+            for mm in range(int(r["start_month"]), int(r["start_month"]) + int(r["duration"])):
+                if 1 <= mm <= MAX_MONTHS: _cc_roads[mm] += per
+        dp = int(r["delivery_period"])
+        if 1 <= dp <= MAX_MONTHS and r["total_landscaping"] > 0:
+            _cc_roads[dp] += r["total_landscaping"]
+
+    # All landscaping monthly = det landscaping + road landscaping + sectional landscaping
+    _cc_landscape_m = _Z()
+    for r in det_cost_rows:
+        dp = int(r["delivery_period"])
+        if 1 <= dp <= MAX_MONTHS and r.get("total_landscaping", 0) > 0:
+            _cc_landscape_m[dp] += r["total_landscaping"]
+    for r in road_cost_rows:
+        dp = int(r["delivery_period"])
+        if 1 <= dp <= MAX_MONTHS and r["total_landscaping"] > 0:
+            _cc_landscape_m[dp] += r["total_landscaping"]
+    for m in range(1, MAX_MONTHS + 1):
+        _cc_landscape_m[m] += lot_landscaping_by_month[m]
+
+    dmf_by_month = _Z()
+    dmf_total = 0.0
+    for m in range(1, MAX_MONTHS + 1):
+        # DMF base = plants + amenities + det + other + roads + fencing + site_work
+        #          + landscaping + MUD&HOA + insurance + legal + taxes + prof_svc + section_dev
+        dmf_base_m = (_cc_plants[m] + _cc_amen[m] + _cc_det[m] + _cc_other[m] + _cc_roads[m]
+                      + fencing_by_month[m] + site_work_by_month[m] + _cc_landscape_m[m]
+                      + op_mud_m[m] + op_insurance_m[m] + op_legal_m[m]
+                      + lot_tax_by_month[m] + op_prof_svc_m[m]
+                      + lot_cost_by_month[m])
+        dmf_this = dmf_base_m * dmf_pct
+        dmf_by_month[m] = dmf_this
+        dmf_total += dmf_this
+        cost_monthly[m] += dmf_this
+
+    # Hard costs (for summary display, includes fencing/URD/streetlights)
+    hard_costs = (total_land + total_plant_cost + total_amenity_cost + total_det_cost +
+                  total_det_landscaping + total_other_cost + total_road_cost +
+                  total_road_landscaping + total_dev_cost + total_lot_landscaping +
+                  total_fencing_cost + total_urd_cost + total_lot_streetlight_cost +
+                  road_streetlight_total + site_work_total)
+
+    # Project Contingency: Excel F37 = SUM(infrastructure+some_operating) * 5%
+    contingency_base = (total_land + total_plant_cost + total_amenity_cost + total_det_cost +
+                        total_other_cost + total_road_cost + total_dev_cost +
+                        total_fencing_cost + total_urd_cost + streetlight_total +
+                        site_work_total + total_lot_landscaping + total_det_landscaping +
+                        total_road_landscaping + prof_svc_total)
+    contingency_total = contingency_base * contingency
 
     # ── 5. SUMMARY OUTPUTS ────────────────────────────────────────────────────
     total_revenue = sum(rev_monthly[1:proj_months+1])
@@ -1006,9 +1196,13 @@ def calculate(inp: dict) -> dict:
     gross_margin  = gross_profit / total_revenue if total_revenue else 0
     roc           = gross_profit / total_cost if total_cost else 0
 
-    infra_cost = total_plant_cost + total_amenity_cost + total_det_cost + total_det_landscaping + total_other_cost + total_road_cost + total_road_landscaping + total_dev_cost + total_lot_landscaping
+    infra_cost = (total_plant_cost + total_amenity_cost + total_det_cost + total_det_landscaping +
+                  total_other_cost + total_road_cost + total_road_landscaping +
+                  total_dev_cost + total_lot_landscaping +
+                  total_fencing_cost + total_urd_cost + streetlight_total + site_work_total)
     below_line = (dmf_total + personnel_mo * gen_pers_end + marketing_personnel_mo * mkt_pers_end
                   + legal_mo * legal_end + insurance_mo * ins_end + bookkeeping_mo * bk_end + mud_total)
+    total_recv_fees = sum(mud_recv_fee_by_month) + sum(wcid_recv_fee_by_month)
     # 0-indexed final period values for display (match Excel Cost Inputs tab)
     gen_final_period_disp  = gen_pers_end - 1   # Excel D103
     mkt_final_period_disp  = mkt_pers_end - 1   # Excel D104 = B91
@@ -1107,6 +1301,10 @@ def calculate(inp: dict) -> dict:
     out["cost_insurance"]   = round(insurance_mo * ins_end)
     out["cost_bookkeeping"] = round(bookkeeping_mo * bk_end)
     out["cost_streetlights"] = round(streetlight_total)
+    out["cost_fencing"]     = round(total_fencing_cost)
+    out["cost_dry_utilities"] = round(total_urd_cost + total_lot_streetlight_cost + road_streetlight_total)
+    out["cost_contingency"] = round(contingency_total)
+    out["cost_recv_fees"]   = round(total_recv_fees)
     out["cost_brokerage"]   = round(sum(lot_brokerage_by_month))
     out["cost_closing"]     = round(sum(lot_closing_by_month))
     out["cost_lot_taxes"]   = round(sum(lot_tax_by_month))
@@ -1140,38 +1338,16 @@ def calculate(inp: dict) -> dict:
     out["below_line_total"]      = round(below_line)
 
     # ── 6. CASHFLOW DETAIL (for Cashflows tab) ───────────────────────────────
-    # Per-category monthly tracking (reconstructed for line-item cashflow display)
-    def _spread_cat(arr, amount, start_m, duration):
-        if duration <= 0 or amount <= 0: return
-        per = amount / duration
-        for m in range(int(start_m), int(start_m) + int(duration)):
-            if 1 <= m <= MAX_MONTHS: arr[m] += per
-
+    # Reuse pre-computed category arrays (_cc_plants, _cc_amen, etc.) from DMF section
+    # Only need to build land and revenue category arrays here.
     Z = lambda: [0.0] * (MAX_MONTHS + 1)
     rc_lot = Z(); rc_res = Z(); rc_comm = Z(); rc_mud = Z()
-    cc_land = Z(); cc_plants = Z(); cc_amen = Z(); cc_det = Z()
-    cc_other = Z(); cc_roads = Z(); cc_lotdev = Z(); cc_lot_landscape = Z()
+    cc_land = Z()
+    cc_lotdev = Z(); cc_lot_landscape = Z()
 
     for td in td_rows:
         mm = max(1, int(td["period"]))
         if mm <= MAX_MONTHS: cc_land[mm] += td["total"]
-    for r in plant_cost_rows:
-        _spread_cat(cc_plants, r["total_cost"], r["start_month"], r["duration"])
-        _spread_cat(cc_plants, r["ph2_total_cost"], r["ph2_start_month"], r["ph2_duration"])
-    for r in amenity_cost_rows:
-        _spread_cat(cc_amen, r["total_cost"], r["start_month"], r["duration"])
-    for r in det_cost_rows:
-        _spread_cat(cc_det, r["total_cost"], r["start_month"], r["duration"])
-        dp = int(r["delivery_period"])
-        if 1 <= dp <= MAX_MONTHS and r.get("total_landscaping", 0) > 0:
-            cc_det[dp] += r["total_landscaping"]
-    for r in other_cost_rows:
-        _spread_cat(cc_other, r["total_cost"], r["start_month"], max(r["duration"], 1))
-    for r in road_cost_rows:
-        _spread_cat(cc_roads, r["total_cost"], r["start_month"], r["duration"])
-        dp = int(r["delivery_period"])
-        if 1 <= dp <= MAX_MONTHS and r["total_landscaping"] > 0:
-            cc_roads[dp] += r["total_landscaping"]
     for m in range(1, MAX_MONTHS + 1):
         cc_lotdev[m]        = lot_cost_by_month[m]
         cc_lot_landscape[m] = lot_landscaping_by_month[m]
@@ -1210,16 +1386,23 @@ def calculate(inp: dict) -> dict:
             "rev_comm_pods": round(rc_comm[m]),
             "rev_mud_wcid":  round(rc_mud[m]),
             "cost_land":     round(cc_land[m]),
-            "cost_plants":   round(cc_plants[m]),
-            "cost_amenities":round(cc_amen[m]),
-            "cost_detention":round(cc_det[m]),
-            "cost_other":    round(cc_other[m]),
-            "cost_roads":    round(cc_roads[m]),
+            "cost_plants":   round(_cc_plants[m]),
+            "cost_amenities":round(_cc_amen[m]),
+            "cost_detention":round(_cc_det[m]),
+            "cost_other":    round(_cc_other[m]),
+            "cost_roads":    round(_cc_roads[m]),
             "cost_lot_dev":          round(cc_lotdev[m]),
             "cost_lot_landscaping":  round(cc_lot_landscape[m]),
-            "cost_operating":round(max(0, cost_monthly[m] - cc_land[m] - cc_plants[m] - cc_amen[m]
-                                       - cc_det[m] - cc_other[m] - cc_roads[m] - cc_lotdev[m]
-                                       - cc_lot_landscape[m])),
+            "cost_fencing":          round(fencing_by_month[m]),
+            "cost_dry_utilities":    round(urd_by_month[m] + lot_streetlight_by_month[m] + road_streetlight_by_month[m]),
+            "cost_site_work":        round(site_work_by_month[m]),
+            "cost_dmf":              round(dmf_by_month[m]),
+            "cost_operating":round(max(0, cost_monthly[m] - cc_land[m] - _cc_plants[m] - _cc_amen[m]
+                                       - _cc_det[m] - _cc_other[m] - _cc_roads[m] - cc_lotdev[m]
+                                       - cc_lot_landscape[m] - fencing_by_month[m]
+                                       - urd_by_month[m] - lot_streetlight_by_month[m]
+                                       - road_streetlight_by_month[m] - site_work_by_month[m]
+                                       - dmf_by_month[m])),
         }
         for m in range(1, proj_months + 1)
     ]
