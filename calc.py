@@ -771,29 +771,52 @@ def calculate(inp: dict) -> dict:
         if pod_rev > 0 and 1 <= sale_period <= MAX_MONTHS:
             rev_monthly[sale_period] += pod_rev
 
-    # ── AV BUILDUP (Excel-precise, cumulative) ────────────────────────────────
-    # Replicate Calc_Revenues row 840: cumulative AV grows as homes close each month.
-    # Lot AV timing: same as lot revenue (dev_start_month + revenue_start_offset).
-    # Commercial AV: added at each pod's sale_period.
+    # ── AV BUILDUP (Excel-precise: section lump-sums + build_time + inventory) ─
+    # Matches Calc_Revenues rows 742-838:
+    #   1. Each section delivers all its lots as a lump sum at section_start+18
+    #   2. Homes complete build_time months after lot delivery (row 742)
+    #   3. Homes sell from completed inventory at pace/month (rows 763-798)
+    #   4. Cumulative AV = running sum of homes_sold * av_per_unit (rows 803+823)
     av_by_month = [0.0] * (MAX_MONTHS + 2)
     for lr in lot_rows:
         if not safe(lr.get("on", 0)) or lr.get("total_lots", 0) == 0:
             continue
-        pace_lr = safe(lr.get("pace", 0))
+        pace_lr    = safe(lr.get("pace", 0))
         if pace_lr <= 0:
             continue
-        total_lr  = int(lr["total_lots"])
-        sm_lr     = int(safe(lr.get("dev_start_month", default_start_month)))
-        hp        = safe(lr.get("home_price", 0))
-        av_pct_lr = safe(lr.get("av_pct", 0.85))
+        total_lr   = int(lr["total_lots"])
+        sm_lr      = int(safe(lr.get("dev_start_month", default_start_month)))
+        build_time = max(0, int(safe(lr.get("build_time", 12))))
+        av_pct_lr  = safe(lr.get("av_pct", 0.85))
+        hp         = safe(lr.get("home_price", 0))
         av_per_lot = hp * av_pct_lr
-        delivered = 0
-        m = sm_lr + revenue_start_offset
-        while delivered < total_lr and m <= MAX_MONTHS:
-            batch = min(int(pace_lr), total_lr - delivered)
-            av_by_month[m] += batch * av_per_lot
-            delivered += batch
-            m += 1
+        if av_per_lot <= 0:
+            continue
+
+        # Section-based home completion schedule (section k delivers at sm+18*(k+1))
+        # Each section holds pace*18 lots; homes complete build_time months later.
+        completions = [0.0] * (MAX_MONTHS + 2)
+        lots_per_section = max(1, int(round(pace_lr * 18)))
+        remaining = total_lr
+        k = 0
+        while remaining > 0:
+            lots_this = min(lots_per_section, remaining)
+            section_delivery = sm_lr + (k + 1) * 18
+            comp_m = section_delivery + build_time
+            if 1 <= comp_m <= MAX_MONTHS:
+                completions[comp_m] += lots_this
+            remaining -= lots_this
+            k += 1
+
+        # Inventory-based home sales: pace-limited, inventory-capped (row 783)
+        cum_comp = 0.0
+        cum_sold = 0.0
+        for m in range(1, MAX_MONTHS + 1):
+            cum_comp  += completions[m]
+            inventory  = cum_comp - cum_sold
+            sold_this  = min(inventory, pace_lr)
+            cum_sold  += sold_this
+            av_by_month[m] += sold_this * av_per_lot
 
     lot_av = sum(av_by_month[1:MAX_MONTHS + 1])
 

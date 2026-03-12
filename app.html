@@ -1934,7 +1934,21 @@ function collectInputs() {
     det_costs: costs.detention,
     other_costs: costs.other_items,
     road_costs: costs.roads_costs,
-    lot_sizes: costs.lot_sizes,
+    lot_sizes: costs.lot_sizes.map((ls, i) => {
+      const ht = (revenues.home_table || [])[i] || {};
+      return {
+        ...ls,
+        build_time:     ht.build_time     ?? ls.build_time,
+        home_price:     ht.home_price     ?? ls.home_price,
+        av_pct:         ht.av_pct         ?? ls.av_pct,
+        premium_per_ff: ht.premium_per_ff ?? ls.premium_per_ff,
+        escalation:     ht.escalation     ?? ls.escalation,
+        fence_per_ff:   ht.fence_per_ff   ?? ls.fence_per_ff,
+        marketing_fee:  ht.marketing_fee  ?? ls.marketing_fee,
+        lot_av_pct:     ht.lot_av_pct     ?? ls.lot_av_pct,
+        lot_tax_rate:   ht.lot_tax_rate   ?? ls.lot_tax_rate,
+      };
+    }),
     dmf_pct: costs.dmf_pct,
     prof_svc_pct: costs.prof_services_pct,
     marketing_pct: 0.02,
