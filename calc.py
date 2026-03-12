@@ -530,6 +530,53 @@ def calculate(inp: dict) -> dict:
     rev_monthly = [0.0] * (MAX_MONTHS + 1)
     cost_monthly = [0.0] * (MAX_MONTHS + 1)
 
+    def _compute_bond_issuances(bond_rev, first_period, bond_interval):
+        """
+        Spread bond proceeds across multiple issuances proportional to lot deliveries.
+        Returns list of (period, amount) tuples.
+        Bond periods: first_period, first_period+bond_interval, ... up to MAX_MONTHS.
+        Each issuance amount = bond_rev * (incremental_lots / total_lots).
+        """
+        if bond_rev <= 0 or not first_period:
+            return []
+        bi = int(safe(bond_interval)) if bond_interval else 0
+        p = int(first_period)
+        periods = []
+        while p <= MAX_MONTHS:
+            periods.append(p)
+            if bi <= 0:
+                break
+            p += bi
+        if not periods:
+            return []
+        # If no lots info or single period, issue as lump sum
+        if total_lots <= 0 or len(periods) == 1:
+            return [(min(periods[0], MAX_MONTHS), bond_rev)]
+        result = []
+        prev_cum = 0
+        issued = 0.0
+        for idx, bp in enumerate(periods):
+            cum = sum(lot_count_by_month[1:min(bp + 1, MAX_MONTHS + 1)])
+            lots_this = max(0, cum - prev_cum)
+            is_last = (idx == len(periods) - 1)
+            if is_last:
+                amount = bond_rev - issued
+            else:
+                amount = bond_rev * lots_this / total_lots if lots_this > 0 else 0
+            if amount > 0 and 1 <= bp <= MAX_MONTHS:
+                result.append((bp, amount))
+                issued += amount
+            prev_cum = cum
+        # If remaining unissued (lots came after last period), add to last
+        remainder = bond_rev - issued
+        if remainder > 1:
+            if result:
+                last_p, last_a = result[-1]
+                result[-1] = (last_p, last_a + remainder)
+            elif periods:
+                result.append((min(periods[-1], MAX_MONTHS), remainder))
+        return result
+
     # Land cost: takedowns
     for td in td_rows:
         m = max(1, int(td["period"]))
@@ -661,13 +708,17 @@ def calculate(inp: dict) -> dict:
         if pod_rev > 0 and 1 <= sale_period <= MAX_MONTHS:
             rev_monthly[sale_period] += pod_rev
 
-    # MUD/WCID bond revenues — lump sum at first bond period
-    mud_first_period  = int(safe(mud_row.get("first_bond_period", proj_months))) if mud_row else proj_months
-    wcid_first_period = int(safe(wcid_row.get("first_bond_period", proj_months))) if wcid_row else proj_months
-    if mud_bond_rev > 0:
-        rev_monthly[min(mud_first_period, MAX_MONTHS)] += mud_bond_rev
-    if wcid_bond_rev > 0:
-        rev_monthly[min(wcid_first_period, MAX_MONTHS)] += wcid_bond_rev
+    # MUD/WCID bond revenues — spread across multiple issuances proportional to lot deliveries
+    mud_first_period   = int(safe(mud_row.get("first_bond_period",  proj_months))) if mud_row  else proj_months
+    wcid_first_period  = int(safe(wcid_row.get("first_bond_period", proj_months))) if wcid_row else proj_months
+    mud_bond_interval  = safe(mud_row.get("bond_interval",  12)) if mud_row  else 12
+    wcid_bond_interval = safe(wcid_row.get("bond_interval", 12)) if wcid_row else 12
+    mud_issuances  = _compute_bond_issuances(mud_bond_rev,  mud_first_period,  mud_bond_interval)
+    wcid_issuances = _compute_bond_issuances(wcid_bond_rev, wcid_first_period, wcid_bond_interval)
+    for bp, amt in mud_issuances:
+        rev_monthly[bp] += amt
+    for bp, amt in wcid_issuances:
+        rev_monthly[bp] += amt
 
     # Operating costs spread over project life
     total_lot_revenue_gross = sum(lot_rev_by_month)
@@ -733,10 +784,16 @@ def calculate(inp: dict) -> dict:
 
     # Yearly lots/homes for chart
     yearly_lots  = {}
+    yearly_homes = {}
     for m in range(1, MAX_MONTHS + 1):
         yr = (m - 1) // 12 + 1
-        yearly_lots[yr]  = yearly_lots.get(yr, 0) + lot_count_by_month[m]
-    out["yearly_lots"] = {k: v for k, v in yearly_lots.items() if v > 0}
+        yearly_lots[yr] = yearly_lots.get(yr, 0) + lot_count_by_month[m]
+        # Home sales ~18 months after lot delivery (matches revenue offset)
+        home_m = m + 18
+        home_yr = (home_m - 1) // 12 + 1
+        yearly_homes[home_yr] = yearly_homes.get(home_yr, 0) + lot_count_by_month[m]
+    out["yearly_lots"]  = {k: v for k, v in yearly_lots.items()  if v > 0}
+    out["yearly_homes"] = {k: v for k, v in yearly_homes.items() if v > 0}
 
     # Cashflow by year for chart
     yearly_cf = {}
@@ -850,10 +907,10 @@ def calculate(inp: dict) -> dict:
         sp    = int(safe(cp.get("sale_period", proj_months)))
         pr    = acres_per_comm_pod * 43560 * psf_p * (1 - cc_p)
         if pr > 0 and 1 <= sp <= MAX_MONTHS: rc_comm[sp] += pr
-    if mud_bond_rev > 0:
-        rc_mud[min(mud_first_period, MAX_MONTHS)] += mud_bond_rev
-    if wcid_bond_rev > 0:
-        rc_mud[min(wcid_first_period, MAX_MONTHS)] += wcid_bond_rev
+    for bp, amt in mud_issuances:
+        rc_mud[bp] += amt
+    for bp, amt in wcid_issuances:
+        rc_mud[bp] += amt
 
     # Monthly detail limited to project length
     out["cf_monthly"] = [

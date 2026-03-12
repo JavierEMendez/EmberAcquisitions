@@ -446,10 +446,10 @@ tr.pod-inactive input { pointer-events: none; }
             </div>
           </div>
           <div class="field-grid" style="margin-top:12px">
-            <div class="field"><label>Gross Acreage (ac)</label><input type="number" id="ti-gross_acreage" class="mono" oninput="markDirty()"></div>
-            <div class="field"><label>Purchase Price / Acre ($)</label><input type="number" id="ti-purchase_price_per_acre" class="mono" oninput="markDirty()"></div>
-            <div class="field"><label>Closing Costs (%)</label><div class="pct-wrap"><input type="number" step="0.1" id="ti-closing_costs_pct" class="mono" oninput="markDirty()" placeholder="4.5"></div></div>
-            <div class="field"><label>Land Escalator (% / yr)</label><div class="pct-wrap"><input type="number" step="0.5" id="ti-land_escalator" class="mono" oninput="markDirty()" placeholder="5"></div></div>
+            <div class="field"><label>Gross Acreage (ac)</label><input type="number" id="ti-gross_acreage" class="mono" oninput="markDirty();updateLandCostPreview()"></div>
+            <div class="field"><label>Purchase Price / Acre ($)</label><input type="number" id="ti-purchase_price_per_acre" class="mono" oninput="markDirty();updateLandCostPreview()"></div>
+            <div class="field"><label>Closing Costs (%)</label><div class="pct-wrap"><input type="number" step="0.1" id="ti-closing_costs_pct" class="mono" oninput="markDirty();updateLandCostPreview()" placeholder="4.5"></div></div>
+            <div class="field"><label>Land Escalator (% / yr)</label><div class="pct-wrap"><input type="number" step="0.5" id="ti-land_escalator" class="mono" oninput="markDirty();updateLandCostPreview()" placeholder="5"></div></div>
             <div class="field"><label>Closing Date</label><input type="date" id="ti-closing_date" oninput="markDirty()"></div>
           </div>
 
@@ -986,29 +986,25 @@ async function loadProjectList() {
       : projects.map(p => {
         const irr = p.unlevered_irr ? (parseFloat(p.unlevered_irr)*100).toFixed(1)+'%' : '—';
         const gm  = p.gross_margin_pct ? (parseFloat(p.gross_margin_pct)*100).toFixed(1)+'%' : '—';
-        const lots = p.total_lots ? (+p.total_lots).toLocaleString()+' lots' : '—';
-        const rev = p.total_revenue ? '$'+(+p.total_revenue/1e6).toFixed(1)+'M' : '—';
+        const yrs = p.project_length_years ? parseFloat(p.project_length_years).toFixed(1)+' yrs' : '—';
+        const statStyle = 'font-family:"DM Sans",sans-serif;font-size:15px;font-weight:600';
         return `
         <div class="kpi-card" style="cursor:pointer;border-left:3px solid var(--accent)" onclick="selectProject(${p.id})">
           <div class="kpi-label" style="color:var(--accent);font-size:9px;letter-spacing:.12em">#${p.id}</div>
           <div style="font-family:'Instrument Serif',serif;font-size:16px;color:var(--text);margin:4px 0 10px">${p.name || 'Unnamed'}</div>
           <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">${p.address ? p.address.substring(0,35) : 'No address'}</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;border-top:1px solid var(--border);padding-top:10px">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;border-top:1px solid var(--border);padding-top:10px">
             <div>
               <div style="font-size:9px;color:var(--text-dim);letter-spacing:.06em;text-transform:uppercase;margin-bottom:3px">IRR</div>
-              <div style="font-family:'DM Sans',sans-serif;font-size:15px;font-weight:600;color:var(--success)">${irr}</div>
+              <div style="${statStyle};color:var(--success)">${irr}</div>
             </div>
             <div>
               <div style="font-size:9px;color:var(--text-dim);letter-spacing:.06em;text-transform:uppercase;margin-bottom:3px">Gross Margin</div>
-              <div style="font-family:'DM Sans',sans-serif;font-size:15px;font-weight:600;color:var(--accent2)">${gm}</div>
+              <div style="${statStyle};color:var(--accent2)">${gm}</div>
             </div>
             <div>
-              <div style="font-size:9px;color:var(--text-dim);letter-spacing:.06em;text-transform:uppercase;margin-bottom:3px">Revenue</div>
-              <div style="font-family:'DM Sans',sans-serif;font-size:15px;font-weight:600;color:var(--text)">${rev}</div>
-            </div>
-            <div>
-              <div style="font-size:9px;color:var(--text-dim);letter-spacing:.06em;text-transform:uppercase;margin-bottom:3px">Lots</div>
-              <div style="font-family:'DM Sans',sans-serif;font-size:15px;font-weight:600;color:var(--text)">${lots}</div>
+              <div style="font-size:9px;color:var(--text-dim);letter-spacing:.06em;text-transform:uppercase;margin-bottom:3px">Project Length</div>
+              <div style="${statStyle};color:var(--text)">${yrs}</div>
             </div>
           </div>
         </div>`;
@@ -1603,7 +1599,7 @@ async function loadInputs() {
       const val = tds[ci]?.[key];
       if (isInput) {
         const displayVal = fmt==='pct' ? (val != null ? +(val*100).toPrecision(6) : '') : (val ?? '');
-        return `<td><input type="number" step="${fmt==='pct'?'1':'any'}" id="ci-td-${key}-${ci}" value="${displayVal}" class="mono" oninput="markDirty()"></td>`;
+        return `<td><input type="number" step="${fmt==='pct'?'1':'any'}" id="ci-td-${key}-${ci}" value="${displayVal}" class="mono" oninput="markDirty();updateLandCostPreview()"></td>`;
       } else {
         const disp = fmt==='$' ? fmtC(val) : fmt==='pct' ? fmtPct(val) : fmtN(val);
         return `<td class="calc-col"><span class="calc-cell">${disp}</span></td>`;
@@ -1614,6 +1610,9 @@ async function loadInputs() {
     const chkCell = `<td class="calc-col"><span class="calc-cell">${chkDisp}</span></td>`;
     return `<tr><td style="color:var(--text-dim);white-space:nowrap">${lbl}</td>${cells.join('')}${chkCell}</tr>`;
   }).join('');
+
+  // Trigger live land cost preview after table is built
+  updateLandCostPreview();
 
   // Plant Projects — Phase 1 + Phase 2
   // Merge: type/acres/duration/total_cost from calc outputs; editable base costs from raw inputs
@@ -1659,13 +1658,13 @@ async function loadInputs() {
       <td id="ci-plant-type-${i}" style="color:var(--text-dim);font-size:12px;white-space:nowrap">${nm}</td>
       <td id="ci-plant-acres-${i}" class="calc-col"><span class="calc-cell">${p.acres||0}</span></td>
       <td><input type="number" id="ci-pl-cost-${i}" value="${p.base_cost||''}" class="mono" oninput="markDirty()"></td>
-      <td><div class="pct-wrap"><input type="number" step="1" id="ci-pl-opct-${i}" value="${p.other_pct!=null?+(p.other_pct*100).toPrecision(4):''}" class="mono" oninput="markDirty()"></div></td>
+      <td class="calc-col"><span class="calc-cell">${((t.default_other_pct??0.17)*100).toFixed(0)}%</span></td>
       <td class="calc-col"><span class="calc-cell">${fmtC(p.total_cost)}</span></td>
       <td><input type="number" id="ci-pl-sm-${i}" value="${p.start_month||''}" class="mono" oninput="markDirty()"></td>
       <td id="ci-plant-dur-${i}" class="calc-col"><span class="calc-cell">${p.duration||'—'}</span></td>
       <td><input type="text" id="ci-pl-notes-${i}" value="${p.notes||''}" class="mono" oninput="markDirty()"></td>
       <td style="${ph2border}"><input type="number" id="ci-pl2-cost-${i}" value="${p.ph2_base_cost||''}" class="mono" oninput="markDirty()"></td>
-      <td><div class="pct-wrap"><input type="number" step="1" id="ci-pl2-opct-${i}" value="${p.ph2_other_pct!=null?+(p.ph2_other_pct*100).toPrecision(4):''}" class="mono" oninput="markDirty()"></div></td>
+      <td class="calc-col"><span class="calc-cell">${((t.default_other_pct??0.17)*100).toFixed(0)}%</span></td>
       <td class="calc-col"><span class="calc-cell">${fmtC(p.ph2_total_cost)}</span></td>
       <td><input type="number" id="ci-pl2-sm-${i}" value="${p.ph2_start_month||''}" class="mono" oninput="markDirty()"></td>
       <td class="calc-col"><span class="calc-cell">${p.ph2_duration||'—'}</span></td>
@@ -1702,7 +1701,7 @@ async function loadInputs() {
       <td id="ci-amenity-type-${i}" style="color:var(--text-dim);font-size:12px;white-space:nowrap">${a.type||'—'}</td>
       <td id="ci-amenity-acres-${i}" class="calc-col"><span class="calc-cell">${a.acres||0}</span></td>
       <td><input type="number" id="ci-am-cost-${i}" value="${a.base_cost||''}" class="mono" oninput="markDirty()"></td>
-      <td><div class="pct-wrap"><input type="number" step="1" id="ci-am-opct-${i}" value="${a.other_pct!=null?+(a.other_pct*100).toPrecision(4):''}" class="mono" oninput="markDirty()"></div></td>
+      <td class="calc-col"><span class="calc-cell">${((t.default_other_pct??0.17)*100).toFixed(0)}%</span></td>
       <td class="calc-col"><span class="calc-cell">${fmtC(a.total_cost)}</span></td>
       <td><input type="number" id="ci-am-sm-${i}" value="${a.start_month||''}" class="mono" oninput="markDirty()"></td>
       <td class="calc-col"><span class="calc-cell">${a.duration||'—'}</span></td>
@@ -1743,7 +1742,7 @@ async function loadInputs() {
       <td class="row-num">${d.num||i+1}</td>
       <td class="calc-col"><span class="calc-cell">${d.acres?d.acres.toFixed(2):'—'}</span></td>
       <td class="calc-col"><span class="calc-cell">${fmtC(d.base_cost)}</span></td>
-      <td><div class="pct-wrap"><input type="number" step="1" id="ci-det-opct-${i}" value="${d.other_pct!=null?+(d.other_pct*100).toPrecision(4):''}" class="mono" oninput="markDirty()"></div></td>
+      <td class="calc-col"><span class="calc-cell">${((t.default_other_pct??0.17)*100).toFixed(0)}%</span></td>
       <td class="calc-col"><span class="calc-cell">${fmtC(d.total_cost)}</span></td>
       <td><input type="number" id="ci-det-sm-${i}" value="${d.start_month||''}" class="mono" oninput="markDirty()"></td>
       <td class="calc-col"><span class="calc-cell">${d.duration||'—'}</span></td>
@@ -1765,7 +1764,7 @@ async function loadInputs() {
       <td class="calc-col"><span class="calc-cell" style="text-align:left">${desc}</span></td>
       <td class="calc-col"><span class="calc-cell">${acres||'—'}</span></td>
       <td><input type="number" id="ci-ot-cost-${i}" value="${o.base_cost||''}" class="mono" oninput="markDirty()"></td>
-      <td><div class="pct-wrap"><input type="number" step="1" id="ci-ot-opct-${i}" value="${o.other_pct!=null?+(o.other_pct*100).toPrecision(4):''}" class="mono" oninput="markDirty()"></div></td>
+      <td class="calc-col"><span class="calc-cell">${((t.default_other_pct??0.17)*100).toFixed(0)}%</span></td>
       <td class="calc-col"><span class="calc-cell">${fmtC(o.total_cost)}</span></td>
       <td><input type="number" id="ci-ot-sm-${i}" value="${o.start_month||''}" class="mono" oninput="markDirty()"></td>
       <td><input type="number" id="ci-ot-dur-${i}" value="${o.duration||''}" class="mono" oninput="markDirty()"></td>
@@ -1791,7 +1790,7 @@ async function loadInputs() {
       <td class="calc-col"><span class="calc-cell">${cr.wsd_per_lf ? fmtN(cr.wsd_per_lf) : '—'}</span></td>
       <td class="calc-col"><span class="calc-cell">${cr.paving_per_lf ? fmtN(cr.paving_per_lf) : '—'}</span></td>
       <td class="calc-col"><span class="calc-cell">${fmtC(cr.base_cost)}</span></td>
-      <td><div class="pct-wrap"><input type="number" step="1" id="ci-rd2-opct-${i}" value="${+(opct*100).toPrecision(4)}" class="mono" oninput="markDirty()"></div></td>
+      <td class="calc-col"><span class="calc-cell">${((t.default_other_pct??0.17)*100).toFixed(0)}%</span></td>
       <td class="calc-col"><span class="calc-cell">${fmtC(cr.total_cost)}</span></td>
       <td><input type="number" id="ci-rd2-sm-${i}" value="${sm}" class="mono" oninput="markDirty()"></td>
       <td class="calc-col"><span class="calc-cell">${cr.duration||'—'}</span></td>
@@ -2027,6 +2026,54 @@ function svp(id, val) {
   el.value = (val !== null && val !== undefined && val !== '') ? +(val * 100).toPrecision(6) : '';
 }
 
+// ── LAND COST LIVE PREVIEW ─────────────────────────────────────────
+function updateLandCostPreview() {
+  const getN = id => { const el = document.getElementById(id); return el ? parseFloat(el.value)||0 : 0; };
+  const getP = id => { const el = document.getElementById(id); return el ? (parseFloat(el.value)||0)/100 : 0; };
+  const ppa      = getN('ti-purchase_price_per_acre');
+  const gross_ac = getN('ti-gross_acreage');
+  const cc_pct   = getP('ti-closing_costs_pct');
+  const esc      = getP('ti-land_escalator');
+  const purchase_price = ppa * gross_ac;
+  const closing_costs  = purchase_price * cc_pct;
+  const fmt$ = v => v > 0 ? '$' + Math.round(v).toLocaleString('en-US') : '$0';
+  // Read takedown table rows (period, pct) from editable inputs
+  const tds = [0,1,2].map(i => {
+    const period = parseInt(document.getElementById(`ci-td-period-${i}`)?.value)||0;
+    const pct    = (parseFloat(document.getElementById(`ci-td-pct-${i}`)?.value)||0)/100;
+    return {period, pct};
+  });
+  // Compute per-takedown values
+  let total_purch = 0, total_close = 0;
+  const tdResults = tds.map((td, i) => {
+    const purch = (td.period === 0 || i === 0)
+      ? purchase_price * td.pct
+      : purchase_price * td.pct * Math.pow(1 + esc, td.period / 12);
+    const close = closing_costs * td.pct;
+    total_purch += purch;
+    total_close += close;
+    return {purch, close, total: purch + close};
+  });
+  // Update the takedown table: row order = period(0), pct(1), purchase(2), closing(3), total(4)
+  // Rows in tbody are rendered by tdLabels order; computed rows are indices 2,3,4
+  const tb = document.getElementById('ci-takedowns-body');
+  if (!tb) return;
+  const rows = tb.querySelectorAll('tr');
+  // Row 2 = Purchase Price, Row 3 = Closing Costs, Row 4 = Total Land Cost
+  const rowMap = [
+    {row:2, vals: tdResults.map(r=>r.purch),  total: total_purch},
+    {row:3, vals: tdResults.map(r=>r.close),  total: total_close},
+    {row:4, vals: tdResults.map(r=>r.total),  total: total_purch+total_close},
+  ];
+  rowMap.forEach(({row, vals, total}) => {
+    const tr = rows[row];
+    if (!tr) return;
+    const cells = tr.querySelectorAll('td.calc-col span.calc-cell');
+    [0,1,2].forEach((ci,idx) => { if (cells[idx]) cells[idx].textContent = fmt$(vals[ci]); });
+    if (cells[3]) cells[3].textContent = fmt$(total);
+  });
+}
+
 // ── COLLECT INPUTS ────────────────────────────────────────────────
 function collectInputs() {
   const gv = id => { const el = document.getElementById(id); return el ? el.value : null; };
@@ -2102,37 +2149,37 @@ function collectInputs() {
     plants: Array.from({length:8}, (_,i) => ({
       num: i+1,
       base_cost: gn(`ci-pl-cost-${i}`) || 0,
-      other_pct: gnp(`ci-pl-opct-${i}`),
+      other_pct: gnp('ci-default_other_pct'),
       start_month: gi(`ci-pl-sm-${i}`),
       notes: gv(`ci-pl-notes-${i}`) || '',
       ph2_base_cost: gn(`ci-pl2-cost-${i}`) || 0,
-      ph2_other_pct: gnp(`ci-pl2-opct-${i}`),
+      ph2_other_pct: gnp('ci-default_other_pct'),
       ph2_start_month: gi(`ci-pl2-sm-${i}`)
     })),
     amenities: Array.from({length:6}, (_,i) => ({
       num: i+1,
       base_cost: gn(`ci-am-cost-${i}`) || 0,
-      other_pct: gnp(`ci-am-opct-${i}`),
+      other_pct: gnp('ci-default_other_pct'),
       start_month: gi(`ci-am-sm-${i}`) || 1,
       notes: gv(`ci-am-notes-${i}`) || ''
     })),
     detention: Array.from({length: Math.max(1, tract.det_num_projects||6)}, (_,i) => ({
       num: i+1,
-      other_pct: gnp(`ci-det-opct-${i}`),
+      other_pct: gnp('ci-default_other_pct'),
       start_month: gi(`ci-det-sm-${i}`),
       landscaping_per_foot: gn(`ci-det-lpf-${i}`)
     })),
     other_items: Array.from({length:6}, (_,i) => ({
       num: i+1,
       base_cost: gn(`ci-ot-cost-${i}`) || 0,
-      other_pct: gnp(`ci-ot-opct-${i}`),
+      other_pct: gnp('ci-default_other_pct'),
       start_month: gi(`ci-ot-sm-${i}`),
       duration: gi(`ci-ot-dur-${i}`),
       notes: gv(`ci-ot-notes-${i}`) || ''
     })),
     roads_costs: Array.from({length:6}, (_,i) => ({
       num: i+1,
-      other_pct: gnp(`ci-rd2-opct-${i}`),
+      other_pct: gnp('ci-default_other_pct'),
       start_month: gi(`ci-rd2-sm-${i}`),
       landscaping_per_sf: gn(`ci-rd2-lpf-${i}`),
       light_spacing: gn(`ci-rd2-lsp-${i}`)
@@ -2495,46 +2542,22 @@ function renderOutputsFromFlat(o) {
       </div>
     </div>
 
-    <!-- FINANCIAL SUMMARY TABLE -->
+    <!-- LOT TAKEDOWNS + HOME SALES CHARTS -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px">
       <div class="fin-card">
-        <div class="fin-card-title">Revenue Summary</div>
-        <table class="info-table" style="width:100%">
-          <tr><td>Lot Sales</td><td>${fmt(o.rev_lot_sales)}</td></tr>
-          <tr><td>Residential Pods</td><td>${fmt(o.rev_res_pods)}</td></tr>
-          <tr><td>Commercial Pods</td><td>${fmt(o.rev_comm_pods)}</td></tr>
-          <tr><td>MUD / WCID Bonds</td><td>${fmt(o.rev_mud_wcid)}</td></tr>
-          <tr style="border-top:1px solid var(--border);font-weight:600">
-            <td>Total Revenue</td><td>${fmt(o.total_revenue)}</td>
-          </tr>
-        </table>
+        <div class="fin-card-title">Annual Lot Takedowns</div>
+        <canvas id="chart-lot-takedowns" height="200"></canvas>
       </div>
       <div class="fin-card">
-        <div class="fin-card-title">Cost Summary</div>
-        <table class="info-table" style="width:100%">
-          <tr><td>Land</td><td>${fmt(o.cost_land)}</td></tr>
-          <tr><td>Plant Projects</td><td>${fmt(o.cost_plants)}</td></tr>
-          <tr><td>Amenities</td><td>${fmt(o.cost_amenities)}</td></tr>
-          <tr><td>Detention</td><td>${fmt(o.cost_detention)}</td></tr>
-          <tr><td>Other Net-outs</td><td>${fmt(o.cost_other)}</td></tr>
-          <tr><td>Roads & Landscaping</td><td>${fmt(o.cost_roads)}</td></tr>
-          <tr><td>Lot Development</td><td>${fmt(o.cost_lot_dev)}</td></tr>
-          <tr><td>Marketing</td><td>${fmt(o.cost_marketing)}</td></tr>
-          <tr><td>Prof. Services</td><td>${fmt(o.cost_prof_svc)}</td></tr>
-          <tr><td>Personnel</td><td>${fmt(o.cost_personnel)}</td></tr>
-          <tr><td>Legal</td><td>${fmt(o.cost_legal)}</td></tr>
-          <tr><td>MUD/HOA</td><td>${fmt(o.cost_mud_hoa)}</td></tr>
-          <tr><td>Insurance</td><td>${fmt(o.cost_insurance)}</td></tr>
-          <tr><td>Bookkeeping</td><td>${fmt(o.cost_bookkeeping)}</td></tr>
-          <tr><td>DMF</td><td>${fmt(o.cost_dmf)}</td></tr>
-          <tr style="border-top:1px solid var(--border);font-weight:600">
-            <td>Total Cost</td><td>${fmt(o.total_cost)}</td>
-          </tr>
-          <tr style="color:var(--accent2);font-weight:600">
-            <td>Gross Profit</td><td>${fmt(o.gross_profit)}</td>
-          </tr>
-        </table>
+        <div class="fin-card-title">Annual Home Sales</div>
+        <canvas id="chart-home-sales" height="200"></canvas>
       </div>
+    </div>
+
+    <!-- FINANCIAL SUMMARY CHART (stacked bar: revenues + costs) -->
+    <div class="fin-card" style="margin-bottom:28px">
+      <div class="fin-card-title">Financial Summary — Revenues &amp; Costs ($M)</div>
+      <canvas id="chart-fin-summary" height="220"></canvas>
     </div>
 
     <!-- ACREAGE NET-OUTS SUMMARY -->
@@ -2612,6 +2635,88 @@ function renderOutputsFromFlat(o) {
         options:{responsive:true,plugins:{legend:{labels:{color:'#8b95a8',font:{size:11}}}},
           scales:{x:{ticks:{color:'#8b95a8',font:{size:10}},grid:{color:DIM}},
             y:{ticks:{color:'#8b95a8',font:{size:10},callback:v=>'$'+v+'M'},grid:{color:DIM}}}}
+      });
+    }
+
+    // Lot Takedowns bar chart
+    const ltCtx = plug('chart-lot-takedowns');
+    if (ltCtx) {
+      const lotYears = Object.keys(o.yearly_lots||{}).map(Number).sort((a,b)=>a-b);
+      new Chart(ltCtx, {
+        type:'bar',
+        data:{
+          labels: lotYears.map(y=>'Yr '+y),
+          datasets:[{
+            label:'Lot Takedowns',
+            data: lotYears.map(y=>(o.yearly_lots||{})[y]||0),
+            backgroundColor:'rgba(200,169,110,0.75)',
+            borderColor:'#c8a96e',borderWidth:1,borderRadius:3
+          }]
+        },
+        options:{responsive:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.parsed.y.toLocaleString()+' lots'}}},
+          scales:{x:{ticks:{color:'#8b95a8',font:{size:10}},grid:{color:DIM}},y:{ticks:{color:'#8b95a8',font:{size:10}},grid:{color:DIM},beginAtZero:true}}}
+      });
+    }
+
+    // Home Sales bar chart
+    const hsCtx = plug('chart-home-sales');
+    if (hsCtx) {
+      const homeYears = Object.keys(o.yearly_homes||{}).map(Number).sort((a,b)=>a-b);
+      new Chart(hsCtx, {
+        type:'bar',
+        data:{
+          labels: homeYears.map(y=>'Yr '+y),
+          datasets:[{
+            label:'Home Sales',
+            data: homeYears.map(y=>(o.yearly_homes||{})[y]||0),
+            backgroundColor:'rgba(94,158,140,0.75)',
+            borderColor:'#5e9e8c',borderWidth:1,borderRadius:3
+          }]
+        },
+        options:{responsive:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.parsed.y.toLocaleString()+' homes'}}},
+          scales:{x:{ticks:{color:'#8b95a8',font:{size:10}},grid:{color:DIM}},y:{ticks:{color:'#8b95a8',font:{size:10}},grid:{color:DIM},beginAtZero:true}}}
+      });
+    }
+
+    // Financial Summary stacked bar chart (Revenue breakdown + Cost breakdown)
+    const fsCtx = plug('chart-fin-summary');
+    if (fsCtx) {
+      const revLabels  = ['Lot Sales','Res. Pods','Comm. Pods','MUD/WCID'];
+      const revValues  = [o.rev_lot_sales||0, o.rev_res_pods||0, o.rev_comm_pods||0, o.rev_mud_wcid||0];
+      const costLabels = ['Land','Plants','Amenities','Detention','Other','Roads','Lot Dev','Marketing','Prof Svc','Personnel','Legal','MUD/HOA','Insurance','Bookkeeping','DMF'];
+      const costValues = [o.cost_land||0, o.cost_plants||0, o.cost_amenities||0, o.cost_detention||0,
+        o.cost_other||0, o.cost_roads||0, o.cost_lot_dev||0, o.cost_marketing||0,
+        o.cost_prof_svc||0, o.cost_personnel||0, o.cost_legal||0, o.cost_mud_hoa||0,
+        o.cost_insurance||0, o.cost_bookkeeping||0, o.cost_dmf||0];
+      const revColors  = ['rgba(200,169,110,0.85)','rgba(94,158,140,0.75)','rgba(123,143,212,0.75)','rgba(160,120,200,0.75)'];
+      const costColors = ['rgba(224,85,85,0.7)','rgba(224,120,85,0.7)','rgba(224,160,85,0.7)','rgba(180,100,60,0.7)',
+        'rgba(160,80,80,0.7)','rgba(180,130,80,0.7)','rgba(200,100,100,0.7)','rgba(160,160,80,0.7)',
+        'rgba(100,140,180,0.7)','rgba(80,120,200,0.7)','rgba(120,160,160,0.7)','rgba(140,100,160,0.7)',
+        'rgba(100,160,120,0.7)','rgba(120,120,180,0.7)','rgba(160,80,120,0.7)'];
+      // Build datasets: each component is its own dataset (stacked)
+      const revDatasets = revLabels.map((lbl, i) => ({
+        label: lbl, data: [revValues[i]/1e6, 0], backgroundColor: revColors[i], stack:'rev', borderRadius:2, borderWidth:0
+      }));
+      const costDatasets = costLabels.map((lbl, i) => ({
+        label: lbl, data: [0, costValues[i]/1e6], backgroundColor: costColors[i], stack:'cost', borderRadius:2, borderWidth:0
+      }));
+      new Chart(fsCtx, {
+        type:'bar',
+        data:{
+          labels:['Revenue','Costs'],
+          datasets:[...revDatasets, ...costDatasets]
+        },
+        options:{
+          responsive:true,
+          plugins:{
+            legend:{labels:{color:'#8b95a8',font:{size:10},boxWidth:12},position:'right'},
+            tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: $${ctx.parsed.y.toFixed(2)}M`}}
+          },
+          scales:{
+            x:{ticks:{color:'#8b95a8',font:{size:11}},grid:{color:DIM}},
+            y:{ticks:{color:'#8b95a8',font:{size:10},callback:v=>'$'+v+'M'},grid:{color:DIM},beginAtZero:true,stacked:true}
+          }
+        }
       });
     }
   });

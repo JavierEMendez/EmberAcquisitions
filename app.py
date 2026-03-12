@@ -134,6 +134,7 @@ def list_projects():
                p.outputs->>'gross_margin_pct' as gross_margin_pct,
                p.outputs->>'total_lots' as total_lots,
                p.outputs->>'unlevered_irr' as unlevered_irr,
+               p.outputs->>'project_length_years' as project_length_years,
                p.archived
         FROM projects p
         LEFT JOIN users u ON p.created_by = u.id
