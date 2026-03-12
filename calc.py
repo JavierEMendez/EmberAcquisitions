@@ -808,6 +808,7 @@ def calculate(inp: dict) -> dict:
     #   4. Cumulative AV = running sum of homes_sold * av_per_unit (rows 803+823)
     _last_home_sale_m = 0
     av_by_month = [0.0] * (MAX_MONTHS + 2)
+    home_sales_by_month = [0.0] * (MAX_MONTHS + 2)
     for lr in lot_rows:
         if not safe(lr.get("on", 0)) or lr.get("total_lots", 0) == 0:
             continue
@@ -847,6 +848,7 @@ def calculate(inp: dict) -> dict:
             sold_this  = min(inventory, pace_lr)
             cum_sold  += sold_this
             av_by_month[m] += sold_this * av_per_lot
+            home_sales_by_month[m] += sold_this
             if sold_this > 0:
                 _last_home_sale_m = m
 
@@ -1032,18 +1034,15 @@ def calculate(inp: dict) -> dict:
     cf = [-(cost_monthly[m]) + rev_monthly[m] for m in range(1, proj_months + 1)]
     irr = npv_irr(cf)
 
-    # Yearly lots/homes for chart
-    yearly_lots  = {}
-    yearly_homes = {}
+    # Yearly lots/homes for chart — always include years 1-10
+    yearly_lots  = {yr: 0 for yr in range(1, 11)}
+    yearly_homes = {yr: 0 for yr in range(1, 11)}
     for m in range(1, MAX_MONTHS + 1):
         yr = (m - 1) // 12 + 1
-        yearly_lots[yr] = yearly_lots.get(yr, 0) + lot_count_by_month[m]
-        # Home sales ~18 months after lot delivery (matches revenue offset)
-        home_m = m + 18
-        home_yr = (home_m - 1) // 12 + 1
-        yearly_homes[home_yr] = yearly_homes.get(home_yr, 0) + lot_count_by_month[m]
-    out["yearly_lots"]  = {k: v for k, v in yearly_lots.items()  if v > 0}
-    out["yearly_homes"] = {k: v for k, v in yearly_homes.items() if v > 0}
+        yearly_lots[yr]  = yearly_lots.get(yr, 0) + lot_count_by_month[m]
+        yearly_homes[yr] = yearly_homes.get(yr, 0) + home_sales_by_month[m]
+    out["yearly_lots"]  = [{"year": k, "lots":  round(v)} for k, v in sorted(yearly_lots.items())]
+    out["yearly_homes"] = [{"year": k, "homes": round(v)} for k, v in sorted(yearly_homes.items())]
 
     # Cashflow by year for chart
     yearly_cf = {}
