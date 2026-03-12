@@ -653,7 +653,7 @@ def calculate(inp: dict) -> dict:
         mktg_fee_lot = safe(lr.get("marketing_fee", 0))
         lot_av_pct_t = safe(lr.get("lot_av_pct", 0.5))
         lot_tax_rate = safe(lr.get("lot_tax_rate", 0.022))
-        lot_tax_per_lot = ff_by_year[0] * ff * lot_av_pct_t * lot_tax_rate
+        # lot_tax_per_lot is computed per-section using the year-appropriate ff_rate (see inside loop)
 
         # Use exact section structure (matches dev cost loop above)
         lots_18mo_r  = pace * 18            # float
@@ -670,6 +670,7 @@ def calculate(inp: dict) -> dict:
 
             year_idx = min(max(int((t1_m - 1) / 12), 0), 10)
             ff_rate = ff_by_year[year_idx] if year_idx < len(ff_by_year) else ff_by_year[-1]
+            lot_tax_per_lot = ff_rate * ff * lot_av_pct_t * lot_tax_rate
             gross_lot_rev = batch * ff * ff_rate
 
             # BEM: received bem_period months before T1

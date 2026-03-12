@@ -1464,7 +1464,7 @@ async function loadInputs() {
       <td><input type="number" step="0.5" id="ci-rd2-lpf-${i}" value="${r2.landscaping_per_sf||''}" class="mono" oninput="markDirty()"></td>
       <td class="calc-col"><span class="calc-cell">${fmtC(r2.total_landscaping)}</span></td>
       <td><input type="number" id="ci-rd2-lsp-${i}" value="${r2.light_spacing||''}" class="mono" oninput="markDirty()"></td>
-      <td class="calc-col"><span class="calc-cell">${fmtN(r2.total_street_lights)}</span></td>
+      <td class="calc-col"><span class="calc-cell">${fmtN(r2.total_lights)}</span></td>
     </tr>`).join('');
 
   // Lot Size Mix — full columns
@@ -1529,7 +1529,7 @@ async function loadInputs() {
   sv('ci-general_monthly', t.personnel_monthly);
   setCalc('ci-general_end', c.general_final_period, 'mo');
   setCalc('ci-mktpers-total', c.personnel?.marketing_total);
-  sv('ci-marketing_monthly', 0);
+  sv('ci-marketing_monthly', t.marketing_personnel_monthly);
   setCalc('ci-marketing_end', c.marketing_pers_final_period, 'mo');
 
   // Legal
@@ -2206,6 +2206,12 @@ function renderOutputsFromFlat(o) {
           <tr><td>Roads & Landscaping</td><td>${fmt(o.cost_roads)}</td></tr>
           <tr><td>Lot Development</td><td>${fmt(o.cost_lot_dev)}</td></tr>
           <tr><td>Sectional Landscaping</td><td>${fmt(o.cost_lot_landscaping)}</td></tr>
+          <tr><td>Site Work</td><td>${fmt(o.cost_site_work)}</td></tr>
+          <tr><td>Streetlights</td><td>${fmt(o.cost_streetlights)}</td></tr>
+          <tr><td>Brokerage Fees</td><td>${fmt(o.cost_brokerage)}</td></tr>
+          <tr><td>Lot Closing Costs</td><td>${fmt(o.cost_closing)}</td></tr>
+          <tr><td>Lot Taxes</td><td>${fmt(o.cost_lot_taxes)}</td></tr>
+          <tr><td>Mailboxes</td><td>${fmt(o.cost_mailboxes)}</td></tr>
           <tr><td>Marketing</td><td>${fmt(o.cost_marketing)}</td></tr>
           <tr><td>Prof. Services</td><td>${fmt(o.cost_prof_svc)}</td></tr>
           <tr><td>Personnel</td><td>${fmt(o.cost_personnel)}</td></tr>
