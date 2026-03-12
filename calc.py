@@ -220,7 +220,12 @@ def calculate(inp: dict) -> dict:
         total_td_purchase += purchase
         total_td_closing  += closing
         td_rows.append({"period": period, "pct": pct, "purchase": purchase, "closing": closing, "total": purchase + closing})
-    out["takedown_rows"] = td_rows
+    # Rename fields to match app.html expectations (purchase_price, closing_costs, total_land_cost)
+    land_takedowns = [{"period": r["period"], "pct": r["pct"],
+                       "purchase_price": r["purchase"], "closing_costs": r["closing"],
+                       "total_land_cost": r["total"]} for r in td_rows]
+    out["land_takedowns"]      = land_takedowns
+    out["land_check"]          = round(sum(td["pct"] for td in land_takedowns), 6)
     out["land_total_purchase"] = total_td_purchase
     out["land_total_closing"]  = total_td_closing
     out["land_total_cost"]     = total_td_purchase + total_td_closing
@@ -892,11 +897,16 @@ def calculate(inp: dict) -> dict:
         rev_monthly[bp] += amt
 
     # Operating costs — Excel-precise end periods
-    # last_lot_period  = last month where any lot revenue falls (last T3 across all sections)
-    # last_home_period = last month where homes are sold (from AV inventory model)
+    # last_delivery_period = last month where lots are DELIVERED (T1 = section delivery month)
+    #   → drives: General Personnel, Legal, Prof Services, MUD end periods (Excel D95/D103/D108)
+    # last_home_period = last month where homes are SOLD (from AV inventory model)
+    #   → drives: Marketing Personnel, Insurance, Bookkeeping, Marketing spend (Excel B91/D104/D116/D120)
+    # In Excel, periods are 0-indexed; each cost runs (period+1) months.
+    # In Python (1-indexed), last_delivery_period == D95_excel + 1, so running months
+    # 1..last_delivery_period gives the same (D95+1) total months. ✓
     total_lot_revenue_gross = sum(lot_rev_by_month)
-    last_lot_period  = max((m for m in range(1, MAX_MONTHS + 1) if lot_rev_by_month[m] > 0), default=proj_months)
-    last_home_period = _last_home_sale_m if _last_home_sale_m > 0 else last_lot_period
+    last_delivery_period = max((m for m in range(1, MAX_MONTHS + 1) if lot_count_by_month[m] > 0), default=proj_months)
+    last_home_period     = _last_home_sale_m if _last_home_sale_m > 0 else last_delivery_period
 
     marketing_total  = total_lot_revenue_gross * marketing_pct
     prof_svc_total   = total_lot_revenue_gross * prof_svc_pct
@@ -912,13 +922,15 @@ def calculate(inp: dict) -> dict:
     # Site work: % of lot revenues
     site_work_total = site_work_pct * total_lot_revenue_gross
 
-    # Marketing: C91 = total / last_home_period, months 1..last_home_period
+    # Marketing: C91 = total / (B91+1) months. B91 = last_home_period-1 (0-indexed).
+    # Runs last_home_period months (months 1..last_home_period in Python).
     mkt_dur   = max(1, last_home_period)
     mkt_per_m = marketing_total / mkt_dur
     spread_cost(cost_monthly, marketing_total, 1, mkt_dur)
 
-    # Prof Services: C95 = total / last_lot_period, months 1..last_lot_period
-    ps_dur    = max(1, last_lot_period)
+    # Prof Services: C95 = total / (D95+1) months. D95 = last_delivery_period-1 (0-indexed).
+    # Runs last_delivery_period months (months 1..last_delivery_period in Python).
+    ps_dur    = max(1, last_delivery_period)
     ps_per_m  = prof_svc_total / ps_dur
     spread_cost(cost_monthly, prof_svc_total, 1, ps_dur)
 
@@ -926,42 +938,44 @@ def calculate(inp: dict) -> dict:
     spread_cost(cost_monthly, dmf_total, 1, proj_months)
     spread_cost(cost_monthly, site_work_total, 1, proj_months)
 
-    # General Personnel: $X/month through last_lot_period (Excel D103 = D95 = last takedown)
-    gen_pers_end = max(1, last_lot_period)
+    # General Personnel: Excel D103=D95 (0-indexed). Runs (D95+1)=last_delivery_period months.
+    gen_pers_end = max(1, last_delivery_period)
     for m in range(1, gen_pers_end + 1):
         if m <= MAX_MONTHS:
             cost_monthly[m] += personnel_mo
 
-    # Marketing Personnel: $X/month through last_home_period (Excel D104 = last home sale)
+    # Marketing Personnel: Excel D104=B91 (0-indexed). Runs last_home_period months.
     mkt_pers_end = max(1, last_home_period)
     for m in range(1, mkt_pers_end + 1):
         if m <= MAX_MONTHS:
             cost_monthly[m] += marketing_personnel_mo
 
-    # Legal: $X/month through last_lot_period (Excel D108 = D103 = D95)
-    legal_end = max(1, last_lot_period)
+    # Legal: Excel D108=D103=D95 (0-indexed). Runs last_delivery_period months.
+    legal_end = max(1, last_delivery_period)
     for m in range(1, legal_end + 1):
         if m <= MAX_MONTHS:
             cost_monthly[m] += legal_mo
 
-    # Insurance: $X/month through last_home_period (Excel D116 = last home sale)
+    # Insurance: Excel D116=D120=D104=B91 (0-indexed). Runs last_home_period months.
     ins_end = max(1, last_home_period)
     for m in range(1, ins_end + 1):
         if m <= MAX_MONTHS:
             cost_monthly[m] += insurance_mo
 
-    # Bookkeeping: $X/month through last_home_period (Excel D120 = D104 = last home sale)
+    # Bookkeeping: Excel D120=D104=B91 (0-indexed). Runs last_home_period months.
     bk_end = max(1, last_home_period)
     for m in range(1, bk_end + 1):
         if m <= MAX_MONTHS:
             cost_monthly[m] += bookkeeping_mo
 
-    # MUD & HOA Advances: Excel E112 = MROUND(last_lot_period * mud_pct, 1)
-    mud_end = max(1, int(mround(last_lot_period * mud_pct_duration, 1))) if mud_pct_duration > 0 else 1
-    for m in range(1, mud_end + 1):
+    # MUD & HOA Advances: Excel E112 = MROUND(D108 * D112, 1) where D108 is 0-indexed.
+    # D108 = last_delivery_period - 1 (0-indexed). Runs (E112+1) months.
+    mud_end_0idx = int(mround((last_delivery_period - 1) * mud_pct_duration, 1)) if mud_pct_duration > 0 else 0
+    mud_run_months = max(1, mud_end_0idx + 1)
+    for m in range(1, mud_run_months + 1):
         if m <= MAX_MONTHS:
             cost_monthly[m] += mud_mo
-    mud_total = mud_mo * mud_end
+    mud_total = mud_mo * mud_run_months
 
     # Streetlight cost
     streetlight_total = total_streetlights * cost_per_streetlight
@@ -977,6 +991,13 @@ def calculate(inp: dict) -> dict:
     infra_cost = total_plant_cost + total_amenity_cost + total_det_cost + total_det_landscaping + total_other_cost + total_road_cost + total_road_landscaping + total_dev_cost + total_lot_landscaping
     below_line = (dmf_total + personnel_mo * gen_pers_end + marketing_personnel_mo * mkt_pers_end
                   + legal_mo * legal_end + insurance_mo * ins_end + bookkeeping_mo * bk_end + mud_total)
+    # 0-indexed final period values for display (match Excel Cost Inputs tab)
+    gen_final_period_disp  = gen_pers_end - 1   # Excel D103
+    mkt_final_period_disp  = mkt_pers_end - 1   # Excel D104 = B91
+    legal_final_period_disp= legal_end - 1       # Excel D108
+    mud_final_period_disp  = mud_end_0idx        # Excel E112
+    ins_final_period_disp  = ins_end - 1         # Excel D116
+    bk_final_period_disp   = bk_end - 1          # Excel D120
 
     net_profit    = gross_profit
     net_margin    = net_profit / total_revenue if total_revenue else 0
@@ -1042,28 +1063,29 @@ def calculate(inp: dict) -> dict:
     out["cost_dmf"]         = round(dmf_total)
     out["cost_site_work"]   = round(site_work_total)
     # Operating cost detail outputs for Cost Inputs tab display
+    # Final period values are 0-indexed to match Excel (e.g. D103=118 not 119)
     out["marketing_total"]             = round(marketing_total)
-    out["marketing_final_period"]      = last_home_period
+    out["marketing_final_period"]      = mkt_final_period_disp
     out["marketing_per_month"]         = round(mkt_per_m)
     out["prof_services_total"]         = round(prof_svc_total)
     out["prof_services_per_month"]     = round(ps_per_m)
-    out["prof_services_final_period"]  = last_lot_period
+    out["prof_services_final_period"]  = gen_final_period_disp   # same as D95=D103
     out["dmf_total"]                   = round(dmf_total)
     out["personnel"] = {
         "general_total":   round(personnel_mo * gen_pers_end),
         "marketing_total": round(marketing_personnel_mo * mkt_pers_end),
     }
-    out["general_final_period"]        = gen_pers_end
-    out["marketing_pers_final_period"] = mkt_pers_end
+    out["general_final_period"]        = gen_final_period_disp
+    out["marketing_pers_final_period"] = mkt_final_period_disp
     out["legal_total"]                 = round(legal_mo * legal_end)
-    out["legal_final_period"]          = legal_end
+    out["legal_final_period"]          = legal_final_period_disp
     out["mud_hoa_total"]               = round(mud_total)
-    out["mud_hoa_final_period"]        = mud_end
+    out["mud_hoa_final_period"]        = mud_final_period_disp
     out["mud_hoa_monthly"]             = round(mud_mo)
     out["insurance_total"]             = round(insurance_mo * ins_end)
-    out["insurance_final_period"]      = ins_end
+    out["insurance_final_period"]      = ins_final_period_disp
     out["bookkeeping_total"]           = round(bookkeeping_mo * bk_end)
-    out["bookkeeping_final_period"]    = bk_end
+    out["bookkeeping_final_period"]    = bk_final_period_disp
     out["cost_personnel"]   = round(personnel_mo * gen_pers_end + marketing_personnel_mo * mkt_pers_end)
     out["cost_legal"]       = round(legal_mo * legal_end)
     out["cost_mud_hoa"]     = round(mud_total)
