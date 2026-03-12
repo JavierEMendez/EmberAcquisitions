@@ -468,38 +468,8 @@ def calculate(inp: dict) -> dict:
     mud_row   = inp.get("mud_bond", {})
     wcid_row  = inp.get("wcid_bond", {})
 
-    # ── 3b. ASSESSED VALUE & BOND REVENUES ───────────────────────────────────
-    # lot_av must be computed here (before Section 4) so bond revenues are available
-    # AV = total_lots * home_price * av_pct  (av_pct ≈ 0.85 for Texas appraised value)
-    lot_av = 0.0
-    for lr in lot_rows:
-        if safe(lr.get("on", 0)) and lr.get("total_lots", 0):
-            hp = safe(lr.get("home_price", 0))
-            av_pct_lr = safe(lr.get("av_pct", 0.85))
-            lot_av += lr["total_lots"] * hp * av_pct_lr
-
-    comm_av = 0.0
-    for i, cp in enumerate(comm_pods):
-        if i >= comm_pod_count:
-            break
-        comm_av += acres_per_comm_pod * safe(cp.get("av_per_acre", 0))
-
-    total_av = lot_av + comm_av
-
-    mud_toggle  = int(safe(mud_row.get("toggle",  1))) if mud_row else 0
-    wcid_toggle = int(safe(wcid_row.get("toggle", 1))) if wcid_row else 0
-    if mud_toggle and total_av > 0:
-        mud_bond_rev = (total_av * safe(mud_row.get("debt_ratio", 0.12))
-                        * safe(mud_row.get("pct_to_dev", 0.85))
-                        * (1 - safe(mud_row.get("receivables_fee", 0.025))))
-    else:
-        mud_bond_rev = 0.0
-    if wcid_toggle and total_av > 0:
-        wcid_bond_rev = (total_av * safe(wcid_row.get("debt_ratio", 0.042))
-                         * safe(wcid_row.get("pct_to_dev", 0.85))
-                         * (1 - safe(wcid_row.get("receivables_fee", 0.025))))
-    else:
-        wcid_bond_rev = 0.0
+    # lot_av / comm_av / bond revenues are computed after cashflow engine builds
+    # lot_count_by_month — see "AV BUILDUP" section below
 
     # ── 4. CASHFLOW ENGINE ────────────────────────────────────────────────────
     MAX_MONTHS = 360
@@ -529,53 +499,6 @@ def calculate(inp: dict) -> dict:
     # Monthly revenue/cost arrays
     rev_monthly = [0.0] * (MAX_MONTHS + 1)
     cost_monthly = [0.0] * (MAX_MONTHS + 1)
-
-    def _compute_bond_issuances(bond_rev, first_period, bond_interval):
-        """
-        Spread bond proceeds across multiple issuances proportional to lot deliveries.
-        Returns list of (period, amount) tuples.
-        Bond periods: first_period, first_period+bond_interval, ... up to MAX_MONTHS.
-        Each issuance amount = bond_rev * (incremental_lots / total_lots).
-        """
-        if bond_rev <= 0 or not first_period:
-            return []
-        bi = int(safe(bond_interval)) if bond_interval else 0
-        p = int(first_period)
-        periods = []
-        while p <= MAX_MONTHS:
-            periods.append(p)
-            if bi <= 0:
-                break
-            p += bi
-        if not periods:
-            return []
-        # If no lots info or single period, issue as lump sum
-        if total_lots <= 0 or len(periods) == 1:
-            return [(min(periods[0], MAX_MONTHS), bond_rev)]
-        result = []
-        prev_cum = 0
-        issued = 0.0
-        for idx, bp in enumerate(periods):
-            cum = sum(lot_count_by_month[1:min(bp + 1, MAX_MONTHS + 1)])
-            lots_this = max(0, cum - prev_cum)
-            is_last = (idx == len(periods) - 1)
-            if is_last:
-                amount = bond_rev - issued
-            else:
-                amount = bond_rev * lots_this / total_lots if lots_this > 0 else 0
-            if amount > 0 and 1 <= bp <= MAX_MONTHS:
-                result.append((bp, amount))
-                issued += amount
-            prev_cum = cum
-        # If remaining unissued (lots came after last period), add to last
-        remainder = bond_rev - issued
-        if remainder > 1:
-            if result:
-                last_p, last_a = result[-1]
-                result[-1] = (last_p, last_a + remainder)
-            elif periods:
-                result.append((min(periods[-1], MAX_MONTHS), remainder))
-        return result
 
     # Land cost: takedowns
     for td in td_rows:
@@ -708,13 +631,86 @@ def calculate(inp: dict) -> dict:
         if pod_rev > 0 and 1 <= sale_period <= MAX_MONTHS:
             rev_monthly[sale_period] += pod_rev
 
-    # MUD/WCID bond revenues — spread across multiple issuances proportional to lot deliveries
-    mud_first_period   = int(safe(mud_row.get("first_bond_period",  proj_months))) if mud_row  else proj_months
-    wcid_first_period  = int(safe(wcid_row.get("first_bond_period", proj_months))) if wcid_row else proj_months
-    mud_bond_interval  = safe(mud_row.get("bond_interval",  12)) if mud_row  else 12
-    wcid_bond_interval = safe(wcid_row.get("bond_interval", 12)) if wcid_row else 12
-    mud_issuances  = _compute_bond_issuances(mud_bond_rev,  mud_first_period,  mud_bond_interval)
-    wcid_issuances = _compute_bond_issuances(wcid_bond_rev, wcid_first_period, wcid_bond_interval)
+    # ── AV BUILDUP (Excel-precise, cumulative) ────────────────────────────────
+    # Replicate Calc_Revenues row 840: cumulative AV grows as homes close each month.
+    # Lot AV timing: same as lot revenue (dev_start_month + revenue_start_offset).
+    # Commercial AV: added at each pod's sale_period.
+    av_by_month = [0.0] * (MAX_MONTHS + 2)
+    for lr in lot_rows:
+        if not safe(lr.get("on", 0)) or lr.get("total_lots", 0) == 0:
+            continue
+        pace_lr = safe(lr.get("pace", 0))
+        if pace_lr <= 0:
+            continue
+        total_lr  = int(lr["total_lots"])
+        sm_lr     = int(safe(lr.get("dev_start_month", default_start_month)))
+        hp        = safe(lr.get("home_price", 0))
+        av_pct_lr = safe(lr.get("av_pct", 0.85))
+        av_per_lot = hp * av_pct_lr
+        delivered = 0
+        m = sm_lr + revenue_start_offset
+        while delivered < total_lr and m <= MAX_MONTHS:
+            batch = min(int(pace_lr), total_lr - delivered)
+            av_by_month[m] += batch * av_per_lot
+            delivered += batch
+            m += 1
+
+    lot_av = sum(av_by_month[1:MAX_MONTHS + 1])
+
+    comm_av = 0.0
+    for i, cp in enumerate(comm_pods):
+        if i >= comm_pod_count:
+            break
+        av_per_acre = safe(cp.get("av_per_acre", 0))
+        sale_period = int(safe(cp.get("sale_period", proj_months)))
+        pod_av = acres_per_comm_pod * av_per_acre
+        comm_av += pod_av
+        if pod_av > 0 and 1 <= sale_period <= MAX_MONTHS:
+            av_by_month[sale_period] += pod_av
+
+    # Cumulative AV array (row 840 analogue: SUM of all prior months)
+    cum_av_monthly = [0.0] * (MAX_MONTHS + 2)
+    for m in range(1, MAX_MONTHS + 1):
+        cum_av_monthly[m] = cum_av_monthly[m - 1] + av_by_month[m]
+
+    def _compute_bond_issuances_excel(bond_cfg):
+        """
+        Excel-precise bond issuance (Calc_Revenues rows 866/864/865):
+          bond_to_date(M) = cum_av_monthly[M-3] * debt_ratio   [at bond periods]
+          bond_this(M)    = bond_to_date(M) - bond_to_date(M - bond_interval)
+          proceeds(M)     = max(bond_this(M) * pct_to_dev, 0)
+        Returns list of (month, proceeds) tuples.
+        """
+        if not bond_cfg:
+            return []
+        toggle = int(safe(bond_cfg.get("toggle", 1)))
+        if not toggle:
+            return []
+        debt_ratio_b    = safe(bond_cfg.get("debt_ratio", 0.12))
+        pct_to_dev_b    = safe(bond_cfg.get("pct_to_dev", 0.85))
+        first_period    = int(safe(bond_cfg.get("first_bond_period", 0)))
+        bond_interval_b = int(safe(bond_cfg.get("bond_interval", 12)))
+        if first_period <= 0 or debt_ratio_b <= 0:
+            return []
+        result = []
+        p = first_period
+        prev_bond_to_date = 0.0
+        while p <= MAX_MONTHS:
+            av_lag = max(0, p - 3)
+            bond_to_date = cum_av_monthly[av_lag] * debt_ratio_b
+            bond_this = max(0.0, bond_to_date - prev_bond_to_date)
+            proceeds = bond_this * pct_to_dev_b
+            if proceeds > 0:
+                result.append((p, proceeds))
+            prev_bond_to_date = bond_to_date
+            if bond_interval_b <= 0:
+                break
+            p += bond_interval_b
+        return result
+
+    # MUD/WCID bond revenues — Excel cumulative-AV method
+    mud_issuances  = _compute_bond_issuances_excel(mud_row)
+    wcid_issuances = _compute_bond_issuances_excel(wcid_row)
     for bp, amt in mud_issuances:
         rev_monthly[bp] += amt
     for bp, amt in wcid_issuances:
@@ -812,7 +808,7 @@ def calculate(inp: dict) -> dict:
     out["rev_lot_sales"]    = round(sum(lot_rev_by_month))
     out["rev_res_pods"]     = round(res_pod_revenue)
     out["rev_comm_pods"]    = round(comm_pod_revenue)
-    out["rev_mud_wcid"]     = round(mud_bond_rev + wcid_bond_rev)
+    out["rev_mud_wcid"]     = round(sum(a for _, a in mud_issuances) + sum(a for _, a in wcid_issuances))
 
     # Cost breakdown
     out["cost_land"]        = round(total_land)
