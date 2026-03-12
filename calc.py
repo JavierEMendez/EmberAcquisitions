@@ -673,6 +673,12 @@ def calculate(inp: dict) -> dict:
     lot_closing_by_month   = [0.0] * (MAX_MONTHS + 1)
     lot_tax_by_month       = [0.0] * (MAX_MONTHS + 1)
     lot_mailbox_by_month   = [0.0] * (MAX_MONTHS + 1)
+    # Revenue sub-category accumulators (for Project Performance display)
+    total_premium_rev     = 0.0
+    total_escalation_rev  = 0.0
+    total_fence_fee_rev   = 0.0
+    total_mktg_fee_rev    = 0.0
+    total_lot_base_rev    = 0.0   # base lot sale revenues (BEM + T1/T2/T3 of gross)
 
     for lr in lot_rows:
         if not safe(lr.get("on", 0)) or lr.get("total_lots", 0) == 0:
@@ -715,15 +721,19 @@ def calculate(inp: dict) -> dict:
             bem_m = max(1, t1_m - bem_period)
             if bem_m <= MAX_MONTHS:
                 lot_rev_by_month[bem_m] += bem_amount
+                total_lot_base_rev += bem_amount
 
             # T1/T2/T3 revenues (gross minus BEM, split by take_pcts)
             gross_remainder = gross_lot_rev * (1 - bem_pct)
             if t1_m <= MAX_MONTHS:
                 lot_rev_by_month[t1_m] += gross_remainder * take1_pct
+                total_lot_base_rev += gross_remainder * take1_pct
             if t2_m <= MAX_MONTHS:
                 lot_rev_by_month[t2_m] += gross_remainder * take2_pct
+                total_lot_base_rev += gross_remainder * take2_pct
             if t3_m <= MAX_MONTHS:
                 lot_rev_by_month[t3_m] += gross_remainder * take3_pct
+                total_lot_base_rev += gross_remainder * take3_pct
 
             # Brokerage fees (cost)
             if brokerage_fees:
@@ -766,10 +776,13 @@ def calculate(inp: dict) -> dict:
                 prem_total = batch * ff * premium_pff
                 if t1_m <= MAX_MONTHS:
                     lot_rev_by_month[t1_m] += prem_total * take1_pct
+                    total_premium_rev += prem_total * take1_pct
                 if t2_m <= MAX_MONTHS:
                     lot_rev_by_month[t2_m] += prem_total * take2_pct
+                    total_premium_rev += prem_total * take2_pct
                 if t3_m <= MAX_MONTHS:
                     lot_rev_by_month[t3_m] += prem_total * take3_pct
+                    total_premium_rev += prem_total * take3_pct
 
             # Escalation (revenue, at T2 and T3 relative to T1)
             if escalation:
@@ -777,27 +790,35 @@ def calculate(inp: dict) -> dict:
                 escal_t3 = (escalation / 12) * 9 * (gross_remainder * take3_pct)
                 if escal_t2 > 0 and t2_m <= MAX_MONTHS:
                     lot_rev_by_month[t2_m] += escal_t2
+                    total_escalation_rev += escal_t2
                 if escal_t3 > 0 and t3_m <= MAX_MONTHS:
                     lot_rev_by_month[t3_m] += escal_t3
+                    total_escalation_rev += escal_t3
 
             # Fence fees (revenue) — Excel: fence_rev_per_FF * lots * FF * fenced_pct
             if fence_fee_pff and ff and fenced_pct:
                 fence_rev = batch * ff * fence_fee_pff * fenced_pct
                 if t1_m <= MAX_MONTHS:
                     lot_rev_by_month[t1_m] += fence_rev * take1_pct
+                    total_fence_fee_rev += fence_rev * take1_pct
                 if t2_m <= MAX_MONTHS:
                     lot_rev_by_month[t2_m] += fence_rev * take2_pct
+                    total_fence_fee_rev += fence_rev * take2_pct
                 if t3_m <= MAX_MONTHS:
                     lot_rev_by_month[t3_m] += fence_rev * take3_pct
+                    total_fence_fee_rev += fence_rev * take3_pct
 
             # Marketing fees (revenue)
             if mktg_fee_lot:
                 if t1_m <= MAX_MONTHS:
                     lot_rev_by_month[t1_m] += batch * take1_pct * mktg_fee_lot
+                    total_mktg_fee_rev += batch * take1_pct * mktg_fee_lot
                 if t2_m <= MAX_MONTHS:
                     lot_rev_by_month[t2_m] += batch * take2_pct * mktg_fee_lot
+                    total_mktg_fee_rev += batch * take2_pct * mktg_fee_lot
                 if t3_m <= MAX_MONTHS:
                     lot_rev_by_month[t3_m] += batch * take3_pct * mktg_fee_lot
+                    total_mktg_fee_rev += batch * take3_pct * mktg_fee_lot
 
     for m in range(1, MAX_MONTHS + 1):
         rev_monthly[m]  += lot_rev_by_month[m]
@@ -1200,8 +1221,13 @@ def calculate(inp: dict) -> dict:
                   total_other_cost + total_road_cost + total_road_landscaping +
                   total_dev_cost + total_lot_landscaping +
                   total_fencing_cost + total_urd_cost + streetlight_total + site_work_total)
-    below_line = (dmf_total + personnel_mo * gen_pers_end + marketing_personnel_mo * mkt_pers_end
-                  + legal_mo * legal_end + insurance_mo * ins_end + bookkeeping_mo * bk_end + mud_total)
+    # Below-the-line items (Excel Project Performance rows 42-44): DMF, Personnel, Bookkeeping
+    below_line_dmf       = dmf_total
+    below_line_personnel = personnel_mo * gen_pers_end + marketing_personnel_mo * mkt_pers_end
+    below_line_bk        = bookkeeping_mo * bk_end
+    below_line = below_line_dmf + below_line_personnel + below_line_bk
+    # Gross costs = total_cost - below_line items
+    gross_costs = total_cost - below_line
     total_recv_fees = sum(mud_recv_fee_by_month) + sum(wcid_recv_fee_by_month)
     # 0-indexed final period values for display (match Excel Cost Inputs tab)
     gen_final_period_disp  = gen_pers_end - 1   # Excel D103
@@ -1211,7 +1237,8 @@ def calculate(inp: dict) -> dict:
     ins_final_period_disp  = ins_end - 1         # Excel D116
     bk_final_period_disp   = bk_end - 1          # Excel D120
 
-    net_profit    = gross_profit
+    gross_margin_amt = total_revenue - gross_costs
+    net_profit    = total_revenue - total_cost
     net_margin    = net_profit / total_revenue if total_revenue else 0
 
     dev_ac = residential_dev_acres if residential_dev_acres > 0 else 1
@@ -1229,9 +1256,10 @@ def calculate(inp: dict) -> dict:
     cf = [-(cost_monthly[m]) + rev_monthly[m] for m in range(1, proj_months + 1)]
     irr = npv_irr(cf)
 
-    # Yearly lots/homes for chart — always include years 1-10
-    yearly_lots  = {yr: 0 for yr in range(1, 11)}
-    yearly_homes = {yr: 0 for yr in range(1, 11)}
+    # Yearly lots/homes for chart — dynamic range based on project length
+    final_year = max(math.ceil(proj_months / 12), 1)
+    yearly_lots  = {yr: 0 for yr in range(1, final_year + 1)}
+    yearly_homes = {yr: 0 for yr in range(1, final_year + 1)}
     for m in range(1, MAX_MONTHS + 1):
         yr = (m - 1) // 12 + 1
         yearly_lots[yr]  = yearly_lots.get(yr, 0) + lot_count_by_month[m]
@@ -1252,11 +1280,16 @@ def calculate(inp: dict) -> dict:
     out["yearly_revenue"]  = {k: round(v) for k, v in yearly_rev.items() if v > 0}
     out["yearly_cost_chart"] = {k: round(v) for k, v in yearly_cost.items() if v > 0}
 
-    # Revenue breakdown
-    out["rev_lot_sales"]    = round(sum(lot_rev_by_month))
+    # Revenue breakdown — sub-categories matching Excel Project Performance
+    out["rev_lot_sales"]    = round(total_lot_base_rev)
+    out["rev_premiums"]     = round(total_premium_rev)
+    out["rev_escalations"]  = round(total_escalation_rev)
+    out["rev_fence_fees"]   = round(total_fence_fee_rev)
+    out["rev_mktg_fees"]    = round(total_mktg_fee_rev)
+    out["rev_mud"]          = round(sum(a for _, a in mud_issuances))
+    out["rev_wcid"]         = round(sum(a for _, a in wcid_issuances))
     out["rev_res_pods"]     = round(res_pod_revenue)
     out["rev_comm_pods"]    = round(comm_pod_revenue)
-    out["rev_mud_wcid"]     = round(sum(a for _, a in mud_issuances) + sum(a for _, a in wcid_issuances))
 
     # Cost breakdown
     out["cost_land"]        = round(total_land)
@@ -1336,6 +1369,16 @@ def calculate(inp: dict) -> dict:
     out["infra_per_dev_acre"]    = round(infra_per_dev_ac)
     out["gm_per_acre"]           = round(gm_per_ac)
     out["below_line_total"]      = round(below_line)
+    out["gross_costs"]           = round(gross_costs)
+    out["gross_margin_amt"]      = round(gross_margin_amt)
+    out["gross_margin_of_costs"] = gross_margin_amt / gross_costs if gross_costs else 0
+    out["gross_margin_of_rev"]   = gross_margin_amt / total_revenue if total_revenue else 0
+    out["below_line_dmf"]        = round(below_line_dmf)
+    out["below_line_personnel"]  = round(below_line_personnel)
+    out["below_line_bookkeeping"]= round(below_line_bk)
+    out["net_margin_amt"]        = round(net_profit)
+    out["net_margin_of_costs"]   = net_profit / total_cost if total_cost else 0
+    out["net_margin_of_rev"]     = net_margin
 
     # ── 6. CASHFLOW DETAIL (for Cashflows tab) ───────────────────────────────
     # Reuse pre-computed category arrays (_cc_plants, _cc_amen, etc.) from DMF section
