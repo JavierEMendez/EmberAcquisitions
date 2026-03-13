@@ -2554,10 +2554,76 @@ function renderOutputsFromFlat(o) {
       </div>
     </div>
 
-    <!-- FINANCIAL SUMMARY CHART (stacked bar: revenues + costs) -->
+    <!-- FINANCIAL SUMMARY — matches Excel Project Performance layout -->
     <div class="fin-card" style="margin-bottom:28px">
-      <div class="fin-card-title">Financial Summary — Revenues &amp; Costs ($M)</div>
-      <canvas id="chart-fin-summary" height="220"></canvas>
+      <div class="fin-card-title">Project Performance</div>
+      <table class="info-table" style="width:100%">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border);font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim)">
+            <th style="text-align:left;padding:6px 8px">Item</th>
+            <th style="text-align:right;padding:6px 8px">Amount</th>
+            <th style="text-align:right;padding:6px 8px">% of Costs</th>
+            <th style="text-align:right;padding:6px 8px">% of Rev</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="background:rgba(94,158,140,0.06)"><td colspan="4" style="font-weight:600;font-size:11px;letter-spacing:.05em;padding:8px 8px 4px">REVENUES</td></tr>
+          <tr><td>Lot Sale Revenues</td><td style="text-align:right">${fmt(o.rev_lot_sales)}</td><td></td><td></td></tr>
+          <tr><td>MUD Proceeds</td><td style="text-align:right">${fmt(o.rev_mud)}</td><td></td><td></td></tr>
+          <tr><td>WCID Proceeds</td><td style="text-align:right">${fmt(o.rev_wcid)}</td><td></td><td></td></tr>
+          <tr><td>Lot Premiums</td><td style="text-align:right">${fmt(o.rev_premiums)}</td><td></td><td></td></tr>
+          <tr><td>Fence Fees</td><td style="text-align:right">${fmt(o.rev_fence_fees)}</td><td></td><td></td></tr>
+          <tr><td>Escalations</td><td style="text-align:right">${fmt(o.rev_escalations)}</td><td></td><td></td></tr>
+          <tr><td>Marketing Fees</td><td style="text-align:right">${fmt(o.rev_mktg_fees)}</td><td></td><td></td></tr>
+          <tr><td>Residential Pod Sales</td><td style="text-align:right">${fmt(o.rev_res_pods)}</td><td></td><td></td></tr>
+          <tr><td>Commercial Pod Sales</td><td style="text-align:right">${fmt(o.rev_comm_pods)}</td><td></td><td></td></tr>
+          <tr style="border-top:2px solid var(--accent2);font-weight:700;color:var(--accent2)">
+            <td>Total Revenue</td><td style="text-align:right">${fmt(o.total_revenue)}</td><td></td><td></td>
+          </tr>
+          <tr style="background:rgba(224,85,85,0.06)"><td colspan="4" style="font-weight:600;font-size:11px;letter-spacing:.05em;padding:12px 8px 4px">COSTS</td></tr>
+          <tr><td>Land</td><td style="text-align:right">${fmt(o.cost_land)}</td><td></td><td></td></tr>
+          <tr><td>Plant Projects</td><td style="text-align:right">${fmt(o.cost_plants)}</td><td></td><td></td></tr>
+          <tr><td>Amenities</td><td style="text-align:right">${fmt(o.cost_amenities)}</td><td></td><td></td></tr>
+          <tr><td>Detention</td><td style="text-align:right">${fmt(o.cost_detention)}</td><td></td><td></td></tr>
+          <tr><td>Sections (Lot Dev)</td><td style="text-align:right">${fmt(o.cost_lot_dev)}</td><td></td><td></td></tr>
+          <tr><td>Other Net-outs</td><td style="text-align:right">${fmt(o.cost_other)}</td><td></td><td></td></tr>
+          <tr><td>Roads & Landscaping</td><td style="text-align:right">${fmt(o.cost_roads)}</td><td></td><td></td></tr>
+          <tr><td>Fencing</td><td style="text-align:right">${fmt(o.cost_fencing)}</td><td></td><td></td></tr>
+          <tr><td>Dry Utilities</td><td style="text-align:right">${fmt(o.cost_dry_utilities)}</td><td></td><td></td></tr>
+          <tr><td>Site Work</td><td style="text-align:right">${fmt(o.cost_site_work)}</td><td></td><td></td></tr>
+          <tr><td>Landscaping</td><td style="text-align:right">${fmt(o.cost_lot_landscaping)}</td><td></td><td></td></tr>
+          <tr><td>Legal</td><td style="text-align:right">${fmt(o.cost_legal)}</td><td></td><td></td></tr>
+          <tr><td>Lot Taxes</td><td style="text-align:right">${fmt(o.cost_lot_taxes)}</td><td></td><td></td></tr>
+          <tr><td>MUD/HOA</td><td style="text-align:right">${fmt(o.cost_mud_hoa)}</td><td></td><td></td></tr>
+          <tr><td>Insurance</td><td style="text-align:right">${fmt(o.cost_insurance)}</td><td></td><td></td></tr>
+          <tr><td>Marketing</td><td style="text-align:right">${fmt(o.cost_marketing)}</td><td></td><td></td></tr>
+          <tr><td>Brokerage Fees</td><td style="text-align:right">${fmt(o.cost_brokerage)}</td><td></td><td></td></tr>
+          <tr><td>Lot Closing Costs</td><td style="text-align:right">${fmt(o.cost_closing)}</td><td></td><td></td></tr>
+          <tr><td>Mailboxes</td><td style="text-align:right">${fmt(o.cost_mailboxes)}</td><td></td><td></td></tr>
+          <tr><td>Prof. Services</td><td style="text-align:right">${fmt(o.cost_prof_svc)}</td><td></td><td></td></tr>
+          <tr><td>MUD/WCID Recv. Fees</td><td style="text-align:right">${fmt(o.cost_recv_fees)}</td><td></td><td></td></tr>
+          <tr><td>Contingency</td><td style="text-align:right">${fmt(o.cost_contingency)}</td><td></td><td></td></tr>
+          <tr style="border-top:2px solid rgba(224,85,85,0.5);font-weight:700">
+            <td>Gross Costs</td><td style="text-align:right">${fmt(o.gross_costs)}</td><td></td><td></td>
+          </tr>
+          <tr style="background:rgba(200,169,110,0.1);font-weight:700;font-size:14px;color:var(--accent)">
+            <td style="padding:10px 8px">Gross Margin</td>
+            <td style="text-align:right;padding:10px 8px">${fmt(o.gross_margin_amt)}</td>
+            <td style="text-align:right;padding:10px 8px">${fmt(o.gross_margin_of_costs,'%')}</td>
+            <td style="text-align:right;padding:10px 8px">${fmt(o.gross_margin_of_rev,'%')}</td>
+          </tr>
+          <tr style="background:rgba(123,143,212,0.06)"><td colspan="4" style="font-weight:600;font-size:11px;letter-spacing:.05em;padding:12px 8px 4px">BELOW THE LINE</td></tr>
+          <tr><td>Development Mgmt Fee (DMF)</td><td style="text-align:right">${fmt(o.below_line_dmf)}</td><td></td><td></td></tr>
+          <tr><td>Project Personnel</td><td style="text-align:right">${fmt(o.below_line_personnel)}</td><td></td><td></td></tr>
+          <tr><td>Bookkeeping</td><td style="text-align:right">${fmt(o.below_line_bookkeeping)}</td><td></td><td></td></tr>
+          <tr style="background:rgba(94,158,140,0.12);font-weight:700;font-size:14px;color:var(--accent2);border-top:2px solid var(--accent2)">
+            <td style="padding:10px 8px">Net Margin</td>
+            <td style="text-align:right;padding:10px 8px">${fmt(o.net_margin_amt)}</td>
+            <td style="text-align:right;padding:10px 8px">${fmt(o.net_margin_of_costs,'%')}</td>
+            <td style="text-align:right;padding:10px 8px">${fmt(o.net_margin_of_rev,'%')}</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
     <!-- ACREAGE NET-OUTS SUMMARY -->
@@ -2641,14 +2707,15 @@ function renderOutputsFromFlat(o) {
     // Lot Takedowns bar chart
     const ltCtx = plug('chart-lot-takedowns');
     if (ltCtx) {
-      const lotYears = Object.keys(o.yearly_lots||{}).map(Number).sort((a,b)=>a-b);
+      const lotArr = Array.isArray(o.yearly_lots) ? o.yearly_lots
+        : Object.entries(o.yearly_lots||{}).map(([yr,lots])=>({year:+yr,lots})).sort((a,b)=>a.year-b.year);
       new Chart(ltCtx, {
         type:'bar',
         data:{
-          labels: lotYears.map(y=>'Yr '+y),
+          labels: lotArr.map(y=>'Yr '+y.year),
           datasets:[{
             label:'Lot Takedowns',
-            data: lotYears.map(y=>(o.yearly_lots||{})[y]||0),
+            data: lotArr.map(y=>y.lots),
             backgroundColor:'rgba(200,169,110,0.75)',
             borderColor:'#c8a96e',borderWidth:1,borderRadius:3
           }]
@@ -2661,14 +2728,15 @@ function renderOutputsFromFlat(o) {
     // Home Sales bar chart
     const hsCtx = plug('chart-home-sales');
     if (hsCtx) {
-      const homeYears = Object.keys(o.yearly_homes||{}).map(Number).sort((a,b)=>a-b);
+      const homArr = Array.isArray(o.yearly_homes) ? o.yearly_homes
+        : Object.entries(o.yearly_homes||{}).map(([yr,homes])=>({year:+yr,homes})).sort((a,b)=>a.year-b.year);
       new Chart(hsCtx, {
         type:'bar',
         data:{
-          labels: homeYears.map(y=>'Yr '+y),
+          labels: homArr.map(y=>'Yr '+y.year),
           datasets:[{
             label:'Home Sales',
-            data: homeYears.map(y=>(o.yearly_homes||{})[y]||0),
+            data: homArr.map(y=>y.homes),
             backgroundColor:'rgba(94,158,140,0.75)',
             borderColor:'#5e9e8c',borderWidth:1,borderRadius:3
           }]
@@ -2678,47 +2746,6 @@ function renderOutputsFromFlat(o) {
       });
     }
 
-    // Financial Summary stacked bar chart (Revenue breakdown + Cost breakdown)
-    const fsCtx = plug('chart-fin-summary');
-    if (fsCtx) {
-      const revLabels  = ['Lot Sales','Res. Pods','Comm. Pods','MUD/WCID'];
-      const revValues  = [o.rev_lot_sales||0, o.rev_res_pods||0, o.rev_comm_pods||0, o.rev_mud_wcid||0];
-      const costLabels = ['Land','Plants','Amenities','Detention','Other','Roads','Lot Dev','Marketing','Prof Svc','Personnel','Legal','MUD/HOA','Insurance','Bookkeeping','DMF'];
-      const costValues = [o.cost_land||0, o.cost_plants||0, o.cost_amenities||0, o.cost_detention||0,
-        o.cost_other||0, o.cost_roads||0, o.cost_lot_dev||0, o.cost_marketing||0,
-        o.cost_prof_svc||0, o.cost_personnel||0, o.cost_legal||0, o.cost_mud_hoa||0,
-        o.cost_insurance||0, o.cost_bookkeeping||0, o.cost_dmf||0];
-      const revColors  = ['rgba(200,169,110,0.85)','rgba(94,158,140,0.75)','rgba(123,143,212,0.75)','rgba(160,120,200,0.75)'];
-      const costColors = ['rgba(224,85,85,0.7)','rgba(224,120,85,0.7)','rgba(224,160,85,0.7)','rgba(180,100,60,0.7)',
-        'rgba(160,80,80,0.7)','rgba(180,130,80,0.7)','rgba(200,100,100,0.7)','rgba(160,160,80,0.7)',
-        'rgba(100,140,180,0.7)','rgba(80,120,200,0.7)','rgba(120,160,160,0.7)','rgba(140,100,160,0.7)',
-        'rgba(100,160,120,0.7)','rgba(120,120,180,0.7)','rgba(160,80,120,0.7)'];
-      // Build datasets: each component is its own dataset (stacked)
-      const revDatasets = revLabels.map((lbl, i) => ({
-        label: lbl, data: [revValues[i]/1e6, 0], backgroundColor: revColors[i], stack:'rev', borderRadius:2, borderWidth:0
-      }));
-      const costDatasets = costLabels.map((lbl, i) => ({
-        label: lbl, data: [0, costValues[i]/1e6], backgroundColor: costColors[i], stack:'cost', borderRadius:2, borderWidth:0
-      }));
-      new Chart(fsCtx, {
-        type:'bar',
-        data:{
-          labels:['Revenue','Costs'],
-          datasets:[...revDatasets, ...costDatasets]
-        },
-        options:{
-          responsive:true,
-          plugins:{
-            legend:{labels:{color:'#8b95a8',font:{size:10},boxWidth:12},position:'right'},
-            tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: $${ctx.parsed.y.toFixed(2)}M`}}
-          },
-          scales:{
-            x:{ticks:{color:'#8b95a8',font:{size:11}},grid:{color:DIM}},
-            y:{ticks:{color:'#8b95a8',font:{size:10},callback:v=>'$'+v+'M'},grid:{color:DIM},beginAtZero:true,stacked:true}
-          }
-        }
-      });
-    }
   });
 }
 
@@ -2968,9 +2995,9 @@ function renderOutputs(d, container) {
     y: { ticks:{color:'#7a8299',font:{size:10},callback: v=>v.toLocaleString()}, grid:{color:'rgba(37,44,61,0.5)'}, beginAtZero:true }
   };
 
-  // Separate years for lots and homes
-  const lotData  = (d.yearly_lots||[]).filter(y=>y.lots>0);
-  const homeData = (d.yearly_homes||[]).filter(y=>y.homes>0);
+  // All years for lots and homes (include zeros so chart shows full project timeline)
+  const lotData  = (d.yearly_lots||[]);
+  const homeData = (d.yearly_homes||[]);
 
   // Chart 1: Lot Takedowns (bar)
   charts.lots = new Chart(document.getElementById('chart-lots'), {
