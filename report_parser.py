@@ -343,18 +343,19 @@ _OPS_CATEGORIES = [
     "Project Personnel",
     "Bookkeeping",
     "Receivables & Bond Fees",
-    "Ember Brokerage Fees",
+    "EB Fees (Lots)",
+    "EB Fees (Pods & Commercial)",
 ]
 
 def _parse_operations(ws) -> dict:
     """Parse the 'Operations' tab."""
     from datetime import date as _date
 
-    # --- Determine column extent from row 52 (Model Dates) ---
+    # --- Determine column extent from row 56 (Model Dates) ---
     dates = []       # list of ISO date strings
     date_cols = []   # corresponding column indices
     for c in range(5, 300):
-        v = ws.cell(row=52, column=c).value
+        v = ws.cell(row=56, column=c).value
         if v is None:
             break
         d = v.date() if hasattr(v, 'date') else v
@@ -364,18 +365,18 @@ def _parse_operations(ws) -> dict:
     if not dates:
         return {}
 
-    # --- KPIs from D83:E85 ---
+    # --- KPIs from D92:E94 ---
     kpis = []
-    for r in range(83, 86):
+    for r in range(92, 95):
         label = _str(ws.cell(row=r, column=4).value)
         value = _num(ws.cell(row=r, column=5).value, 2)
         kpis.append({"label": label, "value": value})
 
-    # --- Expected Next 12 Months (sum of row 73 for next 12 months from today) ---
+    # --- Expected Next 12 Months (sum of row 81 for next 12 months from today) ---
     today = _date.today()
     today_col = None
     for i, c in enumerate(date_cols):
-        v = ws.cell(row=52, column=c).value
+        v = ws.cell(row=56, column=c).value
         d = v.date() if hasattr(v, 'date') else v
         if hasattr(d, 'year') and d.year == today.year and d.month == today.month:
             today_col = c
@@ -384,21 +385,21 @@ def _parse_operations(ws) -> dict:
     next_12_sum = 0
     if today_col:
         for c in range(today_col, min(today_col + 12, date_cols[-1] + 1)):
-            val = ws.cell(row=73, column=c).value
+            val = ws.cell(row=81, column=c).value
             next_12_sum += _num(val, 2)
     kpis.append({"label": "Expected Next 12 Months", "value": round(next_12_sum, 2)})
 
-    # --- Monthly data: rows 53-72 (per-project per-category) + row 73 totals ---
-    # Structure: blocks of 5 rows per project, project name in col C of first row
+    # --- Monthly data: rows 57-80 (per-project per-category) + row 81 totals ---
+    # Structure: blocks of 6 rows per project, project name in col C of first row
     monthly_rows = []
-    r = 53
-    while r <= 72:
+    r = 57
+    while r <= 80:
         project_name = _str(ws.cell(row=r, column=3).value)
         if not project_name:
             r += 1
             continue
-        # 5 category rows per project
-        for offset in range(5):
+        # 6 category rows per project
+        for offset in range(6):
             cat = _str(ws.cell(row=r + offset, column=4).value)
             values = [_num(ws.cell(row=r + offset, column=c).value, 2)
                       for c in date_cols]
@@ -407,17 +408,17 @@ def _parse_operations(ws) -> dict:
                 "category": cat,
                 "values": values,
             })
-        r += 5
+        r += 6
 
-    # Row 73 totals
-    monthly_totals = [_num(ws.cell(row=73, column=c).value, 2) for c in date_cols]
+    # Row 81 totals
+    monthly_totals = [_num(ws.cell(row=81, column=c).value, 2) for c in date_cols]
 
     # --- Yearly rollup: find next 5 years of data ---
-    # Row 50 has years, rows 76-80 have category data, row 81 totals
+    # Row 54 has years, rows 84-89 have category data, row 90 totals
     # Aggregate months by year
     year_map = {}  # year -> list of column indices
     for c in date_cols:
-        yr = ws.cell(row=50, column=c).value
+        yr = ws.cell(row=54, column=c).value
         if yr is None:
             continue
         yr = int(yr)
@@ -427,7 +428,7 @@ def _parse_operations(ws) -> dict:
     current_year = today.year
     yearly_years = [y for y in sorted(year_map.keys()) if y >= current_year][:5]
     yearly_rows = []
-    for cat_row, cat_name in zip(range(76, 81), _OPS_CATEGORIES):
+    for cat_row, cat_name in zip(range(84, 90), _OPS_CATEGORIES):
         values = []
         for yr in yearly_years:
             total = sum(_num(ws.cell(row=cat_row, column=c).value, 2)
@@ -437,16 +438,16 @@ def _parse_operations(ws) -> dict:
 
     yearly_totals = []
     for yr in yearly_years:
-        total = sum(_num(ws.cell(row=81, column=c).value, 2) for c in year_map[yr])
+        total = sum(_num(ws.cell(row=90, column=c).value, 2) for c in year_map[yr])
         yearly_totals.append(round(total, 2))
 
     # --- Quarterly rollup: next 12 quarters from today ---
-    # Row 75 has quarter labels like "Q1 2026", rows 76-80 categories, row 81 totals
+    # Row 83 has quarter labels like "Q1 2026", rows 84-89 categories, row 90 totals
     # Group columns by quarter label
     quarter_map = {}  # quarter_label -> list of columns
     quarter_order = []
     for c in date_cols:
-        qlabel = _str(ws.cell(row=75, column=c).value)
+        qlabel = _str(ws.cell(row=83, column=c).value)
         if not qlabel:
             continue
         if qlabel not in quarter_map:
@@ -464,7 +465,7 @@ def _parse_operations(ws) -> dict:
     next_12_quarters = quarter_order[start_idx:start_idx + 12]
 
     quarterly_rows = []
-    for cat_row, cat_name in zip(range(76, 81), _OPS_CATEGORIES):
+    for cat_row, cat_name in zip(range(84, 90), _OPS_CATEGORIES):
         values = []
         for qlabel in next_12_quarters:
             total = sum(_num(ws.cell(row=cat_row, column=c).value, 2)
@@ -474,20 +475,20 @@ def _parse_operations(ws) -> dict:
 
     quarterly_totals = []
     for qlabel in next_12_quarters:
-        total = sum(_num(ws.cell(row=81, column=c).value, 2)
+        total = sum(_num(ws.cell(row=90, column=c).value, 2)
                     for c in quarter_map[qlabel])
         quarterly_totals.append(round(total, 2))
 
-    # --- Next 12 months data (rows 76-80, 81) ---
+    # --- Next 12 months data (rows 84-89, 90) ---
     next_12_dates = []
     next_12_month_rows = []
     if today_col:
         n12_cols = [c for c in range(today_col, min(today_col + 12, date_cols[-1] + 1))]
         next_12_dates = [dates[date_cols.index(c)] for c in n12_cols]
-        for cat_row, cat_name in zip(range(76, 81), _OPS_CATEGORIES):
+        for cat_row, cat_name in zip(range(84, 90), _OPS_CATEGORIES):
             values = [_num(ws.cell(row=cat_row, column=c).value, 2) for c in n12_cols]
             next_12_month_rows.append({"label": cat_name, "values": values})
-        n12_totals = [_num(ws.cell(row=81, column=c).value, 2) for c in n12_cols]
+        n12_totals = [_num(ws.cell(row=90, column=c).value, 2) for c in n12_cols]
     else:
         n12_totals = []
 
