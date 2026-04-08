@@ -2069,12 +2069,39 @@ def macro_dashboard():
                     "dates":  [o["date"]        for o in obs],
                     "values": [float(o["value"]) for o in obs]
                 }
-        except Exception:
-            pass
+            else:
+                print(f"FRED error {resp.status_code}: {resp.text[:200]}", flush=True)
+        except Exception as e:
+            print(f"FRED fetch exception: {e}", flush=True)
+    else:
+        print("FRED_API_KEY not set", flush=True)
 
     return render_template("macro.html", data=data, uploaded_at=uploaded_at,
                            is_admin=session.get("is_admin"), page_access=pa,
                            mortgage_data=mortgage_data)
+
+
+@app.route("/api/fred-test")
+@login_required
+def fred_test():
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+    fred_key = os.environ.get("FRED_API_KEY")
+    if not fred_key:
+        return jsonify({"error": "FRED_API_KEY not set"})
+    try:
+        start = (datetime.datetime.now() - datetime.timedelta(days=548)).strftime("%Y-%m-%d")
+        resp = requests.get(
+            "https://api.stlouisfed.org/fred/series/observations",
+            params={"series_id": "MORTGAGE30US", "api_key": fred_key,
+                    "observation_start": start, "file_type": "json"},
+            timeout=6
+        )
+        return jsonify({"status": resp.status_code, "ok": resp.ok,
+                        "observations": len(resp.json().get("observations", [])) if resp.ok else 0,
+                        "body_preview": resp.text[:300]})
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
 
 @app.route("/api/upload-macro", methods=["POST"])
