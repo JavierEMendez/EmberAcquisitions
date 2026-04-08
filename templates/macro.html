@@ -67,6 +67,7 @@ a:hover{text-decoration:underline}
 .map-select{background:#0d0f13;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:5px;font-size:12px;font-family:'DM Sans',sans-serif;cursor:pointer;outline:none}
 .map-select:focus{border-color:var(--teal)}
 .map-label{font-size:11px;color:var(--text-dim);letter-spacing:.05em;text-transform:uppercase}
+.year-range-bar{display:flex;align-items:center;gap:8px;margin-bottom:12px}
 .map-container{height:420px;border-radius:6px;overflow:hidden}
 .map-tooltip-custom{background:#151921 !important;border:1px solid #2e3750 !important;color:#e8eaf0 !important;font-family:'DM Sans',sans-serif !important;font-size:12px !important;padding:8px 12px !important;border-radius:6px !important;box-shadow:0 4px 16px rgba(0,0,0,.5) !important;white-space:nowrap}
 .leaflet-tooltip.map-tooltip-custom{pointer-events:none}
@@ -173,6 +174,12 @@ a:hover{text-decoration:underline}
       </button>
     </div>
     <div id="pop-chart-view">
+      <div class="year-range-bar">
+        <span class="map-label">From</span>
+        <select class="map-select" id="pop-yr-from" onchange="refreshSection('pop')"></select>
+        <span class="map-label">To</span>
+        <select class="map-select" id="pop-yr-to" onchange="refreshSection('pop')"></select>
+      </div>
       <div class="chart-grid">
         <div class="chart-card"><div class="chart-title">Population by County</div><div class="chart-wrap"><canvas id="c-pop-pop"></canvas></div></div>
         <div class="chart-card"><div class="chart-title">Net Domestic Migration</div><div class="chart-wrap"><canvas id="c-pop-mig"></canvas></div></div>
@@ -209,6 +216,12 @@ a:hover{text-decoration:underline}
       </button>
     </div>
     <div id="income-chart-view">
+      <div class="year-range-bar">
+        <span class="map-label">From</span>
+        <select class="map-select" id="income-yr-from" onchange="refreshSection('income')"></select>
+        <span class="map-label">To</span>
+        <select class="map-select" id="income-yr-to" onchange="refreshSection('income')"></select>
+      </div>
       <div class="chart-grid">
         <div class="chart-card"><div class="chart-title">Per Capita Personal Income ($)</div><div class="chart-wrap"><canvas id="c-income-pci"></canvas></div></div>
         <div class="chart-card"><div class="chart-title">Total Personal Income</div><div class="chart-wrap"><canvas id="c-income-pi"></canvas></div></div>
@@ -240,6 +253,12 @@ a:hover{text-decoration:underline}
       </button>
     </div>
     <div id="gdp-chart-view">
+      <div class="year-range-bar">
+        <span class="map-label">From</span>
+        <select class="map-select" id="gdp-yr-from" onchange="refreshSection('gdp')"></select>
+        <span class="map-label">To</span>
+        <select class="map-select" id="gdp-yr-to" onchange="refreshSection('gdp')"></select>
+      </div>
       <div class="chart-grid">
         <div class="chart-card"><div class="chart-title">Total GDP by County ($ billions)</div><div class="chart-wrap"><canvas id="c-gdp-total"></canvas></div></div>
         <div class="chart-card"><div class="chart-title">GDP by Sector — Houston Metro, Latest Year ($ billions)</div><div class="chart-wrap tall"><canvas id="c-gdp-sector"></canvas></div></div>
@@ -266,6 +285,12 @@ a:hover{text-decoration:underline}
       </button>
     </div>
     <div id="emp-chart-view">
+      <div class="year-range-bar">
+        <span class="map-label">From</span>
+        <select class="map-select" id="emp-yr-from" onchange="refreshSection('emp')"></select>
+        <span class="map-label">To</span>
+        <select class="map-select" id="emp-yr-to" onchange="refreshSection('emp')"></select>
+      </div>
       <div class="chart-grid">
         <div class="chart-card"><div class="chart-title">Avg Employment by County</div><div class="chart-wrap"><canvas id="c-emp-emp"></canvas></div></div>
         <div class="chart-card"><div class="chart-title">Avg Annual Wage by County ($)</div><div class="chart-wrap"><canvas id="c-emp-wage"></canvas></div></div>
@@ -298,6 +323,12 @@ a:hover{text-decoration:underline}
       </button>
     </div>
     <div id="realestate-chart-view">
+      <div class="year-range-bar">
+        <span class="map-label">From</span>
+        <select class="map-select" id="realestate-yr-from" onchange="refreshSection('realestate')"></select>
+        <span class="map-label">To</span>
+        <select class="map-select" id="realestate-yr-to" onchange="refreshSection('realestate')"></select>
+      </div>
       <div class="chart-grid">
         <div class="chart-card"><div class="chart-title">Home Value Index (Zillow ZHVI) by County ($)</div><div class="chart-wrap"><canvas id="c-re-zhvi"></canvas></div></div>
         <div class="chart-card"><div class="chart-title">HUD Fair Market Rents — Harris County ($)</div><div class="chart-wrap"><canvas id="c-re-fmr"></canvas></div></div>
@@ -324,6 +355,12 @@ a:hover{text-decoration:underline}
       </button>
     </div>
     <div id="banking-chart-view">
+      <div class="year-range-bar">
+        <span class="map-label">From</span>
+        <select class="map-select" id="banking-yr-from" onchange="refreshSection('banking')"></select>
+        <span class="map-label">To</span>
+        <select class="map-select" id="banking-yr-to" onchange="refreshSection('banking')"></select>
+      </div>
       <div class="chart-grid">
         <div class="chart-card"><div class="chart-title">Total Bank Deposits by County</div><div class="chart-wrap"><canvas id="c-bank-dep"></canvas></div></div>
         <div class="chart-card"><div class="chart-title">Number of Banking Institutions by County</div><div class="chart-wrap"><canvas id="c-bank-inst"></canvas></div></div>
@@ -591,79 +628,153 @@ function mkStackedBar(id, labels, datasets, yFmtFn) {
   });
 }
 
-// ── Chart initialization ───────────────────────────────────────────────────────
-function initCharts() {
-  const D = MACRO_DATA;
+// ── Year range helpers ─────────────────────────────────────────────────────────
+function sliceYears(allYears, datasets, from, to) {
+  const i0 = allYears.indexOf(String(from));
+  const i1 = allYears.indexOf(String(to));
+  if (i0 < 0 || i1 < 0 || i0 > i1) return {years: allYears, datasets};
+  const years = allYears.slice(i0, i1 + 1);
+  const sliced = datasets.map(d => ({...d, data: d.data ? d.data.slice(i0, i1 + 1) : d.data}));
+  return {years, datasets: sliced};
+}
 
-  // Population
+function getRange(section) {
+  const from = document.getElementById(section + '-yr-from')?.value;
+  const to   = document.getElementById(section + '-yr-to')?.value;
+  return {from, to};
+}
+
+function populateChartRanges() {
+  const D = MACRO_DATA;
+  const cfg = [
+    ['pop',         D.population?.years],
+    ['income',      D.income?.years],
+    ['gdp',         D.gdp?.years],
+    ['emp',         D.employment?.years],
+    ['realestate',  D.home_values?.years],
+    ['banking',     D.deposits?.years],
+  ];
+  cfg.forEach(([sec, years]) => {
+    if (!years) return;
+    const fromEl = document.getElementById(sec + '-yr-from');
+    const toEl   = document.getElementById(sec + '-yr-to');
+    if (!fromEl || !toEl) return;
+    years.forEach(y => {
+      [fromEl, toEl].forEach(el => {
+        const o = document.createElement('option'); o.value = String(y); o.textContent = String(y); el.appendChild(o);
+      });
+    });
+    fromEl.value = String(years[Math.max(0, years.length - 5)]);
+    toEl.value   = String(years[years.length - 1]);
+  });
+}
+
+// ── Per-section render functions ───────────────────────────────────────────────
+function renderPopCharts(from, to) {
+  const D = MACRO_DATA;
   if (D.population) {
-    const P = D.population, yrs = P.years;
-    mkLineChart('c-pop-pop', yrs, COUNTIES.map(c => ({label:c, data:P.population[c]})), fmtN);
-    mkGroupedBar('c-pop-mig', yrs, COUNTIES.map(c => ({label:c, data:P.net_domestic_migration[c]})), fmtN);
+    const P = D.population;
+    const {years: y1, datasets: d1} = sliceYears(P.years, COUNTIES.map(c=>({label:c,data:P.population[c]})), from, to);
+    mkLineChart('c-pop-pop', y1, d1, fmtN);
+    const {years: y2, datasets: d2} = sliceYears(P.years, COUNTIES.map(c=>({label:c,data:P.net_domestic_migration[c]})), from, to);
+    mkGroupedBar('c-pop-mig', y2, d2, fmtN);
   }
   if (D.irs) {
     const I = D.irs;
-    mkGroupedBar('c-pop-agi', I.years, COUNTIES.map(c => ({label:c, data:I.net_agi[c]})), fmtN);
-    mkGroupedBar('c-pop-ret', I.years, COUNTIES.map(c => ({label:c, data:I.net_returns[c]})), fmtN);
+    const {years: y3, datasets: d3} = sliceYears(I.years, COUNTIES.map(c=>({label:c,data:I.net_agi[c]})), from, to);
+    mkGroupedBar('c-pop-agi', y3, d3, fmtN);
+    const {years: y4, datasets: d4} = sliceYears(I.years, COUNTIES.map(c=>({label:c,data:I.net_returns[c]})), from, to);
+    mkGroupedBar('c-pop-ret', y4, d4, fmtN);
   }
+}
 
-  // Income
-  if (D.income) {
-    const Inc = D.income;
-    mkLineChart('c-income-pci', Inc.years, COUNTIES.map(c => ({label:c, data:Inc.per_capita_income[c]})), fmtUSD);
-    mkStackedBar('c-income-pi',  Inc.years, COUNTIES.map(c => ({label:c, data:Inc.personal_income[c]})),  v => fmtSmartUSD(v*1000));
-  }
+function renderIncomeCharts(from, to) {
+  const D = MACRO_DATA;
+  if (!D.income) return;
+  const Inc = D.income;
+  const {years: y1, datasets: d1} = sliceYears(Inc.years, COUNTIES.map(c=>({label:c,data:Inc.per_capita_income[c]})), from, to);
+  mkLineChart('c-income-pci', y1, d1, fmtUSD);
+  const {years: y2, datasets: d2} = sliceYears(Inc.years, COUNTIES.map(c=>({label:c,data:Inc.personal_income[c]})), from, to);
+  mkStackedBar('c-income-pi', y2, d2, v => fmtSmartUSD(v*1000));
+}
 
-  // GDP
-  if (D.gdp) {
-    const G = D.gdp;
-    mkStackedBar('c-gdp-total', G.years, COUNTIES.map(c => ({label:c, data:(G.total[c]||[]).map(v=>v==null?null:v/1e6)})), v => '$' + v.toFixed(1) + 'B');
+function renderGdpCharts(from, to) {
+  const D = MACRO_DATA;
+  if (!D.gdp) return;
+  const G = D.gdp;
+  const {years, datasets} = sliceYears(G.years, COUNTIES.map(c=>({label:c,data:(G.total[c]||[]).map(v=>v==null?null:v/1e6)})), from, to);
+  mkStackedBar('c-gdp-total', years, datasets, v => '$' + v.toFixed(1) + 'B');
 
-    // Sector bar chart: metro total (sum all counties) for latest year, excluding aggregate rows
-    const exclude = new Set(['All industry total','Private industries']);
-    const sectors = G.sector_names.filter(s => !exclude.has(s));
-    const latestIdx = G.years.length - 1;
-    const sectorTotals = sectors.map(s => {
-      let total = 0;
-      COUNTIES.forEach(c => {
-        const bsc = (G.by_sector[c] || {})[s];
-        if (bsc) { const v = bsc[latestIdx]; if (v) total += v; }
-      });
-      return total / 1e6; // billions
-    });
-    // Sort descending
-    const combined = sectors.map((s, i) => ({s, v: sectorTotals[i]})).sort((a,b) => b.v - a.v);
-    mkBarChart('c-gdp-sector', combined.map(x=>x.s), [{label:'GDP ($ B)', data:combined.map(x=>x.v)}], v => '$' + v.toFixed(1) + 'B', true);
-  }
+  // Sector bar always shows latest year — rebuild with min:1 on value axis
+  const exclude = new Set(['All industry total','Private industries']);
+  const sectors = G.sector_names.filter(s => !exclude.has(s));
+  const latestIdx = G.years.length - 1;
+  const sectorTotals = sectors.map(s => {
+    let total = 0;
+    COUNTIES.forEach(c => { const bsc = (G.by_sector[c]||{})[s]; if (bsc) { const v = bsc[latestIdx]; if (v) total += v; } });
+    return total / 1e6;
+  });
+  const combined = sectors.map((s,i) => ({s, v: sectorTotals[i]})).sort((a,b) => b.v - a.v);
+  mkBarChart('c-gdp-sector', combined.map(x=>x.s), [{label:'GDP ($ B)', data:combined.map(x=>x.v)}], v => '$' + v.toFixed(1) + 'B', true);
+  if (_charts['c-gdp-sector']) { _charts['c-gdp-sector'].options.scales.x.min = 1; _charts['c-gdp-sector'].update('none'); }
+}
 
-  // Employment
-  if (D.employment) {
-    const E = D.employment;
-    mkStackedBar('c-emp-emp',  E.years, COUNTIES.map(c => ({label:c, data:E.avg_employment[c]})), fmtN);
-    mkLineChart('c-emp-wage', E.years, COUNTIES.map(c => ({label:c, data:E.avg_annual_wage[c]})), fmtUSD);
-  }
+function renderEmpCharts(from, to) {
+  const D = MACRO_DATA;
+  if (!D.employment) return;
+  const E = D.employment;
+  const {years: y1, datasets: d1} = sliceYears(E.years, COUNTIES.map(c=>({label:c,data:E.avg_employment[c]})), from, to);
+  mkStackedBar('c-emp-emp', y1, d1, fmtN);
+  const {years: y2, datasets: d2} = sliceYears(E.years, COUNTIES.map(c=>({label:c,data:E.avg_annual_wage[c]})), from, to);
+  mkLineChart('c-emp-wage', y2, d2, fmtUSD);
+}
 
-  // Real Estate
+function renderReCharts(from, to) {
+  const D = MACRO_DATA;
   if (D.home_values) {
     const Z = D.home_values;
-    mkLineChart('c-re-zhvi', Z.years, COUNTIES.map(c => ({label:c, data:Z.zhvi[c]})), fmtUSD);
+    const {years, datasets} = sliceYears(Z.years, COUNTIES.map(c=>({label:c,data:Z.zhvi[c]})), from, to);
+    mkLineChart('c-re-zhvi', years, datasets, fmtUSD);
   }
   if (D.rents) {
     const R = D.rents;
     const brs = ['0BR','1BR','2BR','3BR','4BR'];
-    mkLineChart('c-re-fmr', R.years,
-      brs.map(br => ({label:br, data:R['fmr_'+br] && R['fmr_'+br].Harris ? R['fmr_'+br].Harris : []})),
-      fmtUSD);
+    const allDs = brs.map(br => ({label:br, data:R['fmr_'+br]?.Harris || []}));
+    const {years, datasets} = sliceYears(R.years, allDs, from, to);
+    mkLineChart('c-re-fmr', years, datasets, fmtUSD);
   }
+}
 
-  // Banking
-  if (D.deposits) {
-    const B = D.deposits;
-    mkStackedBar('c-bank-dep',  B.years, COUNTIES.map(c => ({label:c, data:B.total_deposits[c]})), v => fmtSmartUSD(v*1000));
-    mkGroupedBar('c-bank-inst', B.years, COUNTIES.map(c => ({label:c, data:B.num_institutions[c]})), fmtN);
-  }
+function renderBankCharts(from, to) {
+  const D = MACRO_DATA;
+  if (!D.deposits) return;
+  const B = D.deposits;
+  const {years: y1, datasets: d1} = sliceYears(B.years, COUNTIES.map(c=>({label:c,data:B.total_deposits[c]})), from, to);
+  mkStackedBar('c-bank-dep', y1, d1, v => fmtSmartUSD(v*1000));
+  const {years: y2, datasets: d2} = sliceYears(B.years, COUNTIES.map(c=>({label:c,data:B.num_institutions[c]})), from, to);
+  mkGroupedBar('c-bank-inst', y2, d2, fmtN);
+}
 
-  // Populate year selectors for maps
+function refreshSection(section) {
+  const {from, to} = getRange(section);
+  if (section === 'pop')        renderPopCharts(from, to);
+  else if (section === 'income')     renderIncomeCharts(from, to);
+  else if (section === 'gdp')        renderGdpCharts(from, to);
+  else if (section === 'emp')        renderEmpCharts(from, to);
+  else if (section === 'realestate') renderReCharts(from, to);
+  else if (section === 'banking')    renderBankCharts(from, to);
+}
+
+// ── Chart initialization ───────────────────────────────────────────────────────
+function initCharts() {
+  populateChartRanges();
+  const D = MACRO_DATA;
+  if (D.population) { const {from,to} = getRange('pop');        renderPopCharts(from, to); }
+  if (D.income)     { const {from,to} = getRange('income');     renderIncomeCharts(from, to); }
+  if (D.gdp)        { const {from,to} = getRange('gdp');        renderGdpCharts(from, to); }
+  if (D.employment) { const {from,to} = getRange('emp');        renderEmpCharts(from, to); }
+  if (D.home_values){ const {from,to} = getRange('realestate'); renderReCharts(from, to); }
+  if (D.deposits)   { const {from,to} = getRange('banking');    renderBankCharts(from, to); }
   populateYearSelects();
 }
 
