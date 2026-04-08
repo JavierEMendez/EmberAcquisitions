@@ -630,8 +630,9 @@ function mkStackedBar(id, labels, datasets, yFmtFn) {
 
 // ── Year range helpers ─────────────────────────────────────────────────────────
 function sliceYears(allYears, datasets, from, to) {
-  const i0 = allYears.indexOf(String(from));
-  const i1 = allYears.indexOf(String(to));
+  const strs = allYears.map(String);
+  const i0 = strs.indexOf(String(from));
+  const i1 = strs.indexOf(String(to));
   if (i0 < 0 || i1 < 0 || i0 > i1) return {years: allYears, datasets};
   const years = allYears.slice(i0, i1 + 1);
   const sliced = datasets.map(d => ({...d, data: d.data ? d.data.slice(i0, i1 + 1) : d.data}));
