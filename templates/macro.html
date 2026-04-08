@@ -401,7 +401,7 @@ a:hover{text-decoration:underline}
     <div class="section-title" id="sec-newhome">New Home Market — National</div>
     <div class="chart-grid">
       <div class="chart-card"><div class="chart-title">New Single-Family Home Sales (thousands, SAAR)</div><div class="chart-wrap"><canvas id="c-nh-sales"></canvas></div></div>
-      <div class="chart-card"><div class="chart-title">New Homes Sold — South Region (thousands)</div><div class="chart-wrap"><canvas id="c-nh-south"></canvas></div></div>
+      <div class="chart-card"><div class="chart-title">Housing Starts — South Census Region (thousands, SAAR)</div><div class="chart-wrap"><canvas id="c-nh-south"></canvas></div></div>
       <div class="chart-card"><div class="chart-title">Median New Home Sales Price ($)</div><div class="chart-wrap"><canvas id="c-nh-price"></canvas></div></div>
       <div class="chart-card"><div class="chart-title">Months' Supply of New Houses</div><div class="chart-wrap"><canvas id="c-nh-supply"></canvas></div></div>
     </div>
@@ -806,7 +806,7 @@ function renderFinancingCharts() {
 
 function renderNewHomeCharts() {
   mkFREDLine('c-nh-sales',  'HSN1F',     'New SF Sales',      v => fmtN(v) + 'K');
-  mkFREDLine('c-nh-south',  'NHSSOU',    'South Region',      v => fmtN(v) + 'K');
+  mkFREDLine('c-nh-south',  'HOUSTS',    'Housing Starts — South', v => fmtN(v) + 'K');
   mkFREDLine('c-nh-price',  'MSPNHSUS',  'Median Price',      fmtUSD);
   mkFREDLine('c-nh-supply', 'MSACSR',    "Months' Supply",    v => v.toFixed(1) + ' mo');
 }
