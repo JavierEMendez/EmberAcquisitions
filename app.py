@@ -2106,7 +2106,7 @@ def macro_dashboard():
             ("FEDFUNDS",     start_3yr, {}),
             ("DPRIME",       start_3yr, {"frequency": "m", "aggregation_method": "avg"}),
             ("HSN1F",        start_3yr, {}),
-            ("HSN1FSOU",     start_3yr, {}),
+            ("NHSSOU",       start_3yr, {}),
             ("MSPNHSUS",     start_3yr, {}),
             ("MSACSR",       start_3yr, {}),
             ("UMCSENT",      start_3yr, {}),
@@ -2156,7 +2156,7 @@ def fred_audit():
         return jsonify({"error": "FRED_API_KEY not set"})
     series_list = [
         "MORTGAGE30US", "FEDFUNDS", "DPRIME",
-        "HSN1F", "HSN1FSOU", "MSPNHSUS", "MSACSR",
+        "HSN1F", "NHSSOU", "MSPNHSUS", "MSACSR",
         "UMCSENT", "CPIAUCSL", "CUSR0000SEHC"
     ]
     def _latest(sid):
