@@ -262,9 +262,14 @@
       <input type="file" id="macroUpload" accept=".xlsx" hidden>
       <button class="upload-btn" onclick="document.getElementById('macroUpload').click()">
         <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="2"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20" stroke-width="2" stroke-linecap="round"/></svg>
-        Update Macro Data
+        Upload Macro Excel
       </button>
       <span id="macroUploadStatus" class="upload-status"></span>
+      <button class="upload-btn" id="refreshMacroBtn" onclick="triggerMacroRefresh()">
+        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Refresh Macro Data
+      </button>
+      <span id="macroRefreshStatus" class="upload-status"></span>
       {% endif %}
     </div>
     <a href="/logout">Sign Out</a>
@@ -526,6 +531,58 @@ document.getElementById('macroUpload').addEventListener('change', async function
   }
   this.value = '';
 });
+
+let _refreshPoller = null;
+
+async function triggerMacroRefresh() {
+  const btn = document.getElementById('refreshMacroBtn');
+  const status = document.getElementById('macroRefreshStatus');
+  btn.disabled = true;
+  status.textContent = 'Starting…';
+  status.style.color = 'var(--text-muted)';
+  try {
+    const res = await fetch('/api/refresh-macro', { method: 'POST' });
+    const data = await res.json();
+    if (!data.ok) {
+      status.textContent = data.message || 'Could not start';
+      status.style.color = '#f87171';
+      btn.disabled = false;
+      return;
+    }
+  } catch (e) {
+    status.textContent = 'Request failed';
+    status.style.color = '#f87171';
+    btn.disabled = false;
+    return;
+  }
+  pollMacroStatus();
+}
+
+async function pollMacroStatus() {
+  const btn = document.getElementById('refreshMacroBtn');
+  const status = document.getElementById('macroRefreshStatus');
+  if (_refreshPoller) clearInterval(_refreshPoller);
+  _refreshPoller = setInterval(async () => {
+    try {
+      const res = await fetch('/api/macro-status');
+      const d = await res.json();
+      if (d.running) {
+        status.textContent = 'Pulling data from APIs… (this takes ~10 min)';
+        status.style.color = 'var(--text-muted)';
+      } else if (d.last_error) {
+        status.textContent = 'Error: ' + d.last_error.slice(0, 80);
+        status.style.color = '#f87171';
+        btn.disabled = false;
+        clearInterval(_refreshPoller);
+      } else if (d.last_finished) {
+        status.textContent = 'Done! Data stored ' + (d.last_data_stored || '');
+        status.style.color = 'var(--teal)';
+        btn.disabled = false;
+        clearInterval(_refreshPoller);
+      }
+    } catch (e) { /* ignore */ }
+  }, 8000);
+}
 </script>
 {% endif %}
 <script>

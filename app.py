@@ -2,7 +2,7 @@
 Ember Tract Underwriting Web App
 Flask + PostgreSQL + Flask-Login — no Excel required
 """
-import os, json, datetime, io, base64, requests
+import os, json, datetime, io, base64, requests, threading
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail, Attachment, FileContent, FileName, FileType, Disposition, Content
 from functools import wraps
@@ -13,9 +13,53 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from calc import calculate
 from report_parser import parse_dashboard
 from macro_parser import parse_macro
+from data_puller import run_pull
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "ember-dev-secret-change-in-production")
+
+# ── Macro data refresh state ───────────────────────────────────────────────────
+_refresh_lock = threading.Lock()
+_refresh_state = {"running": False, "last_started": None, "last_finished": None, "last_error": None}
+
+def _do_macro_refresh():
+    """Background thread: pull all macro data, parse, and store in DB."""
+    with _refresh_lock:
+        if _refresh_state["running"]:
+            return
+        _refresh_state["running"] = True
+        _refresh_state["last_started"] = datetime.datetime.utcnow().isoformat()
+        _refresh_state["last_error"] = None
+
+    print("[macro_refresh] Starting data pull…", flush=True)
+    try:
+        excel_bytes = run_pull()
+        print("[macro_refresh] Pull complete, parsing…", flush=True)
+        data = parse_macro(excel_bytes)
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM reports WHERE report_type = 'macro'")
+        cur.execute("INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+                    ("macro", json.dumps(data), None))
+        conn.commit()
+        cur.close()
+        conn.close()
+        with _refresh_lock:
+            _refresh_state["last_finished"] = datetime.datetime.utcnow().isoformat()
+            _refresh_state["running"] = False
+        print("[macro_refresh] Done — data stored.", flush=True)
+    except Exception as e:
+        print(f"[macro_refresh] ERROR: {e}", flush=True)
+        with _refresh_lock:
+            _refresh_state["last_error"] = str(e)
+            _refresh_state["running"] = False
+
+# Schedule: 1st of every month at 02:00 UTC
+_scheduler = BackgroundScheduler(daemon=True)
+_scheduler.add_job(_do_macro_refresh, CronTrigger(day=1, hour=2, minute=0), id="macro_monthly")
+_scheduler.start()
 
 # Auto-initialize DB on first request
 _db_initialized = False
@@ -2102,6 +2146,30 @@ def fred_test():
                         "body_preview": resp.text[:300]})
     except Exception as e:
         return jsonify({"error": str(e)})
+
+
+@app.route("/api/macro-status")
+@login_required
+def macro_status():
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT uploaded_at FROM reports WHERE report_type = 'macro' ORDER BY uploaded_at DESC LIMIT 1")
+    row = cur.fetchone(); cur.close(); conn.close()
+    last_data = row["uploaded_at"].strftime("%B %d, %Y %H:%M UTC") if row else None
+    return jsonify({**_refresh_state, "last_data_stored": last_data})
+
+
+@app.route("/api/refresh-macro", methods=["POST"])
+@login_required
+def refresh_macro():
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+    if _refresh_state["running"]:
+        return jsonify({"ok": False, "message": "Refresh already in progress"})
+    t = threading.Thread(target=_do_macro_refresh, daemon=True)
+    t.start()
+    return jsonify({"ok": True, "message": "Refresh started"})
 
 
 @app.route("/api/upload-macro", methods=["POST"])
