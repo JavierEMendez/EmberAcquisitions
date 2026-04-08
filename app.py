@@ -12,6 +12,7 @@ import psycopg2.extras
 from werkzeug.security import generate_password_hash, check_password_hash
 from calc import calculate
 from report_parser import parse_dashboard
+from macro_parser import parse_macro
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "ember-dev-secret-change-in-production")
@@ -82,6 +83,7 @@ def init_db():
     """)
     # Backfill portfolio access for existing users
     cur.execute("UPDATE users SET page_access = page_access || '{\"portfolio\": true}'::jsonb WHERE page_access->>'portfolio' IS NULL")
+    cur.execute("UPDATE users SET page_access = page_access || '{\"macro\": true}'::jsonb WHERE page_access->>'macro' IS NULL")
     # Create default admin if no users exist
     cur.execute("SELECT COUNT(*) as cnt FROM users")
     row = cur.fetchone()
@@ -2030,6 +2032,47 @@ def _gen_excel_operations(data):
     for ci in range(2, 50): ws.column_dimensions[get_column_letter(ci)].width=11
     out=io.BytesIO(); wb.save(out); out.seek(0)
     return out.read()
+
+
+# ─── MACRO DASHBOARD ──────────────────────────────────────────────────────────
+
+@app.route("/macro")
+@login_required
+def macro_dashboard():
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("macro", True):
+        return redirect(url_for("home"))
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT data, uploaded_at FROM reports WHERE report_type = 'macro' ORDER BY uploaded_at DESC LIMIT 1")
+    row = cur.fetchone(); cur.close(); conn.close()
+    data = row["data"] if row else None
+    uploaded_at = row["uploaded_at"].strftime("%B %d, %Y") if row else None
+    pa = session.get("page_access") or {}
+    if session.get("is_admin"):
+        pa = {k: True for k in ["mpc_underwriting","returns","loans","operations","macro","portfolio"]}
+    return render_template("macro.html", data=data, uploaded_at=uploaded_at,
+                           is_admin=session.get("is_admin"), page_access=pa)
+
+
+@app.route("/api/upload-macro", methods=["POST"])
+@login_required
+def upload_macro():
+    if not session.get("is_admin"):
+        return jsonify({"error": "Admin only"}), 403
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No file"}), 400
+    try:
+        file_bytes = f.read()
+        data = parse_macro(file_bytes)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM reports WHERE report_type = 'macro'")
+    cur.execute("INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+                ("macro", json.dumps(data), session["user_id"]))
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True, "counties": data.get("counties", [])})
 
 
 # ─── SCHEDULER ────────────────────────────────────────────────────────────────

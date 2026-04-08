@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Houston Macro Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f13;--card:#151921;--border:#1e2535;--border-light:#2e3750;
+  --accent:#c8a96e;--text:#e8eaf0;--text-muted:#8b95a8;--text-dim:#4a5568;
+  --teal:#5e9e8c;
+}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;height:100vh;overflow:hidden;}
+#app{display:flex;height:100vh;overflow:hidden}
+#sidebar{width:240px;background:#141820;border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
+#main-content{flex:1;overflow-y:auto;padding:24px 32px}
+.sidebar-logo{padding:16px 18px 14px;border-bottom:1px solid var(--border)}
+.logo-img{width:100%;max-width:160px;height:auto;display:block;margin:0 auto}
+.logo-sub{font-size:10px;color:var(--text-dim);letter-spacing:.12em;text-transform:uppercase;margin-top:8px;text-align:center}
+.sidebar-section{padding:8px 10px 4px;font-size:10px;color:var(--text-dim);letter-spacing:.1em;text-transform:uppercase;margin-top:8px}
+.sidebar-item{display:flex;align-items:center;gap:10px;padding:8px 14px;cursor:pointer;border-radius:6px;margin:1px 6px;transition:all .15s;color:var(--text-muted);font-size:13px;text-decoration:none}
+.sidebar-item:hover{background:rgba(200,169,110,.06);color:var(--text);text-decoration:none}
+.sidebar-item.active{background:rgba(200,169,110,.12);color:var(--accent)}
+.sidebar-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0}
+.sidebar-item.active .icon{opacity:1}
+.nav-link{display:flex;align-items:center;gap:10px;padding:7px 14px;cursor:pointer;border-radius:6px;margin:1px 6px;transition:all .15s;color:var(--text-muted);font-size:12px;text-decoration:none}
+.nav-link:hover{background:rgba(200,169,110,.04);color:var(--text);text-decoration:none}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+.top-bar{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:8px}
+.top-bar h1{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:24px;color:var(--text)}
+.top-right .meta{font-size:12px;color:var(--text-muted)}
+.section-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:18px;color:var(--accent);margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+
+/* KPI grid */
+.kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:8px}
+@media(max-width:1200px){.kpi-grid{grid-template-columns:repeat(3,1fr)}}
+.kpi-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px 16px}
+.kpi-label{font-size:10px;color:var(--text-muted);letter-spacing:.07em;text-transform:uppercase;margin-bottom:6px}
+.kpi-value{font-size:20px;font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;color:var(--text)}
+.kpi-sub{font-size:11px;color:var(--text-dim);margin-top:3px}
+
+/* Charts */
+.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:4px}
+.chart-grid.full{grid-template-columns:1fr}
+.chart-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px 20px}
+.chart-title{font-size:11px;color:var(--text-muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:14px}
+.chart-wrap{position:relative;height:220px}
+.chart-wrap.tall{height:300px}
+
+/* View toggle */
+.view-toggle{display:flex;gap:6px;margin-bottom:14px}
+.view-btn{padding:5px 14px;border-radius:5px;font-size:12px;cursor:pointer;border:1px solid var(--border);background:none;color:var(--text-muted);font-family:'DM Sans',sans-serif;transition:all .15s;display:inline-flex;align-items:center;gap:6px}
+.view-btn:hover{border-color:var(--border-light);color:var(--text)}
+.view-btn.active{background:rgba(94,158,140,.12);border-color:rgba(94,158,140,.3);color:var(--teal)}
+
+/* Map */
+.map-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px 20px}
+.map-controls{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.map-select{background:#0d0f13;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:5px;font-size:12px;font-family:'DM Sans',sans-serif;cursor:pointer;outline:none}
+.map-select:focus{border-color:var(--teal)}
+.map-label{font-size:11px;color:var(--text-dim);letter-spacing:.05em;text-transform:uppercase}
+.map-container{height:420px;border-radius:6px;overflow:hidden}
+.map-tooltip-custom{background:#151921 !important;border:1px solid #2e3750 !important;color:#e8eaf0 !important;font-family:'DM Sans',sans-serif !important;font-size:12px !important;padding:8px 12px !important;border-radius:6px !important;box-shadow:0 4px 16px rgba(0,0,0,.5) !important;white-space:nowrap}
+.leaflet-tooltip.map-tooltip-custom{pointer-events:none}
+/* Override Leaflet default tooltip styles */
+.leaflet-tooltip{background:none;border:none;box-shadow:none;padding:0}
+
+/* No-data state */
+.no-data{text-align:center;padding:60px 20px;color:var(--text-dim)}
+.no-data h2{font-size:18px;margin-bottom:8px;color:var(--text-muted);font-weight:400}
+</style>
+</head>
+<body>
+<div id="app">
+  <nav id="sidebar">
+    <div class="sidebar-logo">
+      <img src="/static/img/ember_logo.png" alt="Ember" class="logo-img">
+      <div class="logo-sub">Macro Dashboard</div>
+    </div>
+
+    <div class="sidebar-section">Ember Apps</div>
+    {% if page_access.get('mpc_underwriting', true) %}
+    <a href="/" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+      MPC Underwriting
+    </a>
+    {% endif %}
+    {% if page_access.get('returns', true) %}
+    <a href="/returns" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Project Returns
+    </a>
+    {% endif %}
+    {% if page_access.get('loans', true) %}
+    <a href="/loans" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Loans &amp; Debt
+    </a>
+    {% endif %}
+    {% if page_access.get('operations', true) %}
+    <a href="/operations" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Operating Revenues
+    </a>
+    {% endif %}
+    <a href="/macro" class="sidebar-item active">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="1.5"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Macro Dashboard
+    </a>
+
+    {% if data %}
+    <div class="sidebar-section">Sections</div>
+    <a href="#sec-kpis" class="nav-link" onclick="event.preventDefault();scrollTo('sec-kpis')">KPIs</a>
+    <a href="#sec-pop" class="nav-link" onclick="event.preventDefault();scrollTo('sec-pop')">Population</a>
+    <a href="#sec-income" class="nav-link" onclick="event.preventDefault();scrollTo('sec-income')">Income</a>
+    <a href="#sec-gdp" class="nav-link" onclick="event.preventDefault();scrollTo('sec-gdp')">GDP</a>
+    <a href="#sec-emp" class="nav-link" onclick="event.preventDefault();scrollTo('sec-emp')">Employment</a>
+    <a href="#sec-realestate" class="nav-link" onclick="event.preventDefault();scrollTo('sec-realestate')">Real Estate</a>
+    <a href="#sec-banking" class="nav-link" onclick="event.preventDefault();scrollTo('sec-banking')">Banking</a>
+    {% endif %}
+
+    <div style="flex:1"></div>
+    <div style="padding:8px 10px 4px">
+      <button onclick="openAcct()" style="width:100%;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--text-dim);font-size:12px;cursor:pointer;transition:all .15s;justify-content:center;font-family:'DM Sans',sans-serif" onmouseover="this.style.borderColor='var(--border-light)';this.style.color='var(--text-muted)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-dim)'">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" stroke-width="1.8"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke-width="1.8" stroke-linecap="round"/></svg>
+        Account Settings
+      </button>
+    </div>
+    <div style="padding:4px 10px 14px">
+      <a href="/home" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:6px;border:1px solid var(--border);color:var(--text-dim);font-size:12px;text-decoration:none;transition:all .15s;justify-content:center" onmouseover="this.style.borderColor='var(--border-light)';this.style.color='var(--text-muted)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-dim)'">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1m-2 0h2" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Back to Home
+      </a>
+    </div>
+  </nav>
+
+  <div id="main-content">
+    <div class="top-bar">
+      <h1>Houston Metro Macro Dashboard</h1>
+      <div class="top-right">
+        <div class="meta">{% if uploaded_at %}Last updated: {{ uploaded_at }}{% else %}No data uploaded yet{% endif %}</div>
+      </div>
+    </div>
+
+    {% if data %}
+
+    <!-- KPI Strip -->
+    <div class="kpi-grid" id="sec-kpis">
+      <div class="kpi-card"><div class="kpi-label">Metro Population</div><div class="kpi-value" id="kpi-pop">—</div><div class="kpi-sub" id="kpi-pop-sub"></div></div>
+      <div class="kpi-card"><div class="kpi-label">YoY Pop Change</div><div class="kpi-value" id="kpi-popchg">—</div><div class="kpi-sub" id="kpi-popchg-sub"></div></div>
+      <div class="kpi-card"><div class="kpi-label">Per Capita Income</div><div class="kpi-value" id="kpi-pci">—</div><div class="kpi-sub" id="kpi-pci-sub"></div></div>
+      <div class="kpi-card"><div class="kpi-label">Avg Annual Wage</div><div class="kpi-value" id="kpi-wage">—</div><div class="kpi-sub" id="kpi-wage-sub"></div></div>
+      <div class="kpi-card"><div class="kpi-label">Median Home Value</div><div class="kpi-value" id="kpi-zhvi">—</div><div class="kpi-sub" id="kpi-zhvi-sub"></div></div>
+      <div class="kpi-card"><div class="kpi-label">2BR Fair Mkt Rent</div><div class="kpi-value" id="kpi-rent">—</div><div class="kpi-sub" id="kpi-rent-sub"></div></div>
+    </div>
+
+    <!-- ── Section 1: Population ── -->
+    <div class="section-title" id="sec-pop">Population &amp; Migration</div>
+    <div class="view-toggle" data-section="pop">
+      <button class="view-btn active" data-view="chart" onclick="setView('pop','chart')">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-width="1.8"/></svg> Chart
+      </button>
+      <button class="view-btn" data-view="map" onclick="setView('pop','map')">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" stroke-width="1.8"/></svg> Map
+      </button>
+    </div>
+    <div id="pop-chart-view">
+      <div class="chart-grid">
+        <div class="chart-card"><div class="chart-title">Population by County</div><div class="chart-wrap"><canvas id="c-pop-pop"></canvas></div></div>
+        <div class="chart-card"><div class="chart-title">Net Domestic Migration</div><div class="chart-wrap"><canvas id="c-pop-mig"></canvas></div></div>
+        <div class="chart-card"><div class="chart-title">IRS Net AGI Migration ($ thousands)</div><div class="chart-wrap"><canvas id="c-pop-agi"></canvas></div></div>
+        <div class="chart-card"><div class="chart-title">IRS Net Return Filers</div><div class="chart-wrap"><canvas id="c-pop-ret"></canvas></div></div>
+      </div>
+    </div>
+    <div id="pop-map-view" style="display:none">
+      <div class="map-card">
+        <div class="map-controls">
+          <span class="map-label">Metric</span>
+          <select class="map-select" id="pop-map-metric" onchange="renderChoropleth('pop')">
+            <option value="population">Population</option>
+            <option value="net_domestic_migration">Net Domestic Migration</option>
+            <option value="net_international_migration">Net International Migration</option>
+            <option value="births">Births</option>
+            <option value="deaths">Deaths</option>
+          </select>
+          <span class="map-label">Year</span>
+          <select class="map-select" id="pop-map-year" onchange="renderChoropleth('pop')"></select>
+        </div>
+        <div id="pop-leaflet" class="map-container"></div>
+      </div>
+    </div>
+
+    <!-- ── Section 2: Income ── -->
+    <div class="section-title" id="sec-income">Personal Income</div>
+    <div class="view-toggle" data-section="income">
+      <button class="view-btn active" data-view="chart" onclick="setView('income','chart')">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-width="1.8"/></svg> Chart
+      </button>
+      <button class="view-btn" data-view="map" onclick="setView('income','map')">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" stroke-width="1.8"/></svg> Map
+      </button>
+    </div>
+    <div id="income-chart-view">
+      <div class="chart-grid">
+        <div class="chart-card"><div class="chart-title">Per Capita Personal Income ($)</div><div class="chart-wrap"><canvas id="c-income-pci"></canvas></div></div>
+        <div class="chart-card"><div class="chart-title">Total Personal Income ($ thousands)</div><div class="chart-wrap"><canvas id="c-income-pi"></canvas></div></div>
+      </div>
+    </div>
+    <div id="income-map-view" style="display:none">
+      <div class="map-card">
+        <div class="map-controls">
+          <span class="map-label">Metric</span>
+          <select class="map-select" id="income-map-metric" onchange="renderChoropleth('income')">
+            <option value="per_capita_income">Per Capita Income</option>
+            <option value="personal_income">Total Personal Income</option>
+          </select>
+          <span class="map-label">Year</span>
+          <select class="map-select" id="income-map-year" onchange="renderChoropleth('income')"></select>
+        </div>
+        <div id="income-leaflet" class="map-container"></div>
+      </div>
+    </div>
+
+    <!-- ── Section 3: GDP ── -->
+    <div class="section-title" id="sec-gdp">GDP</div>
+    <div class="view-toggle" data-section="gdp">
+      <button class="view-btn active" data-view="chart" onclick="setView('gdp','chart')">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-width="1.8"/></svg> Chart
+      </button>
+      <button class="view-btn" data-view="map" onclick="setView('gdp','map')">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" stroke-width="1.8"/></svg> Map
+      </button>
+    </div>
+    <div id="gdp-chart-view">
+      <div class="chart-grid">
+        <div class="chart-card"><div class="chart-title">Total GDP by County ($ billions)</div><div class="chart-wrap"><canvas id="c-gdp-total"></canvas></div></div>
+        <div class="chart-card"><div class="chart-title">GDP by Sector — Houston Metro, Latest Year ($ billions)</div><div class="chart-wrap tall"><canvas id="c-gdp-sector"></canvas></div></div>
+      </div>
+    </div>
+    <div id="gdp-map-view" style="display:none">
+      <div class="map-card">
+        <div class="map-controls">
+          <span class="map-label">Year</span>
+          <select class="map-select" id="gdp-map-year" onchange="renderChoropleth('gdp')"></select>
+        </div>
+        <div id="gdp-leaflet" class="map-container"></div>
+      </div>
+    </div>
+
+    <!-- ── Section 4: Employment ── -->
+    <div class="section-title" id="sec-emp">Employment &amp; Wages</div>
+    <div class="view-toggle" data-section="emp">
+      <button class="view-btn active" data-view="chart" onclick="setView('emp','chart')">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-width="1.8"/></svg> Chart
+      </button>
+      <button class="view-btn" data-view="map" onclick="setView('emp','map')">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" stroke-width="1.8"/></svg> Map
+      </button>
+    </div>
+    <div id="emp-chart-view">
+      <div class="chart-grid">
+        <div class="chart-card"><div class="chart-title">Avg Employment by County</div><div class="chart-wrap"><canvas id="c-emp-emp"></canvas></div></div>
+        <div class="chart-card"><div class="chart-title">Avg Annual Wage by County ($)</div><div class="chart-wrap"><canvas id="c-emp-wage"></canvas></div></div>
+      </div>
+    </div>
+    <div id="emp-map-view" style="display:none">
+      <div class="map-card">
+        <div class="map-controls">
+          <span class="map-label">Metric</span>
+          <select class="map-select" id="emp-map-metric" onchange="renderChoropleth('emp')">
+            <option value="avg_employment">Avg Employment</option>
+            <option value="avg_annual_wage">Avg Annual Wage</option>
+            <option value="establishments">Establishments</option>
+          </select>
+          <span class="map-label">Year</span>
+          <select class="map-select" id="emp-map-year" onchange="renderChoropleth('emp')"></select>
+        </div>
+        <div id="emp-leaflet" class="map-container"></div>
+      </div>
+    </div>
+
+    <!-- ── Section 5: Real Estate ── -->
+    <div class="section-title" id="sec-realestate">Real Estate</div>
+    <div class="view-toggle" data-section="realestate">
+      <button class="view-btn active" data-view="chart" onclick="setView('realestate','chart')">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-width="1.8"/></svg> Chart
+      </button>
+      <button class="view-btn" data-view="map" onclick="setView('realestate','map')">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" stroke-width="1.8"/></svg> Map
+      </button>
+    </div>
+    <div id="realestate-chart-view">
+      <div class="chart-grid">
+        <div class="chart-card"><div class="chart-title">Home Value Index (Zillow ZHVI) by County ($)</div><div class="chart-wrap"><canvas id="c-re-zhvi"></canvas></div></div>
+        <div class="chart-card"><div class="chart-title">HUD Fair Market Rents — Harris County ($)</div><div class="chart-wrap"><canvas id="c-re-fmr"></canvas></div></div>
+      </div>
+    </div>
+    <div id="realestate-map-view" style="display:none">
+      <div class="map-card">
+        <div class="map-controls">
+          <span class="map-label">Year</span>
+          <select class="map-select" id="realestate-map-year" onchange="renderChoropleth('realestate')"></select>
+        </div>
+        <div id="realestate-leaflet" class="map-container"></div>
+      </div>
+    </div>
+
+    <!-- ── Section 6: Banking ── -->
+    <div class="section-title" id="sec-banking">Banking &amp; Capital</div>
+    <div class="view-toggle" data-section="banking">
+      <button class="view-btn active" data-view="chart" onclick="setView('banking','chart')">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-width="1.8"/></svg> Chart
+      </button>
+      <button class="view-btn" data-view="map" onclick="setView('banking','map')">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" stroke-width="1.8"/></svg> Map
+      </button>
+    </div>
+    <div id="banking-chart-view">
+      <div class="chart-grid">
+        <div class="chart-card"><div class="chart-title">Total Bank Deposits by County ($ thousands)</div><div class="chart-wrap"><canvas id="c-bank-dep"></canvas></div></div>
+        <div class="chart-card"><div class="chart-title">Number of Banking Institutions by County</div><div class="chart-wrap"><canvas id="c-bank-inst"></canvas></div></div>
+      </div>
+    </div>
+    <div id="banking-map-view" style="display:none">
+      <div class="map-card">
+        <div class="map-controls">
+          <span class="map-label">Metric</span>
+          <select class="map-select" id="banking-map-metric" onchange="renderChoropleth('banking')">
+            <option value="total_deposits">Total Deposits</option>
+            <option value="num_institutions">Num. Institutions</option>
+          </select>
+          <span class="map-label">Year</span>
+          <select class="map-select" id="banking-map-year" onchange="renderChoropleth('banking')"></select>
+        </div>
+        <div id="banking-leaflet" class="map-container"></div>
+      </div>
+    </div>
+
+    <div style="height:40px"></div>
+
+    {% else %}
+    <div class="no-data">
+      <h2>No Data Uploaded Yet</h2>
+      <p>An admin can upload the Houston County macroeconomic Excel file from the home page.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Account modal -->
+<div id="acct-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;align-items:center;justify-content:center">
+  <div style="background:#151921;border:1px solid #1e2535;border-radius:10px;padding:28px;width:360px;max-width:90vw">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+      <h3 style="margin:0;font-size:15px;font-weight:600;font-family:'Plus Jakarta Sans',sans-serif">Account Settings</h3>
+      <button onclick="closeAcct()" style="background:none;border:none;color:#4a5568;font-size:20px;cursor:pointer">&times;</button>
+    </div>
+    <div style="font-size:12px;color:#4a5568;margin-bottom:14px">Change Password</div>
+    <input id="acct-cur-pw" type="password" placeholder="Current password" style="width:100%;background:#0d0f13;border:1px solid #1e2535;color:#e8eaf0;border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:8px;outline:none">
+    <input id="acct-new-pw" type="password" placeholder="New password" style="width:100%;background:#0d0f13;border:1px solid #1e2535;color:#e8eaf0;border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:8px;outline:none">
+    <input id="acct-conf-pw" type="password" placeholder="Confirm new password" style="width:100%;background:#0d0f13;border:1px solid #1e2535;color:#e8eaf0;border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:14px;outline:none">
+    <div id="acct-msg" style="font-size:12px;margin-bottom:12px;display:none"></div>
+    <button onclick="saveAcctPw()" style="width:100%;background:#c8a96e;border:none;color:#0d0f13;padding:10px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">Save Password</button>
+  </div>
+</div>
+
+{% if data %}
+<script>
+const MACRO_DATA = {{ data | tojson }};
+
+// ── Constants ──────────────────────────────────────────────────────────────────
+const CC = ['#c8a96e','#5e9e8c','#7b8fd4','#e07b54','#9ecf8c','#d46b7b','#7bc4d4','#d4c47b','#a07bd4'];
+const COUNTY_BY_FIPS = {'48015':'Austin','48039':'Brazoria','48071':'Chambers','48157':'Fort Bend','48167':'Galveston','48201':'Harris','48291':'Liberty','48339':'Montgomery','48473':'Waller'};
+const HOUSTON_FIPS = new Set(Object.keys(COUNTY_BY_FIPS));
+const COUNTIES = MACRO_DATA.counties;
+
+// ── Formatters ─────────────────────────────────────────────────────────────────
+const fmtN  = n => n == null ? '—' : n.toLocaleString('en-US', {maximumFractionDigits:0});
+const fmtUSD = n => n == null ? '—' : '$' + n.toLocaleString('en-US', {maximumFractionDigits:0});
+const fmtUSDK = n => n == null ? '—' : '$' + (n/1000).toLocaleString('en-US',{maximumFractionDigits:1}) + 'K';
+const fmtUSDM = n => n == null ? '—' : '$' + (n/1e6).toLocaleString('en-US',{maximumFractionDigits:1}) + 'M';
+const fmtUSDT = n => n == null ? '—' : '$' + (n/1e9).toLocaleString('en-US',{maximumFractionDigits:2}) + 'B';
+
+function latestNonNull(arr) {
+  if (!arr) return null;
+  for (let i = arr.length - 1; i >= 0; i--) { if (arr[i] != null) return arr[i]; }
+  return null;
+}
+
+// ── KPIs ───────────────────────────────────────────────────────────────────────
+function computeKPIs() {
+  const pop = MACRO_DATA.population;
+  const emp = MACRO_DATA.employment;
+  const zhvi = MACRO_DATA.home_values;
+  const rents = MACRO_DATA.rents;
+  const income = MACRO_DATA.income;
+
+  // Metro population: sum all counties at latest year
+  if (pop && pop.years.length) {
+    const latestIdx = pop.years.length - 1;
+    const latestYear = pop.years[latestIdx];
+    let total = 0;
+    COUNTIES.forEach(c => { const v = (pop.population[c] || [])[latestIdx]; if (v) total += v; });
+    const prevIdx = latestIdx - 1;
+    let chg = 0;
+    COUNTIES.forEach(c => {
+      const npc = pop.net_pop_change[c];
+      if (npc) { const v = npc[latestIdx]; if (v) chg += v; }
+    });
+    document.getElementById('kpi-pop').textContent = fmtN(total);
+    document.getElementById('kpi-pop-sub').textContent = latestYear + ' estimate';
+    document.getElementById('kpi-popchg').textContent = (chg >= 0 ? '+' : '') + fmtN(chg);
+    document.getElementById('kpi-popchg-sub').textContent = 'vs prior year';
+  }
+
+  // Per capita income — Harris County latest
+  if (income && income.per_capita_income && income.per_capita_income.Harris) {
+    const v = latestNonNull(income.per_capita_income.Harris);
+    const yr = income.years[income.per_capita_income.Harris.length - 1];
+    document.getElementById('kpi-pci').textContent = fmtUSD(v);
+    document.getElementById('kpi-pci-sub').textContent = 'Harris County, ' + income.years[income.years.length-1];
+  }
+
+  // Annual wage — Harris County latest
+  if (emp && emp.avg_annual_wage && emp.avg_annual_wage.Harris) {
+    const v = latestNonNull(emp.avg_annual_wage.Harris);
+    document.getElementById('kpi-wage').textContent = fmtUSD(v);
+    document.getElementById('kpi-wage-sub').textContent = 'Harris County, ' + emp.years[emp.years.length-1];
+  }
+
+  // Home value — Harris County latest non-null
+  if (zhvi && zhvi.zhvi && zhvi.zhvi.Harris) {
+    const v = latestNonNull(zhvi.zhvi.Harris);
+    const idx = zhvi.zhvi.Harris.lastIndexOf(v);
+    document.getElementById('kpi-zhvi').textContent = fmtUSD(v);
+    document.getElementById('kpi-zhvi-sub').textContent = 'Harris County, ' + zhvi.years[idx];
+  }
+
+  // 2BR FMR — Harris County latest
+  if (rents && rents['fmr_2BR'] && rents['fmr_2BR'].Harris) {
+    const v = latestNonNull(rents['fmr_2BR'].Harris);
+    const idx = rents['fmr_2BR'].Harris.lastIndexOf(v);
+    document.getElementById('kpi-rent').textContent = fmtUSD(v) + '/mo';
+    document.getElementById('kpi-rent-sub').textContent = 'Harris County, ' + rents.years[idx];
+  }
+}
+
+// ── Chart helpers ──────────────────────────────────────────────────────────────
+Chart.defaults.color = '#8b95a8';
+Chart.defaults.borderColor = '#1e2535';
+
+const _charts = {};
+
+function mkLineChart(id, labels, datasets, yFmtFn, options = {}) {
+  if (_charts[id]) _charts[id].destroy();
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  _charts[id] = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets: datasets.map((d, i) => ({
+      label: d.label, data: d.data,
+      borderColor: CC[i % CC.length],
+      backgroundColor: CC[i % CC.length] + '22',
+      borderWidth: 1.5, pointRadius: 0, pointHoverRadius: 4,
+      fill: false, tension: 0.3, spanGaps: true
+    }))},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 300 },
+      plugins: {
+        legend: { labels: { color: '#8b95a8', font: { family: 'DM Sans', size: 10 }, boxWidth: 10, padding: 10 } },
+        tooltip: {
+          backgroundColor: '#1e2535', titleColor: '#e8eaf0', bodyColor: '#8b95a8',
+          borderColor: '#2e3750', borderWidth: 1, padding: 9,
+          callbacks: { label: ctx => ' ' + ctx.dataset.label + ': ' + (yFmtFn ? yFmtFn(ctx.raw) : fmtN(ctx.raw)) }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#4a5568', font: { size: 9 }, maxTicksLimit: 10 }, grid: { color: '#1a2030' } },
+        y: { ticks: { color: '#4a5568', font: { size: 9 }, callback: v => yFmtFn ? yFmtFn(v) : fmtN(v) }, grid: { color: '#1a2030' } }
+      },
+      ...options
+    }
+  });
+}
+
+function mkBarChart(id, labels, datasets, yFmtFn, horizontal = false) {
+  if (_charts[id]) _charts[id].destroy();
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  _charts[id] = new Chart(ctx, {
+    type: horizontal ? 'bar' : 'bar',
+    data: { labels, datasets: datasets.map((d, i) => ({
+      label: d.label, data: d.data,
+      backgroundColor: (CC[i % CC.length]) + 'cc',
+      borderColor: CC[i % CC.length],
+      borderWidth: 1,
+    }))},
+    options: {
+      indexAxis: horizontal ? 'y' : 'x',
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 300 },
+      plugins: {
+        legend: { display: datasets.length > 1, labels: { color: '#8b95a8', font: { family: 'DM Sans', size: 10 }, boxWidth: 10, padding: 10 } },
+        tooltip: {
+          backgroundColor: '#1e2535', titleColor: '#e8eaf0', bodyColor: '#8b95a8',
+          borderColor: '#2e3750', borderWidth: 1, padding: 9,
+          callbacks: { label: ctx => ' ' + (yFmtFn ? yFmtFn(ctx.raw) : fmtN(ctx.raw)) }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#4a5568', font: { size: 9 }, callback: v => horizontal ? (yFmtFn ? yFmtFn(v) : fmtN(v)) : v }, grid: { color: '#1a2030' } },
+        y: { ticks: { color: '#4a5568', font: { size: 9 }, callback: v => !horizontal ? (yFmtFn ? yFmtFn(v) : fmtN(v)) : v }, grid: { color: '#1a2030' } }
+      }
+    }
+  });
+}
+
+// ── Chart initialization ───────────────────────────────────────────────────────
+function initCharts() {
+  const D = MACRO_DATA;
+
+  // Population
+  if (D.population) {
+    const P = D.population, yrs = P.years;
+    mkLineChart('c-pop-pop', yrs, COUNTIES.map(c => ({label:c, data:P.population[c]})), fmtN);
+    mkLineChart('c-pop-mig', yrs, COUNTIES.map(c => ({label:c, data:P.net_domestic_migration[c]})), fmtN);
+  }
+  if (D.irs) {
+    const I = D.irs;
+    mkLineChart('c-pop-agi', I.years, COUNTIES.map(c => ({label:c, data:I.net_agi[c]})), fmtN);
+    mkLineChart('c-pop-ret', I.years, COUNTIES.map(c => ({label:c, data:I.net_returns[c]})), fmtN);
+  }
+
+  // Income
+  if (D.income) {
+    const Inc = D.income;
+    mkLineChart('c-income-pci', Inc.years, COUNTIES.map(c => ({label:c, data:Inc.per_capita_income[c]})), fmtUSD);
+    mkLineChart('c-income-pi',  Inc.years, COUNTIES.map(c => ({label:c, data:Inc.personal_income[c]})),  v => fmtUSDM(v*1000));
+  }
+
+  // GDP
+  if (D.gdp) {
+    const G = D.gdp;
+    mkLineChart('c-gdp-total', G.years, COUNTIES.map(c => ({label:c, data:(G.total[c]||[]).map(v=>v==null?null:v/1e6)})), v => '$' + v.toFixed(1) + 'B');
+
+    // Sector bar chart: metro total (sum all counties) for latest year, excluding aggregate rows
+    const exclude = new Set(['All industry total','Private industries']);
+    const sectors = G.sector_names.filter(s => !exclude.has(s));
+    const latestIdx = G.years.length - 1;
+    const sectorTotals = sectors.map(s => {
+      let total = 0;
+      COUNTIES.forEach(c => {
+        const bsc = (G.by_sector[c] || {})[s];
+        if (bsc) { const v = bsc[latestIdx]; if (v) total += v; }
+      });
+      return total / 1e6; // billions
+    });
+    // Sort descending
+    const combined = sectors.map((s, i) => ({s, v: sectorTotals[i]})).sort((a,b) => b.v - a.v);
+    mkBarChart('c-gdp-sector', combined.map(x=>x.s), [{label:'GDP ($ B)', data:combined.map(x=>x.v)}], v => '$' + v.toFixed(1) + 'B', true);
+  }
+
+  // Employment
+  if (D.employment) {
+    const E = D.employment;
+    mkLineChart('c-emp-emp',  E.years, COUNTIES.map(c => ({label:c, data:E.avg_employment[c]})), fmtN);
+    mkLineChart('c-emp-wage', E.years, COUNTIES.map(c => ({label:c, data:E.avg_annual_wage[c]})), fmtUSD);
+  }
+
+  // Real Estate
+  if (D.home_values) {
+    const Z = D.home_values;
+    mkLineChart('c-re-zhvi', Z.years, COUNTIES.map(c => ({label:c, data:Z.zhvi[c]})), fmtUSD);
+  }
+  if (D.rents) {
+    const R = D.rents;
+    const brs = ['0BR','1BR','2BR','3BR','4BR'];
+    mkLineChart('c-re-fmr', R.years,
+      brs.map(br => ({label:br, data:R['fmr_'+br] && R['fmr_'+br].Harris ? R['fmr_'+br].Harris : []})),
+      fmtUSD);
+  }
+
+  // Banking
+  if (D.deposits) {
+    const B = D.deposits;
+    mkLineChart('c-bank-dep',  B.years, COUNTIES.map(c => ({label:c, data:B.total_deposits[c]})), v => fmtUSDM(v*1000));
+    mkLineChart('c-bank-inst', B.years, COUNTIES.map(c => ({label:c, data:B.num_institutions[c]})), fmtN);
+  }
+
+  // Populate year selectors for maps
+  populateYearSelects();
+}
+
+function populateYearSelects() {
+  const D = MACRO_DATA;
+  const cfg = [
+    ['pop-map-year',        D.population?.years],
+    ['income-map-year',     D.income?.years],
+    ['gdp-map-year',        D.gdp?.years],
+    ['emp-map-year',        D.employment?.years],
+    ['realestate-map-year', D.home_values?.years],
+    ['banking-map-year',    D.deposits?.years],
+  ];
+  cfg.forEach(([id, years]) => {
+    const el = document.getElementById(id);
+    if (!el || !years) return;
+    const sorted = [...years].reverse();
+    sorted.forEach(y => { const o = document.createElement('option'); o.value = y; o.textContent = y; el.appendChild(o); });
+  });
+}
+
+// ── View toggle ────────────────────────────────────────────────────────────────
+function setView(section, view) {
+  document.getElementById(section + '-chart-view').style.display = view === 'chart' ? '' : 'none';
+  document.getElementById(section + '-map-view').style.display = view === 'map' ? '' : 'none';
+  document.querySelectorAll(`[data-section="${section}"] .view-btn`).forEach(b =>
+    b.classList.toggle('active', b.dataset.view === view)
+  );
+  if (view === 'map') {
+    initSectionMap(section);
+    setTimeout(() => { if (window._maps && window._maps[section]) window._maps[section].invalidateSize(); }, 80);
+  }
+}
+
+function scrollTo(id) { document.getElementById(id)?.scrollIntoView({behavior:'smooth',block:'start'}); }
+
+// ── Map helpers ────────────────────────────────────────────────────────────────
+let _atlasPromise = null;
+function loadAtlas() {
+  if (!_atlasPromise)
+    _atlasPromise = fetch('https://cdn.jsdelivr.net/npm/us-atlas@3/counties-10m.json').then(r => r.json());
+  return _atlasPromise;
+}
+
+window._maps = {};
+window._mapLayers = {};
+window._geoFeatures = null;
+
+function initSectionMap(section) {
+  if (window._maps[section]) return; // already init
+  const container = document.getElementById(section + '-leaflet');
+  const map = L.map(container, {center:[29.75,-95.0], zoom:8, zoomControl:true, attributionControl:true});
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution:'&copy; <a href="https://carto.com/">CartoDB</a>', maxZoom:18
+  }).addTo(map);
+  window._maps[section] = map;
+
+  loadAtlas().then(us => {
+    if (!window._geoFeatures) {
+      const allCounties = topojson.feature(us, us.objects.counties);
+      window._geoFeatures = {
+        type:'FeatureCollection',
+        features: allCounties.features.filter(f => HOUSTON_FIPS.has(String(f.id).padStart(5,'0')))
+      };
+    }
+    renderChoropleth(section);
+  });
+}
+
+function getMapState(section) {
+  const metricEl = document.getElementById(section + '-map-metric');
+  const yearEl   = document.getElementById(section + '-map-year');
+  const metric = metricEl ? metricEl.value : null;
+  const year   = yearEl ? parseInt(yearEl.value) : null;
+  return {metric, year};
+}
+
+function getValuesForMap(section, metric, year) {
+  const D = MACRO_DATA;
+  let source, key;
+  switch(section) {
+    case 'pop':        source = D.population;  key = metric || 'population'; break;
+    case 'income':     source = D.income;       key = metric || 'per_capita_income'; break;
+    case 'gdp':        source = D.gdp;          key = 'total'; break;
+    case 'emp':        source = D.employment;   key = metric || 'avg_employment'; break;
+    case 'realestate': source = D.home_values;  key = 'zhvi'; break;
+    case 'banking':    source = D.deposits;     key = metric || 'total_deposits'; break;
+    default: return {};
+  }
+  if (!source || !source[key]) return {};
+  const idx = source.years.indexOf(year);
+  if (idx === -1) return {};
+  const out = {};
+  COUNTIES.forEach(c => { out[c] = (source[key][c] || [])[idx] ?? null; });
+  return out;
+}
+
+function choroplethColor(val, min, max) {
+  if (val == null) return '#1a2535';
+  const t = max === min ? 0.5 : Math.max(0, Math.min(1, (val - min) / (max - min)));
+  const r = Math.round(13 + t * 81);
+  const g = Math.round(42 + t * 116);
+  const b = Math.round(36 + t * 104);
+  return `rgb(${r},${g},${b})`;
+}
+
+function mapFmtValue(section, metric, val) {
+  if (val == null) return '—';
+  switch(section) {
+    case 'pop':
+      if (!metric || metric === 'population') return fmtN(val);
+      return (val >= 0 ? '+' : '') + fmtN(val);
+    case 'income':
+      return metric === 'personal_income' ? fmtUSDM(val*1000) : fmtUSD(val);
+    case 'gdp': return '$' + (val/1e6).toFixed(2) + 'B';
+    case 'emp':
+      return metric === 'avg_annual_wage' ? fmtUSD(val) : fmtN(val);
+    case 'realestate': return fmtUSD(val);
+    case 'banking':
+      return metric === 'num_institutions' ? fmtN(val) : fmtUSDM(val*1000);
+    default: return fmtN(val);
+  }
+}
+
+function renderChoropleth(section) {
+  const map = window._maps[section];
+  if (!map || !window._geoFeatures) return;
+
+  const {metric, year} = getMapState(section);
+  const values = getValuesForMap(section, metric, year);
+  const vals = Object.values(values).filter(v => v != null);
+  if (!vals.length) return;
+  const minVal = Math.min(...vals), maxVal = Math.max(...vals);
+
+  if (window._mapLayers[section]) map.removeLayer(window._mapLayers[section]);
+
+  const layer = L.geoJSON(window._geoFeatures, {
+    style: feature => {
+      const fips = String(feature.id).padStart(5,'0');
+      const county = COUNTY_BY_FIPS[fips];
+      return {
+        fillColor: choroplethColor(values[county], minVal, maxVal),
+        weight: 1, opacity: 1, color: '#2e3750', fillOpacity: 0.82
+      };
+    },
+    onEachFeature: (feature, lyr) => {
+      const fips = String(feature.id).padStart(5,'0');
+      const county = COUNTY_BY_FIPS[fips];
+      const val = values[county];
+      lyr.bindTooltip(
+        `<div class="map-tooltip-custom"><strong>${county} County</strong><br>${year}: ${mapFmtValue(section, metric, val)}</div>`,
+        {sticky: true, opacity: 1, className: ''}
+      );
+      lyr.on('mouseover', e => e.target.setStyle({fillOpacity:1, weight:2, color:'#c8a96e'}));
+      lyr.on('mouseout',  e => layer.resetStyle(e.target));
+    }
+  }).addTo(map);
+
+  window._mapLayers[section] = layer;
+  map.fitBounds(layer.getBounds(), {padding:[20,20]});
+  map.invalidateSize();
+}
+
+// ── Account modal ──────────────────────────────────────────────────────────────
+function openAcct() { document.getElementById('acct-modal').style.display = 'flex'; }
+function closeAcct() { document.getElementById('acct-modal').style.display = 'none'; }
+function saveAcctPw() {
+  const cur = document.getElementById('acct-cur-pw').value;
+  const nw  = document.getElementById('acct-new-pw').value;
+  const cf  = document.getElementById('acct-conf-pw').value;
+  const msg = document.getElementById('acct-msg');
+  if (!cur || !nw || !cf) { msg.style.display='block'; msg.style.color='#e05555'; msg.textContent='All fields required.'; return; }
+  if (nw !== cf) { msg.style.display='block'; msg.style.color='#e05555'; msg.textContent='Passwords do not match.'; return; }
+  fetch('/api/change-password', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({current:cur, new:nw})})
+    .then(r=>r.json()).then(d => {
+      msg.style.display='block';
+      msg.style.color = d.ok ? '#5e9e8c' : '#e05555';
+      msg.textContent = d.message || (d.ok ? 'Password updated.' : 'Error.');
+    });
+}
+
+// ── Boot ────────────────────────────────────────────────────────────────────────
+window.addEventListener('load', () => { computeKPIs(); initCharts(); });
+</script>
+{% endif %}
+</body>
+</html>
