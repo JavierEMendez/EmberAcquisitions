@@ -118,13 +118,16 @@
 
     <div style="flex:1"></div>
     <div style="padding:8px 10px 4px">
-      <a href="/home" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:6px;border:1px solid var(--border);color:var(--text-dim);font-size:12px;text-decoration:none;transition:all .15s;justify-content:center" onmouseover="this.style.borderColor='var(--border-light)';this.style.color='var(--text-muted)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-dim)'">
-        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Home
-      </a>
+      <button onclick="openAcct()" style="width:100%;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--text-dim);font-size:12px;cursor:pointer;transition:all .15s;justify-content:center;font-family:'DM Sans',sans-serif" onmouseover="this.style.borderColor='var(--border-light)';this.style.color='var(--text-muted)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-dim)'">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" stroke-width="1.8"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke-width="1.8" stroke-linecap="round"/></svg>
+        Account Settings
+      </button>
     </div>
-    <div style="padding:4px 10px 14px;font-size:12px;color:var(--text-dim);text-align:center">
-      Signed in as <strong>{{ username }}</strong>
+    <div style="padding:4px 10px 14px">
+      <a href="/home" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:6px;border:1px solid var(--border);color:var(--text-dim);font-size:12px;text-decoration:none;transition:all .15s;justify-content:center" onmouseover="this.style.borderColor='var(--border-light)';this.style.color='var(--text-muted)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-dim)'">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1m-2 0h2" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Back to Home
+      </a>
     </div>
   </nav>
 
@@ -298,6 +301,112 @@ function renderTable() {
 // Set default sort indicator
 document.querySelector('th[data-col="unlevered_irr"]')?.classList.add('sort-desc');
 load();
+</script>
+
+<!-- ACCOUNT SETTINGS MODAL -->
+<div id="acct-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;align-items:center;justify-content:center">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:28px;width:360px;max-width:90vw;max-height:90vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+      <h3 style="margin:0;font-size:15px;font-weight:600">Account Settings</h3>
+      <button onclick="closeAcct()" style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer;line-height:1">&times;</button>
+    </div>
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:16px">Logged in as <strong style="color:var(--text-muted)">{{ username }}</strong></div>
+    <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Email</div>
+    <div id="acct-email" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:16px;min-height:36px">—</div>
+    <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Change Password</div>
+    <input id="acct-cur-pw" type="password" placeholder="Current password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:8px;outline:none">
+    <input id="acct-new-pw" type="password" placeholder="New password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:8px;outline:none">
+    <input id="acct-conf-pw" type="password" placeholder="Confirm new password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:14px;outline:none">
+    <div id="acct-msg" style="font-size:12px;margin-bottom:12px;display:none"></div>
+    <button onclick="saveAcctPw()" style="width:100%;background:var(--accent);border:none;color:#0d0f13;padding:10px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:20px">Save Password</button>
+    <div style="border-top:1px solid var(--border);padding-top:18px">
+      <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">Monthly Report Emails</div>
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:14px">
+        <input type="checkbox" id="acct-report-optin" style="accent-color:#5e9e8c;width:15px;height:15px">
+        <div>
+          <div style="font-size:13px;color:var(--text)">Receive monthly reports</div>
+          <div style="font-size:11px;color:var(--text-dim);margin-top:2px">Sent on the 1st of each month to your email</div>
+        </div>
+      </label>
+      <div id="acct-format-row" style="display:none;margin-bottom:14px">
+        <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Format</div>
+        <div style="display:flex;gap:16px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text)">
+            <input type="radio" name="acct-report-fmt" value="pdf" id="acct-fmt-pdf" style="accent-color:#5e9e8c"> PDF
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text)">
+            <input type="radio" name="acct-report-fmt" value="excel" id="acct-fmt-excel" style="accent-color:#5e9e8c"> Excel
+          </label>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:8px">Includes: Active Project Returns, Loan Capacities &amp; Debt Schedules, Ember Operating Revenues</div>
+      </div>
+      <div id="acct-report-msg" style="font-size:12px;margin-bottom:8px;display:none"></div>
+      <button onclick="saveReportSettings()" style="width:100%;background:var(--card);border:1px solid var(--border);color:var(--text);padding:9px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s" onmouseover="this.style.borderColor='#5e9e8c';this.style.color='#5e9e8c'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">Save Report Preferences</button>
+    </div>
+  </div>
+</div>
+<script>
+async function openAcct() {
+  const m = document.getElementById('acct-modal');
+  m.style.display = 'flex';
+  document.getElementById('acct-cur-pw').value = '';
+  document.getElementById('acct-new-pw').value = '';
+  document.getElementById('acct-conf-pw').value = '';
+  document.getElementById('acct-msg').style.display = 'none';
+  document.getElementById('acct-report-msg').style.display = 'none';
+  try {
+    const res = await fetch('/api/account');
+    const d = await res.json();
+    document.getElementById('acct-email').textContent = d.email || '—';
+    document.getElementById('acct-report-optin').checked = d.report_opt_in || false;
+    document.getElementById(d.report_format === 'excel' ? 'acct-fmt-excel' : 'acct-fmt-pdf').checked = true;
+    document.getElementById('acct-format-row').style.display = d.report_opt_in ? 'block' : 'none';
+  } catch(e) {}
+}
+function closeAcct() {
+  document.getElementById('acct-modal').style.display = 'none';
+}
+document.getElementById('acct-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeAcct();
+});
+document.getElementById('acct-report-optin').addEventListener('change', function() {
+  document.getElementById('acct-format-row').style.display = this.checked ? 'block' : 'none';
+});
+async function saveAcctPw() {
+  const cur  = document.getElementById('acct-cur-pw').value;
+  const nw   = document.getElementById('acct-new-pw').value;
+  const conf = document.getElementById('acct-conf-pw').value;
+  const msg  = document.getElementById('acct-msg');
+  function showMsg(txt, ok) {
+    msg.textContent = txt;
+    msg.style.color = ok ? '#5e9e8c' : '#e07a3e';
+    msg.style.display = 'block';
+  }
+  if (!cur || !nw || !conf) { showMsg('All fields are required.', false); return; }
+  if (nw !== conf)           { showMsg('New passwords do not match.', false); return; }
+  const res  = await fetch('/api/account/password', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({current_password: cur, new_password: nw})
+  });
+  const data = await res.json();
+  if (data.ok) { showMsg('Password updated.', true); setTimeout(closeAcct, 1500); }
+  else         { showMsg(data.error || 'Failed to update password.', false); }
+}
+async function saveReportSettings() {
+  const opt_in = document.getElementById('acct-report-optin').checked;
+  const fmt = document.querySelector('input[name="acct-report-fmt"]:checked')?.value || 'pdf';
+  const msg = document.getElementById('acct-report-msg');
+  const res = await fetch('/api/account/report-settings', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({report_opt_in: opt_in, report_format: fmt})
+  });
+  const d = await res.json();
+  msg.style.display = 'block';
+  if (d.ok) { msg.textContent = 'Preferences saved.'; msg.style.color = '#5e9e8c'; }
+  else      { msg.textContent = d.error || 'Failed to save.'; msg.style.color = '#e07a3e'; }
+}
 </script>
 </body>
 </html>
