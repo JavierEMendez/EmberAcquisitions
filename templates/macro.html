@@ -406,18 +406,17 @@ function computeKPIs() {
   if (pop && pop.years.length) {
     const latestIdx = pop.years.length - 1;
     const latestYear = pop.years[latestIdx];
-    let total = 0;
-    COUNTIES.forEach(c => { const v = (pop.population[c] || [])[latestIdx]; if (v) total += v; });
-    const prevIdx = latestIdx - 1;
-    let chg = 0;
+    let total = 0, totalPrior = 0;
     COUNTIES.forEach(c => {
-      const npc = pop.net_pop_change[c];
-      if (npc) { const v = npc[latestIdx]; if (v) chg += v; }
+      const arr = pop.population[c] || [];
+      if (arr[latestIdx] != null) total += arr[latestIdx];
+      if (latestIdx > 0 && arr[latestIdx - 1] != null) totalPrior += arr[latestIdx - 1];
     });
+    const chg = total - totalPrior;
     document.getElementById('kpi-pop').textContent = fmtN(total);
     document.getElementById('kpi-pop-sub').textContent = latestYear + ' estimate';
     document.getElementById('kpi-popchg').textContent = (chg >= 0 ? '+' : '') + fmtN(chg);
-    document.getElementById('kpi-popchg-sub').textContent = 'vs prior year';
+    document.getElementById('kpi-popchg-sub').textContent = pop.years[latestIdx - 1] + ' → ' + latestYear;
   }
 
   // Per capita income — Harris County latest
