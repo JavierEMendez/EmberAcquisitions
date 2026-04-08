@@ -323,6 +323,14 @@ a:hover{text-decoration:underline}
       </button>
     </div>
     <div id="realestate-chart-view">
+      {% if mortgage_data %}
+      <div class="chart-grid full" style="margin-bottom:16px">
+        <div class="chart-card">
+          <div class="chart-title">30-Year Fixed Mortgage Rate — Trailing 18 Months (%)</div>
+          <div class="chart-wrap"><canvas id="c-re-mortgage"></canvas></div>
+        </div>
+      </div>
+      {% endif %}
       <div class="year-range-bar">
         <span class="map-label">From</span>
         <select class="map-select" id="realestate-yr-from" onchange="refreshSection('realestate')"></select>
@@ -411,6 +419,7 @@ a:hover{text-decoration:underline}
 {% if data %}
 <script>
 const MACRO_DATA = {{ data | tojson }};
+const MORTGAGE_DATA = {{ mortgage_data | tojson }};
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const CC = ['#c8a96e','#5e9e8c','#7b8fd4','#e07b54','#9ecf8c','#d46b7b','#7bc4d4','#d4c47b','#a07bd4'];
@@ -735,6 +744,21 @@ function renderEmpCharts(from, to) {
   mkLineChart('c-emp-wage', y2, d2, fmtUSD);
 }
 
+function renderMortgageChart() {
+  if (!MORTGAGE_DATA) return;
+  const rawDates = MORTGAGE_DATA.dates;
+  // Format "2024-01-04" → "Jan '24"
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const labels = rawDates.map(d => {
+    const [y, m] = d.split('-');
+    return months[parseInt(m,10)-1] + " '" + y.slice(2);
+  });
+  mkLineChart('c-re-mortgage', labels,
+    [{label:'30-Yr Fixed', data: MORTGAGE_DATA.values}],
+    v => v.toFixed(2) + '%'
+  );
+}
+
 function renderReCharts(from, to) {
   const D = MACRO_DATA;
   if (D.home_values) {
@@ -780,6 +804,7 @@ function initCharts() {
   if (D.gdp)        { const {from,to} = getRange('gdp');        renderGdpCharts(from, to); }
   if (D.employment) { const {from,to} = getRange('emp');        renderEmpCharts(from, to); }
   if (D.home_values){ const {from,to} = getRange('realestate'); renderReCharts(from, to); }
+  renderMortgageChart();
   if (D.deposits)   { const {from,to} = getRange('banking');    renderBankCharts(from, to); }
   populateYearSelects();
 }

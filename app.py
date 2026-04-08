@@ -2,7 +2,7 @@
 Ember Tract Underwriting Web App
 Flask + PostgreSQL + Flask-Login — no Excel required
 """
-import os, json, datetime, io, base64
+import os, json, datetime, io, base64, requests
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail, Attachment, FileContent, FileName, FileType, Disposition, Content
 from functools import wraps
@@ -2050,8 +2050,31 @@ def macro_dashboard():
     pa = session.get("page_access") or {}
     if session.get("is_admin"):
         pa = {k: True for k in ["mpc_underwriting","returns","loans","operations","macro","portfolio"]}
+
+    # Fetch trailing 18-month mortgage rate from FRED
+    mortgage_data = None
+    fred_key = os.environ.get("FRED_API_KEY")
+    if fred_key:
+        try:
+            start = (datetime.datetime.now() - datetime.timedelta(days=548)).strftime("%Y-%m-%d")
+            resp = requests.get(
+                "https://api.stlouisfed.org/fred/series/observations",
+                params={"series_id": "MORTGAGE30US", "api_key": fred_key,
+                        "observation_start": start, "file_type": "json"},
+                timeout=6
+            )
+            if resp.ok:
+                obs = [o for o in resp.json().get("observations", []) if o["value"] != "."]
+                mortgage_data = {
+                    "dates":  [o["date"]        for o in obs],
+                    "values": [float(o["value"]) for o in obs]
+                }
+        except Exception:
+            pass
+
     return render_template("macro.html", data=data, uploaded_at=uploaded_at,
-                           is_admin=session.get("is_admin"), page_access=pa)
+                           is_admin=session.get("is_admin"), page_access=pa,
+                           mortgage_data=mortgage_data)
 
 
 @app.route("/api/upload-macro", methods=["POST"])
