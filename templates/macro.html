@@ -550,6 +550,7 @@ function mkLineChart(id, labels, datasets, yFmtFn, options = {}) {
     options: {
       responsive: true, maintainAspectRatio: false,
       animation: { duration: 300 },
+      interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { labels: { color: '#8b95a8', font: { family: 'DM Sans', size: 10 }, boxWidth: 10, padding: 10 } },
         tooltip: {
@@ -786,6 +787,12 @@ function mkFREDLine(id, series, label, fmtFn) {
   const s = FRED_DATA[series];
   if (!s || !s.dates.length) return;
   mkLineChart(id, fmtFREDLabels(s.dates), [{label, data: s.values}], fmtFn);
+  // Patch tooltip title to show the actual date (not the deduplicated axis label)
+  const chart = _charts[id];
+  if (chart) {
+    chart.options.plugins.tooltip.callbacks.title = items => s.dates[items[0].dataIndex] || '';
+    chart.update('none');
+  }
 }
 
 function renderMortgageChart() {
@@ -794,7 +801,7 @@ function renderMortgageChart() {
 
 function renderFinancingCharts() {
   mkFREDLine('c-fin-fedfunds', 'FEDFUNDS', 'Fed Funds Rate', v => v.toFixed(2) + '%');
-  mkFREDLine('c-fin-prime',    'PRIME',    'Prime Rate',     v => v.toFixed(2) + '%');
+  mkFREDLine('c-fin-prime',    'DPRIME',   'Prime Rate',     v => v.toFixed(2) + '%');
 }
 
 function renderNewHomeCharts() {

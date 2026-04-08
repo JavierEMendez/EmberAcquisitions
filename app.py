@@ -2104,7 +2104,7 @@ def macro_dashboard():
         fred_series = [
             ("MORTGAGE30US", start_18m, {}),
             ("FEDFUNDS",     start_3yr, {}),
-            ("PRIME",        start_3yr, {"frequency": "m", "aggregation_method": "avg"}),
+            ("DPRIME",       start_3yr, {"frequency": "m", "aggregation_method": "avg"}),
             ("HSN1F",        start_3yr, {}),
             ("NHSDPTS",      start_3yr, {}),
             ("MSPNHSUS",     start_3yr, {}),
@@ -2118,19 +2118,22 @@ def macro_dashboard():
             params = {"series_id": sid, "api_key": fred_key,
                       "observation_start": start, "file_type": "json"}
             params.update(extra)
-            try:
-                r = requests.get("https://api.stlouisfed.org/fred/series/observations",
-                                 params=params, timeout=8)
-                if r.ok:
-                    obs = [o for o in r.json().get("observations", []) if o["value"] != "."]
-                    return sid, {"dates": [o["date"] for o in obs],
-                                 "values": [float(o["value"]) for o in obs]}
-                print(f"FRED {sid} {r.status_code}: {r.text[:120]}", flush=True)
-            except Exception as e:
-                print(f"FRED {sid} error: {e}", flush=True)
+            for attempt in range(2):  # one retry on failure
+                try:
+                    r = requests.get("https://api.stlouisfed.org/fred/series/observations",
+                                     params=params, timeout=10)
+                    if r.ok:
+                        obs = [o for o in r.json().get("observations", []) if o["value"] != "."]
+                        return sid, {"dates": [o["date"] for o in obs],
+                                     "values": [float(o["value"]) for o in obs]}
+                    print(f"FRED {sid} {r.status_code}: {r.text[:120]}", flush=True)
+                    break  # don't retry on HTTP errors (bad key, bad series, etc.)
+                except Exception as e:
+                    print(f"FRED {sid} attempt {attempt+1} error: {e}", flush=True)
             return sid, None
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+        # max_workers=5 avoids hitting FRED rate limits with simultaneous requests
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as ex:
             for sid, result in ex.map(lambda t: _fetch_fred(*t), fred_series):
                 if result:
                     fred_data[sid] = result
