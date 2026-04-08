@@ -211,7 +211,7 @@ a:hover{text-decoration:underline}
     <div id="income-chart-view">
       <div class="chart-grid">
         <div class="chart-card"><div class="chart-title">Per Capita Personal Income ($)</div><div class="chart-wrap"><canvas id="c-income-pci"></canvas></div></div>
-        <div class="chart-card"><div class="chart-title">Total Personal Income ($ thousands)</div><div class="chart-wrap"><canvas id="c-income-pi"></canvas></div></div>
+        <div class="chart-card"><div class="chart-title">Total Personal Income</div><div class="chart-wrap"><canvas id="c-income-pi"></canvas></div></div>
       </div>
     </div>
     <div id="income-map-view" style="display:none">
@@ -325,7 +325,7 @@ a:hover{text-decoration:underline}
     </div>
     <div id="banking-chart-view">
       <div class="chart-grid">
-        <div class="chart-card"><div class="chart-title">Total Bank Deposits by County ($ thousands)</div><div class="chart-wrap"><canvas id="c-bank-dep"></canvas></div></div>
+        <div class="chart-card"><div class="chart-title">Total Bank Deposits by County</div><div class="chart-wrap"><canvas id="c-bank-dep"></canvas></div></div>
         <div class="chart-card"><div class="chart-title">Number of Banking Institutions by County</div><div class="chart-wrap"><canvas id="c-bank-inst"></canvas></div></div>
       </div>
     </div>
@@ -382,11 +382,17 @@ const HOUSTON_FIPS = new Set(Object.keys(COUNTY_BY_FIPS));
 const COUNTIES = MACRO_DATA.counties;
 
 // ── Formatters ─────────────────────────────────────────────────────────────────
-const fmtN  = n => n == null ? '—' : n.toLocaleString('en-US', {maximumFractionDigits:0});
+const fmtN   = n => n == null ? '—' : n.toLocaleString('en-US', {maximumFractionDigits:0});
 const fmtUSD = n => n == null ? '—' : '$' + n.toLocaleString('en-US', {maximumFractionDigits:0});
-const fmtUSDK = n => n == null ? '—' : '$' + (n/1000).toLocaleString('en-US',{maximumFractionDigits:1}) + 'K';
-const fmtUSDM = n => n == null ? '—' : '$' + (n/1e6).toLocaleString('en-US',{maximumFractionDigits:1}) + 'M';
-const fmtUSDT = n => n == null ? '—' : '$' + (n/1e9).toLocaleString('en-US',{maximumFractionDigits:2}) + 'B';
+function fmtSmartUSD(n) {
+  if (n == null) return '—';
+  const abs = Math.abs(n);
+  if (abs >= 1e12) return '$' + (n/1e12).toFixed(1) + 'T';
+  if (abs >= 1e9)  return '$' + (n/1e9).toFixed(1) + 'B';
+  if (abs >= 1e6)  return '$' + (n/1e6).toFixed(1) + 'M';
+  if (abs >= 1e3)  return '$' + (n/1e3).toFixed(0) + 'K';
+  return '$' + Math.round(n).toLocaleString();
+}
 
 function latestNonNull(arr) {
   if (!arr) return null;
@@ -542,7 +548,7 @@ function initCharts() {
   if (D.income) {
     const Inc = D.income;
     mkLineChart('c-income-pci', Inc.years, COUNTIES.map(c => ({label:c, data:Inc.per_capita_income[c]})), fmtUSD);
-    mkLineChart('c-income-pi',  Inc.years, COUNTIES.map(c => ({label:c, data:Inc.personal_income[c]})),  v => fmtUSDM(v*1000));
+    mkLineChart('c-income-pi',  Inc.years, COUNTIES.map(c => ({label:c, data:Inc.personal_income[c]})),  v => fmtSmartUSD(v*1000));
   }
 
   // GDP
@@ -590,7 +596,7 @@ function initCharts() {
   // Banking
   if (D.deposits) {
     const B = D.deposits;
-    mkLineChart('c-bank-dep',  B.years, COUNTIES.map(c => ({label:c, data:B.total_deposits[c]})), v => fmtUSDM(v*1000));
+    mkLineChart('c-bank-dep',  B.years, COUNTIES.map(c => ({label:c, data:B.total_deposits[c]})), v => fmtSmartUSD(v*1000));
     mkLineChart('c-bank-inst', B.years, COUNTIES.map(c => ({label:c, data:B.num_institutions[c]})), fmtN);
   }
 
@@ -708,13 +714,13 @@ function mapFmtValue(section, metric, val) {
       if (!metric || metric === 'population') return fmtN(val);
       return (val >= 0 ? '+' : '') + fmtN(val);
     case 'income':
-      return metric === 'personal_income' ? fmtUSDM(val*1000) : fmtUSD(val);
+      return metric === 'personal_income' ? fmtSmartUSD(val*1000) : fmtUSD(val);
     case 'gdp': return '$' + (val/1e6).toFixed(2) + 'B';
     case 'emp':
       return metric === 'avg_annual_wage' ? fmtUSD(val) : fmtN(val);
     case 'realestate': return fmtUSD(val);
     case 'banking':
-      return metric === 'num_institutions' ? fmtN(val) : fmtUSDM(val*1000);
+      return metric === 'num_institutions' ? fmtN(val) : fmtSmartUSD(val*1000);
     default: return fmtN(val);
   }
 }
