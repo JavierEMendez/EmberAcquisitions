@@ -2106,7 +2106,7 @@ def macro_dashboard():
             ("FEDFUNDS",     start_3yr, {}),
             ("DPRIME",       start_3yr, {"frequency": "m", "aggregation_method": "avg"}),
             ("HSN1F",        start_3yr, {}),
-            ("NHSDPTS",      start_3yr, {}),
+            ("HSN1FSOU",     start_3yr, {}),
             ("MSPNHSUS",     start_3yr, {}),
             ("MSACSR",       start_3yr, {}),
             ("UMCSENT",      start_3yr, {}),
@@ -2153,17 +2153,21 @@ def fred_test():
     fred_key = os.environ.get("FRED_API_KEY")
     if not fred_key:
         return jsonify({"error": "FRED_API_KEY not set"})
+    series_id = request.args.get("series", "MORTGAGE30US")
     try:
-        start = (datetime.datetime.now() - datetime.timedelta(days=548)).strftime("%Y-%m-%d")
         resp = requests.get(
             "https://api.stlouisfed.org/fred/series/observations",
-            params={"series_id": "MORTGAGE30US", "api_key": fred_key,
-                    "observation_start": start, "file_type": "json"},
-            timeout=6
+            params={"series_id": series_id, "api_key": fred_key,
+                    "sort_order": "desc", "limit": 3, "file_type": "json"},
+            timeout=8
         )
-        return jsonify({"status": resp.status_code, "ok": resp.ok,
-                        "observations": len(resp.json().get("observations", [])) if resp.ok else 0,
-                        "body_preview": resp.text[:300]})
+        data = resp.json() if resp.ok else {}
+        obs = data.get("observations", [])
+        return jsonify({
+            "series": series_id, "status": resp.status_code, "ok": resp.ok,
+            "latest_3": [{"date": o["date"], "value": o["value"]} for o in obs if o["value"] != "."],
+            "body_preview": resp.text[:300] if not resp.ok else None
+        })
     except Exception as e:
         return jsonify({"error": str(e)})
 
