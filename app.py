@@ -2,7 +2,7 @@
 Ember Tract Underwriting Web App
 Flask + PostgreSQL + Flask-Login — no Excel required
 """
-import os, json, datetime, io, base64, requests, threading
+import os, json, datetime, io, base64, requests, threading, concurrent.futures
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail, Attachment, FileContent, FileName, FileType, Disposition, Content
 from functools import wraps
@@ -2095,34 +2095,51 @@ def macro_dashboard():
     if session.get("is_admin"):
         pa = {k: True for k in ["mpc_underwriting","returns","loans","operations","macro","portfolio"]}
 
-    # Fetch trailing 18-month mortgage rate from FRED
-    mortgage_data = None
+    # Fetch FRED series in parallel
+    fred_data = {}
     fred_key = os.environ.get("FRED_API_KEY")
     if fred_key:
-        try:
-            start = (datetime.datetime.now() - datetime.timedelta(days=548)).strftime("%Y-%m-%d")
-            resp = requests.get(
-                "https://api.stlouisfed.org/fred/series/observations",
-                params={"series_id": "MORTGAGE30US", "api_key": fred_key,
-                        "observation_start": start, "file_type": "json"},
-                timeout=6
-            )
-            if resp.ok:
-                obs = [o for o in resp.json().get("observations", []) if o["value"] != "."]
-                mortgage_data = {
-                    "dates":  [o["date"]        for o in obs],
-                    "values": [float(o["value"]) for o in obs]
-                }
-            else:
-                print(f"FRED error {resp.status_code}: {resp.text[:200]}", flush=True)
-        except Exception as e:
-            print(f"FRED fetch exception: {e}", flush=True)
+        start_18m = (datetime.datetime.now() - datetime.timedelta(days=548)).strftime("%Y-%m-%d")
+        start_3yr = (datetime.datetime.now() - datetime.timedelta(days=1095)).strftime("%Y-%m-%d")
+        fred_series = [
+            ("MORTGAGE30US", start_18m, {}),
+            ("FEDFUNDS",     start_3yr, {}),
+            ("PRIME",        start_3yr, {"frequency": "m", "aggregation_method": "avg"}),
+            ("HSN1F",        start_3yr, {}),
+            ("NHSDPTS",      start_3yr, {}),
+            ("MSPNHSUS",     start_3yr, {}),
+            ("MSACSR",       start_3yr, {}),
+            ("UMCSENT",      start_3yr, {}),
+            ("CPIAUCSL",     start_3yr, {}),
+            ("CUSR0000SEHC", start_3yr, {}),
+        ]
+
+        def _fetch_fred(sid, start, extra):
+            params = {"series_id": sid, "api_key": fred_key,
+                      "observation_start": start, "file_type": "json"}
+            params.update(extra)
+            try:
+                r = requests.get("https://api.stlouisfed.org/fred/series/observations",
+                                 params=params, timeout=8)
+                if r.ok:
+                    obs = [o for o in r.json().get("observations", []) if o["value"] != "."]
+                    return sid, {"dates": [o["date"] for o in obs],
+                                 "values": [float(o["value"]) for o in obs]}
+                print(f"FRED {sid} {r.status_code}: {r.text[:120]}", flush=True)
+            except Exception as e:
+                print(f"FRED {sid} error: {e}", flush=True)
+            return sid, None
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+            for sid, result in ex.map(lambda t: _fetch_fred(*t), fred_series):
+                if result:
+                    fred_data[sid] = result
     else:
         print("FRED_API_KEY not set", flush=True)
 
     return render_template("macro.html", data=data, uploaded_at=uploaded_at,
                            is_admin=session.get("is_admin"), page_access=pa,
-                           mortgage_data=mortgage_data)
+                           fred_data=fred_data)
 
 
 @app.route("/api/fred-test")

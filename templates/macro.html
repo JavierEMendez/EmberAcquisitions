@@ -126,6 +126,9 @@ a:hover{text-decoration:underline}
     <a href="#sec-emp" class="nav-link" onclick="event.preventDefault();scrollTo('sec-emp')">Employment</a>
     <a href="#sec-realestate" class="nav-link" onclick="event.preventDefault();scrollTo('sec-realestate')">Real Estate</a>
     <a href="#sec-banking" class="nav-link" onclick="event.preventDefault();scrollTo('sec-banking')">Banking</a>
+    <a href="#sec-financing" class="nav-link" onclick="event.preventDefault();scrollTo('sec-financing')">Financing Rates</a>
+    <a href="#sec-newhome" class="nav-link" onclick="event.preventDefault();scrollTo('sec-newhome')">New Home Market</a>
+    <a href="#sec-consumer" class="nav-link" onclick="event.preventDefault();scrollTo('sec-consumer')">Consumer &amp; Inflation</a>
     {% endif %}
 
     <div style="flex:1"></div>
@@ -323,14 +326,12 @@ a:hover{text-decoration:underline}
       </button>
     </div>
     <div id="realestate-chart-view">
-      {% if mortgage_data %}
       <div class="chart-grid full" style="margin-bottom:16px">
         <div class="chart-card">
           <div class="chart-title">30-Year Fixed Mortgage Rate — Trailing 18 Months (%)</div>
           <div class="chart-wrap"><canvas id="c-re-mortgage"></canvas></div>
         </div>
       </div>
-      {% endif %}
       <div class="year-range-bar">
         <span class="map-label">From</span>
         <select class="map-select" id="realestate-yr-from" onchange="refreshSection('realestate')"></select>
@@ -389,6 +390,30 @@ a:hover{text-decoration:underline}
       </div>
     </div>
 
+    <!-- ── Section 7: Financing Rates ── -->
+    <div class="section-title" id="sec-financing">Financing Rates</div>
+    <div class="chart-grid">
+      <div class="chart-card"><div class="chart-title">Federal Funds Rate — Trailing 3 Years (%)</div><div class="chart-wrap"><canvas id="c-fin-fedfunds"></canvas></div></div>
+      <div class="chart-card"><div class="chart-title">Bank Prime Loan Rate — Trailing 3 Years (%)</div><div class="chart-wrap"><canvas id="c-fin-prime"></canvas></div></div>
+    </div>
+
+    <!-- ── Section 8: New Home Market ── -->
+    <div class="section-title" id="sec-newhome">New Home Market — National</div>
+    <div class="chart-grid">
+      <div class="chart-card"><div class="chart-title">New Single-Family Home Sales (thousands, SAAR)</div><div class="chart-wrap"><canvas id="c-nh-sales"></canvas></div></div>
+      <div class="chart-card"><div class="chart-title">New Homes Sold — South Region (thousands)</div><div class="chart-wrap"><canvas id="c-nh-south"></canvas></div></div>
+      <div class="chart-card"><div class="chart-title">Median New Home Sales Price ($)</div><div class="chart-wrap"><canvas id="c-nh-price"></canvas></div></div>
+      <div class="chart-card"><div class="chart-title">Months' Supply of New Houses</div><div class="chart-wrap"><canvas id="c-nh-supply"></canvas></div></div>
+    </div>
+
+    <!-- ── Section 9: Consumer & Inflation ── -->
+    <div class="section-title" id="sec-consumer">Consumer Sentiment &amp; Inflation</div>
+    <div class="chart-grid">
+      <div class="chart-card"><div class="chart-title">Consumer Sentiment Index (Univ. of Michigan)</div><div class="chart-wrap"><canvas id="c-con-sent"></canvas></div></div>
+      <div class="chart-card"><div class="chart-title">CPI — All Urban Consumers (index, 1982=100)</div><div class="chart-wrap"><canvas id="c-con-cpi"></canvas></div></div>
+      <div class="chart-card"><div class="chart-title">CPI — Shelter (index, 1982=100)</div><div class="chart-wrap"><canvas id="c-con-shelter"></canvas></div></div>
+    </div>
+
     <div style="height:40px"></div>
 
     {% else %}
@@ -419,7 +444,7 @@ a:hover{text-decoration:underline}
 {% if data %}
 <script>
 const MACRO_DATA = {{ data | tojson }};
-const MORTGAGE_DATA = {{ mortgage_data | tojson }};
+const FRED_DATA = {{ fred_data | tojson }};
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const CC = ['#c8a96e','#5e9e8c','#7b8fd4','#e07b54','#9ecf8c','#d46b7b','#7bc4d4','#d4c47b','#a07bd4'];
@@ -744,19 +769,45 @@ function renderEmpCharts(from, to) {
   mkLineChart('c-emp-wage', y2, d2, fmtUSD);
 }
 
-function renderMortgageChart() {
-  if (!MORTGAGE_DATA) return;
-  const rawDates = MORTGAGE_DATA.dates;
-  // Format "2024-01-04" → "Jan '24"
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const labels = rawDates.map(d => {
+// ── FRED chart helpers ─────────────────────────────────────────────────────────
+const _MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function fmtFREDLabels(dates) {
+  // Deduplicate consecutive month labels for weekly series
+  const labels = []; let lastLabel = '';
+  dates.forEach(d => {
     const [y, m] = d.split('-');
-    return months[parseInt(m,10)-1] + " '" + y.slice(2);
+    const lbl = _MONTHS[parseInt(m,10)-1] + " '" + y.slice(2);
+    labels.push(lbl !== lastLabel ? lbl : '');
+    lastLabel = lbl;
   });
-  mkLineChart('c-re-mortgage', labels,
-    [{label:'30-Yr Fixed', data: MORTGAGE_DATA.values}],
-    v => v.toFixed(2) + '%'
-  );
+  return labels;
+}
+function mkFREDLine(id, series, label, fmtFn) {
+  const s = FRED_DATA[series];
+  if (!s || !s.dates.length) return;
+  mkLineChart(id, fmtFREDLabels(s.dates), [{label, data: s.values}], fmtFn);
+}
+
+function renderMortgageChart() {
+  mkFREDLine('c-re-mortgage', 'MORTGAGE30US', '30-Yr Fixed', v => v.toFixed(2) + '%');
+}
+
+function renderFinancingCharts() {
+  mkFREDLine('c-fin-fedfunds', 'FEDFUNDS', 'Fed Funds Rate', v => v.toFixed(2) + '%');
+  mkFREDLine('c-fin-prime',    'PRIME',    'Prime Rate',     v => v.toFixed(2) + '%');
+}
+
+function renderNewHomeCharts() {
+  mkFREDLine('c-nh-sales',  'HSN1F',     'New SF Sales',      v => fmtN(v) + 'K');
+  mkFREDLine('c-nh-south',  'NHSDPTS',   'South Region',      v => fmtN(v) + 'K');
+  mkFREDLine('c-nh-price',  'MSPNHSUS',  'Median Price',      fmtUSD);
+  mkFREDLine('c-nh-supply', 'MSACSR',    "Months' Supply",    v => v.toFixed(1) + ' mo');
+}
+
+function renderConsumerCharts() {
+  mkFREDLine('c-con-sent',    'UMCSENT',      'Sentiment Index', v => v.toFixed(1));
+  mkFREDLine('c-con-cpi',     'CPIAUCSL',     'CPI All Urban',   v => v.toFixed(1));
+  mkFREDLine('c-con-shelter', 'CUSR0000SEHC', 'CPI Shelter',     v => v.toFixed(1));
 }
 
 function renderReCharts(from, to) {
@@ -806,6 +857,9 @@ function initCharts() {
   if (D.home_values){ const {from,to} = getRange('realestate'); renderReCharts(from, to); }
   renderMortgageChart();
   if (D.deposits)   { const {from,to} = getRange('banking');    renderBankCharts(from, to); }
+  renderFinancingCharts();
+  renderNewHomeCharts();
+  renderConsumerCharts();
   populateYearSelects();
 }
 
