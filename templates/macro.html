@@ -525,7 +525,7 @@ function mkLineChart(id, labels, datasets, yFmtFn, options = {}) {
         }
       },
       scales: {
-        x: { ticks: { color: '#4a5568', font: { size: 9 }, maxTicksLimit: 10 }, grid: { color: '#1a2030' } },
+        x: { ticks: { color: '#4a5568', font: { size: 9 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 20 }, grid: { color: '#1a2030' } },
         y: { ticks: { color: '#4a5568', font: { size: 9 }, callback: v => yFmtFn ? yFmtFn(v) : fmtN(v) }, grid: { color: '#1a2030' } }
       },
       ...options
@@ -589,7 +589,7 @@ function mkGroupedBar(id, labels, datasets, yFmtFn) {
         }
       },
       scales: {
-        x: { ticks: { color: '#4a5568', font: { size: 9 }, maxTicksLimit: 10 }, grid: { color: '#1a2030' } },
+        x: { ticks: { color: '#4a5568', font: { size: 9 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 20 }, grid: { color: '#1a2030' } },
         y: { ticks: { color: '#4a5568', font: { size: 9 }, callback: v => yFmtFn ? yFmtFn(v) : fmtN(v) }, grid: { color: '#1a2030' } }
       }
     }
@@ -621,7 +621,7 @@ function mkStackedBar(id, labels, datasets, yFmtFn) {
         }
       },
       scales: {
-        x: { stacked: true, ticks: { color: '#4a5568', font: { size: 9 }, maxTicksLimit: 10 }, grid: { color: '#1a2030' } },
+        x: { stacked: true, ticks: { color: '#4a5568', font: { size: 9 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 20 }, grid: { color: '#1a2030' } },
         y: { stacked: true, ticks: { color: '#4a5568', font: { size: 9 }, callback: v => yFmtFn ? yFmtFn(v) : fmtN(v) }, grid: { color: '#1a2030' } }
       }
     }
@@ -630,9 +630,14 @@ function mkStackedBar(id, labels, datasets, yFmtFn) {
 
 // ── Year range helpers ─────────────────────────────────────────────────────────
 function sliceYears(allYears, datasets, from, to) {
-  const strs = allYears.map(String);
-  const i0 = strs.indexOf(String(from));
-  const i1 = strs.indexOf(String(to));
+  if (from == null || to == null) return {years: allYears, datasets};
+  const fromN = Number(from), toN = Number(to);
+  let i0 = -1, i1 = -1;
+  allYears.forEach((y, i) => {
+    const yn = Number(y);
+    if (yn >= fromN && i0 < 0) i0 = i;
+    if (yn <= toN) i1 = i;
+  });
   if (i0 < 0 || i1 < 0 || i0 > i1) return {years: allYears, datasets};
   const years = allYears.slice(i0, i1 + 1);
   const sliced = datasets.map(d => ({...d, data: d.data ? d.data.slice(i0, i1 + 1) : d.data}));
