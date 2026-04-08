@@ -2145,6 +2145,38 @@ def macro_dashboard():
                            fred_data=fred_data)
 
 
+@app.route("/api/fred-audit")
+@login_required
+def fred_audit():
+    """Check latest observation date for every series used in the dashboard."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+    fred_key = os.environ.get("FRED_API_KEY")
+    if not fred_key:
+        return jsonify({"error": "FRED_API_KEY not set"})
+    series_list = [
+        "MORTGAGE30US", "FEDFUNDS", "DPRIME",
+        "HSN1F", "HSN1FSOU", "MSPNHSUS", "MSACSR",
+        "UMCSENT", "CPIAUCSL", "CUSR0000SEHC"
+    ]
+    def _latest(sid):
+        try:
+            r = requests.get("https://api.stlouisfed.org/fred/series/observations",
+                params={"series_id": sid, "api_key": fred_key,
+                        "sort_order": "desc", "limit": 1, "file_type": "json"}, timeout=8)
+            if r.ok:
+                obs = [o for o in r.json().get("observations", []) if o["value"] != "."]
+                if obs:
+                    return {"latest_date": obs[0]["date"], "latest_value": obs[0]["value"], "ok": True}
+            return {"ok": False, "status": r.status_code, "error": r.text[:120]}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as ex:
+        results = dict(zip(series_list, ex.map(_latest, series_list)))
+    return jsonify(results)
+
+
 @app.route("/api/fred-test")
 @login_required
 def fred_test():
