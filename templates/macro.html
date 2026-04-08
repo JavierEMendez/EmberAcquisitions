@@ -528,6 +528,69 @@ function mkBarChart(id, labels, datasets, yFmtFn, horizontal = false) {
   });
 }
 
+function mkGroupedBar(id, labels, datasets, yFmtFn) {
+  if (_charts[id]) _charts[id].destroy();
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  _charts[id] = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: datasets.map((d, i) => ({
+      label: d.label, data: d.data,
+      backgroundColor: CC[i % CC.length] + 'cc',
+      borderColor: CC[i % CC.length],
+      borderWidth: 1,
+    }))},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 300 },
+      plugins: {
+        legend: { labels: { color: '#8b95a8', font: { family: 'DM Sans', size: 10 }, boxWidth: 10, padding: 10 } },
+        tooltip: {
+          backgroundColor: '#1e2535', titleColor: '#e8eaf0', bodyColor: '#8b95a8',
+          borderColor: '#2e3750', borderWidth: 1, padding: 9,
+          callbacks: { label: ctx => ' ' + ctx.dataset.label + ': ' + (yFmtFn ? yFmtFn(ctx.raw) : fmtN(ctx.raw)) }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#4a5568', font: { size: 9 }, maxTicksLimit: 10 }, grid: { color: '#1a2030' } },
+        y: { ticks: { color: '#4a5568', font: { size: 9 }, callback: v => yFmtFn ? yFmtFn(v) : fmtN(v) }, grid: { color: '#1a2030' } }
+      }
+    }
+  });
+}
+
+function mkStackedBar(id, labels, datasets, yFmtFn) {
+  if (_charts[id]) _charts[id].destroy();
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  _charts[id] = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: datasets.map((d, i) => ({
+      label: d.label, data: d.data,
+      backgroundColor: CC[i % CC.length] + 'cc',
+      borderColor: CC[i % CC.length],
+      borderWidth: 1,
+    }))},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 300 },
+      plugins: {
+        legend: { labels: { color: '#8b95a8', font: { family: 'DM Sans', size: 10 }, boxWidth: 10, padding: 10 } },
+        tooltip: {
+          mode: 'index', intersect: false,
+          backgroundColor: '#1e2535', titleColor: '#e8eaf0', bodyColor: '#8b95a8',
+          borderColor: '#2e3750', borderWidth: 1, padding: 9,
+          callbacks: { label: ctx => ' ' + ctx.dataset.label + ': ' + (yFmtFn ? yFmtFn(ctx.raw) : fmtN(ctx.raw)) }
+        }
+      },
+      scales: {
+        x: { stacked: true, ticks: { color: '#4a5568', font: { size: 9 }, maxTicksLimit: 10 }, grid: { color: '#1a2030' } },
+        y: { stacked: true, ticks: { color: '#4a5568', font: { size: 9 }, callback: v => yFmtFn ? yFmtFn(v) : fmtN(v) }, grid: { color: '#1a2030' } }
+      }
+    }
+  });
+}
+
 // ── Chart initialization ───────────────────────────────────────────────────────
 function initCharts() {
   const D = MACRO_DATA;
@@ -536,25 +599,25 @@ function initCharts() {
   if (D.population) {
     const P = D.population, yrs = P.years;
     mkLineChart('c-pop-pop', yrs, COUNTIES.map(c => ({label:c, data:P.population[c]})), fmtN);
-    mkLineChart('c-pop-mig', yrs, COUNTIES.map(c => ({label:c, data:P.net_domestic_migration[c]})), fmtN);
+    mkGroupedBar('c-pop-mig', yrs, COUNTIES.map(c => ({label:c, data:P.net_domestic_migration[c]})), fmtN);
   }
   if (D.irs) {
     const I = D.irs;
-    mkLineChart('c-pop-agi', I.years, COUNTIES.map(c => ({label:c, data:I.net_agi[c]})), fmtN);
-    mkLineChart('c-pop-ret', I.years, COUNTIES.map(c => ({label:c, data:I.net_returns[c]})), fmtN);
+    mkGroupedBar('c-pop-agi', I.years, COUNTIES.map(c => ({label:c, data:I.net_agi[c]})), fmtN);
+    mkGroupedBar('c-pop-ret', I.years, COUNTIES.map(c => ({label:c, data:I.net_returns[c]})), fmtN);
   }
 
   // Income
   if (D.income) {
     const Inc = D.income;
     mkLineChart('c-income-pci', Inc.years, COUNTIES.map(c => ({label:c, data:Inc.per_capita_income[c]})), fmtUSD);
-    mkLineChart('c-income-pi',  Inc.years, COUNTIES.map(c => ({label:c, data:Inc.personal_income[c]})),  v => fmtSmartUSD(v*1000));
+    mkStackedBar('c-income-pi',  Inc.years, COUNTIES.map(c => ({label:c, data:Inc.personal_income[c]})),  v => fmtSmartUSD(v*1000));
   }
 
   // GDP
   if (D.gdp) {
     const G = D.gdp;
-    mkLineChart('c-gdp-total', G.years, COUNTIES.map(c => ({label:c, data:(G.total[c]||[]).map(v=>v==null?null:v/1e6)})), v => '$' + v.toFixed(1) + 'B');
+    mkStackedBar('c-gdp-total', G.years, COUNTIES.map(c => ({label:c, data:(G.total[c]||[]).map(v=>v==null?null:v/1e6)})), v => '$' + v.toFixed(1) + 'B');
 
     // Sector bar chart: metro total (sum all counties) for latest year, excluding aggregate rows
     const exclude = new Set(['All industry total','Private industries']);
@@ -576,7 +639,7 @@ function initCharts() {
   // Employment
   if (D.employment) {
     const E = D.employment;
-    mkLineChart('c-emp-emp',  E.years, COUNTIES.map(c => ({label:c, data:E.avg_employment[c]})), fmtN);
+    mkStackedBar('c-emp-emp',  E.years, COUNTIES.map(c => ({label:c, data:E.avg_employment[c]})), fmtN);
     mkLineChart('c-emp-wage', E.years, COUNTIES.map(c => ({label:c, data:E.avg_annual_wage[c]})), fmtUSD);
   }
 
@@ -596,8 +659,8 @@ function initCharts() {
   // Banking
   if (D.deposits) {
     const B = D.deposits;
-    mkLineChart('c-bank-dep',  B.years, COUNTIES.map(c => ({label:c, data:B.total_deposits[c]})), v => fmtSmartUSD(v*1000));
-    mkLineChart('c-bank-inst', B.years, COUNTIES.map(c => ({label:c, data:B.num_institutions[c]})), fmtN);
+    mkStackedBar('c-bank-dep',  B.years, COUNTIES.map(c => ({label:c, data:B.total_deposits[c]})), v => fmtSmartUSD(v*1000));
+    mkGroupedBar('c-bank-inst', B.years, COUNTIES.map(c => ({label:c, data:B.num_institutions[c]})), fmtN);
   }
 
   // Populate year selectors for maps
