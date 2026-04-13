@@ -2736,7 +2736,7 @@ async function loadInputs(override = null) {
   setCalc('ci-bookkeeping_end', c.bookkeeping_final_period, 'mo');
 
   // Revenue inputs
-  sv('ri-timing_method', t.timing_method);
+  sv('ri-timing_method', t.timing_method ?? '25/25/25/25');
   sv('ri-bem_period', t.bem_period);
   svp('ri-bem_pct',          t.bem_pct          ?? 0.18);
   svp('ri-brokerage_fees',   t.brokerage_fees   ?? 0.03);

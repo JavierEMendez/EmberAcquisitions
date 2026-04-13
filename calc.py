@@ -504,7 +504,7 @@ def calculate(inp: dict) -> dict:
     bookkeeping_mo         = safe(inp.get("bookkeeping_monthly", 0))
 
     # ── 3. REVENUE INPUTS derived values ──────────────────────────────────────
-    timing_method = inp.get("timing_method", "1 Takedown")
+    timing_method = inp.get("timing_method", "25/25/25/25")
     is_25x4   = timing_method == "25/25/25/25"
     take1_pct = 0.25 if is_25x4 else (1.0 if timing_method == "1 Takedown" else 0.5)
     take2_pct = 0.25 if is_25x4 else (0.0 if timing_method == "1 Takedown" else (0.5 if timing_method == "50/50" else 0.25))
