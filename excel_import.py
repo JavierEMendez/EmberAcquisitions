@@ -260,20 +260,27 @@ def import_excel(file_bytes: bytes) -> dict:
     inputs["brokerage_fees"] = _n(ri["B5"].value, 0.03)
     inputs["lot_closing_costs"] = _n(ri["B6"].value, 0.015)
 
-    # Take weights (new model has these at B7/B8/B9)
+    # Take weights (B7/B8/B9, plus B10 for 25/25/25/25 in newer templates)
     take1 = _n(ri["B7"].value)
     take2 = _n(ri["B8"].value)
     take3 = _n(ri["B9"].value)
+    take4 = _n(ri["B10"].value)
 
-    # $/FF by year (rows 13-23)
+    # Auto-detect row offset: newer templates insert a "Year / $/FF" header row
+    # at row 13, pushing all data sections below it down by 1.
+    # Old template: row 13 col B = first numeric $/FF value (ri_off = 0)
+    # New template: row 13 col B = '$/FF' string label      (ri_off = 1)
+    ri_off = 1 if not _is_numeric(ri.cell(row=13, column=2).value) else 0
+
+    # $/FF by year (rows 13-23 old / 14-24 new)
     price_per_ff = {}
     for yr in range(11):
-        val = _n(ri.cell(row=13 + yr, column=2).value)
+        val = _n(ri.cell(row=13 + ri_off + yr, column=2).value)
         price_per_ff[str(yr)] = val
     inputs["price_per_ff"] = price_per_ff
 
-    # Home build table — merge into lot_sizes (rows 27-42)
-    for idx, row in enumerate(range(27, 43)):
+    # Home build table — merge into lot_sizes (rows 27-42 old / 28-43 new)
+    for idx, row in enumerate(range(27 + ri_off, 43 + ri_off)):
         if idx < len(lot_sizes):
             lot_sizes[idx]["build_time"] = _int(ri.cell(row=row, column=2).value)   # B
             hp = _n(ri.cell(row=row, column=3).value)
@@ -289,11 +296,11 @@ def import_excel(file_bytes: bytes) -> dict:
 
     inputs["lot_sizes"] = lot_sizes
 
-    # Residential pods (rows 46-51)
-    inputs["res_pod_acreage"] = _n(ri["A46"].value)
-    inputs["res_pod_count"] = _int(ri["B46"].value, 1)
+    # Residential pods (rows 46-51 old / 47-52 new)
+    inputs["res_pod_acreage"] = _n(ri.cell(row=46 + ri_off, column=1).value)
+    inputs["res_pod_count"] = _int(ri.cell(row=46 + ri_off, column=2).value, 1)
     res_pods = []
-    for row in range(46, 52):
+    for row in range(46 + ri_off, 52 + ri_off):
         res_pods.append({
             "price_per_acre": _n(ri.cell(row=row, column=6).value),          # F
             "closing_costs_pct": _n(ri.cell(row=row, column=7).value, 0.045),# G
@@ -303,11 +310,11 @@ def import_excel(file_bytes: bytes) -> dict:
         })
     inputs["res_pods"] = res_pods
 
-    # Commercial pods (rows 55-60)
-    inputs["comm_pod_acreage"] = _n(ri["A55"].value)
-    inputs["comm_pod_count"] = _int(ri["B55"].value, 6)
+    # Commercial pods (rows 55-60 old / 56-61 new)
+    inputs["comm_pod_acreage"] = _n(ri.cell(row=55 + ri_off, column=1).value)
+    inputs["comm_pod_count"] = _int(ri.cell(row=55 + ri_off, column=2).value, 6)
     comm_pods = []
-    for row in range(55, 61):
+    for row in range(55 + ri_off, 61 + ri_off):
         comm_pods.append({
             "price_per_sf": _n(ri.cell(row=row, column=6).value),            # F
             "closing_costs_pct": _n(ri.cell(row=row, column=7).value, 0.045),# G
@@ -317,28 +324,31 @@ def import_excel(file_bytes: bytes) -> dict:
         })
     inputs["comm_pods"] = comm_pods
 
-    # MUD & WCID bonds (rows 64-65)
+    # MUD & WCID bonds (rows 64-65 old / 65-66 new)
+    mud_row_num  = 64 + ri_off
+    wcid_row_num = 65 + ri_off
     inputs["mud_bond"] = {
-        "toggle": _int(ri["B64"].value, 1),
-        "debt_ratio": _n(ri["C64"].value, 0.12),
-        "first_bond_period": _int(ri["D64"].value, 48),
-        "bond_interval": _int(ri["E64"].value, 12),
-        "pct_to_dev": _n(ri["F64"].value, 0.85),
-        "receivables_fee": _n(ri["G64"].value, 0.025),
+        "toggle": _int(ri.cell(row=mud_row_num, column=2).value, 1),
+        "debt_ratio": _n(ri.cell(row=mud_row_num, column=3).value, 0.12),
+        "first_bond_period": _int(ri.cell(row=mud_row_num, column=4).value, 48),
+        "bond_interval": _int(ri.cell(row=mud_row_num, column=5).value, 12),
+        "pct_to_dev": _n(ri.cell(row=mud_row_num, column=6).value, 0.85),
+        "receivables_fee": _n(ri.cell(row=mud_row_num, column=7).value, 0.025),
     }
     inputs["wcid_bond"] = {
-        "toggle": _int(ri["B65"].value, 1),
-        "debt_ratio": _n(ri["C65"].value, 0.042),
-        "first_bond_period": _int(ri["D65"].value, 48),
-        "bond_interval": _int(ri["E65"].value, 12),
-        "pct_to_dev": _n(ri["F65"].value, 0.85),
-        "receivables_fee": _n(ri["G65"].value, 0.025),
+        "toggle": _int(ri.cell(row=wcid_row_num, column=2).value, 1),
+        "debt_ratio": _n(ri.cell(row=wcid_row_num, column=3).value, 0.042),
+        "first_bond_period": _int(ri.cell(row=wcid_row_num, column=4).value, 48),
+        "bond_interval": _int(ri.cell(row=wcid_row_num, column=5).value, 12),
+        "pct_to_dev": _n(ri.cell(row=wcid_row_num, column=6).value, 0.85),
+        "receivables_fee": _n(ri.cell(row=wcid_row_num, column=7).value, 0.025),
     }
 
     # Derived fields the app expects
     inputs["take1_pct"] = take1 if take1 else (takedowns[0]["pct"] if takedowns else 0.5)
     inputs["take2_pct"] = take2 if take2 else (takedowns[1]["pct"] if len(takedowns) > 1 else 0.25)
     inputs["take3_pct"] = take3 if take3 else (takedowns[2]["pct"] if len(takedowns) > 2 else 0.25)
+    inputs["take4_pct"] = take4  # 0.0 for all methods except 25/25/25/25
     inputs["marketing_pct"] = 0.02  # not in Excel, use default
 
     wb.close()
