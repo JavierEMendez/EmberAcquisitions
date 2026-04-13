@@ -395,7 +395,7 @@ def list_scenarios(pid):
     scenarios = list(row["scenarios"] or [])
     if not scenarios:
         sid = str(uuid.uuid4())[:8]
-        scenarios = [{"id": sid, "name": "Base Case",
+        scenarios = [{"id": sid, "name": "Main",
                       "inputs": row["inputs"] or {}, "outputs": row["outputs"] or {}}]
         cur.execute("UPDATE projects SET scenarios = %s WHERE id = %s", (json.dumps(scenarios), pid))
         conn.commit()
