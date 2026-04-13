@@ -802,9 +802,9 @@ _CHANGE_LOG_FIELDS = [
     ("land_escalator",          "Land Escalator"),
     ("contingency",             "Contingency"),
     ("closing_costs_pct",       "Closing Costs %"),
-    ("net_dev_acres",           "Net Dev Acres"),
-    ("dmf_rate",                "DMF Rate"),
-    ("personnel_cost",          "Personnel Cost"),
+    ("timing_method",           "Revenue Timing Method"),
+    ("dmf_pct",                 "DMF Rate"),
+    ("personnel_monthly",       "Personnel Cost / Mo"),
 ]
 _CHANGE_LOG_LOT_FIELDS = [
     ("home_price",   "Home Price"),
