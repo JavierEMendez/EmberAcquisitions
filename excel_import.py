@@ -294,6 +294,28 @@ def import_excel(file_bytes: bytes) -> dict:
             lot_sizes[idx]["lot_av_pct"] = _n(ri.cell(row=row, column=11).value)     # K
             lot_sizes[idx]["lot_tax_rate"] = _n(ri.cell(row=row, column=13).value)   # M
 
+    # Section costs from Calc_Lookups (rows 47-62: col A=FF, B=WSD, C=Paving)
+    # Newer template moves these inputs here from Cost Inputs cols I/J (which become formula refs).
+    # Old template: no section in Calc_Lookups, Cost Inputs I/J already read correctly above.
+    lk_sheet = _find_sheet(wb, "lookup")
+    if lk_sheet:
+        sc_map = {}
+        for row in range(47, 63):
+            ff_val = lk_sheet.cell(row=row, column=1).value
+            wsd_val = lk_sheet.cell(row=row, column=2).value
+            pav_val = lk_sheet.cell(row=row, column=3).value
+            if ff_val is not None and _is_numeric(ff_val) and _int(ff_val) > 0:
+                sc_map[_int(ff_val)] = (_n(wsd_val), _n(pav_val))
+        if sc_map:
+            for ls in lot_sizes:
+                ff_key = ls.get("front_footage", 0)
+                if ff_key in sc_map:
+                    wsd, pav = sc_map[ff_key]
+                    if wsd > 0:
+                        ls["wsd_per_ff"] = wsd
+                    if pav > 0:
+                        ls["paving_per_ff"] = pav
+
     inputs["lot_sizes"] = lot_sizes
 
     # Residential pods (rows 46-51 old / 47-52 new)

@@ -1125,6 +1125,14 @@ tr.pod-inactive input { pointer-events: none; }
               <tbody id="lk-roads-body"></tbody>
             </table>
           </div>
+
+          <div class="lookup-section">
+            <div class="lookup-title">Section Costs (WSD &amp; Paving $/FF by Lot Size)</div>
+            <table class="data-table" style="max-width:420px">
+              <thead><tr><th>Lot (FF)</th><th>WSD ($/FF)</th><th>Paving ($/FF)</th><th class="calc-th">Dev Cost/Lot ⟵</th></tr></thead>
+              <tbody id="lk-sc-body"></tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
@@ -1949,6 +1957,14 @@ function updateTakeWeights() {
       t4el.style.display = 'none';
     }
   }
+}
+
+// ── SECTION COST DEV COST DISPLAY ────────────────────────────────
+function updateSectionDevCost(i, ff) {
+  const wsd = parseFloat(document.getElementById(`lk-sc-wsd-${i}`)?.value) || 0;
+  const pav = parseFloat(document.getElementById(`lk-sc-paving-${i}`)?.value) || 0;
+  const el  = document.getElementById(`lk-sc-devcost-${i}`);
+  if (el) el.textContent = '$' + Math.round((wsd + pav) * ff).toLocaleString('en-US');
 }
 
 // ── LOT TAX / LOT AUTO-CALC ───────────────────────────────────────
@@ -2863,6 +2879,24 @@ async function loadInputs(override = null) {
       <td><input type="number" step="0.01" id="lk-rd-paving-${i}" value="${rd.paving}" class="mono" oninput="markDirty()"></td>
     </tr>`).join('');
 
+  // Section costs table (WSD & Paving $/FF per lot size → Dev Cost/Lot)
+  const STD_FF_SC = [25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100];
+  const lksc = document.getElementById('lk-sc-body');
+  if (lksc) {
+    lksc.innerHTML = STD_FF_SC.map((ff, i) => {
+      const ls      = (t.lot_sizes||[])[i] || {};
+      const wsd     = ls.wsd_per_ff     ?? 290;
+      const pav     = ls.paving_per_ff  ?? 220;
+      const devCost = Math.round((wsd + pav) * ff);
+      return `<tr>
+        <td><span class="acre-badge">${ff} FF</span></td>
+        <td><input type="number" id="lk-sc-wsd-${i}" value="${wsd}" class="mono" style="width:90px" oninput="updateSectionDevCost(${i},${ff}); markDirty()"></td>
+        <td><input type="number" id="lk-sc-paving-${i}" value="${pav}" class="mono" style="width:90px" oninput="updateSectionDevCost(${i},${ff}); markDirty()"></td>
+        <td style="background:rgba(123,143,212,.04)"><span class="calc-cell" id="lk-sc-devcost-${i}">$${devCost.toLocaleString('en-US')}</span></td>
+      </tr>`;
+    }).join('');
+  }
+
   markClean();
   // Apply comma overlays to all large number inputs
   setTimeout(applyCommaDisplay, 50);
@@ -3062,9 +3096,9 @@ function collectInputs() {
         lot_sf: ls.lot_sf,
         depth: ls.depth,
         on: onVal,
-        // Preserve WSD/paving from stored inputs (display-only calc cells, not re-collected from DOM)
-        wsd_per_ff: ls.wsd_per_ff ?? 290,
-        paving_per_ff: ls.paving_per_ff ?? 220,
+        // WSD/paving come from Calc Lookups section costs inputs
+        wsd_per_ff: gn(`lk-sc-wsd-${i}`) ?? ls.wsd_per_ff ?? 290,
+        paving_per_ff: gn(`lk-sc-paving-${i}`) ?? ls.paving_per_ff ?? 220,
         pct_mix: (() => { const v = getSaved(`ci-ls-mix-${i}`); return v != null ? v / 100 : null; })(),
         yield_per_ac: getSaved(`ci-ls-yield-${i}`),
         pace: getSaved(`ci-ls-pace-${i}`),
