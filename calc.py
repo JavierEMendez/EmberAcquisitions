@@ -505,9 +505,15 @@ def calculate(inp: dict) -> dict:
 
     # ── 3. REVENUE INPUTS derived values ──────────────────────────────────────
     timing_method = inp.get("timing_method", "1 Takedown")
-    take1_pct = 1.0 if timing_method == "1 Takedown" else 0.5
-    take2_pct = 0.0 if timing_method == "1 Takedown" else (0.5 if timing_method == "50/50" else 0.25)
-    take3_pct = 0.25 if timing_method == "50/25/25" else 0.0
+    is_25x4   = timing_method == "25/25/25/25"
+    take1_pct = 0.25 if is_25x4 else (1.0 if timing_method == "1 Takedown" else 0.5)
+    take2_pct = 0.25 if is_25x4 else (0.0 if timing_method == "1 Takedown" else (0.5 if timing_method == "50/50" else 0.25))
+    take3_pct = 0.25 if is_25x4 else (0.25 if timing_method == "50/25/25" else 0.0)
+    take4_pct = 0.25 if is_25x4 else 0.0
+    # Timing offsets relative to T1: 25/25/25/25 compresses to +3/+6/+9; all other methods use +6/+9
+    t2_offset = 3 if is_25x4 else 6
+    t3_offset = 6 if is_25x4 else 9
+    t4_offset = 9  # only active when take4_pct > 0
 
     brokerage_fees    = safe(inp.get("brokerage_fees", 0.03))
     lot_closing_costs = safe(inp.get("lot_closing_costs", 0.015))
@@ -759,8 +765,9 @@ def calculate(inp: dict) -> dict:
 
         for k, batch in rev_sections:
             t1_m  = sm + k * 18              # T1 = section delivery month
-            t2_m  = t1_m + 6
-            t3_m  = t1_m + 9
+            t2_m  = t1_m + t2_offset
+            t3_m  = t1_m + t3_offset
+            t4_m  = t1_m + t4_offset
 
             year_idx = min(max(int((t1_m - 1) / 12), 0), 10)
             ff_rate = ff_by_year[year_idx] if year_idx < len(ff_by_year) else ff_by_year[-1]
@@ -775,7 +782,7 @@ def calculate(inp: dict) -> dict:
                 lot_rev_by_month[bem_m] += bem_amount
                 total_lot_base_rev += bem_amount
 
-            # T1/T2/T3 revenues (gross minus BEM, split by take_pcts)
+            # T1/T2/T3/T4 revenues (gross minus BEM, split by take_pcts)
             gross_remainder = gross_lot_rev * (1 - bem_pct)
             if t1_m <= MAX_MONTHS:
                 lot_rev_by_month[t1_m] += gross_remainder * take1_pct
@@ -786,6 +793,9 @@ def calculate(inp: dict) -> dict:
             if t3_m <= MAX_MONTHS:
                 lot_rev_by_month[t3_m] += gross_remainder * take3_pct
                 total_lot_base_rev += gross_remainder * take3_pct
+            if take4_pct > 0 and t4_m <= MAX_MONTHS:
+                lot_rev_by_month[t4_m] += gross_remainder * take4_pct
+                total_lot_base_rev += gross_remainder * take4_pct
 
             # Brokerage fees (cost)
             if brokerage_fees:
@@ -795,6 +805,8 @@ def calculate(inp: dict) -> dict:
                     lot_brokerage_by_month[t2_m] += gross_lot_rev * take2_pct * brokerage_fees
                 if t3_m <= MAX_MONTHS:
                     lot_brokerage_by_month[t3_m] += gross_lot_rev * take3_pct * brokerage_fees
+                if take4_pct > 0 and t4_m <= MAX_MONTHS:
+                    lot_brokerage_by_month[t4_m] += gross_lot_rev * take4_pct * brokerage_fees
 
             # Lot closing costs (cost)
             if lot_closing_costs:
@@ -804,6 +816,8 @@ def calculate(inp: dict) -> dict:
                     lot_closing_by_month[t2_m] += gross_lot_rev * take2_pct * lot_closing_costs
                 if t3_m <= MAX_MONTHS:
                     lot_closing_by_month[t3_m] += gross_lot_rev * take3_pct * lot_closing_costs
+                if take4_pct > 0 and t4_m <= MAX_MONTHS:
+                    lot_closing_by_month[t4_m] += gross_lot_rev * take4_pct * lot_closing_costs
 
             # Lot taxes (cost)
             if lot_tax_per_lot:
@@ -813,6 +827,8 @@ def calculate(inp: dict) -> dict:
                     lot_tax_by_month[t2_m] += batch * take2_pct * lot_tax_per_lot
                 if t3_m <= MAX_MONTHS:
                     lot_tax_by_month[t3_m] += batch * take3_pct * lot_tax_per_lot
+                if take4_pct > 0 and t4_m <= MAX_MONTHS:
+                    lot_tax_by_month[t4_m] += batch * take4_pct * lot_tax_per_lot
 
             # Mailboxes (cost)
             if cost_per_mailbox:
@@ -822,6 +838,8 @@ def calculate(inp: dict) -> dict:
                     lot_mailbox_by_month[t2_m] += batch * take2_pct * cost_per_mailbox
                 if t3_m <= MAX_MONTHS:
                     lot_mailbox_by_month[t3_m] += batch * take3_pct * cost_per_mailbox
+                if take4_pct > 0 and t4_m <= MAX_MONTHS:
+                    lot_mailbox_by_month[t4_m] += batch * take4_pct * cost_per_mailbox
 
             # Premiums (revenue)
             if premium_pff and ff:
@@ -835,17 +853,24 @@ def calculate(inp: dict) -> dict:
                 if t3_m <= MAX_MONTHS:
                     lot_rev_by_month[t3_m] += prem_total * take3_pct
                     total_premium_rev += prem_total * take3_pct
+                if take4_pct > 0 and t4_m <= MAX_MONTHS:
+                    lot_rev_by_month[t4_m] += prem_total * take4_pct
+                    total_premium_rev += prem_total * take4_pct
 
-            # Escalation (revenue, at T2 and T3 relative to T1)
+            # Escalation (revenue, at T2/T3/T4 relative to T1 — dynamic months since T1)
             if escalation:
-                escal_t2 = (escalation / 12) * 6 * (gross_remainder * take2_pct)
-                escal_t3 = (escalation / 12) * 9 * (gross_remainder * take3_pct)
+                escal_t2 = (escalation / 12) * (t2_m - t1_m) * (gross_remainder * take2_pct)
+                escal_t3 = (escalation / 12) * (t3_m - t1_m) * (gross_remainder * take3_pct)
+                escal_t4 = (escalation / 12) * (t4_m - t1_m) * (gross_remainder * take4_pct)
                 if escal_t2 > 0 and t2_m <= MAX_MONTHS:
                     lot_rev_by_month[t2_m] += escal_t2
                     total_escalation_rev += escal_t2
                 if escal_t3 > 0 and t3_m <= MAX_MONTHS:
                     lot_rev_by_month[t3_m] += escal_t3
                     total_escalation_rev += escal_t3
+                if escal_t4 > 0 and t4_m <= MAX_MONTHS:
+                    lot_rev_by_month[t4_m] += escal_t4
+                    total_escalation_rev += escal_t4
 
             # Fence fees (revenue) — Excel: fence_rev_per_FF * lots * FF * fenced_pct
             if fence_fee_pff and ff and fenced_pct:
@@ -859,6 +884,9 @@ def calculate(inp: dict) -> dict:
                 if t3_m <= MAX_MONTHS:
                     lot_rev_by_month[t3_m] += fence_rev * take3_pct
                     total_fence_fee_rev += fence_rev * take3_pct
+                if take4_pct > 0 and t4_m <= MAX_MONTHS:
+                    lot_rev_by_month[t4_m] += fence_rev * take4_pct
+                    total_fence_fee_rev += fence_rev * take4_pct
 
             # Marketing fees (revenue)
             if mktg_fee_lot:
@@ -871,6 +899,9 @@ def calculate(inp: dict) -> dict:
                 if t3_m <= MAX_MONTHS:
                     lot_rev_by_month[t3_m] += batch * take3_pct * mktg_fee_lot
                     total_mktg_fee_rev += batch * take3_pct * mktg_fee_lot
+                if take4_pct > 0 and t4_m <= MAX_MONTHS:
+                    lot_rev_by_month[t4_m] += batch * take4_pct * mktg_fee_lot
+                    total_mktg_fee_rev += batch * take4_pct * mktg_fee_lot
 
     for m in range(1, MAX_MONTHS + 1):
         rev_monthly[m]  += lot_rev_by_month[m]
@@ -949,11 +980,12 @@ def calculate(inp: dict) -> dict:
 
         for k, lots_this in av_sections:
             section_delivery = sm_lr + k * 18
-            # Excel splits lot deliveries into takes (T1/T2/T3), homes complete
+            # Excel splits lot deliveries into takes (T1/T2/T3/T4), homes complete
             # build_time after each take — matching Calc_Revenues rows 742+
-            takes = [(section_delivery, take1_pct),
-                     (section_delivery + 6, take2_pct),
-                     (section_delivery + 9, take3_pct)]
+            takes = [(section_delivery,              take1_pct),
+                     (section_delivery + t2_offset,  take2_pct),
+                     (section_delivery + t3_offset,  take3_pct),
+                     (section_delivery + t4_offset,  take4_pct)]
             for take_m, take_frac in takes:
                 if take_frac > 0:
                     comp_m = take_m + build_time

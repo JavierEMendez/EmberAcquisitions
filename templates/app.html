@@ -959,6 +959,7 @@ tr.pod-inactive input { pointer-events: none; }
                 <option value="1 Takedown">1 Takedown — 100% at first sale</option>
                 <option value="50/50">50/50 — 50% at sale, 50% at +6 months</option>
                 <option value="50/25/25">50/25/25 — 50% at sale, 25% at +6, 25% at +9</option>
+                <option value="25/25/25/25">25/25/25/25 — 25% at sale, 25% at +3, 25% at +6, 25% at +9</option>
               </select>
             </div>
             <div class="field"><label>Builder Earnest Money Period (months)</label><input type="number" id="ri-bem_period" class="mono" oninput="markDirty()"></div>
@@ -968,8 +969,9 @@ tr.pod-inactive input { pointer-events: none; }
           </div>
           <div class="take-weights-display" id="take-weights-display">
             <span class="take-weight-pill" id="tw-take1">Take 1: —%</span>
-            <span class="take-weight-pill" id="tw-take2">Take 2 (+6mo): —%</span>
-            <span class="take-weight-pill" id="tw-take3">Take 3 (+9mo): —%</span>
+            <span class="take-weight-pill" id="tw-take2">Take 2: —%</span>
+            <span class="take-weight-pill" id="tw-take3">Take 3: —%</span>
+            <span class="take-weight-pill" id="tw-take4" style="display:none">Take 4: —%</span>
           </div>
 
           <!-- ② $/FF BY YEAR -->
@@ -1920,19 +1922,33 @@ function syncAmenityTypeToCosts(idx, newType) {
 // ── TAKE WEIGHTS DISPLAY ──────────────────────────────────────────
 function updateTakeWeights() {
   const method = document.getElementById('ri-timing_method')?.value || '';
+  const is25x4 = method === '25/25/25/25';
   const map = {
-    '1 Takedown': [100, 0, 0],
-    '50/50':      [50, 50, 0],
-    '50/25/25':   [50, 25, 25],
+    '1 Takedown':   { weights: [100, 0, 0, 0],    offsets: [0, 6, 9, null] },
+    '50/50':        { weights: [50, 50, 0, 0],     offsets: [0, 6, 9, null] },
+    '50/25/25':     { weights: [50, 25, 25, 0],    offsets: [0, 6, 9, null] },
+    '25/25/25/25':  { weights: [25, 25, 25, 25],   offsets: [0, 3, 6, 9]    },
   };
-  const [t1, t2, t3] = map[method] || [50, 25, 25];
-  const setTW = (id, label, val) => {
+  const entry = map[method] || map['50/25/25'];
+  const [w1, w2, w3, w4] = entry.weights;
+  const [o1, o2, o3, o4] = entry.offsets;
+  const label = (n, off) => off === 0 ? `Take ${n} (Period 0)` : `Take ${n} (+${off}mo)`;
+  const setTW = (id, lbl, val) => {
     const el = document.getElementById(id);
-    if (el) el.textContent = `${label}: ${val}%`;
+    if (el) el.textContent = `${lbl}: ${val}%`;
   };
-  setTW('tw-take1', 'Take 1 (Period 0)', t1);
-  setTW('tw-take2', 'Take 2 (+6 mo)', t2);
-  setTW('tw-take3', 'Take 3 (+9 mo)', t3);
+  setTW('tw-take1', label(1, o1), w1);
+  setTW('tw-take2', label(2, o2), w2);
+  setTW('tw-take3', label(3, o3), w3);
+  const t4el = document.getElementById('tw-take4');
+  if (t4el) {
+    if (is25x4) {
+      t4el.style.display = '';
+      setTW('tw-take4', label(4, o4), w4);
+    } else {
+      t4el.style.display = 'none';
+    }
+  }
 }
 
 // ── LOT ROW TOGGLE ────────────────────────────────────────────────
@@ -3066,9 +3082,10 @@ function collectInputs() {
     brokerage_fees: gnp('ri-brokerage_fees'),
     lot_closing_costs: gnp('ri-lot_closing_costs'),
     // take weights are derived from timing_method by the Excel model - write them explicitly too
-    take1_pct: {'1 Takedown':1,'50/50':0.5,'50/25/25':0.5}[gv('ri-timing_method')] ?? 0.5,
-    take2_pct: {'1 Takedown':0,'50/50':0.5,'50/25/25':0.25}[gv('ri-timing_method')] ?? 0.25,
-    take3_pct: {'1 Takedown':0,'50/50':0,'50/25/25':0.25}[gv('ri-timing_method')] ?? 0.25,
+    take1_pct: {'1 Takedown':1,'50/50':0.5,'50/25/25':0.5,'25/25/25/25':0.25}[gv('ri-timing_method')] ?? 0.5,
+    take2_pct: {'1 Takedown':0,'50/50':0.5,'50/25/25':0.25,'25/25/25/25':0.25}[gv('ri-timing_method')] ?? 0.25,
+    take3_pct: {'1 Takedown':0,'50/50':0,'50/25/25':0.25,'25/25/25/25':0.25}[gv('ri-timing_method')] ?? 0.25,
+    take4_pct: {'1 Takedown':0,'50/50':0,'50/25/25':0,'25/25/25/25':0.25}[gv('ri-timing_method')] ?? 0,
     price_per_ff: ppff,
     // home_table fields are merged directly into lot_sizes rows
     // (handled by lot_sizes collection which also reads ht fields)
