@@ -1951,6 +1951,19 @@ function updateTakeWeights() {
   }
 }
 
+// ── LOT TAX / LOT AUTO-CALC ───────────────────────────────────────
+function updateLotTaxes() {
+  const ppff0 = parseFloat(document.getElementById('ri-ppff-0')?.value) || 0;
+  document.querySelectorAll('#ri-home-body tr').forEach((tr, i) => {
+    const ff        = parseFloat(tr.getAttribute('data-ff')) || 0;
+    const lotAvPct  = (parseFloat(document.getElementById(`ri-ht-lotav-${i}`)?.value) || 0) / 100;
+    const lotTaxRate= (parseFloat(document.getElementById(`ri-ht-ltax-${i}`)?.value) || 0) / 100;
+    const val       = ppff0 * ff * lotAvPct * lotTaxRate;
+    const el        = document.getElementById(`ri-ht-lottax-${i}`);
+    if (el) el.textContent = '$' + Math.round(val).toLocaleString('en-US');
+  });
+}
+
 // ── LOT ROW TOGGLE ────────────────────────────────────────────────
 function toggleLotRow(i) {
   const sel = document.getElementById(`ci-ls-on-${i}`);
@@ -2736,7 +2749,7 @@ async function loadInputs(override = null) {
   for (let yr = 0; yr <= 10; yr++) {
     ppffBody.innerHTML += `<tr>
       <td class="row-num">${yr}</td>
-      <td><input type="number" id="ri-ppff-${yr}" value="${t.price_per_ff?.[yr] ?? 1800}" class="mono" oninput="markDirty()"></td>
+      <td><input type="number" id="ri-ppff-${yr}" value="${t.price_per_ff?.[yr] ?? 1800}" class="mono" oninput="${yr===0?'updateLotTaxes();':''}markDirty()"></td>
     </tr>`;
   }
 
@@ -2744,13 +2757,15 @@ async function loadInputs(override = null) {
   const homeBody = document.getElementById('ri-home-body');
   const fmtCalc = v => v != null ? '$'+Math.round(v).toLocaleString('en-US') : '—';
   const fmtCalcSm = v => v != null ? '$'+Math.round(v).toLocaleString('en-US') : '—';
+  const ppff0_init = +(t.price_per_ff?.[0] ?? t.price_per_ff?.['0'] ?? 1800);
   homeBody.innerHTML = (t.lot_sizes||[]).map((ht,i) => {
     // ht is from lot_sizes which has all defaults pre-populated from Excel
     const avPct = ht.av_pct ?? 0.85;
     const esc = ht.escalation ?? 0.06;
     const lotAvPct = ht.lot_av_pct ?? 0.50;
     const lotTax = ht.lot_tax_rate ?? 0.02;
-    return `<tr>
+    const lotTaxVal = ppff0_init * (ht.ff||0) * lotAvPct * lotTax;
+    return `<tr data-ff="${ht.ff}">
       <td><span class="acre-badge">${ht.ff} FF</span></td>
       <td><input type="number" id="ri-ht-bt-${i}" value="${ht.build_time||''}" class="mono" style="width:70px" oninput="markDirty()"></td>
       <td><input type="number" id="ri-ht-hp-${i}" value="${ht.home_price||''}" class="mono" style="width:110px" oninput="markDirty()"></td>
@@ -2761,10 +2776,10 @@ async function loadInputs(override = null) {
       <td><input type="number" id="ri-ht-fence-${i}" value="${ht.fence_per_ff||''}" class="mono" style="width:70px" oninput="markDirty()"></td>
       <td><input type="number" id="ri-ht-mktg-${i}" value="${ht.marketing_fee||''}" class="mono" style="width:100px" oninput="markDirty()"></td>
       <td style="background:rgba(123,143,212,.04)"><span class="calc-cell">${fmtCalc(ht.implied_lot_price || 1800*(ht.ff||0))}</span></td>
-      <td><div class="pct-wrap" style="width:80px"><input type="number" step="1" id="ri-ht-lotav-${i}" value="${+(lotAvPct*100).toPrecision(4)}" class="mono" oninput="markDirty()"></div></td>
+      <td><div class="pct-wrap" style="width:80px"><input type="number" step="1" id="ri-ht-lotav-${i}" value="${+(lotAvPct*100).toPrecision(4)}" class="mono" oninput="updateLotTaxes(); markDirty()"></div></td>
       <td style="background:rgba(123,143,212,.04)"><span class="calc-cell">${fmtCalc(ht.lot_av || 1800*(ht.ff||0)*lotAvPct)}</span></td>
-      <td><div class="pct-wrap" style="width:80px"><input type="number" step="0.1" id="ri-ht-ltax-${i}" value="${+(lotTax*100).toPrecision(4)}" class="mono" oninput="markDirty()"></div></td>
-      <td style="background:rgba(123,143,212,.04)"><span class="calc-cell">${fmtCalcSm(ht.lot_taxes)}</span></td>
+      <td><div class="pct-wrap" style="width:80px"><input type="number" step="0.1" id="ri-ht-ltax-${i}" value="${+(lotTax*100).toPrecision(4)}" class="mono" oninput="updateLotTaxes(); markDirty()"></div></td>
+      <td style="background:rgba(123,143,212,.04)"><span class="calc-cell" id="ri-ht-lottax-${i}">${'$'+Math.round(lotTaxVal).toLocaleString('en-US')}</span></td>
     </tr>`;
   }).join('');
 
