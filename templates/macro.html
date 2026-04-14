@@ -13,9 +13,13 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#0d0f13;--card:#151921;--border:#1e2535;--border-light:#2e3750;
+  --bg:#0d0f13;--surface:#151921;--card:#151921;--border:#1e2535;--border-light:#2e3750;
   --accent:#c8a96e;--text:#e8eaf0;--text-muted:#8b95a8;--text-dim:#4a5568;
   --teal:#5e9e8c;
+}
+[data-theme="light"]{
+  --bg:#f0f2f5;--surface:#ffffff;--card:#ffffff;--border:#e2e8f0;--border-light:#cbd5e0;
+  --accent:#c8a96e;--text:#1a2a3a;--text-muted:#718096;--text-dim:#a0aec0;--teal:#38a169;
 }
 body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;height:100vh;overflow:hidden;}
 #app{display:flex;height:100vh;overflow:hidden}
@@ -425,19 +429,56 @@ a:hover{text-decoration:underline}
   </div>
 </div>
 
-<!-- Account modal -->
+<!-- ACCOUNT SETTINGS MODAL -->
 <div id="acct-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;align-items:center;justify-content:center">
-  <div style="background:#151921;border:1px solid #1e2535;border-radius:10px;padding:28px;width:360px;max-width:90vw">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:28px;width:360px;max-width:90vw;max-height:90vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
-      <h3 style="margin:0;font-size:15px;font-weight:600;font-family:'Plus Jakarta Sans',sans-serif">Account Settings</h3>
-      <button onclick="closeAcct()" style="background:none;border:none;color:#4a5568;font-size:20px;cursor:pointer">&times;</button>
+      <h3 style="margin:0;font-size:15px;font-weight:600">Account Settings</h3>
+      <button onclick="closeAcct()" style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer;line-height:1">&times;</button>
     </div>
-    <div style="font-size:12px;color:#4a5568;margin-bottom:14px">Change Password</div>
-    <input id="acct-cur-pw" type="password" placeholder="Current password" style="width:100%;background:#0d0f13;border:1px solid #1e2535;color:#e8eaf0;border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:8px;outline:none">
-    <input id="acct-new-pw" type="password" placeholder="New password" style="width:100%;background:#0d0f13;border:1px solid #1e2535;color:#e8eaf0;border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:8px;outline:none">
-    <input id="acct-conf-pw" type="password" placeholder="Confirm new password" style="width:100%;background:#0d0f13;border:1px solid #1e2535;color:#e8eaf0;border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:14px;outline:none">
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:16px">Logged in as <strong style="color:var(--text-muted)">{{ username }}</strong></div>
+    <div style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:16px">
+      <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Appearance</div>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:13px;color:var(--text-muted)">Color Theme</span>
+        <div style="display:flex;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:3px;gap:2px">
+          <button id="theme-btn-dark" onclick="applyTheme('dark')" style="padding:5px 14px;border:none;border-radius:4px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s">Dark</button>
+          <button id="theme-btn-light" onclick="applyTheme('light')" style="padding:5px 14px;border:none;border-radius:4px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s">Light</button>
+        </div>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Email</div>
+    <div id="acct-email" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:16px;min-height:36px">—</div>
+    <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Change Password</div>
+    <input id="acct-cur-pw" type="password" placeholder="Current password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:8px;outline:none">
+    <input id="acct-new-pw" type="password" placeholder="New password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:8px;outline:none">
+    <input id="acct-conf-pw" type="password" placeholder="Confirm new password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:14px;outline:none">
     <div id="acct-msg" style="font-size:12px;margin-bottom:12px;display:none"></div>
-    <button onclick="saveAcctPw()" style="width:100%;background:#c8a96e;border:none;color:#0d0f13;padding:10px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">Save Password</button>
+    <button onclick="saveAcctPw()" style="width:100%;background:var(--accent);border:none;color:#0d0f13;padding:10px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:20px">Save Password</button>
+    <div style="border-top:1px solid var(--border);padding-top:18px">
+      <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">Monthly Report Emails</div>
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:14px">
+        <input type="checkbox" id="acct-report-optin" style="accent-color:#5e9e8c;width:15px;height:15px">
+        <div>
+          <div style="font-size:13px;color:var(--text)">Receive monthly reports</div>
+          <div style="font-size:11px;color:var(--text-dim);margin-top:2px">Sent on the 1st of each month to your email</div>
+        </div>
+      </label>
+      <div id="acct-format-row" style="display:none;margin-bottom:14px">
+        <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Format</div>
+        <div style="display:flex;gap:16px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text)">
+            <input type="radio" name="acct-report-fmt" value="pdf" id="acct-fmt-pdf" style="accent-color:#5e9e8c"> PDF
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text)">
+            <input type="radio" name="acct-report-fmt" value="excel" id="acct-fmt-excel" style="accent-color:#5e9e8c"> Excel
+          </label>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:8px">Includes: Active Project Returns, Loan Capacities & Debt Schedules, Ember Operating Revenues</div>
+      </div>
+      <div id="acct-report-msg" style="font-size:12px;margin-bottom:8px;display:none"></div>
+      <button onclick="saveReportSettings()" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:9px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s" onmouseover="this.style.borderColor='#5e9e8c';this.style.color='#5e9e8c'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">Save Report Preferences</button>
+    </div>
   </div>
 </div>
 
@@ -1030,27 +1071,77 @@ function renderChoropleth(section) {
   map.invalidateSize();
 }
 
-// ── Account modal ──────────────────────────────────────────────────────────────
-function openAcct() { document.getElementById('acct-modal').style.display = 'flex'; }
-function closeAcct() { document.getElementById('acct-modal').style.display = 'none'; }
-function saveAcctPw() {
-  const cur = document.getElementById('acct-cur-pw').value;
-  const nw  = document.getElementById('acct-new-pw').value;
-  const cf  = document.getElementById('acct-conf-pw').value;
-  const msg = document.getElementById('acct-msg');
-  if (!cur || !nw || !cf) { msg.style.display='block'; msg.style.color='#e05555'; msg.textContent='All fields required.'; return; }
-  if (nw !== cf) { msg.style.display='block'; msg.style.color='#e05555'; msg.textContent='Passwords do not match.'; return; }
-  fetch('/api/change-password', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({current:cur, new:nw})})
-    .then(r=>r.json()).then(d => {
-      msg.style.display='block';
-      msg.style.color = d.ok ? '#5e9e8c' : '#e05555';
-      msg.textContent = d.message || (d.ok ? 'Password updated.' : 'Error.');
-    });
-}
-
 // ── Boot ────────────────────────────────────────────────────────────────────────
 window.addEventListener('load', () => { computeKPIs(); initCharts(); });
 </script>
 {% endif %}
+
+<script>
+function _updateThemeButtons() {
+  const isLight = document.documentElement.dataset.theme === 'light';
+  const darkBtn  = document.getElementById('theme-btn-dark');
+  const lightBtn = document.getElementById('theme-btn-light');
+  if (!darkBtn || !lightBtn) return;
+  darkBtn.style.background  = isLight ? 'transparent' : 'var(--accent)';
+  darkBtn.style.color       = isLight ? 'var(--text-muted)' : '#000';
+  darkBtn.style.fontWeight  = isLight ? '400' : '600';
+  lightBtn.style.background = isLight ? 'var(--accent)' : 'transparent';
+  lightBtn.style.color      = isLight ? '#000' : 'var(--text-muted)';
+  lightBtn.style.fontWeight = isLight ? '600' : '400';
+}
+function applyTheme(theme) {
+  if (theme === 'light') { document.documentElement.dataset.theme = 'light'; }
+  else { delete document.documentElement.dataset.theme; }
+  localStorage.setItem('ember-theme', theme);
+  _updateThemeButtons();
+}
+(function(){ if (localStorage.getItem('ember-theme') === 'light') document.documentElement.dataset.theme = 'light'; })();
+async function openAcct() {
+  const m = document.getElementById('acct-modal');
+  m.style.display = 'flex';
+  _updateThemeButtons();
+  document.getElementById('acct-cur-pw').value = '';
+  document.getElementById('acct-new-pw').value = '';
+  document.getElementById('acct-conf-pw').value = '';
+  document.getElementById('acct-msg').style.display = 'none';
+  document.getElementById('acct-report-msg').style.display = 'none';
+  try {
+    const res = await fetch('/api/account');
+    const d = await res.json();
+    document.getElementById('acct-email').textContent = d.email || '—';
+    document.getElementById('acct-report-optin').checked = d.report_opt_in || false;
+    document.getElementById(d.report_format === 'excel' ? 'acct-fmt-excel' : 'acct-fmt-pdf').checked = true;
+    document.getElementById('acct-format-row').style.display = d.report_opt_in ? 'block' : 'none';
+  } catch(e) {}
+}
+function closeAcct() { document.getElementById('acct-modal').style.display = 'none'; }
+document.getElementById('acct-modal').addEventListener('click', function(e) { if (e.target === this) closeAcct(); });
+document.getElementById('acct-report-optin').addEventListener('change', function() {
+  document.getElementById('acct-format-row').style.display = this.checked ? 'block' : 'none';
+});
+async function saveAcctPw() {
+  const cur = document.getElementById('acct-cur-pw').value;
+  const nw  = document.getElementById('acct-new-pw').value;
+  const conf= document.getElementById('acct-conf-pw').value;
+  const msg = document.getElementById('acct-msg');
+  function showMsg(txt, ok) { msg.textContent=txt; msg.style.color=ok?'#5e9e8c':'#e07a3e'; msg.style.display='block'; }
+  if (!cur||!nw||!conf) { showMsg('All fields are required.',false); return; }
+  if (nw!==conf)        { showMsg('New passwords do not match.',false); return; }
+  const res = await fetch('/api/account/password',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({current_password:cur,new_password:nw})});
+  const data = await res.json();
+  if (data.ok) { showMsg('Password updated.',true); setTimeout(closeAcct,1500); }
+  else         { showMsg(data.error||'Failed to update password.',false); }
+}
+async function saveReportSettings() {
+  const opt_in = document.getElementById('acct-report-optin').checked;
+  const fmt = document.querySelector('input[name="acct-report-fmt"]:checked')?.value || 'pdf';
+  const msg = document.getElementById('acct-report-msg');
+  const res = await fetch('/api/account/report-settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({report_opt_in:opt_in,report_format:fmt})});
+  const d = await res.json();
+  msg.style.display='block';
+  if (d.ok) { msg.textContent='Preferences saved.'; msg.style.color='#5e9e8c'; }
+  else      { msg.textContent=d.error||'Failed to save.'; msg.style.color='#e07a3e'; }
+}
+</script>
 </body>
 </html>
