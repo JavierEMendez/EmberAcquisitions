@@ -234,11 +234,31 @@ def list_projects():
     cur.execute("""
         SELECT p.id, p.name, p.address, p.updated_at,
                u.username as created_by,
-               p.outputs->>'total_revenue' as total_revenue,
-               p.outputs->>'gross_margin_pct' as gross_margin_pct,
-               p.outputs->>'total_lots' as total_lots,
-               p.outputs->>'unlevered_irr' as unlevered_irr,
-               p.outputs->>'project_length_years' as project_length_years,
+               COALESCE(
+                   CASE WHEN jsonb_array_length(COALESCE(p.scenarios,'[]'::jsonb)) > 0
+                        THEN p.scenarios->0->'outputs'->>'total_revenue' END,
+                   p.outputs->>'total_revenue'
+               ) as total_revenue,
+               COALESCE(
+                   CASE WHEN jsonb_array_length(COALESCE(p.scenarios,'[]'::jsonb)) > 0
+                        THEN p.scenarios->0->'outputs'->>'gross_margin_pct' END,
+                   p.outputs->>'gross_margin_pct'
+               ) as gross_margin_pct,
+               COALESCE(
+                   CASE WHEN jsonb_array_length(COALESCE(p.scenarios,'[]'::jsonb)) > 0
+                        THEN p.scenarios->0->'outputs'->>'total_lots' END,
+                   p.outputs->>'total_lots'
+               ) as total_lots,
+               COALESCE(
+                   CASE WHEN jsonb_array_length(COALESCE(p.scenarios,'[]'::jsonb)) > 0
+                        THEN p.scenarios->0->'outputs'->>'unlevered_irr' END,
+                   p.outputs->>'unlevered_irr'
+               ) as unlevered_irr,
+               COALESCE(
+                   CASE WHEN jsonb_array_length(COALESCE(p.scenarios,'[]'::jsonb)) > 0
+                        THEN p.scenarios->0->'outputs'->>'project_length_years' END,
+                   p.outputs->>'project_length_years'
+               ) as project_length_years,
                p.archived,
                COALESCE(p.status, 'Active') as status
         FROM projects p
@@ -446,7 +466,15 @@ def save_scenario(pid, sid):
     if idx is None: cur.close(); conn.close(); return jsonify({"error": "Scenario not found"}), 404
     scenarios[idx]["inputs"] = inp
     scenarios[idx]["outputs"] = out
-    cur.execute("UPDATE projects SET scenarios = %s WHERE id = %s", (json.dumps(scenarios), pid))
+    # Keep projects.inputs/outputs in sync with the first (Main) scenario so
+    # the sidebar IRR and portfolio view always reflect current inputs.
+    if idx == 0:
+        cur.execute(
+            "UPDATE projects SET scenarios = %s, inputs = %s, outputs = %s WHERE id = %s",
+            (json.dumps(scenarios), json.dumps(inp), json.dumps(out), pid)
+        )
+    else:
+        cur.execute("UPDATE projects SET scenarios = %s WHERE id = %s", (json.dumps(scenarios), pid))
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True, "outputs": out})
 
@@ -887,7 +915,7 @@ def portfolio():
     include_archived = request.args.get("include_archived") == "true"
     where = "" if include_archived else "WHERE p.archived = FALSE"
     cur.execute(f"""
-        SELECT p.id, p.name, p.address, p.outputs, COALESCE(p.status, 'Active') as status
+        SELECT p.id, p.name, p.address, p.outputs, p.scenarios, COALESCE(p.status, 'Active') as status
         FROM projects p
         {where}
         ORDER BY p.name
@@ -896,7 +924,8 @@ def portfolio():
     cur.close(); conn.close()
     result = []
     for r in rows:
-        o = r["outputs"] or {}
+        scens = list(r["scenarios"] or [])
+        o = (scens[0]["outputs"] if scens else None) or r["outputs"] or {}
         result.append({"id": r["id"], "name": r["name"], "address": r["address"],
                        "status": r["status"], "outputs": o})
     return jsonify(result)
