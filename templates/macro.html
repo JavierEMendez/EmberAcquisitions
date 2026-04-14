@@ -19,7 +19,7 @@
 }
 [data-theme="light"]{
   --bg:#f0f2f5;--surface:#ffffff;--card:#ffffff;--border:#e2e8f0;--border-light:#cbd5e0;
-  --accent:#c8a96e;--text:#1a2a3a;--text-muted:#718096;--text-dim:#a0aec0;--teal:#38a169;
+  --accent:#003552;--text:#1a2a3a;--text-muted:#718096;--text-dim:#a0aec0;--teal:#38a169;
 }
 body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;height:100vh;overflow:hidden;}
 #app{display:flex;height:100vh;overflow:hidden}
@@ -488,7 +488,8 @@ const MACRO_DATA = {{ data | tojson }};
 const FRED_DATA = {{ fred_data | tojson }};
 
 // ── Constants ──────────────────────────────────────────────────────────────────
-const CC = ['#c8a96e','#5e9e8c','#7b8fd4','#e07b54','#9ecf8c','#d46b7b','#7bc4d4','#d4c47b','#a07bd4'];
+const _ltMacro = document.documentElement.dataset.theme === 'light';
+const CC = [_ltMacro ? '#003552' : '#c8a96e','#5e9e8c','#7b8fd4','#e07b54','#9ecf8c','#d46b7b','#7bc4d4','#d4c47b','#a07bd4'];
 const COUNTY_BY_FIPS = {'48015':'Austin','48039':'Brazoria','48071':'Chambers','48157':'Fort Bend','48167':'Galveston','48201':'Harris','48291':'Liberty','48339':'Montgomery','48473':'Waller'};
 const HOUSTON_FIPS = new Set(Object.keys(COUNTY_BY_FIPS));
 const COUNTIES = MACRO_DATA.counties;
@@ -1061,7 +1062,7 @@ function renderChoropleth(section) {
         `<div class="map-tooltip-custom"><strong>${county} County</strong><br>${year}: ${mapFmtValue(section, metric, val)}</div>`,
         {sticky: true, opacity: 1, className: ''}
       );
-      lyr.on('mouseover', e => e.target.setStyle({fillOpacity:1, weight:2, color:'#c8a96e'}));
+      lyr.on('mouseover', e => e.target.setStyle({fillOpacity:1, weight:2, color: document.documentElement.dataset.theme === 'light' ? '#003552' : '#c8a96e'}));
       lyr.on('mouseout',  e => layer.resetStyle(e.target));
     }
   }).addTo(map);

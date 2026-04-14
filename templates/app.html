@@ -35,7 +35,7 @@
   --card: #ffffff;
   --border: #e2e8f0;
   --border-light: #cbd5e0;
-  --accent: #c8a96e;
+  --accent: #003552;
   --accent2: #38a169;
   --accent3: #003552;
   --text: #1a2a3a;
@@ -95,6 +95,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'DM San
 .status-badge{font-size:9px;border-radius:3px;padding:1px 5px;font-weight:600;flex-shrink:0;letter-spacing:.02em}
 .status-active{background:rgba(94,158,140,.15);color:#5e9e8c}
 .status-under-contract{background:rgba(200,169,110,.15);color:#c8a96e}
+[data-theme="light"] .status-under-contract{background:rgba(0,53,82,.12);color:#003552}
 .status-closed{background:rgba(123,143,212,.15);color:#7b8fd4}
 .status-dead{background:rgba(224,82,82,.12);color:#e05252}
 /* Status filter bar */
@@ -3808,6 +3809,8 @@ function renderOutputsFromFlat(o) {
     const _lt = document.documentElement.dataset.theme === 'light';
     const DIM = _lt ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.07)';
     const CH_TEXT = _lt ? '#718096' : '#8b95a8';
+    const CH_ACCENT = _lt ? '#003552' : '#c8a96e';
+    const CH_ACCENT_FILL = _lt ? 'rgba(0,53,82,0.75)' : 'rgba(200,169,110,0.75)';
 
     // Rev vs Cost chart
     const rc = plug('chart-rev-cost');
@@ -3858,8 +3861,8 @@ function renderOutputsFromFlat(o) {
           datasets:[{
             label:'Lot Takedowns',
             data: lotArr.map(y=>y.lots),
-            backgroundColor:'rgba(200,169,110,0.75)',
-            borderColor:'#c8a96e',borderWidth:1,borderRadius:3
+            backgroundColor:CH_ACCENT_FILL,
+            borderColor:CH_ACCENT,borderWidth:1,borderRadius:3
           }]
         },
         options:{responsive:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.parsed.y.toLocaleString()+' lots'}}},
@@ -4201,8 +4204,8 @@ function renderOutputs(d, container) {
       datasets: [{
         label: 'Lot Takedowns',
         data: lotData.map(y=>y.lots),
-        backgroundColor: 'rgba(200,169,110,0.75)',
-        borderColor: '#c8a96e', borderWidth:1, borderRadius:3
+        backgroundColor: CH_ACCENT_FILL,
+        borderColor: CH_ACCENT, borderWidth:1, borderRadius:3
       }]
     },
     options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.parsed.y.toLocaleString()+' lots'}}}, scales:scaleOpts }
@@ -4487,6 +4490,8 @@ function renderCashflow(o, container) {
     const _ltCF = document.documentElement.dataset.theme === 'light';
     const DIM = _ltCF ? 'rgba(0,0,0,0.08)' : 'rgba(37,44,61,0.7)';
     const CH_TEXT = _ltCF ? '#718096' : '#8b95a8';
+    const CH_ACCENT = _ltCF ? '#003552' : '#c8a96e';
+    const CH_ACCENT_FILL = _ltCF ? 'rgba(0,53,82,0.75)' : 'rgba(200,169,110,0.75)';
     const qbarCtx = document.getElementById('cf-chart-qbar');
     if (qbarCtx) new Chart(qbarCtx, {
       type: 'bar',

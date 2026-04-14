@@ -17,7 +17,7 @@
   }
   [data-theme="light"]{
     --bg:#f0f2f5;--surface:#ffffff;--card:#ffffff;--border:#e2e8f0;--border-light:#cbd5e0;
-    --accent:#c8a96e;--text:#1a2a3a;--text-muted:#718096;--text-dim:#a0aec0;--teal:#38a169;
+    --accent:#003552;--text:#1a2a3a;--text-muted:#718096;--text-dim:#a0aec0;--teal:#38a169;
   }
   body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;height:100vh;overflow:hidden;padding:0;}
   #app{display:flex;height:100vh;overflow:hidden}
@@ -131,6 +131,9 @@
   #pdf-render .group-header{
     background:#f0ead8!important;color:#6b5a2e;font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;
     font-size:8px;border-bottom:1.5px solid #c8a96e;text-align:center;padding:3px 4px;
+  }
+  [data-theme="light"] #pdf-render .group-header{
+    border-bottom:1.5px solid #003552!important;
   }
   #pdf-render .totals-row td{font-weight:700;border-top:1.5px solid #8a7040;background:#faf9f6!important;}
   #pdf-render .health-pill{display:inline-block;padding:1px 6px;border-radius:8px;font-size:6.5px;font-weight:700;}
