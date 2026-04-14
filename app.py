@@ -738,8 +738,8 @@ def default_inputs(name="New Project"):
         "purchase_price_per_acre": 0,
         "closing_costs_pct": 0.045,
         "closing_date": "",
-        "default_other_pct": 0.25,
-        "sectional_other_pct": 0.17,       # Excel B6 = 0.17
+        "default_other_pct": 0.17,
+        "sectional_other_pct": 0.25,       # Excel B6 = 0.17
         "landscaping_other_pct": 0.12,
         "contingency": 0.05,
         "site_work_pct": 0.01,
