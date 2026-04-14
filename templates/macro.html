@@ -21,6 +21,10 @@
   --bg:#f0f2f5;--surface:#ffffff;--card:#ffffff;--border:#e2e8f0;--border-light:#cbd5e0;
   --accent:#003552;--text:#1a2a3a;--text-muted:#718096;--text-dim:#a0aec0;--teal:#38a169;
 }
+[data-theme="light"] #sidebar{background:var(--bg);}
+[data-theme="light"] .map-select{background:var(--bg);}
+[data-theme="light"] .map-tooltip-custom{background:#fff!important;border:1px solid #e2e8f0!important;color:#1a2a3a!important;box-shadow:0 4px 16px rgba(0,0,0,.1)!important;}
+[data-theme="light"] button[onclick="saveAcctPw()"]{color:#fff!important;}
 body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;height:100vh;overflow:hidden;}
 #app{display:flex;height:100vh;overflow:hidden}
 #sidebar{width:240px;background:#141820;border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
@@ -571,8 +575,16 @@ function computeKPIs() {
 }
 
 // ── Chart helpers ──────────────────────────────────────────────────────────────
-Chart.defaults.color = '#8b95a8';
-Chart.defaults.borderColor = '#1e2535';
+const _CH_LEGEND    = _ltMacro ? '#718096' : '#8b95a8';
+const _CH_GRID      = _ltMacro ? 'rgba(0,0,0,0.08)' : '#1a2030';
+const _CH_TICK      = _ltMacro ? '#718096' : '#4a5568';
+const _CH_TT_BG     = _ltMacro ? '#ffffff' : '#1e2535';
+const _CH_TT_TITLE  = _ltMacro ? '#1a2a3a' : '#e8eaf0';
+const _CH_TT_BODY   = _ltMacro ? '#718096' : '#8b95a8';
+const _CH_TT_BORDER = _ltMacro ? '#e2e8f0' : '#2e3750';
+
+Chart.defaults.color = _CH_LEGEND;
+Chart.defaults.borderColor = _CH_GRID;
 
 const _charts = {};
 
@@ -594,16 +606,16 @@ function mkLineChart(id, labels, datasets, yFmtFn, options = {}) {
       animation: { duration: 300 },
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { labels: { color: '#8b95a8', font: { family: 'DM Sans', size: 10 }, boxWidth: 10, padding: 10 } },
+        legend: { labels: { color: _CH_LEGEND, font: { family: 'DM Sans', size: 10 }, boxWidth: 10, padding: 10 } },
         tooltip: {
-          backgroundColor: '#1e2535', titleColor: '#e8eaf0', bodyColor: '#8b95a8',
-          borderColor: '#2e3750', borderWidth: 1, padding: 9,
+          backgroundColor: _CH_TT_BG, titleColor: _CH_TT_TITLE, bodyColor: _CH_TT_BODY,
+          borderColor: _CH_TT_BORDER, borderWidth: 1, padding: 9,
           callbacks: { label: ctx => ' ' + ctx.dataset.label + ': ' + (yFmtFn ? yFmtFn(ctx.raw) : fmtN(ctx.raw)) }
         }
       },
       scales: {
-        x: { ticks: { color: '#4a5568', font: { size: 9 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 20 }, grid: { color: '#1a2030' } },
-        y: { ticks: { color: '#4a5568', font: { size: 9 }, callback: v => yFmtFn ? yFmtFn(v) : fmtN(v) }, grid: { color: '#1a2030' } }
+        x: { ticks: { color: _CH_TICK, font: { size: 9 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 20 }, grid: { color: _CH_GRID } },
+        y: { ticks: { color: _CH_TICK, font: { size: 9 }, callback: v => yFmtFn ? yFmtFn(v) : fmtN(v) }, grid: { color: _CH_GRID } }
       },
       ...options
     }
@@ -627,16 +639,16 @@ function mkBarChart(id, labels, datasets, yFmtFn, horizontal = false) {
       responsive: true, maintainAspectRatio: false,
       animation: { duration: 300 },
       plugins: {
-        legend: { display: datasets.length > 1, labels: { color: '#8b95a8', font: { family: 'DM Sans', size: 10 }, boxWidth: 10, padding: 10 } },
+        legend: { display: datasets.length > 1, labels: { color: _CH_LEGEND, font: { family: 'DM Sans', size: 10 }, boxWidth: 10, padding: 10 } },
         tooltip: {
-          backgroundColor: '#1e2535', titleColor: '#e8eaf0', bodyColor: '#8b95a8',
-          borderColor: '#2e3750', borderWidth: 1, padding: 9,
+          backgroundColor: _CH_TT_BG, titleColor: _CH_TT_TITLE, bodyColor: _CH_TT_BODY,
+          borderColor: _CH_TT_BORDER, borderWidth: 1, padding: 9,
           callbacks: { label: ctx => ' ' + (yFmtFn ? yFmtFn(ctx.raw) : fmtN(ctx.raw)) }
         }
       },
       scales: {
-        x: { ticks: { color: '#4a5568', font: { size: 9 }, callback: v => horizontal ? (yFmtFn ? yFmtFn(v) : fmtN(v)) : v }, grid: { color: '#1a2030' } },
-        y: { ticks: { color: '#4a5568', font: { size: 9 }, callback: v => !horizontal ? (yFmtFn ? yFmtFn(v) : fmtN(v)) : v }, grid: { color: '#1a2030' } }
+        x: { ticks: { color: _CH_TICK, font: { size: 9 }, callback: v => horizontal ? (yFmtFn ? yFmtFn(v) : fmtN(v)) : v }, grid: { color: _CH_GRID } },
+        y: { ticks: { color: _CH_TICK, font: { size: 9 }, callback: v => !horizontal ? (yFmtFn ? yFmtFn(v) : fmtN(v)) : v }, grid: { color: _CH_GRID } }
       }
     }
   });
@@ -658,16 +670,16 @@ function mkGroupedBar(id, labels, datasets, yFmtFn) {
       responsive: true, maintainAspectRatio: false,
       animation: { duration: 300 },
       plugins: {
-        legend: { labels: { color: '#8b95a8', font: { family: 'DM Sans', size: 10 }, boxWidth: 10, padding: 10 } },
+        legend: { labels: { color: _CH_LEGEND, font: { family: 'DM Sans', size: 10 }, boxWidth: 10, padding: 10 } },
         tooltip: {
-          backgroundColor: '#1e2535', titleColor: '#e8eaf0', bodyColor: '#8b95a8',
-          borderColor: '#2e3750', borderWidth: 1, padding: 9,
+          backgroundColor: _CH_TT_BG, titleColor: _CH_TT_TITLE, bodyColor: _CH_TT_BODY,
+          borderColor: _CH_TT_BORDER, borderWidth: 1, padding: 9,
           callbacks: { label: ctx => ' ' + ctx.dataset.label + ': ' + (yFmtFn ? yFmtFn(ctx.raw) : fmtN(ctx.raw)) }
         }
       },
       scales: {
-        x: { ticks: { color: '#4a5568', font: { size: 9 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 20 }, grid: { color: '#1a2030' } },
-        y: { ticks: { color: '#4a5568', font: { size: 9 }, callback: v => yFmtFn ? yFmtFn(v) : fmtN(v) }, grid: { color: '#1a2030' } }
+        x: { ticks: { color: _CH_TICK, font: { size: 9 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 20 }, grid: { color: _CH_GRID } },
+        y: { ticks: { color: _CH_TICK, font: { size: 9 }, callback: v => yFmtFn ? yFmtFn(v) : fmtN(v) }, grid: { color: _CH_GRID } }
       }
     }
   });
@@ -689,17 +701,17 @@ function mkStackedBar(id, labels, datasets, yFmtFn) {
       responsive: true, maintainAspectRatio: false,
       animation: { duration: 300 },
       plugins: {
-        legend: { labels: { color: '#8b95a8', font: { family: 'DM Sans', size: 10 }, boxWidth: 10, padding: 10 } },
+        legend: { labels: { color: _CH_LEGEND, font: { family: 'DM Sans', size: 10 }, boxWidth: 10, padding: 10 } },
         tooltip: {
           mode: 'index', intersect: false,
-          backgroundColor: '#1e2535', titleColor: '#e8eaf0', bodyColor: '#8b95a8',
-          borderColor: '#2e3750', borderWidth: 1, padding: 9,
+          backgroundColor: _CH_TT_BG, titleColor: _CH_TT_TITLE, bodyColor: _CH_TT_BODY,
+          borderColor: _CH_TT_BORDER, borderWidth: 1, padding: 9,
           callbacks: { label: ctx => ' ' + ctx.dataset.label + ': ' + (yFmtFn ? yFmtFn(ctx.raw) : fmtN(ctx.raw)) }
         }
       },
       scales: {
-        x: { stacked: true, ticks: { color: '#4a5568', font: { size: 9 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 20 }, grid: { color: '#1a2030' } },
-        y: { stacked: true, ticks: { color: '#4a5568', font: { size: 9 }, callback: v => yFmtFn ? yFmtFn(v) : fmtN(v) }, grid: { color: '#1a2030' } }
+        x: { stacked: true, ticks: { color: _CH_TICK, font: { size: 9 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 20 }, grid: { color: _CH_GRID } },
+        y: { stacked: true, ticks: { color: _CH_TICK, font: { size: 9 }, callback: v => yFmtFn ? yFmtFn(v) : fmtN(v) }, grid: { color: _CH_GRID } }
       }
     }
   });
