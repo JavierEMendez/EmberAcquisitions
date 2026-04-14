@@ -29,6 +29,32 @@
   --sidebar-w: 240px;
   --header-h: 64px;
 }
+[data-theme="light"] {
+  --bg: #f0f2f5;
+  --surface: #ffffff;
+  --card: #ffffff;
+  --border: #e2e8f0;
+  --border-light: #cbd5e0;
+  --accent: #c8a96e;
+  --accent2: #38a169;
+  --accent3: #003552;
+  --text: #1a2a3a;
+  --text-muted: #718096;
+  --text-dim: #a0aec0;
+  --danger: #e53e3e;
+  --success: #38a169;
+  --warn: #d69e2e;
+}
+/* Light mode overrides for hardcoded dark-only colors */
+[data-theme="light"] .data-table td { border-bottom-color: #e2e8f0; }
+[data-theme="light"] .data-table tr:hover td { background: rgba(0,53,82,.04); }
+[data-theme="light"] .summary-row { border-bottom-color: #e2e8f0; }
+[data-theme="light"] .fin-row td { border-bottom-color: #e2e8f0; }
+[data-theme="light"] .fin-row:hover td { background: rgba(0,53,82,.03); }
+[data-theme="light"] .cl-header { background: rgba(0,53,82,.04); }
+[data-theme="light"] tr.lot-off { background: rgba(0,0,0,.07); }
+[data-theme="light"] .sidebar-item:hover { background: rgba(200,169,110,.08); }
+[data-theme="light"] #ctx-menu { box-shadow: 0 4px 16px rgba(0,0,0,.12); }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;line-height:1.5}
 /* Disable slashed zeros everywhere - use lining tabular numerals */
@@ -3778,7 +3804,10 @@ function renderOutputsFromFlat(o) {
   // Render charts
   requestAnimationFrame(() => {
     const plug = (id) => { const c = document.getElementById(id); return c ? c.getContext('2d') : null; };
-    const GOLD = 'rgba(200,169,110,0.85)', TEAL = 'rgba(94,158,140,0.7)', BLUE='rgba(123,143,212,0.7)', DIM='rgba(255,255,255,0.07)';
+    const GOLD = 'rgba(200,169,110,0.85)', TEAL = 'rgba(94,158,140,0.7)', BLUE='rgba(123,143,212,0.7)';
+    const _lt = document.documentElement.dataset.theme === 'light';
+    const DIM = _lt ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.07)';
+    const CH_TEXT = _lt ? '#718096' : '#8b95a8';
 
     // Rev vs Cost chart
     const rc = plug('chart-rev-cost');
@@ -3791,8 +3820,8 @@ function renderOutputsFromFlat(o) {
           {label:'Cost',data:years.map(y=>(yrCostData[y]||0)/1e6),backgroundColor:'rgba(224,85,85,0.6)',borderRadius:3}
         ]
       },
-      options:{responsive:true,plugins:{legend:{labels:{color:'#8b95a8',font:{size:11}}}},
-        scales:{x:{ticks:{color:'#8b95a8',font:{size:10}},grid:{color:DIM}},y:{ticks:{color:'#8b95a8',font:{size:10},callback:v=>'$'+v+'M'},grid:{color:DIM}}}}
+      options:{responsive:true,plugins:{legend:{labels:{color:CH_TEXT,font:{size:11}}}},
+        scales:{x:{ticks:{color:CH_TEXT,font:{size:10}},grid:{color:DIM}},y:{ticks:{color:CH_TEXT,font:{size:10},callback:v=>'$'+v+'M'},grid:{color:DIM}}}}
     });
 
     // Cumulative CF chart
@@ -3834,7 +3863,7 @@ function renderOutputsFromFlat(o) {
           }]
         },
         options:{responsive:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.parsed.y.toLocaleString()+' lots'}}},
-          scales:{x:{ticks:{color:'#8b95a8',font:{size:10}},grid:{color:DIM}},y:{ticks:{color:'#8b95a8',font:{size:10}},grid:{color:DIM},beginAtZero:true}}}
+          scales:{x:{ticks:{color:CH_TEXT,font:{size:10}},grid:{color:DIM}},y:{ticks:{color:CH_TEXT,font:{size:10}},grid:{color:DIM},beginAtZero:true}}}
       });
     }
 
@@ -3856,7 +3885,7 @@ function renderOutputsFromFlat(o) {
           }]
         },
         options:{responsive:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.parsed.y.toLocaleString()+' homes'}}},
-          scales:{x:{ticks:{color:'#8b95a8',font:{size:10}},grid:{color:DIM}},y:{ticks:{color:'#8b95a8',font:{size:10}},grid:{color:DIM},beginAtZero:true}}}
+          scales:{x:{ticks:{color:CH_TEXT,font:{size:10}},grid:{color:DIM}},y:{ticks:{color:CH_TEXT,font:{size:10}},grid:{color:DIM},beginAtZero:true}}}
       });
     }
 
@@ -3905,8 +3934,8 @@ function renderOutputsFromFlat(o) {
             }
           },
           scales:{
-            x:{stacked:true, ticks:{color:'#8b95a8',font:{size:10}}, grid:{color:DIM}},
-            y:{stacked:true, ticks:{color:'#8b95a8',font:{size:10},callback:v=>'$'+(v/1e6).toFixed(0)+'M'}, grid:{color:DIM}, beginAtZero:true}
+            x:{stacked:true, ticks:{color:CH_TEXT,font:{size:10}}, grid:{color:DIM}},
+            y:{stacked:true, ticks:{color:CH_TEXT,font:{size:10},callback:v=>'$'+(v/1e6).toFixed(0)+'M'}, grid:{color:DIM}, beginAtZero:true}
           }
         }
       });
@@ -4455,7 +4484,9 @@ function renderCashflow(o, container) {
 
   // Charts
   requestAnimationFrame(() => {
-    const DIM = 'rgba(37,44,61,0.7)';
+    const _ltCF = document.documentElement.dataset.theme === 'light';
+    const DIM = _ltCF ? 'rgba(0,0,0,0.08)' : 'rgba(37,44,61,0.7)';
+    const CH_TEXT = _ltCF ? '#718096' : '#8b95a8';
     const qbarCtx = document.getElementById('cf-chart-qbar');
     if (qbarCtx) new Chart(qbarCtx, {
       type: 'bar',
@@ -4464,9 +4495,9 @@ function renderCashflow(o, container) {
         {label:'Cost',    data:qCost, backgroundColor:'rgba(224,85,85,0.6)', borderRadius:2},
       ]},
       options: {responsive:true, maintainAspectRatio:false,
-        plugins:{legend:{labels:{color:'#8b95a8',font:{size:11}}}},
-        scales:{x:{ticks:{color:'#7a8299',font:{size:9},maxRotation:60},grid:{color:DIM}},
-                y:{ticks:{color:'#7a8299',font:{size:10},callback:v=>'$'+v.toFixed(1)+'M'},grid:{color:DIM}}}}
+        plugins:{legend:{labels:{color:CH_TEXT,font:{size:11}}}},
+        scales:{x:{ticks:{color:CH_TEXT,font:{size:9},maxRotation:60},grid:{color:DIM}},
+                y:{ticks:{color:CH_TEXT,font:{size:10},callback:v=>'$'+v.toFixed(1)+'M'},grid:{color:DIM}}}}
     });
     const cumCtx = document.getElementById('cf-chart-cum');
     if (cumCtx) new Chart(cumCtx, {
@@ -4477,9 +4508,9 @@ function renderCashflow(o, container) {
         borderWidth:2, fill:true, pointRadius:2, tension:0.3
       }]},
       options: {responsive:true, maintainAspectRatio:false,
-        plugins:{legend:{labels:{color:'#8b95a8',font:{size:11}}}},
-        scales:{x:{ticks:{color:'#7a8299',font:{size:9},maxRotation:60},grid:{color:DIM}},
-                y:{ticks:{color:'#7a8299',font:{size:10},callback:v=>'$'+v.toFixed(1)+'M'},grid:{color:DIM}}}}
+        plugins:{legend:{labels:{color:CH_TEXT,font:{size:11}}}},
+        scales:{x:{ticks:{color:CH_TEXT,font:{size:9},maxRotation:60},grid:{color:DIM}},
+                y:{ticks:{color:CH_TEXT,font:{size:10},callback:v=>'$'+v.toFixed(1)+'M'},grid:{color:DIM}}}}
     });
   });
 }
@@ -4731,6 +4762,17 @@ async function downloadPerformancePDF(){
       <button onclick="closeAcct()" style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer;line-height:1">&times;</button>
     </div>
     <div style="font-size:12px;color:var(--text-dim);margin-bottom:16px">Logged in as <strong style="color:var(--text-muted)">{{ username }}</strong></div>
+    <!-- Theme Toggle -->
+    <div style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:16px">
+      <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Appearance</div>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:13px;color:var(--text-muted)">Color Theme</span>
+        <div style="display:flex;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:3px;gap:2px">
+          <button id="theme-btn-dark" onclick="applyTheme('dark')" style="padding:5px 14px;border:none;border-radius:4px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s">Dark</button>
+          <button id="theme-btn-light" onclick="applyTheme('light')" style="padding:5px 14px;border:none;border-radius:4px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s">Light</button>
+        </div>
+      </div>
+    </div>
     <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Email</div>
     <div id="acct-email" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:16px;min-height:36px">—</div>
     <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Change Password</div>
@@ -4766,9 +4808,47 @@ async function downloadPerformancePDF(){
   </div>
 </div>
 <script>
+// ── THEME ─────────────────────────────────────────────────────────
+function _updateThemeButtons() {
+  const isLight = document.documentElement.dataset.theme === 'light';
+  const darkBtn  = document.getElementById('theme-btn-dark');
+  const lightBtn = document.getElementById('theme-btn-light');
+  if (!darkBtn || !lightBtn) return;
+  darkBtn.style.background  = isLight ? 'transparent' : 'var(--accent)';
+  darkBtn.style.color       = isLight ? 'var(--text-muted)' : '#000';
+  darkBtn.style.fontWeight  = isLight ? '400' : '600';
+  lightBtn.style.background = isLight ? 'var(--accent)' : 'transparent';
+  lightBtn.style.color      = isLight ? '#000' : 'var(--text-muted)';
+  lightBtn.style.fontWeight = isLight ? '600' : '400';
+}
+function applyTheme(theme) {
+  if (theme === 'light') {
+    document.documentElement.dataset.theme = 'light';
+  } else {
+    delete document.documentElement.dataset.theme;
+  }
+  localStorage.setItem('ember-theme', theme);
+  _updateThemeButtons();
+  // Re-render charts with new palette
+  if (window._lastOutputs && Object.keys(window._lastOutputs).length > 0) {
+    renderOutputsFromFlat(window._lastOutputs);
+  }
+  const cfContent = document.getElementById('cashflow-content');
+  if (cfContent && window._lastOutputs && Object.keys(window._lastOutputs).length > 0) {
+    renderCashflow(window._lastOutputs, cfContent);
+  }
+}
+// Apply saved theme immediately on load
+(function() {
+  if (localStorage.getItem('ember-theme') === 'light') {
+    document.documentElement.dataset.theme = 'light';
+  }
+})();
+
 async function openAcct() {
   const m = document.getElementById('acct-modal');
   m.style.display = 'flex';
+  _updateThemeButtons();
   document.getElementById('acct-cur-pw').value = '';
   document.getElementById('acct-new-pw').value = '';
   document.getElementById('acct-conf-pw').value = '';
