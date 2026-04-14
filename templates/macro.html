@@ -497,7 +497,7 @@ const FRED_DATA = {{ fred_data | tojson }};
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const _ltMacro = document.documentElement.dataset.theme === 'light';
-const CC = [_ltMacro ? '#003552' : '#c8a96e','#5e9e8c','#7b8fd4','#e07b54','#9ecf8c','#d46b7b','#7bc4d4','#d4c47b','#a07bd4'];
+const CC = [_ltMacro ? '#718096' : '#c8a96e','#5e9e8c','#7b8fd4','#e07b54','#9ecf8c','#d46b7b','#7bc4d4','#d4c47b','#a07bd4'];
 const COUNTY_BY_FIPS = {'48015':'Austin','48039':'Brazoria','48071':'Chambers','48157':'Fort Bend','48167':'Galveston','48201':'Harris','48291':'Liberty','48339':'Montgomery','48473':'Waller'};
 const HOUSTON_FIPS = new Set(Object.keys(COUNTY_BY_FIPS));
 const COUNTIES = MACRO_DATA.counties;
@@ -618,8 +618,8 @@ function mkLineChart(id, labels, datasets, yFmtFn, options = {}) {
         }
       },
       scales: {
-        x: { ticks: { color: _CH_TICK, font: { size: 9 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 20 }, grid: { color: _CH_GRID } },
-        y: { ticks: { color: _CH_TICK, font: { size: 9 }, callback: v => yFmtFn ? yFmtFn(v) : fmtN(v) }, grid: { color: _CH_GRID } }
+        x: { border: { color: _CH_GRID }, ticks: { color: _CH_TICK, font: { size: 9 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 20 }, grid: { color: _CH_GRID } },
+        y: { border: { color: _CH_GRID }, ticks: { color: _CH_TICK, font: { size: 9 }, callback: v => yFmtFn ? yFmtFn(v) : fmtN(v) }, grid: { color: _CH_GRID } }
       },
       ...options
     }
@@ -651,8 +651,8 @@ function mkBarChart(id, labels, datasets, yFmtFn, horizontal = false) {
         }
       },
       scales: {
-        x: { ticks: { color: _CH_TICK, font: { size: 9 }, callback: v => horizontal ? (yFmtFn ? yFmtFn(v) : fmtN(v)) : v }, grid: { color: _CH_GRID } },
-        y: { ticks: { color: _CH_TICK, font: { size: 9 }, callback: v => !horizontal ? (yFmtFn ? yFmtFn(v) : fmtN(v)) : v }, grid: { color: _CH_GRID } }
+        x: { border: { color: _CH_GRID }, ticks: { color: _CH_TICK, font: { size: 9 }, callback: v => horizontal ? (yFmtFn ? yFmtFn(v) : fmtN(v)) : v }, grid: { color: _CH_GRID } },
+        y: { border: { color: _CH_GRID }, ticks: { color: _CH_TICK, font: { size: 9 }, callback: v => !horizontal ? (yFmtFn ? yFmtFn(v) : fmtN(v)) : v }, grid: { color: _CH_GRID } }
       }
     }
   });
@@ -682,8 +682,8 @@ function mkGroupedBar(id, labels, datasets, yFmtFn) {
         }
       },
       scales: {
-        x: { ticks: { color: _CH_TICK, font: { size: 9 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 20 }, grid: { color: _CH_GRID } },
-        y: { ticks: { color: _CH_TICK, font: { size: 9 }, callback: v => yFmtFn ? yFmtFn(v) : fmtN(v) }, grid: { color: _CH_GRID } }
+        x: { border: { color: _CH_GRID }, ticks: { color: _CH_TICK, font: { size: 9 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 20 }, grid: { color: _CH_GRID } },
+        y: { border: { color: _CH_GRID }, ticks: { color: _CH_TICK, font: { size: 9 }, callback: v => yFmtFn ? yFmtFn(v) : fmtN(v) }, grid: { color: _CH_GRID } }
       }
     }
   });
@@ -714,8 +714,8 @@ function mkStackedBar(id, labels, datasets, yFmtFn) {
         }
       },
       scales: {
-        x: { stacked: true, ticks: { color: _CH_TICK, font: { size: 9 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 20 }, grid: { color: _CH_GRID } },
-        y: { stacked: true, ticks: { color: _CH_TICK, font: { size: 9 }, callback: v => yFmtFn ? yFmtFn(v) : fmtN(v) }, grid: { color: _CH_GRID } }
+        x: { stacked: true, border: { color: _CH_GRID }, ticks: { color: _CH_TICK, font: { size: 9 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 20 }, grid: { color: _CH_GRID } },
+        y: { stacked: true, border: { color: _CH_GRID }, ticks: { color: _CH_TICK, font: { size: 9 }, callback: v => yFmtFn ? yFmtFn(v) : fmtN(v) }, grid: { color: _CH_GRID } }
       }
     }
   });
