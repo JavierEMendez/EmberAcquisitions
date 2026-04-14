@@ -300,7 +300,13 @@ def get_project(pid):
     cur.close(); conn.close()
     if not row:
         return jsonify({"error": "Not found"}), 404
-    return jsonify(dict(row))
+    d = dict(row)
+    # Prefer first scenario's inputs/outputs so callers always get current data
+    scens = list(d.get("scenarios") or [])
+    if scens:
+        d["inputs"]  = scens[0].get("inputs",  d.get("inputs",  {}))
+        d["outputs"] = scens[0].get("outputs", d.get("outputs", {}))
+    return jsonify(d)
 
 @app.route("/api/projects/<int:pid>", methods=["PUT"])
 @login_required
@@ -440,8 +446,10 @@ def create_scenario(pid):
         inp = dict(src["inputs"]) if src else dict(row["inputs"] or {})
         out = dict(src["outputs"]) if src else dict(row["outputs"] or {})
     else:
-        inp = dict(row["inputs"] or {})
-        out = dict(row["outputs"] or {})
+        # Seed from first scenario when available so new scenarios start from current inputs
+        base = scenarios[0] if scenarios else None
+        inp = dict(base["inputs"]) if base else dict(row["inputs"] or {})
+        out = dict(base["outputs"]) if base else dict(row["outputs"] or {})
     new_scen = {"id": sid, "name": name, "inputs": inp, "outputs": out}
     scenarios.append(new_scen)
     cur.execute("UPDATE projects SET scenarios = %s WHERE id = %s", (json.dumps(scenarios), pid))
