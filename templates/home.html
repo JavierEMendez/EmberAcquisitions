@@ -21,6 +21,9 @@
   [data-theme="light"] .dash-card.clickable:hover{background:var(--border);}
   [data-theme="light"] .add-user-form{background:var(--bg);}
   [data-theme="light"] button[onclick="saveAcctPw()"]{color:#fff!important;}
+  .logo-light{display:none;}
+  [data-theme="light"] .logo-dark{display:none;}
+  [data-theme="light"] .logo-light{display:block;}
   body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;
     min-height:100vh;display:flex;align-items:center;justify-content:center;}
   .home-wrap{width:100%;max-width:960px;padding:24px;}
@@ -128,7 +131,8 @@
 <body>
 <div class="home-wrap">
   <div class="logo-area">
-    <img src="/static/img/ember_logo.png" alt="Ember">
+    <img src="/static/img/ember_logo.png" alt="Ember" class="logo-dark">
+    <img src="/static/img/ember_logo_light.png" alt="Ember" class="logo-light">
     <div class="tagline">Applications &amp; Dashboards</div>
   </div>
   <div class="welcome"><span id="greeting-text">Welcome back</span>, <strong>{{ display_name }}</strong></div>

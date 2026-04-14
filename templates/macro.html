@@ -25,6 +25,9 @@
 [data-theme="light"] .map-select{background:var(--bg);}
 [data-theme="light"] .map-tooltip-custom{background:#fff!important;border:1px solid #e2e8f0!important;color:#1a2a3a!important;box-shadow:0 4px 16px rgba(0,0,0,.1)!important;}
 [data-theme="light"] button[onclick="saveAcctPw()"]{color:#fff!important;}
+.logo-light{display:none;}
+[data-theme="light"] .logo-dark{display:none;}
+[data-theme="light"] .logo-light{display:block;}
 body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;height:100vh;overflow:hidden;}
 #app{display:flex;height:100vh;overflow:hidden}
 #sidebar{width:240px;background:#141820;border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
@@ -91,7 +94,8 @@ a:hover{text-decoration:underline}
 <div id="app">
   <nav id="sidebar">
     <div class="sidebar-logo">
-      <img src="/static/img/ember_logo.png" alt="Ember" class="logo-img">
+      <img src="/static/img/ember_logo.png" alt="Ember" class="logo-img logo-dark">
+      <img src="/static/img/ember_logo_light.png" alt="Ember" class="logo-img logo-light">
       <div class="logo-sub">Macroeconomic Data</div>
     </div>
 
