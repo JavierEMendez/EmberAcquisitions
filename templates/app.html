@@ -1840,24 +1840,36 @@ async function importFromExcel(file) {
 
 async function importIntoProject(file) {
   if (!file || !currentProject) return;
-  if (!confirm('Import inputs from "' + file.name + '" into this project? This will overwrite all current inputs.')) return;
+  const scenName = _scenarios.find(s => s.id === _currentScenarioId)?.name || 'current scenario';
+  if (!confirm('Import inputs from "' + file.name + '" into scenario "' + scenName + '"?\nOther scenarios will not be affected.')) return;
   const fd = new FormData();
   fd.append('file', file);
   try {
     const res = await fetch('/api/parse_excel', { method: 'POST', body: fd });
     const data = await res.json();
     if (!res.ok || !data.ok) { toast('Import failed: ' + (data.error || 'unknown'), 'error'); return; }
-    // Save parsed inputs to current project
-    const saveRes = await fetch('/api/projects/' + currentProject, {
+    // Save parsed inputs to the active scenario only — leaves all other scenarios untouched
+    const url = _currentScenarioId
+      ? `/api/projects/${currentProject}/scenarios/${_currentScenarioId}`
+      : `/api/projects/${currentProject}`;
+    const saveRes = await fetch(url, {
       method: 'PUT',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ inputs: data.inputs })
     });
     const saveData = await saveRes.json();
     if (saveRes.ok && saveData.ok) {
-      toast('Inputs imported from Excel!', 'success');
+      // Update in-memory scenario and reload display
+      const idx = _scenarios.findIndex(s => s.id === _currentScenarioId);
+      if (idx >= 0) { _scenarios[idx].inputs = data.inputs; _scenarios[idx].outputs = saveData.outputs; }
+      window._lastOutputs = saveData.outputs;
+      markClean();
+      renderOutputsFromFlat(saveData.outputs);
+      await loadInputs({ inputs: data.inputs, outputs: saveData.outputs });
+      recalcAllLiveFields();
+      renderComparisonPanel();
       await loadProjectList();
-      await selectProject(currentProject);
+      toast('Excel imported into "' + scenName + '"', 'success');
     } else {
       toast('Save failed: ' + (saveData.error || 'unknown'), 'error');
     }
