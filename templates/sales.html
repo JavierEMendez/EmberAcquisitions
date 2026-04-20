@@ -1730,21 +1730,21 @@ function renderBohlke(data) {
 
   // ── KPIs ──
   const comps = data.comps || [];
-  // TGP includes Highlands (Lennar rolls up under "THE GRAND PRAIRIE"), so the
-  // coworker's convention is: GPD main = TGP total - Highlands.
+  // In the current raw Bohlke file, "THE GRAND PRAIRIE" is already GPD-only
+  // and "THE GRAND PRAIRIE HIGHLANDS" is its own row — no subtraction needed.
   const tgp = comps.find(c => (c.community || '').toUpperCase() === 'THE GRAND PRAIRIE');
   const hld = comps.find(c => (c.community || '').toUpperCase().includes('HIGHLAND'));
   const wallerTotal25 = comps.reduce((s,c) => s + (c.p25 || 0), 0);
   const wallerTotal24 = comps.reduce((s,c) => s + (c.p24 || 0), 0);
-  const tgpP25 = tgp ? (tgp.p25 || 0) : 0;
-  const tgpP24 = tgp ? (tgp.p24 || 0) : 0;
+  const gpdP25 = tgp ? (tgp.p25 || 0) : 0;
+  const gpdP24 = tgp ? (tgp.p24 || 0) : 0;
   const hldP25 = hld ? (hld.p25 || 0) : 0;
   const hldP24 = hld ? (hld.p24 || 0) : 0;
-  const gpdP25 = tgpP25 - hldP25;
-  const gpdP24 = tgpP24 - hldP24;
+  const combinedP25 = gpdP25 + hldP25;
+  const combinedP24 = gpdP24 + hldP24;
 
-  const combinedShare = wallerTotal25 ? (tgpP25 / wallerTotal25 * 100).toFixed(1) : '—';
-  const combinedYoY   = tgpP24 ? (((tgpP25 - tgpP24) / tgpP24) * 100).toFixed(1) : null;
+  const combinedShare = wallerTotal25 ? (combinedP25 / wallerTotal25 * 100).toFixed(1) : '—';
+  const combinedYoY   = combinedP24 ? (((combinedP25 - combinedP24) / combinedP24) * 100).toFixed(1) : null;
   const gpdShare      = wallerTotal25 ? (gpdP25 / wallerTotal25 * 100).toFixed(1) : '—';
   const gpdYoY        = gpdP24 ? (((gpdP25 - gpdP24) / gpdP24) * 100).toFixed(1) : null;
   const hldShare      = wallerTotal25 ? (hldP25 / wallerTotal25 * 100).toFixed(1) : '—';
@@ -1752,7 +1752,7 @@ function renderBohlke(data) {
 
   document.getElementById('bk-share').textContent = combinedShare + '%';
   document.getElementById('bk-share-sub').textContent =
-    fmtN(tgpP25) + ' of ' + fmtN(wallerTotal25) + ' permits' +
+    fmtN(combinedP25) + ' of ' + fmtN(wallerTotal25) + ' permits' +
     (combinedYoY != null ? ' · YoY ' + (combinedYoY >= 0 ? '+' : '') + combinedYoY + '%' : '');
   document.getElementById('bk-gpd').textContent    = fmtN(gpdP25);
   document.getElementById('bk-gpd-sub').textContent =
@@ -1807,13 +1807,13 @@ function renderBohlke(data) {
   });
 
   // ── Chart: Market Share doughnut ──
-  // For the pie, split "THE GRAND PRAIRIE" into GPD + Highlands so viewers see
-  // the Highlands slice explicitly (otherwise it's rolled into the TGP row).
+  // TGP and Highlands are already separate rows in the raw file, so just
+  // rename "THE GRAND PRAIRIE" for clarity in the chart legend.
   const shareRows = comps
     .filter(c => (c.p25 || 0) > 0 && !(c.community || '').includes('('))
     .map(c => {
       const name = (c.community || '').toUpperCase();
-      if (name === 'THE GRAND PRAIRIE') return { ...c, community: 'GPD (GRAND PRAIRIE)', p25: gpdP25 };
+      if (name === 'THE GRAND PRAIRIE') return { ...c, community: 'GPD (GRAND PRAIRIE)' };
       return c;
     })
     .sort((a,b) => b.p25 - a.p25);
@@ -1882,20 +1882,12 @@ function renderBohlke(data) {
   });
 
   // ── Comps table ──
-  // Same split-out convention: show GPD (minus Highlands) as its own row.
+  // TGP and Highlands are already separate rows — just relabel TGP for clarity.
   const tableRows = comps
     .filter(c => (c.p25 || 0) > 0 && !(c.community || '').includes('('))
     .map(c => {
       const up = (c.community || '').toUpperCase();
-      if (up === 'THE GRAND PRAIRIE') {
-        return {
-          ...c,
-          community: 'GPD (GRAND PRAIRIE)',
-          p25: gpdP25,
-          p24: (c.p24 || 0) - hldP24,
-          p23: (c.p23 || 0) - (hld ? (hld.p23 || 0) : 0),
-        };
-      }
+      if (up === 'THE GRAND PRAIRIE') return { ...c, community: 'GPD (GRAND PRAIRIE)' };
       return c;
     })
     .sort((a,b) => (b.p25 || 0) - (a.p25 || 0));
