@@ -15,6 +15,7 @@ from report_parser import parse_dashboard
 from macro_parser import parse_macro
 from data_puller import run_pull
 from sales_parser import get_sales_dashboard_data
+from bohlke_parser import parse_bohlke
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -2320,6 +2321,63 @@ def sales_data():
         return jsonify({"error": str(e)}), 503
     except Exception as e:
         return jsonify({"error": f"Unexpected error: {e}"}), 500
+
+
+@app.route("/api/upload-bohlke", methods=["POST"])
+@login_required
+def upload_bohlke():
+    """Admin-only — accepts a Bohlke competitive-set xlsx, parses it,
+    and stores the JSON in the reports table (report_type='bohlke')."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Admin only"}), 403
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No file"}), 400
+    try:
+        file_bytes = f.read()
+        data = parse_bohlke(file_bytes)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM reports WHERE report_type = 'bohlke'")
+    cur.execute("INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+                ("bohlke", json.dumps(data), session["user_id"]))
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({
+        "ok": True,
+        "yearly_rows": len(data.get("yearly", [])),
+        "comps": len(data.get("comps", [])),
+        "tgp_builders": len(data.get("tgp_builders", [])),
+    })
+
+
+@app.route("/api/bohlke-data")
+@login_required
+def bohlke_data():
+    """Return the latest stored Bohlke report data, or an empty shell
+    if nothing has been uploaded yet."""
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("sales", True):
+        return jsonify({"error": "Access denied"}), 403
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("""
+        SELECT data, uploaded_at, uploaded_by
+        FROM reports
+        WHERE report_type = 'bohlke'
+        ORDER BY uploaded_at DESC
+        LIMIT 1
+    """)
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    if not row:
+        return jsonify({"yearly": [], "comps": [], "tgp_builders": [], "uploaded_at": None})
+    data = row["data"]
+    uploaded_at = row["uploaded_at"]
+    # psycopg2 may return JSONB as dict already; fall back to json.loads if str
+    if isinstance(data, str):
+        data = json.loads(data)
+    data["uploaded_at"] = uploaded_at.isoformat() if uploaded_at else None
+    return jsonify(data)
 
 
 # ─── SCHEDULER ────────────────────────────────────────────────────────────────

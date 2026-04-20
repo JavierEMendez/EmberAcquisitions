@@ -246,6 +246,13 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
       Sales by Week
     </a>
 
+    <div class="sidebar-section">Market</div>
+    <a href="#bohlke" class="sidebar-item" data-tab="bohlke">
+      <span class="tab-accent"></span>
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l4-4 4 4 5-5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Bohlke Report
+    </a>
+
     <div style="flex:1"></div>
     <div style="padding:8px 10px 4px">
       <button onclick="openAcct()" style="width:100%;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--text-dim);font-size:12px;cursor:pointer;transition:all .15s;justify-content:center;font-family:'DM Sans',sans-serif">
@@ -580,6 +587,94 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
       <div class="starts-card" style="overflow-x:auto"><table class="pace-tbl" id="t-wk-wrg"></table></div>
       </div><!-- /tab-weekly -->
 
+      <!-- ═══════════════════════ TAB: BOHLKE REPORT ═══════════════════════ -->
+      <div id="tab-bohlke" class="tab-content">
+      <div class="section-title">
+        Bohlke Competitive-Set Report
+        <span class="sub" id="bohlke-meta">—</span>
+      </div>
+
+      {% if is_admin %}
+      <div style="display:flex;align-items:center;gap:10px;margin:-6px 0 14px">
+        <input type="file" id="bohlke-file" accept=".xlsx,.xls" style="display:none">
+        <button id="bohlke-upload-btn" onclick="document.getElementById('bohlke-file').click()"
+                style="background:var(--accent);border:none;color:#0d0f13;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;display:inline-flex;align-items:center;gap:6px">
+          <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5-5 5 5M12 5v12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Upload Bohlke xlsx
+        </button>
+        <span id="bohlke-upload-msg" style="font-size:12px;color:var(--text-dim)"></span>
+      </div>
+      {% endif %}
+
+      <!-- Empty state -->
+      <div id="bohlke-empty" style="display:none;background:var(--surface);border:1px dashed var(--border);border-radius:8px;padding:28px;text-align:center;color:var(--text-dim)">
+        <div style="font-size:14px;margin-bottom:6px">No Bohlke report uploaded yet.</div>
+        <div style="font-size:12px">
+          {% if is_admin %}Upload the latest competitive-set xlsx to populate this dashboard.
+          {% else %}Ask an admin to upload the latest competitive-set xlsx.{% endif %}
+        </div>
+      </div>
+
+      <!-- Content -->
+      <div id="bohlke-content" style="display:none">
+        <!-- KPIs -->
+        <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+          <div class="kpi-card acc-tgp"><div class="kpi-label">GPD + Highlands Share</div><div class="kpi-value" id="bk-share">—</div><div class="kpi-sub" id="bk-share-sub"></div></div>
+          <div class="kpi-card acc-gpd"><div class="kpi-label">GPD 2025 Permits</div><div class="kpi-value" id="bk-gpd">—</div><div class="kpi-sub" id="bk-gpd-sub"></div></div>
+          <div class="kpi-card acc-hld"><div class="kpi-label">Highlands 2025 Permits</div><div class="kpi-value" id="bk-hld">—</div><div class="kpi-sub" id="bk-hld-sub"></div></div>
+          <div class="kpi-card acc-amber"><div class="kpi-label">Waller ISD 2025 Permits</div><div class="kpi-value" id="bk-waller">—</div><div class="kpi-sub" id="bk-waller-sub"></div></div>
+        </div>
+
+        <!-- Yearly + Market Share row -->
+        <div class="chart-grid" style="grid-template-columns:1.4fr 1fr">
+          <div class="chart-card"><div class="chart-title">Waller ISD — Annual Permit Totals</div><div class="chart-wrap tall"><canvas id="c-bk-yearly"></canvas></div></div>
+          <div class="chart-card"><div class="chart-title">2025 Market Share</div><div class="chart-wrap tall"><canvas id="c-bk-share"></canvas></div></div>
+        </div>
+
+        <!-- Builder mix -->
+        <div class="section-title">TGP Builder Mix — 2025 Permits</div>
+        <div class="chart-grid full">
+          <div class="chart-card"><div class="chart-title">Permits by Builder (The Grand Prairie)</div><div class="chart-wrap tall"><canvas id="c-bk-builders"></canvas></div></div>
+        </div>
+
+        <!-- Community comps table -->
+        <div class="section-title">Waller ISD Communities — 2023-2025 Permits</div>
+        <div class="starts-card" style="overflow-x:auto">
+          <table class="pace-tbl" id="t-bk-comps">
+            <thead><tr>
+              <th style="text-align:left">Community</th>
+              <th>Type</th>
+              <th>'23</th>
+              <th>'24</th>
+              <th>'25</th>
+              <th>YoY</th>
+              <th>Avg Size</th>
+              <th>Avg Price</th>
+              <th>PPSF</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <!-- Yearly detail table -->
+        <div class="section-title">Waller ISD — Year-by-Year Detail</div>
+        <div class="starts-card" style="overflow-x:auto">
+          <table class="pace-tbl" id="t-bk-yearly">
+            <thead><tr>
+              <th style="text-align:left">Year</th>
+              <th>Total Permits</th>
+              <th>Avg Size</th>
+              <th>Avg Price</th>
+              <th>Avg PPSF</th>
+              <th>30yr Rate</th>
+              <th style="text-align:left">Events</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      </div><!-- /tab-bohlke -->
+
       <div style="height:40px"></div>
     </div>
   </div>
@@ -675,6 +770,7 @@ const TAB_TITLES = {
   cancels: 'Cancellations',
   starts:  'Starts & Inventory',
   weekly:  'Sales by Week',
+  bohlke:  'Bohlke Report',
 };
 const TABS = Object.keys(TAB_TITLES);
 
@@ -1596,6 +1692,288 @@ function renderCancelTable(tableId, recents) {
   });
 }
 
+// ── BOHLKE REPORT TAB ─────────────────────────────────────────────────────────
+async function loadBohlke() {
+  try {
+    const res = await fetch('/api/bohlke-data');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    window._BOHLKE_DATA = data;
+    renderBohlke(data);
+  } catch (e) {
+    document.getElementById('bohlke-meta').textContent = 'Error: ' + e.message;
+  }
+}
+
+function renderBohlke(data) {
+  const empty = document.getElementById('bohlke-empty');
+  const content = document.getElementById('bohlke-content');
+  const meta = document.getElementById('bohlke-meta');
+
+  const hasData = data && data.yearly && data.yearly.length;
+  if (!hasData) {
+    if (empty) empty.style.display = 'block';
+    if (content) content.style.display = 'none';
+    meta.textContent = 'No data uploaded';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  if (content) content.style.display = 'block';
+
+  if (data.uploaded_at) {
+    const d = new Date(data.uploaded_at);
+    meta.textContent = 'Last uploaded ' + d.toLocaleDateString() + ' · ' +
+      (data.yearly.length) + ' years · ' + (data.comps || []).length + ' communities';
+  } else {
+    meta.textContent = '';
+  }
+
+  // ── KPIs ──
+  const comps = data.comps || [];
+  // TGP includes Highlands (Lennar rolls up under "THE GRAND PRAIRIE"), so the
+  // coworker's convention is: GPD main = TGP total - Highlands.
+  const tgp = comps.find(c => (c.community || '').toUpperCase() === 'THE GRAND PRAIRIE');
+  const hld = comps.find(c => (c.community || '').toUpperCase().includes('HIGHLAND'));
+  const wallerTotal25 = comps.reduce((s,c) => s + (c.p25 || 0), 0);
+  const wallerTotal24 = comps.reduce((s,c) => s + (c.p24 || 0), 0);
+  const tgpP25 = tgp ? (tgp.p25 || 0) : 0;
+  const tgpP24 = tgp ? (tgp.p24 || 0) : 0;
+  const hldP25 = hld ? (hld.p25 || 0) : 0;
+  const hldP24 = hld ? (hld.p24 || 0) : 0;
+  const gpdP25 = tgpP25 - hldP25;
+  const gpdP24 = tgpP24 - hldP24;
+
+  const combinedShare = wallerTotal25 ? (tgpP25 / wallerTotal25 * 100).toFixed(1) : '—';
+  const combinedYoY   = tgpP24 ? (((tgpP25 - tgpP24) / tgpP24) * 100).toFixed(1) : null;
+  const gpdShare      = wallerTotal25 ? (gpdP25 / wallerTotal25 * 100).toFixed(1) : '—';
+  const gpdYoY        = gpdP24 ? (((gpdP25 - gpdP24) / gpdP24) * 100).toFixed(1) : null;
+  const hldShare      = wallerTotal25 ? (hldP25 / wallerTotal25 * 100).toFixed(1) : '—';
+  const wallerYoY     = wallerTotal24 ? (((wallerTotal25 - wallerTotal24) / wallerTotal24) * 100).toFixed(1) : null;
+
+  document.getElementById('bk-share').textContent = combinedShare + '%';
+  document.getElementById('bk-share-sub').textContent =
+    fmtN(tgpP25) + ' of ' + fmtN(wallerTotal25) + ' permits' +
+    (combinedYoY != null ? ' · YoY ' + (combinedYoY >= 0 ? '+' : '') + combinedYoY + '%' : '');
+  document.getElementById('bk-gpd').textContent    = fmtN(gpdP25);
+  document.getElementById('bk-gpd-sub').textContent =
+    gpdShare + '% share' + (gpdYoY != null ? ' · YoY ' + (gpdYoY >= 0 ? '+' : '') + gpdYoY + '%' : '');
+  document.getElementById('bk-hld').textContent    = fmtN(hldP25);
+  document.getElementById('bk-hld-sub').textContent = hldShare + '% share';
+  document.getElementById('bk-waller').textContent = fmtN(wallerTotal25);
+  document.getElementById('bk-waller-sub').textContent =
+    wallerYoY != null ? 'YoY ' + (wallerYoY >= 0 ? '+' : '') + wallerYoY + '%' : '';
+
+  // ── Chart: Yearly permits bar (highlight 2023+) ──
+  const yrLabels = data.yearly.map(y => String(y.year));
+  const yrTotals = data.yearly.map(y => y.total || 0);
+  _destroy('c-bk-yearly');
+  const tC = themeColors();
+  _charts['c-bk-yearly'] = new Chart(document.getElementById('c-bk-yearly'), {
+    type: 'bar',
+    data: {
+      labels: yrLabels,
+      datasets: [{
+        label: 'Total Permits',
+        data: yrTotals,
+        backgroundColor: data.yearly.map(y => y.year >= 2023 ? '#c8a96ecc' : '#4a90e2aa'),
+        borderColor: data.yearly.map(y => y.year >= 2023 ? '#c8a96e' : '#4a90e2'),
+        borderWidth: 1, borderRadius: 3,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: tC.ttBg, titleColor: tC.ttTitle, bodyColor: tC.ttBody,
+          borderColor: tC.ttBorder, borderWidth: 1, padding: 9,
+          callbacks: {
+            afterLabel: (ctx) => {
+              const row = data.yearly[ctx.dataIndex];
+              const lines = [];
+              if (row.avgPrice) lines.push('Avg Price: $' + row.avgPrice.toLocaleString());
+              if (row.avgPPSF)  lines.push('Avg PPSF: $' + row.avgPPSF.toFixed(2));
+              if (row.rate30yr) lines.push('30yr Rate: ' + row.rate30yr.toFixed(2) + '%');
+              return lines;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 10 } }, grid: { color: tC.grid } },
+        y: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 10 }, callback: v => v.toLocaleString() }, grid: { color: tC.grid }, beginAtZero: true },
+      },
+    },
+  });
+
+  // ── Chart: Market Share doughnut ──
+  // For the pie, split "THE GRAND PRAIRIE" into GPD + Highlands so viewers see
+  // the Highlands slice explicitly (otherwise it's rolled into the TGP row).
+  const shareRows = comps
+    .filter(c => (c.p25 || 0) > 0 && !(c.community || '').includes('('))
+    .map(c => {
+      const name = (c.community || '').toUpperCase();
+      if (name === 'THE GRAND PRAIRIE') return { ...c, community: 'GPD (GRAND PRAIRIE)', p25: gpdP25 };
+      return c;
+    })
+    .sort((a,b) => b.p25 - a.p25);
+  const top = shareRows.slice(0, 8);
+  const otherP25 = wallerTotal25 - top.reduce((s,c) => s + (c.p25 || 0), 0);
+  const pieLabels = top.map(c => c.community).concat(otherP25 > 0 ? ['Others'] : []);
+  const pieData   = top.map(c => c.p25).concat(otherP25 > 0 ? [otherP25] : []);
+  const pieColors = ['#c8a96e','#4a90e2','#58b47a','#e07a3e','#d4a76a','#8b7db8','#e06f6f','#4a6fa5','#8b95a8'];
+  _destroy('c-bk-share');
+  _charts['c-bk-share'] = new Chart(document.getElementById('c-bk-share'), {
+    type: 'doughnut',
+    data: { labels: pieLabels, datasets: [{ data: pieData, backgroundColor: pieColors.slice(0, pieLabels.length), borderWidth: 0 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'right', labels: { color: tC.legend, font: { family: 'DM Sans', size: 10 }, boxWidth: 10, padding: 8 } },
+        tooltip: {
+          backgroundColor: tC.ttBg, titleColor: tC.ttTitle, bodyColor: tC.ttBody,
+          borderColor: tC.ttBorder, borderWidth: 1, padding: 9,
+          callbacks: {
+            label: (ctx) => {
+              const pct = wallerTotal25 ? (ctx.parsed / wallerTotal25 * 100).toFixed(1) : '0';
+              return ctx.label + ': ' + ctx.parsed.toLocaleString() + ' (' + pct + '%)';
+            },
+          },
+        },
+      },
+    },
+  });
+
+  // ── Chart: TGP builder mix (horizontal bars) ──
+  const builders = data.tgp_builders || [];
+  const bLabels = builders.map(b => (b.builder || '').replace(/ HOMES$/i, '').replace(/ COMMUNITIES$/i, ''));
+  _destroy('c-bk-builders');
+  _charts['c-bk-builders'] = new Chart(document.getElementById('c-bk-builders'), {
+    type: 'bar',
+    data: {
+      labels: bLabels,
+      datasets: [{
+        label: '2025 Permits',
+        data: builders.map(b => b.permits),
+        backgroundColor: '#4a90e2cc', borderColor: '#4a90e2', borderWidth: 1, borderRadius: 3,
+      }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: tC.ttBg, titleColor: tC.ttTitle, bodyColor: tC.ttBody,
+          borderColor: tC.ttBorder, borderWidth: 1, padding: 9,
+          callbacks: {
+            afterLabel: (ctx) => {
+              const b = builders[ctx.dataIndex];
+              return b.avgPPSF ? 'Avg PPSF: $' + b.avgPPSF.toFixed(2) : '';
+            },
+          },
+        },
+      },
+      scales: {
+        x: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 10 } }, grid: { color: tC.grid }, beginAtZero: true },
+        y: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 11 } }, grid: { color: 'transparent' } },
+      },
+    },
+  });
+
+  // ── Comps table ──
+  // Same split-out convention: show GPD (minus Highlands) as its own row.
+  const tableRows = comps
+    .filter(c => (c.p25 || 0) > 0 && !(c.community || '').includes('('))
+    .map(c => {
+      const up = (c.community || '').toUpperCase();
+      if (up === 'THE GRAND PRAIRIE') {
+        return {
+          ...c,
+          community: 'GPD (GRAND PRAIRIE)',
+          p25: gpdP25,
+          p24: (c.p24 || 0) - hldP24,
+          p23: (c.p23 || 0) - (hld ? (hld.p23 || 0) : 0),
+        };
+      }
+      return c;
+    })
+    .sort((a,b) => (b.p25 || 0) - (a.p25 || 0));
+  const compsBody = document.querySelector('#t-bk-comps tbody');
+  compsBody.innerHTML = tableRows.map(c => {
+    const up = (c.community || '').toUpperCase();
+    const isOurs = up.includes('GRAND PRAIRIE') || up.includes('HIGHLAND');
+    const highlightStyle = isOurs ? 'background:rgba(200,169,110,.08);font-weight:600' : '';
+    const yoy = c.p24 ? (((c.p25 - c.p24) / c.p24) * 100).toFixed(1) : null;
+    const yoyColor = yoy == null ? 'var(--text-dim)' : (yoy >= 0 ? '#58b47a' : '#e06f6f');
+    const yoyTxt = yoy == null ? '—' : ((yoy >= 0 ? '+' : '') + yoy + '%');
+    const typeStyle = c.mpc === 'MPC' ? 'background:rgba(74,144,226,.12);color:#4a90e2' : 'background:var(--bg);color:var(--text-dim)';
+    return `<tr style="${highlightStyle}">
+      <td style="text-align:left">${c.community}</td>
+      <td><span style="${typeStyle};padding:2px 8px;border-radius:10px;font-size:11px">${c.mpc || 'NON'}</span></td>
+      <td>${c.p23 || '—'}</td>
+      <td>${c.p24 || '—'}</td>
+      <td style="font-weight:600">${c.p25 || 0}</td>
+      <td style="color:${yoyColor}">${yoyTxt}</td>
+      <td>${c.size25 ? Math.round(c.size25).toLocaleString() + ' sf' : '—'}</td>
+      <td>${c.price25 ? '$' + Math.round(c.price25).toLocaleString() : '—'}</td>
+      <td>${c.ppsf25 ? '$' + c.ppsf25.toFixed(2) : '—'}</td>
+    </tr>`;
+  }).join('');
+
+  // ── Yearly detail table (newest first) ──
+  const yrBody = document.querySelector('#t-bk-yearly tbody');
+  yrBody.innerHTML = data.yearly.slice().reverse().map(y => `<tr>
+    <td style="text-align:left;font-weight:600">${y.year}</td>
+    <td>${y.total ? y.total.toLocaleString() : '—'}</td>
+    <td>${y.avgSize ? Math.round(y.avgSize).toLocaleString() + ' sf' : '—'}</td>
+    <td>${y.avgPrice ? '$' + Math.round(y.avgPrice).toLocaleString() : '—'}</td>
+    <td>${y.avgPPSF ? '$' + y.avgPPSF.toFixed(2) : '—'}</td>
+    <td>${y.rate30yr ? y.rate30yr.toFixed(2) + '%' : '—'}</td>
+    <td style="text-align:left;color:var(--text-dim);font-size:12px">${y.events || ''}</td>
+  </tr>`).join('');
+
+  // Resize charts in case we rendered while hidden
+  setTimeout(() => {
+    ['c-bk-yearly','c-bk-share','c-bk-builders'].forEach(id => {
+      if (_charts[id]) { try { _charts[id].resize(); } catch(e){} }
+    });
+  }, 40);
+}
+
+{% if is_admin %}
+// Admin upload handler
+(function wireBohlkeUpload() {
+  const input = document.getElementById('bohlke-file');
+  const msgEl = document.getElementById('bohlke-upload-msg');
+  const btn   = document.getElementById('bohlke-upload-btn');
+  if (!input) return;
+  input.addEventListener('change', async function() {
+    const f = this.files[0];
+    if (!f) return;
+    const fd = new FormData(); fd.append('file', f);
+    if (btn) { btn.disabled = true; }
+    msgEl.style.color = 'var(--text-dim)';
+    msgEl.textContent = 'Uploading ' + f.name + '…';
+    try {
+      const res = await fetch('/api/upload-bohlke', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      msgEl.style.color = '#58b47a';
+      msgEl.textContent = 'Imported ' + data.yearly_rows + ' years, ' + data.comps + ' communities, ' + data.tgp_builders + ' builders.';
+      await loadBohlke();
+      setTimeout(() => { msgEl.textContent = ''; }, 4000);
+    } catch (e) {
+      msgEl.style.color = '#e06f6f';
+      msgEl.textContent = 'Error: ' + e.message;
+    } finally {
+      if (btn) { btn.disabled = false; }
+      input.value = '';
+    }
+  });
+})();
+{% endif %}
+
 // ── INIT ───────────────────────────────────────────────────────────────────────
 function _initialTab() {
   const h = (location.hash || '').replace('#', '');
@@ -1618,6 +1996,8 @@ function _initialTab() {
     document.getElementById('load-state').style.display = 'none';
     document.getElementById('dash').style.display = 'block';
     renderAll(data);
+    // Load Bohlke report data in parallel (independent of Pipsy sales data)
+    loadBohlke();
     // After render, re-apply tab to make sure charts resize correctly in the visible panel.
     showTab(_initialTab(), {skipHash: true});
   } catch (e) {
