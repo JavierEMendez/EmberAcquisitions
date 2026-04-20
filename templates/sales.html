@@ -224,6 +224,13 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
       Windrose Green
     </a>
 
+    <div class="sidebar-section">Planning</div>
+    <a href="#proj" class="sidebar-item" data-tab="proj">
+      <span class="tab-accent"></span>
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      2026 Projections
+    </a>
+
     <div style="flex:1"></div>
     <div style="padding:8px 10px 4px">
       <button onclick="openAcct()" style="width:100%;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--text-dim);font-size:12px;cursor:pointer;transition:all .15s;justify-content:center;font-family:'DM Sans',sans-serif">
@@ -450,6 +457,38 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
       <div class="starts-card"><table class="starts" id="t-starts-wrg"></table></div>
       </div><!-- /tab-wrg -->
 
+      <!-- ═══════════════════════ TAB: 2026 PROJECTIONS ═══════════════════════ -->
+      <div id="tab-proj" class="tab-content">
+      <div class="section-title">2026 Projections <span class="sub" id="proj-sub">Source: Joe email 11/05</span></div>
+      <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+        <div class="kpi-card acc-tgp"><div class="kpi-label">TGP 2026 Target</div><div class="kpi-value">228</div><div class="kpi-sub">19/mo pace · Grand Prairie Dev</div></div>
+        <div class="kpi-card acc-hld"><div class="kpi-label">Highlands 2026 Target</div><div class="kpi-value">372</div><div class="kpi-sub">31/mo pace</div></div>
+        <div class="kpi-card acc-wrg"><div class="kpi-label">WRG 2026 Target</div><div class="kpi-value">216</div><div class="kpi-sub">18/mo pace</div></div>
+        <div class="kpi-card acc-amber"><div class="kpi-label">Combined 2026 Target</div><div class="kpi-value">816</div><div class="kpi-sub">68/mo · all communities</div></div>
+      </div>
+
+      <div class="section-title">2026 Builder Projections</div>
+      <div class="chart-grid">
+        <div class="chart-card" style="padding:14px 16px">
+          <div class="chart-title">The Grand Prairie <span style="color:var(--text-dim);text-transform:none;letter-spacing:0">— GPD + Highlands</span></div>
+          <div style="overflow-x:auto"><table class="summary" id="t-proj-tgp"><thead><tr>
+            <th>Lot</th><th>Builder</th><th>Pace/mo</th><th>Annual</th>
+          </tr></thead><tbody></tbody></table></div>
+        </div>
+        <div class="chart-card" style="padding:14px 16px">
+          <div class="chart-title">Windrose Green</div>
+          <div style="overflow-x:auto"><table class="summary" id="t-proj-wrg"><thead><tr>
+            <th>Builder</th><th>Lots</th><th>Pace/mo</th><th>Annual</th>
+          </tr></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+
+      <div class="section-title">2026 Target vs Current Pace <span class="sub">Monthly homes sold</span></div>
+      <div class="chart-grid full">
+        <div class="chart-card"><div class="chart-title">YTD Pace vs Monthly Target (units/mo)</div><div class="chart-wrap tall"><canvas id="c-proj"></canvas></div></div>
+      </div>
+      </div><!-- /tab-proj -->
+
       <div style="height:40px"></div>
     </div>
   </div>
@@ -541,6 +580,7 @@ const TAB_TITLES = {
   gpd:  'Grand Prairie Dev',
   hld:  'Highlands',
   wrg:  'Windrose Green',
+  proj: '2026 Projections',
 };
 const TABS = Object.keys(TAB_TITLES);
 
@@ -870,6 +910,9 @@ function renderAll(data) {
   // The Grand Prairie tab (combined GPD + Highlands)
   renderTGP(data);
 
+  // 2026 Projections tab
+  renderProj(data);
+
   // Starts tables
   if (gpd.starts) renderStartsTable('t-starts-gpd', gpd.starts);
   if (wrg.starts) renderStartsTable('t-starts-wrg', wrg.starts);
@@ -995,6 +1038,61 @@ function renderPaceTable(tableId, months, gpd, hld) {
     combRow.map(v => '<td>' + (v === '' ? '' : fmtN(v)) + '</td>').join('') + '</tr>';
   html += '</tbody>';
   tbl.innerHTML = html;
+}
+
+// ── 2026 PROJECTIONS TAB ──────────────────────────────────────────────────────
+// Static builder-level targets from Joe's 11/05 email. TGP = GPD + Highlands.
+const PROJ_TGP = [
+  {lot: '40', builder: 'David Weekley Homes', pace: 2,    annual: 24},
+  {lot: '40', builder: 'Perry Homes',         pace: 2,    annual: 24},
+  {lot: '45', builder: 'Village Builders',    pace: 4,    annual: 48},
+  {lot: '45', builder: 'Westin Homes',        pace: 2,    annual: 24},
+  {lot: '50', builder: 'David Weekley Homes', pace: 3,    annual: 36},
+  {lot: '50', builder: 'Perry Homes',         pace: 3,    annual: 36},
+  {lot: '60', builder: 'David Weekley Homes', pace: 0.75, annual: 9},
+  {lot: '60', builder: 'Sitterle Homes',      pace: 0.75, annual: 9},
+  {lot: '60', builder: 'Shea Homes',          pace: 0.75, annual: 9},
+  {lot: '60', builder: 'Westin Homes',        pace: 0.75, annual: 9},
+];
+const PROJ_WRG = [
+  {builder: 'Lennar Homes',   lots: '40/45/50', pace: 14, annual: 168},
+  {builder: 'CastleRock',     lots: '45',       pace: 1,  annual: 12},
+  {builder: 'Coventry Homes', lots: '45/50',    pace: 3,  annual: 36},
+];
+
+function renderProj(data) {
+  const gpd = data.communities.gpd, hld = data.communities.hld, wrg = data.communities.wrg;
+  const t_gpd = data.targets.gpd_monthly, t_hld = data.targets.hld_monthly, t_wrg = data.targets.wrg_monthly;
+
+  // TGP builder table (GPD rows, then Highlands + Combined totals)
+  const tgpBody = document.querySelector('#t-proj-tgp tbody');
+  let lastLot = null;
+  tgpBody.innerHTML = PROJ_TGP.map(r => {
+    const cls = (lastLot !== null && r.lot !== lastLot) ? 'lot-sep' : '';
+    lastLot = r.lot;
+    const badge = '<span class="badge ' + (LOT_BADGE[r.lot] || 'badge-blue') + '">' + r.lot + '\'</span>';
+    return `<tr class="${cls}"><td>${badge}</td><td>${r.builder}</td><td>${r.pace}</td><td>${r.annual}</td></tr>`;
+  }).join('') +
+    `<tr class="totals-row"><td colspan="2">GPD Total</td><td>19</td><td>228</td></tr>` +
+    `<tr class="totals-row"><td colspan="2">Highlands (40/45/50 · Lennar)</td><td>31</td><td>372</td></tr>` +
+    `<tr class="totals-row" style="background:rgba(200,169,110,.12)"><td colspan="2"><strong>Combined TGP</strong></td><td><strong>50</strong></td><td><strong>600</strong></td></tr>`;
+
+  // WRG builder table
+  const wrgBody = document.querySelector('#t-proj-wrg tbody');
+  wrgBody.innerHTML = PROJ_WRG.map(r =>
+    `<tr><td>${r.builder}</td><td>${r.lots}</td><td>${r.pace}</td><td>${r.annual}</td></tr>`
+  ).join('') +
+    `<tr class="totals-row"><td colspan="2"><strong>WRG Total</strong></td><td><strong>18</strong></td><td><strong>216</strong></td></tr>`;
+
+  // Target-vs-current-pace bar chart (4 sub-communities including combined TGP)
+  mkBar('c-proj', ['GPD', 'Highlands', 'Combined TGP', 'Windrose Green'], [
+    {label: 'Current YTD Pace',
+     data: [gpd.ytd_pace, hld.ytd_pace, gpd.ytd_pace + hld.ytd_pace, wrg.ytd_pace],
+     color: PALETTE[1]},
+    {label: 'Monthly Target',
+     data: [t_gpd, t_hld, t_gpd + t_hld, t_wrg],
+     color: PALETTE[0]},
+  ]);
 }
 
 function renderCommunity(prefix, c, target, year) {
