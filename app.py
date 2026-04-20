@@ -14,6 +14,7 @@ from calc import calculate
 from report_parser import parse_dashboard
 from macro_parser import parse_macro
 from data_puller import run_pull
+from sales_parser import get_sales_dashboard_data
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -128,6 +129,7 @@ def init_db():
     # Backfill portfolio access for existing users
     cur.execute("UPDATE users SET page_access = page_access || '{\"portfolio\": true}'::jsonb WHERE page_access->>'portfolio' IS NULL")
     cur.execute("UPDATE users SET page_access = page_access || '{\"macro\": true}'::jsonb WHERE page_access->>'macro' IS NULL")
+    cur.execute("UPDATE users SET page_access = page_access || '{\"sales\": true}'::jsonb WHERE page_access->>'sales' IS NULL")
     # Create default admin if no users exist
     cur.execute("SELECT COUNT(*) as cnt FROM users")
     row = cur.fetchone()
@@ -2284,6 +2286,40 @@ def upload_macro():
                 ("macro", json.dumps(data), session["user_id"]))
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True, "counties": data.get("counties", [])})
+
+
+# ─── COMMUNITY SALES TRACKER ──────────────────────────────────────────────────
+@app.route("/sales")
+@login_required
+def sales_dashboard():
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("sales", True):
+        return redirect(url_for("home"))
+    pa = session.get("page_access") or {}
+    if session.get("is_admin"):
+        pa = {k: True for k in ["mpc_underwriting","returns","loans","operations","macro","portfolio","sales"]}
+    return render_template("sales.html",
+        username=session.get("username"),
+        is_admin=session.get("is_admin"),
+        page_access=pa,
+        pipsy_configured=bool(os.environ.get("PIPSY_API_TOKEN")))
+
+
+@app.route("/api/sales-data")
+@login_required
+def sales_data():
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("sales", True):
+        return jsonify({"error": "Access denied"}), 403
+    force = request.args.get("refresh") == "1" and session.get("is_admin")
+    try:
+        data = get_sales_dashboard_data(force_refresh=force)
+        return jsonify(data)
+    except RuntimeError as e:
+        # Missing API token or Pipsy error — surface a clear message
+        return jsonify({"error": str(e)}), 503
+    except Exception as e:
+        return jsonify({"error": f"Unexpected error: {e}"}), 500
 
 
 # ─── SCHEDULER ────────────────────────────────────────────────────────────────

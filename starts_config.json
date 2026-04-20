@@ -1,0 +1,11 @@
+{
+  "_comment": "Drive-date columns for the Starts Tracking section on the Community Sales Tracker page. Homes Sold / Cancellations / Net Sales values are auto-populated from Pipsy. Edit dates here to add or remove columns.",
+  "gpd": {
+    "months": ["Jan 26", "Feb 26 (1)", "Feb 26 (2)", "Mar 26"],
+    "dates":  ["01/21/26", "02/02/26", "02/19/26", "03/06/26"]
+  },
+  "wrg": {
+    "months": ["Jan 26", "Feb 26", "Mar 26"],
+    "dates":  ["01/20/26", "02/13/26", "03/03/26"]
+  }
+}
