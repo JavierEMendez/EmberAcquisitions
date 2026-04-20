@@ -124,12 +124,32 @@ table.starts tr.metric-total td{font-weight:500}
 @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 .sidebar-item[data-tab] .tab-accent{width:3px;height:16px;border-radius:2px;background:transparent;flex-shrink:0;margin-right:2px}
 .sidebar-item[data-tab].active .tab-accent{background:var(--accent)}
+.tab-accent.tgp{background:rgba(200,169,110,.7)}
 .tab-accent.gpd{background:rgba(74,144,226,.7)}
 .tab-accent.hld{background:rgba(88,180,122,.7)}
 .tab-accent.wrg{background:rgba(224,122,62,.7)}
+.sidebar-item[data-tab].active .tab-accent.tgp{background:var(--accent)}
 .sidebar-item[data-tab].active .tab-accent.gpd{background:#4a90e2}
 .sidebar-item[data-tab].active .tab-accent.hld{background:#58b47a}
 .sidebar-item[data-tab].active .tab-accent.wrg{background:#e07a3e}
+
+/* KPI card accent stripe (matches coworker dashboard look) */
+.kpi-card.acc-tgp{border-left:3px solid var(--accent)}
+.kpi-card.acc-gpd{border-left:3px solid #4a90e2}
+.kpi-card.acc-hld{border-left:3px solid #58b47a}
+.kpi-card.acc-wrg{border-left:3px solid #e07a3e}
+.kpi-card.acc-amber{border-left:3px solid #d4a76a}
+
+/* Pace table */
+table.pace-tbl{width:100%;border-collapse:collapse;font-size:11.5px;min-width:1100px}
+table.pace-tbl th,table.pace-tbl td{padding:7px 10px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap}
+table.pace-tbl th:first-child,table.pace-tbl td:first-child{text-align:left;position:sticky;left:0;background:var(--card);z-index:1;font-weight:500}
+table.pace-tbl th{font-weight:500;color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;background:#0f1218}
+[data-theme="light"] table.pace-tbl th{background:#f1f4f8}
+table.pace-tbl tr.pace-combined td{font-weight:600;background:rgba(200,169,110,.06);border-top:1px solid var(--border-light)}
+table.pace-tbl tr.pace-combined td:first-child{color:var(--accent)}
+table.pace-tbl tr.pace-gpd td:first-child{color:#4a90e2}
+table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
 </style>
 </head>
 <body>
@@ -183,10 +203,15 @@ table.starts tr.metric-total td{font-weight:500}
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l3-3 4 4 5-6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Executive Summary
     </a>
+    <a href="#tgp" class="sidebar-item" data-tab="tgp">
+      <span class="tab-accent tgp"></span>
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 9l9-6 9 6v11a1 1 0 01-1 1h-5a1 1 0 01-1-1v-5h-4v5a1 1 0 01-1 1H4a1 1 0 01-1-1V9z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      The Grand Prairie
+    </a>
     <a href="#gpd" class="sidebar-item" data-tab="gpd">
       <span class="tab-accent gpd"></span>
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 9l9-6 9 6v11a1 1 0 01-1 1h-5a1 1 0 01-1-1v-5h-4v5a1 1 0 01-1 1H4a1 1 0 01-1-1V9z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      The Grand Prairie
+      Grand Prairie Dev
     </a>
     <a href="#hld" class="sidebar-item" data-tab="hld">
       <span class="tab-accent hld"></span>
@@ -255,18 +280,35 @@ table.starts tr.metric-total td{font-weight:500}
       <!-- ═══════════════════════ TAB: EXECUTIVE SUMMARY ═══════════════════════ -->
       <div id="tab-exec" class="tab-content">
       <div class="section-title">Executive Summary <span class="sub" id="exec-sub"></span></div>
+
+      <div class="community-heading">The Grand Prairie <span class="tag">GPD + Highlands</span></div>
       <div class="kpi-grid">
-        <div class="kpi-card"><div class="kpi-label">Combined LOP Net Sales</div><div class="kpi-value" id="k-comb-lop">—</div><div class="kpi-sub">All three communities</div></div>
-        <div class="kpi-card"><div class="kpi-label">YTD Net Sales</div><div class="kpi-value" id="k-comb-ytd">—</div><div class="kpi-sub" id="k-comb-ytd-sub"></div></div>
-        <div class="kpi-card"><div class="kpi-label">YTD Pace</div><div class="kpi-value" id="k-comb-pace">—</div><div class="kpi-sub" id="k-comb-pace-sub"></div></div>
-        <div class="kpi-card"><div class="kpi-label">GPD LOP Sales</div><div class="kpi-value" id="k-gpd-lop">—</div><div class="kpi-sub" id="k-gpd-age"></div></div>
-        <div class="kpi-card"><div class="kpi-label">HLD LOP Sales</div><div class="kpi-value" id="k-hld-lop">—</div><div class="kpi-sub" id="k-hld-age"></div></div>
-        <div class="kpi-card"><div class="kpi-label">WRG LOP Sales</div><div class="kpi-value" id="k-wrg-lop">—</div><div class="kpi-sub" id="k-wrg-age"></div></div>
+        <div class="kpi-card acc-tgp"><div class="kpi-label">TGP LOP Net Sales</div><div class="kpi-value" id="k-tgp-lop">—</div><div class="kpi-sub">GPD + Highlands combined</div></div>
+        <div class="kpi-card acc-tgp"><div class="kpi-label">TGP YTD Net</div><div class="kpi-value" id="k-tgp-ytd">—</div><div class="kpi-sub" id="k-tgp-ytd-sub"></div></div>
+        <div class="kpi-card acc-tgp"><div class="kpi-label">TGP YTD Pace</div><div class="kpi-value" id="k-tgp-pace">—</div><div class="kpi-sub" id="k-tgp-pace-sub"></div></div>
+        <div class="kpi-card acc-gpd"><div class="kpi-label">GPD LOP</div><div class="kpi-value" id="k-gpd-lop">—</div><div class="kpi-sub" id="k-gpd-age"></div></div>
+        <div class="kpi-card acc-hld"><div class="kpi-label">Highlands LOP</div><div class="kpi-value" id="k-hld-lop">—</div><div class="kpi-sub" id="k-hld-age"></div></div>
+        <div class="kpi-card acc-tgp"><div class="kpi-label">TGP Annual Target</div><div class="kpi-value">600</div><div class="kpi-sub">GPD 228 · Hld 372</div></div>
       </div>
-      <div class="chart-grid full">
+
+      <div class="community-heading" style="margin-top:28px">Windrose Green <span class="tag">WRG</span></div>
+      <div class="kpi-grid">
+        <div class="kpi-card acc-wrg"><div class="kpi-label">WRG LOP Net Sales</div><div class="kpi-value" id="k-wrg-lop">—</div><div class="kpi-sub" id="k-wrg-age"></div></div>
+        <div class="kpi-card acc-wrg"><div class="kpi-label">WRG YTD Net</div><div class="kpi-value" id="k-wrg-ytd">—</div><div class="kpi-sub" id="k-wrg-ytd-sub"></div></div>
+        <div class="kpi-card acc-wrg"><div class="kpi-label">WRG YTD Pace</div><div class="kpi-value" id="k-wrg-pace">—</div><div class="kpi-sub" id="k-wrg-pace-sub"></div></div>
+        <div class="kpi-card acc-wrg"><div class="kpi-label">WRG Annual Target</div><div class="kpi-value">216</div><div class="kpi-sub">18/month</div></div>
+        <div class="kpi-card acc-amber"><div class="kpi-label">WRG Cancellations YTD</div><div class="kpi-value amber" id="k-wrg-canc">—</div><div class="kpi-sub" id="k-wrg-canc-sub"></div></div>
+        <div class="kpi-card acc-amber"><div class="kpi-label">WRG Avg Sales Price</div><div class="kpi-value" id="k-wrg-avg">—</div><div class="kpi-sub">Weighted by lot mix</div></div>
+      </div>
+
+      <div class="chart-grid">
         <div class="chart-card">
-          <div class="chart-title">Monthly Net Sales — All Communities</div>
-          <div class="chart-wrap tall"><canvas id="c-all-monthly"></canvas></div>
+          <div class="chart-title">The Grand Prairie — Monthly Net Sales</div>
+          <div class="chart-wrap tall"><canvas id="c-exec-tgp"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">Windrose Green — Monthly Net Sales</div>
+          <div class="chart-wrap tall"><canvas id="c-exec-wrg"></canvas></div>
         </div>
       </div>
       <div class="section-title">YTD Pace vs Target</div>
@@ -275,10 +317,58 @@ table.starts tr.metric-total td{font-weight:500}
       </div>
       </div><!-- /tab-exec -->
 
+      <!-- ═══════════════════════ TAB: THE GRAND PRAIRIE (TGP = GPD + HLD) ═══════════════════════ -->
+      <div id="tab-tgp" class="tab-content">
+      <div class="section-title">The Grand Prairie <span class="sub">GPD + Highlands combined</span></div>
+      <div class="kpi-grid" style="grid-template-columns:repeat(5,1fr)">
+        <div class="kpi-card acc-tgp"><div class="kpi-label">Total Sales (LOP)</div><div class="kpi-value" id="tgp-total">—</div><div class="kpi-sub">GPD + Highlands combined</div></div>
+        <div class="kpi-card acc-gpd"><div class="kpi-label">GPD Sales</div><div class="kpi-value" id="tgp-gpd">—</div><div class="kpi-sub">Life of Project</div></div>
+        <div class="kpi-card acc-hld"><div class="kpi-label">Highlands Sales</div><div class="kpi-value" id="tgp-hld">—</div><div class="kpi-sub">Life of Project</div></div>
+        <div class="kpi-card acc-amber"><div class="kpi-label"><span id="tgp-target-yr">2026</span> Target</div><div class="kpi-value">600/yr</div><div class="kpi-sub">GPD 228 · Hld 372</div></div>
+        <div class="kpi-card acc-tgp"><div class="kpi-label">TGP <span id="tgp-ytd-yr">2026</span> Sales to Date</div><div class="kpi-value" id="tgp-ytd-val">—</div><div class="kpi-sub" id="tgp-ytd-breakdown">—</div></div>
+      </div>
+
+      <div class="section-title">Monthly Net Sales — The Grand Prairie <span class="sub" id="tgp-range"></span></div>
+      <div class="chart-grid full">
+        <div class="chart-card">
+          <div class="chart-title">GPD vs Highlands — Net Sales by Month</div>
+          <div class="chart-wrap tall"><canvas id="c-tgp-stack"></canvas></div>
+        </div>
+      </div>
+
+      <div class="chart-grid">
+        <div class="chart-card">
+          <div class="chart-title">Sales Mix by Sub-Community (LOP)</div>
+          <div class="chart-wrap"><canvas id="c-tgp-mix"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">Avg Monthly Pace — GPD vs Highlands</div>
+          <div class="chart-wrap"><canvas id="c-tgp-avgpace"></canvas></div>
+        </div>
+      </div>
+
+      <div class="section-title">Monthly Pace Table</div>
+      <div class="chart-grid full">
+        <div class="chart-card">
+          <div class="chart-title">Net Sales per Month · GPD · Highlands · Combined (dashed)</div>
+          <div class="chart-wrap tall"><canvas id="c-tgp-line"></canvas></div>
+        </div>
+      </div>
+      <div class="starts-card" style="overflow-x:auto"><table class="pace-tbl" id="t-tgp-pace"></table></div>
+
+      <div class="section-title">Net Sales by Month — Year over Year</div>
+      <div class="chart-grid full">
+        <div class="chart-card">
+          <div class="chart-title">Homes Sold Per Month · Each Year in a Different Color</div>
+          <div class="chart-wrap tall"><canvas id="c-tgp-yoy"></canvas></div>
+        </div>
+      </div>
+      </div><!-- /tab-tgp -->
+
       <!-- ═══════════════════════ TAB: GPD ═══════════════════════ -->
       <div id="tab-gpd" class="tab-content">
       <!-- THE GRAND PRAIRIE (GPD) -->
-      <div class="community-heading" id="sec-gpd">The Grand Prairie <span class="tag">GPD</span></div>
+      <div class="community-heading" id="sec-gpd">Grand Prairie Dev <span class="tag">GPD</span></div>
       <div class="kpi-grid">
         <div class="kpi-card"><div class="kpi-label">LOP Net Sales</div><div class="kpi-value" id="gpd-lop">—</div><div class="kpi-sub">Since first sale</div></div>
         <div class="kpi-card"><div class="kpi-label">YTD Net</div><div class="kpi-value" id="gpd-ytd">—</div><div class="kpi-sub" id="gpd-ytd-sub"></div></div>
@@ -447,7 +537,8 @@ async function saveAcctPw() {
 // ── TABS ──────────────────────────────────────────────────────────────────────
 const TAB_TITLES = {
   exec: 'Executive Summary',
-  gpd:  'The Grand Prairie',
+  tgp:  'The Grand Prairie',
+  gpd:  'Grand Prairie Dev',
   hld:  'Highlands',
   wrg:  'Windrose Green',
 };
@@ -631,6 +722,83 @@ function flashStatus(msg, isErr) {
   setTimeout(() => { pill.style.display = 'none'; }, 3500);
 }
 
+// ── TGP HELPERS (GPD + Highlands combined) ────────────────────────────────────
+// Build a union of month keys ("YYYY-MM") across one or more communities, sorted.
+function unionMonths() {
+  const s = new Set();
+  for (let i = 0; i < arguments.length; i++) {
+    const c = arguments[i];
+    if (c && c.months) c.months.forEach(m => s.add(m));
+  }
+  return [...s].sort();
+}
+// Sum net_monthly[m] across an arbitrary number of communities.
+function combinedNet(months, ...comms) {
+  return months.map(m => comms.reduce((acc, c) => acc + ((c && c.net_monthly && c.net_monthly[m]) || 0), 0));
+}
+// Per-year average monthly net, for combined community list. For current year,
+// divide by months elapsed so the pace is comparable to prior years' full-year avg.
+function yearlyAvg(comms, year, currentYear, currentMonthIdx) {
+  let total = 0;
+  const denom = (year === currentYear) ? (currentMonthIdx + 1) : 12;
+  for (let m = 1; m <= (year === currentYear ? currentMonthIdx + 1 : 12); m++) {
+    const mk = year + '-' + (m < 10 ? '0' + m : m);
+    comms.forEach(c => { total += (c.net_monthly && c.net_monthly[mk]) || 0; });
+  }
+  return total / denom;
+}
+// Pivot combined monthly data by year → [{year, values: [Jan..Dec]}].
+function pivotYoY(comms, currentYear, currentMonthIdx) {
+  const years = new Set();
+  comms.forEach(c => (c.months || []).forEach(m => years.add(parseInt(m.slice(0,4), 10))));
+  const yrs = [...years].sort();
+  return yrs.map(y => {
+    const last = (y === currentYear) ? currentMonthIdx + 1 : 12;
+    const vals = new Array(12).fill(null);
+    for (let m = 1; m <= last; m++) {
+      const mk = y + '-' + (m < 10 ? '0' + m : m);
+      let v = 0, has = false;
+      comms.forEach(c => {
+        if (c.net_monthly && c.net_monthly[mk] != null) { v += c.net_monthly[mk]; has = true; }
+      });
+      vals[m - 1] = has ? v : null;
+    }
+    return {year: y, values: vals};
+  });
+}
+// Doughnut chart helper
+function mkDoughnut(id, labels, values, colors) {
+  _destroy(id);
+  const el = document.getElementById(id); if (!el) return;
+  const t = themeColors();
+  const total = values.reduce((a,b) => a + b, 0) || 1;
+  _charts[id] = new Chart(el, {
+    type: 'doughnut',
+    data: { labels, datasets: [{
+      data: values,
+      backgroundColor: colors,
+      borderColor: t.ttBg, borderWidth: 2,
+    }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '62%',
+      animation: { duration: 400 },
+      plugins: {
+        legend: { position: 'bottom', labels: { color: t.legend, font: { family: 'DM Sans', size: 11 }, boxWidth: 12, padding: 10 } },
+        tooltip: {
+          backgroundColor: t.ttBg, titleColor: t.ttTitle, bodyColor: t.ttBody,
+          borderColor: t.ttBorder, borderWidth: 1, padding: 9,
+          callbacks: {
+            label: (ctx) => {
+              const v = ctx.parsed;
+              return ctx.label + ': ' + fmtN(v) + ' (' + ((v/total)*100).toFixed(1) + '%)';
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
 // ── RENDER ─────────────────────────────────────────────────────────────────────
 function renderAll(data) {
   const comm = data.communities;
@@ -639,34 +807,48 @@ function renderAll(data) {
   document.getElementById('meta-updated').textContent = 'Pulled ' + data.generated_at;
   document.getElementById('exec-sub').textContent = 'As of ' + data.generated_at;
 
-  // Exec KPIs
-  const combLop = gpd.total_net + hld.total_net + wrg.total_net;
-  const combYtd = gpd.ytd_net + hld.ytd_net + wrg.ytd_net;
-  const combPace = (gpd.ytd_pace + hld.ytd_pace + wrg.ytd_pace);
-  const combTarget = data.targets.combined_monthly;
-  document.getElementById('k-comb-lop').textContent = fmtN(combLop);
-  document.getElementById('k-comb-ytd').textContent = fmtN(combYtd);
-  document.getElementById('k-comb-ytd-sub').textContent = year + ' to date';
-  document.getElementById('k-comb-pace').textContent = fmtPace(combPace) + '/mo';
-  document.getElementById('k-comb-pace-sub').textContent = 'Target: ' + combTarget + '/mo';
-  document.getElementById('k-comb-pace').className = 'kpi-value ' + (combPace >= combTarget ? 'green' : 'red');
+  // ── The Grand Prairie (GPD + Highlands combined) exec KPIs ─────────────────
+  const tgpLop   = gpd.total_net + hld.total_net;
+  const tgpYtd   = gpd.ytd_net   + hld.ytd_net;
+  const tgpPace  = gpd.ytd_pace  + hld.ytd_pace;
+  const tgpTarget = data.targets.gpd_monthly + data.targets.hld_monthly; // 19 + 31 = 50
+  document.getElementById('k-tgp-lop').textContent = fmtN(tgpLop);
+  document.getElementById('k-tgp-ytd').textContent = fmtN(tgpYtd);
+  document.getElementById('k-tgp-ytd-sub').textContent = year + ' to date';
+  document.getElementById('k-tgp-pace').textContent = fmtPace(tgpPace) + '/mo';
+  document.getElementById('k-tgp-pace-sub').textContent = 'Target: ' + tgpTarget + '/mo';
+  document.getElementById('k-tgp-pace').className = 'kpi-value ' + (tgpPace >= tgpTarget ? 'green' : 'red');
 
   document.getElementById('k-gpd-lop').textContent = fmtN(gpd.total_net);
   document.getElementById('k-gpd-age').textContent = gpd.earliest ? 'Since ' + gpd.earliest : '';
   document.getElementById('k-hld-lop').textContent = fmtN(hld.total_net);
   document.getElementById('k-hld-age').textContent = hld.earliest ? 'Since ' + hld.earliest : '';
+
+  // ── Windrose Green exec KPIs (kept separate — never mixed) ─────────────────
   document.getElementById('k-wrg-lop').textContent = fmtN(wrg.total_net);
   document.getElementById('k-wrg-age').textContent = wrg.earliest ? 'Since ' + wrg.earliest : '';
+  document.getElementById('k-wrg-ytd').textContent = fmtN(wrg.ytd_net);
+  document.getElementById('k-wrg-ytd-sub').textContent = year + ' to date';
+  document.getElementById('k-wrg-pace').textContent = fmtPace(wrg.ytd_pace) + '/mo';
+  document.getElementById('k-wrg-pace-sub').textContent = 'Target: ' + data.targets.wrg_monthly + '/mo';
+  document.getElementById('k-wrg-pace').className = 'kpi-value ' + (wrg.ytd_pace >= data.targets.wrg_monthly ? 'green' : 'red');
+  document.getElementById('k-wrg-canc').textContent = fmtN(wrg.canc_ytd);
+  document.getElementById('k-wrg-canc-sub').textContent = fmtN(wrg.canc_total) + ' LOP';
+  document.getElementById('k-wrg-avg').textContent = wrg.avg_price || '—';
 
-  // Combined monthly chart — overlay the three series on a unified month axis
-  const allMonthsSet = new Set([...gpd.months, ...hld.months, ...wrg.months]);
-  const allMonths = [...allMonthsSet].sort();
-  function series(c) { return allMonths.map(m => c.net_monthly[m] != null ? c.net_monthly[m] : null); }
-  mkLine('c-all-monthly', allMonths.map(monthLabelFromKey), [
-    {label: 'GPD',         data: series(gpd), color: PALETTE[0]},
-    {label: 'Highlands',   data: series(hld), color: PALETTE[1]},
-    {label: 'Windrose Green', data: series(wrg), color: PALETTE[2]},
-  ]);
+  // ── Exec summary monthly charts — TGP vs WRG, never mixed ──────────────────
+  const tgpMonths = unionMonths(gpd, hld);
+  const tgpMonthly = combinedNet(tgpMonths, gpd, hld);
+  mkLine('c-exec-tgp', tgpMonths.map(monthLabelFromKey), [
+    {label: 'GPD',       data: tgpMonths.map(m => gpd.net_monthly[m] != null ? gpd.net_monthly[m] : null), color: '#4a90e2'},
+    {label: 'Highlands', data: tgpMonths.map(m => hld.net_monthly[m] != null ? hld.net_monthly[m] : null), color: '#58b47a'},
+    {label: 'Combined',  data: tgpMonthly, color: '#c8a96e', borderWidth: 2, pointRadius: 0},
+  ], {beginAtZero: true});
+
+  const wrgMonths = wrg.months || [];
+  mkLine('c-exec-wrg', wrgMonths.map(monthLabelFromKey), [
+    {label: 'Net Sales', data: wrgMonths.map(m => wrg.net_monthly[m] != null ? wrg.net_monthly[m] : 0), color: '#e07a3e'},
+  ], {beginAtZero: true});
 
   // Community details
   renderCommunity('gpd', gpd, data.targets.gpd_monthly, year);
@@ -678,12 +860,15 @@ function renderAll(data) {
   renderBuilderTable('t-hld', hld, false);
   renderBuilderTable('t-wrg', wrg, false);
 
-  // Pace vs target chart
+  // Pace vs target chart (exec summary)
   const paceLabels = ['GPD', 'Highlands', 'Windrose Green'];
   mkBar('c-pace', paceLabels, [
     {label: 'YTD Pace',      data: [gpd.ytd_pace, hld.ytd_pace, wrg.ytd_pace], color: PALETTE[1]},
     {label: 'Monthly Target', data: [data.targets.gpd_monthly, data.targets.hld_monthly, data.targets.wrg_monthly], color: PALETTE[0]},
   ]);
+
+  // The Grand Prairie tab (combined GPD + Highlands)
+  renderTGP(data);
 
   // Starts tables
   if (gpd.starts) renderStartsTable('t-starts-gpd', gpd.starts);
@@ -691,6 +876,125 @@ function renderAll(data) {
 
   // Recent cancellations
   renderCancelTable('t-cancels', gpd.recent_cancels || []);
+}
+
+// ── THE GRAND PRAIRIE TAB ──────────────────────────────────────────────────────
+function renderTGP(data) {
+  const gpd = data.communities.gpd, hld = data.communities.hld;
+  const year = data.current_year;
+  const now = new Date();
+  const currentMonthIdx = now.getMonth(); // 0-indexed
+
+  // KPIs
+  document.getElementById('tgp-total').textContent = fmtN(gpd.total_net + hld.total_net);
+  document.getElementById('tgp-gpd').textContent   = fmtN(gpd.total_net);
+  document.getElementById('tgp-hld').textContent   = fmtN(hld.total_net);
+  document.getElementById('tgp-target-yr').textContent = year;
+  document.getElementById('tgp-ytd-yr').textContent    = year;
+  document.getElementById('tgp-ytd-val').textContent   = fmtN(gpd.ytd_net + hld.ytd_net);
+  document.getElementById('tgp-ytd-breakdown').textContent =
+    'GPD ' + fmtN(gpd.ytd_net) + ' · Hld ' + fmtN(hld.ytd_net);
+
+  // Month range subtitle
+  const months = unionMonths(gpd, hld);
+  if (months.length) {
+    document.getElementById('tgp-range').textContent =
+      monthLabelFromKey(months[0]) + ' – ' + monthLabelFromKey(months[months.length - 1]);
+  }
+
+  // Stacked monthly bar: GPD (blue) + Highlands (green)
+  mkBar('c-tgp-stack', months.map(monthLabelFromKey), [
+    {label: 'GPD',       data: months.map(m => gpd.net_monthly[m] || 0), color: '#4a90e2', stack: 'tgp'},
+    {label: 'Highlands', data: months.map(m => hld.net_monthly[m] || 0), color: '#58b47a', stack: 'tgp'},
+  ], {stacked: true});
+
+  // Donut — LOP sales mix
+  mkDoughnut('c-tgp-mix',
+    ['Grand Prairie Dev', 'Highlands'],
+    [gpd.total_net, hld.total_net],
+    ['#4a90e2', '#58b47a']
+  );
+
+  // Avg monthly pace — grouped bar by year (GPD vs Highlands)
+  const years = new Set();
+  [gpd, hld].forEach(c => (c.months || []).forEach(m => years.add(parseInt(m.slice(0,4), 10))));
+  const yrs = [...years].sort();
+  mkBar('c-tgp-avgpace', yrs.map(String), [
+    {label: 'GPD',       data: yrs.map(y => +yearlyAvg([gpd], y, year, currentMonthIdx).toFixed(2)), color: '#4a90e2'},
+    {label: 'Highlands', data: yrs.map(y => +yearlyAvg([hld], y, year, currentMonthIdx).toFixed(2)), color: '#58b47a'},
+  ]);
+
+  // Monthly pace line — GPD solid, Hld solid, Combined dashed (custom dash)
+  (function() {
+    _destroy('c-tgp-line');
+    const el = document.getElementById('c-tgp-line'); if (!el) return;
+    const t = themeColors();
+    const labels = months.map(monthLabelFromKey);
+    const gpdSeries = months.map(m => gpd.net_monthly[m] != null ? gpd.net_monthly[m] : null);
+    const hldSeries = months.map(m => hld.net_monthly[m] != null ? hld.net_monthly[m] : null);
+    const combSeries = combinedNet(months, gpd, hld);
+    _charts['c-tgp-line'] = new Chart(el, {
+      type: 'line',
+      data: { labels, datasets: [
+        {label: 'GPD',         data: gpdSeries, borderColor: '#4a90e2', backgroundColor: '#4a90e233', borderWidth: 2, tension: .25, pointRadius: 2, fill: false},
+        {label: 'Highlands',   data: hldSeries, borderColor: '#58b47a', backgroundColor: '#58b47a33', borderWidth: 2, tension: .25, pointRadius: 2, fill: false},
+        {label: 'Combined GP', data: combSeries, borderColor: '#c8a96e', backgroundColor: 'transparent', borderWidth: 2, borderDash: [6,4], tension: .25, pointRadius: 0, fill: false},
+      ] },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+        plugins: {
+          legend: { labels: { color: t.legend, font: { family: 'DM Sans', size: 10 }, boxWidth: 10, padding: 10 } },
+          tooltip: { mode: 'index', intersect: false, backgroundColor: t.ttBg, titleColor: t.ttTitle, bodyColor: t.ttBody, borderColor: t.ttBorder, borderWidth: 1, padding: 9 }
+        },
+        scales: {
+          x: { border: { color: t.grid }, ticks: { color: t.tick, font: { size: 9 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 16 }, grid: { color: t.grid } },
+          y: { border: { color: t.grid }, ticks: { color: t.tick, font: { size: 9 } }, grid: { color: t.grid }, beginAtZero: true }
+        }
+      }
+    });
+  })();
+
+  // Pace table — rows: GPD, Highlands, Combined GP; cols: months
+  renderPaceTable('t-tgp-pace', months, gpd, hld);
+
+  // Year-over-Year — one line per year, Jan–Dec x-axis
+  const yoy = pivotYoY([gpd, hld], year, currentMonthIdx);
+  const monthLabels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const yoyColors = ['#7b8fd4','#58b47a','#e07a3e','#c8a96e','#e86c6c','#5e9e8c'];
+  mkLine('c-tgp-yoy', monthLabels, yoy.map((row, i) => ({
+    label: String(row.year),
+    data: row.values,
+    color: yoyColors[i % yoyColors.length],
+    borderWidth: row.year === year ? 2.5 : 1.8,
+    pointRadius: 3,
+  })), {beginAtZero: true});
+}
+
+function renderPaceTable(tableId, months, gpd, hld) {
+  const tbl = document.getElementById(tableId);
+  if (!tbl) return;
+  const labels = months.map(monthLabelFromKey);
+  let html = '<thead><tr><th>Community</th>';
+  labels.forEach(l => { html += '<th>' + l + '</th>'; });
+  html += '</tr></thead><tbody>';
+
+  const gpdRow = months.map(m => gpd.net_monthly[m] != null ? gpd.net_monthly[m] : '');
+  const hldRow = months.map(m => hld.net_monthly[m] != null ? hld.net_monthly[m] : '');
+  const combRow = months.map((m, i) => {
+    const g = gpd.net_monthly[m];
+    const h = hld.net_monthly[m];
+    if (g == null && h == null) return '';
+    return (g || 0) + (h || 0);
+  });
+
+  html += '<tr class="pace-gpd"><td>Grand Prairie Dev</td>' +
+    gpdRow.map(v => '<td>' + (v === '' ? '' : fmtN(v)) + '</td>').join('') + '</tr>';
+  html += '<tr class="pace-hld"><td>Highlands</td>' +
+    hldRow.map(v => '<td>' + (v === '' ? '' : fmtN(v)) + '</td>').join('') + '</tr>';
+  html += '<tr class="pace-combined"><td>Combined GP</td>' +
+    combRow.map(v => '<td>' + (v === '' ? '' : fmtN(v)) + '</td>').join('') + '</tr>';
+  html += '</tbody>';
+  tbl.innerHTML = html;
 }
 
 function renderCommunity(prefix, c, target, year) {
