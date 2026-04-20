@@ -39,8 +39,6 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;hei
 .sidebar-item.active{background:rgba(200,169,110,.12);color:var(--accent)}
 .sidebar-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0}
 .sidebar-item.active .icon{opacity:1}
-.nav-link{display:flex;align-items:center;gap:10px;padding:7px 14px;cursor:pointer;border-radius:6px;margin:1px 6px;transition:all .15s;color:var(--text-muted);font-size:12px;text-decoration:none}
-.nav-link:hover{background:rgba(200,169,110,.04);color:var(--text);text-decoration:none}
 a{color:var(--accent);text-decoration:none}
 a:hover{text-decoration:underline}
 
@@ -119,6 +117,19 @@ table.starts tr.metric-total td{font-weight:500}
 .cancel-table{width:100%;border-collapse:collapse;font-size:12px}
 .cancel-table th,.cancel-table td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--border)}
 .cancel-table th{font-weight:500;color:var(--text-muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}
+
+/* Tab navigation */
+.tab-content{display:none;animation:fadeIn .18s ease-out}
+.tab-content.active{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.sidebar-item[data-tab] .tab-accent{width:3px;height:16px;border-radius:2px;background:transparent;flex-shrink:0;margin-right:2px}
+.sidebar-item[data-tab].active .tab-accent{background:var(--accent)}
+.tab-accent.gpd{background:rgba(74,144,226,.7)}
+.tab-accent.hld{background:rgba(88,180,122,.7)}
+.tab-accent.wrg{background:rgba(224,122,62,.7)}
+.sidebar-item[data-tab].active .tab-accent.gpd{background:#4a90e2}
+.sidebar-item[data-tab].active .tab-accent.hld{background:#58b47a}
+.sidebar-item[data-tab].active .tab-accent.wrg{background:#e07a3e}
 </style>
 </head>
 <body>
@@ -166,15 +177,27 @@ table.starts tr.metric-total td{font-weight:500}
       Community Sales
     </a>
 
-    <div class="sidebar-section">Sections</div>
-    <a href="#sec-exec" class="nav-link" onclick="event.preventDefault();scrollTo('sec-exec')">Executive Summary</a>
-    <a href="#sec-gpd" class="nav-link" onclick="event.preventDefault();scrollTo('sec-gpd')">The Grand Prairie</a>
-    <a href="#sec-hld" class="nav-link" onclick="event.preventDefault();scrollTo('sec-hld')">Highlands</a>
-    <a href="#sec-wrg" class="nav-link" onclick="event.preventDefault();scrollTo('sec-wrg')">Windrose Green</a>
-    <a href="#sec-pace" class="nav-link" onclick="event.preventDefault();scrollTo('sec-pace')">Pace vs Target</a>
-    <a href="#sec-starts-gpd" class="nav-link" onclick="event.preventDefault();scrollTo('sec-starts-gpd')">GPD Starts</a>
-    <a href="#sec-starts-wrg" class="nav-link" onclick="event.preventDefault();scrollTo('sec-starts-wrg')">WRG Starts</a>
-    <a href="#sec-cancels" class="nav-link" onclick="event.preventDefault();scrollTo('sec-cancels')">Recent Cancellations</a>
+    <div class="sidebar-section">Views</div>
+    <a href="#exec" class="sidebar-item" data-tab="exec">
+      <span class="tab-accent"></span>
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l3-3 4 4 5-6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Executive Summary
+    </a>
+    <a href="#gpd" class="sidebar-item" data-tab="gpd">
+      <span class="tab-accent gpd"></span>
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 9l9-6 9 6v11a1 1 0 01-1 1h-5a1 1 0 01-1-1v-5h-4v5a1 1 0 01-1 1H4a1 1 0 01-1-1V9z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      The Grand Prairie
+    </a>
+    <a href="#hld" class="sidebar-item" data-tab="hld">
+      <span class="tab-accent hld"></span>
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 9l9-6 9 6v11a1 1 0 01-1 1h-5a1 1 0 01-1-1v-5h-4v5a1 1 0 01-1 1H4a1 1 0 01-1-1V9z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Highlands
+    </a>
+    <a href="#wrg" class="sidebar-item" data-tab="wrg">
+      <span class="tab-accent wrg"></span>
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 9l9-6 9 6v11a1 1 0 01-1 1h-5a1 1 0 01-1-1v-5h-4v5a1 1 0 01-1 1H4a1 1 0 01-1-1V9z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Windrose Green
+    </a>
 
     <div style="flex:1"></div>
     <div style="padding:8px 10px 4px">
@@ -229,8 +252,9 @@ table.starts tr.metric-total td{font-weight:500}
     <!-- Main content (populated by JS) -->
     <div id="dash" style="display:none">
 
-      <!-- Executive Summary -->
-      <div class="section-title" id="sec-exec">Executive Summary <span class="sub" id="exec-sub"></span></div>
+      <!-- ═══════════════════════ TAB: EXECUTIVE SUMMARY ═══════════════════════ -->
+      <div id="tab-exec" class="tab-content">
+      <div class="section-title">Executive Summary <span class="sub" id="exec-sub"></span></div>
       <div class="kpi-grid">
         <div class="kpi-card"><div class="kpi-label">Combined LOP Net Sales</div><div class="kpi-value" id="k-comb-lop">—</div><div class="kpi-sub">All three communities</div></div>
         <div class="kpi-card"><div class="kpi-label">YTD Net Sales</div><div class="kpi-value" id="k-comb-ytd">—</div><div class="kpi-sub" id="k-comb-ytd-sub"></div></div>
@@ -245,7 +269,14 @@ table.starts tr.metric-total td{font-weight:500}
           <div class="chart-wrap tall"><canvas id="c-all-monthly"></canvas></div>
         </div>
       </div>
+      <div class="section-title">YTD Pace vs Target</div>
+      <div class="chart-grid full">
+        <div class="chart-card"><div class="chart-title">Homes/Month — YTD vs Annual Target</div><div class="chart-wrap"><canvas id="c-pace"></canvas></div></div>
+      </div>
+      </div><!-- /tab-exec -->
 
+      <!-- ═══════════════════════ TAB: GPD ═══════════════════════ -->
+      <div id="tab-gpd" class="tab-content">
       <!-- THE GRAND PRAIRIE (GPD) -->
       <div class="community-heading" id="sec-gpd">The Grand Prairie <span class="tag">GPD</span></div>
       <div class="kpi-grid">
@@ -267,6 +298,19 @@ table.starts tr.metric-total td{font-weight:500}
         </tr></thead><tbody></tbody></table>
       </div>
 
+      <div class="section-title">Starts &amp; Inventory <span class="sub">Completed, sold, under construction &amp; vacant lots per drive date</span></div>
+      <div class="starts-card"><table class="starts" id="t-starts-gpd"></table></div>
+
+      <div class="section-title">Recent Cancellations <span class="sub">Most recent 5</span></div>
+      <div class="table-card">
+        <table class="cancel-table" id="t-cancels"><thead><tr>
+          <th>Cancel Date</th><th>Original Sale</th><th>Address</th><th>Builder</th><th>Lot</th><th>Reason</th>
+        </tr></thead><tbody></tbody></table>
+      </div>
+      </div><!-- /tab-gpd -->
+
+      <!-- ═══════════════════════ TAB: HLD ═══════════════════════ -->
+      <div id="tab-hld" class="tab-content">
       <!-- HIGHLANDS (HLD) -->
       <div class="community-heading" id="sec-hld">Highlands <span class="tag">HLD</span></div>
       <div class="kpi-grid">
@@ -287,7 +331,10 @@ table.starts tr.metric-total td{font-weight:500}
           <th>Builder</th><th>Lot</th><th>LOP Net</th><th>% of LOP</th><th>YTD Pace</th><th>Avg Price</th>
         </tr></thead><tbody></tbody></table>
       </div>
+      </div><!-- /tab-hld -->
 
+      <!-- ═══════════════════════ TAB: WRG ═══════════════════════ -->
+      <div id="tab-wrg" class="tab-content">
       <!-- WINDROSE GREEN (WRG) -->
       <div class="community-heading" id="sec-wrg">Windrose Green <span class="tag">WRG</span></div>
       <div class="kpi-grid">
@@ -309,26 +356,9 @@ table.starts tr.metric-total td{font-weight:500}
         </tr></thead><tbody></tbody></table>
       </div>
 
-      <!-- PACE vs TARGET -->
-      <div class="section-title" id="sec-pace">YTD Pace vs Target</div>
-      <div class="chart-grid full">
-        <div class="chart-card"><div class="chart-title">Homes/Month — YTD vs Annual Target</div><div class="chart-wrap"><canvas id="c-pace"></canvas></div></div>
-      </div>
-
-      <!-- STARTS TRACKING -->
-      <div class="section-title" id="sec-starts-gpd">GPD Starts &amp; Inventory <span class="sub">Completed, sold, under construction &amp; vacant lots per drive date</span></div>
-      <div class="starts-card"><table class="starts" id="t-starts-gpd"></table></div>
-
-      <div class="section-title" id="sec-starts-wrg">Windrose Green Starts &amp; Inventory <span class="sub">Completed, sold, under construction &amp; vacant lots per drive date</span></div>
+      <div class="section-title">Starts &amp; Inventory <span class="sub">Completed, sold, under construction &amp; vacant lots per drive date</span></div>
       <div class="starts-card"><table class="starts" id="t-starts-wrg"></table></div>
-
-      <!-- RECENT CANCELLATIONS (GPD only for now) -->
-      <div class="section-title" id="sec-cancels">Recent Cancellations — GPD <span class="sub">Most recent 5</span></div>
-      <div class="table-card">
-        <table class="cancel-table" id="t-cancels"><thead><tr>
-          <th>Cancel Date</th><th>Original Sale</th><th>Address</th><th>Builder</th><th>Lot</th><th>Reason</th>
-        </tr></thead><tbody></tbody></table>
-      </div>
+      </div><!-- /tab-wrg -->
 
       <div style="height:40px"></div>
     </div>
@@ -414,10 +444,57 @@ async function saveAcctPw() {
   if (data.ok) { showMsg('Password updated.',true); setTimeout(closeAcct,1500); }
   else         { showMsg(data.error||'Failed to update password.',false); }
 }
-function scrollTo(id) {
-  const el = document.getElementById(id);
-  if (el) el.scrollIntoView({behavior: 'smooth', block: 'start'});
+// ── TABS ──────────────────────────────────────────────────────────────────────
+const TAB_TITLES = {
+  exec: 'Executive Summary',
+  gpd:  'The Grand Prairie',
+  hld:  'Highlands',
+  wrg:  'Windrose Green',
+};
+const TABS = Object.keys(TAB_TITLES);
+
+function showTab(id, opts) {
+  if (!TABS.includes(id)) id = 'exec';
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.sidebar-item[data-tab]').forEach(el => el.classList.remove('active'));
+  const panel = document.getElementById('tab-' + id);
+  const link  = document.querySelector('.sidebar-item[data-tab="' + id + '"]');
+  if (panel) panel.classList.add('active');
+  if (link)  link.classList.add('active');
+
+  // Update page title in top bar
+  const h1 = document.querySelector('#main-content .top-bar h1');
+  if (h1) h1.textContent = TAB_TITLES[id];
+  document.title = TAB_TITLES[id] + ' — Community Sales';
+
+  // Sync hash (replaceState so back button can still leave the page cleanly)
+  if (!opts || !opts.skipHash) {
+    if (history.replaceState) history.replaceState(null, '', '#' + id);
+    else location.hash = id;
+  }
+
+  // Scroll main content to top
+  const main = document.getElementById('main-content');
+  if (main) main.scrollTop = 0;
+
+  // Charts inside freshly visible panel may have been sized at 0 while hidden
+  setTimeout(() => {
+    Object.values(_charts).forEach(c => { try { c.resize(); } catch(e){} });
+  }, 40);
 }
+
+// Wire tab clicks
+document.querySelectorAll('.sidebar-item[data-tab]').forEach(a => {
+  a.addEventListener('click', function(e) {
+    e.preventDefault();
+    showTab(this.dataset.tab);
+  });
+});
+// Respond to hash changes (back/forward nav)
+window.addEventListener('hashchange', () => {
+  const id = location.hash.replace('#', '') || 'exec';
+  showTab(id, {skipHash: true});
+});
 
 // ── CHART THEME HELPERS ───────────────────────────────────────────────────────
 function themeColors() {
@@ -749,63 +826,36 @@ function renderBuilderTable(tableId, c, includeTarget) {
 
 function renderStartsTable(tableId, starts) {
   const tbl = document.getElementById(tableId);
+  if (!tbl) return;
   const months = starts.months || [];
   const rows = starts.rows || [];
-  // Header: Lot | Builder | Section | Delivery | month1 | month2 | ...
-  let html = '<thead><tr><th>Lot</th><th>Builder</th><th>Section</th><th>Delivery</th>';
+
+  // Header: Lot | Builder | Section / Metric | Delivery | month1 | month2 | ...
+  let html = '<thead><tr><th>Lot</th><th>Builder</th><th>Section / Metric</th><th>Delivery</th>';
   months.forEach(m => { html += '<th>' + m + '</th>'; });
   html += '</tr></thead><tbody>';
 
   let lastKey = null;
   rows.forEach(r => {
     const key = r.lot + '|' + r.bld;
-    const isFirstMetric = (key !== lastKey);
-    const lotCell = isFirstMetric ? `<td class="lot-start"><span class="badge ${LOT_BADGE[String(r.lot)]||'badge-blue'}">${r.lot}'</span></td>` : '<td></td>';
-    const bldCell = isFirstMetric ? `<td>${r.bld}</td>` : '<td></td>';
-    // Only show sec/del on first row (Completed Homes)
-    const secCell = isFirstMetric ? `<td>${r.sec || ''}</td>` : '<td></td>';
-    const delCell = isFirstMetric ? `<td>${r.del || ''}</td>` : '<td></td>';
-
-    let cls = '';
-    const ml = (r.metric || '').toLowerCase();
-    if (ml === 'homes sold' || ml === 'cancellations') cls = 'metric-sold';
-    if (ml === 'net sales') cls = 'metric-net';
-    if (ml === 'total inventory') cls = 'metric-total';
-
-    html += `<tr class="${cls}">${lotCell}${bldCell}${secCell}${delCell}`;
-    // If isFirstMetric, show metric on the "Section" column? No, metric goes as a label in the delivery cell actually.
-    // Simpler: override "Section" and "Delivery" columns differently for non-first rows — show the metric name instead.
-    html += '</tr>';
-    lastKey = key;
-  });
-
-  // Actually the above doesn't render the metric name per row. Let's redo with a cleaner layout.
-  // Reset and use: Lot | Builder | Metric | month1 | month2 | ...
-  html = '<thead><tr><th>Lot</th><th>Builder</th><th>Section / Metric</th><th>Delivery</th>';
-  months.forEach(m => { html += '<th>' + m + '</th>'; });
-  html += '</tr></thead><tbody>';
-
-  lastKey = null;
-  rows.forEach(r => {
-    const key = r.lot + '|' + r.bld;
     const isFirst = (key !== lastKey);
-    let cls = '';
     const ml = (r.metric || '').toLowerCase();
+    let cls = '';
     if (ml === 'homes sold' || ml === 'cancellations') cls = 'metric-sold';
-    if (ml === 'net sales') cls = 'metric-net';
-    if (ml === 'total inventory') cls = 'metric-total';
+    else if (ml === 'net sales') cls = 'metric-net';
+    else if (ml === 'total inventory') cls = 'metric-total';
 
-    const lotCell = isFirst ? `<td class="lot-start"><span class="badge ${LOT_BADGE[String(r.lot)]||'badge-blue'}">${r.lot}'</span></td>` : '<td></td>';
+    const lotCell = isFirst
+      ? `<td class="lot-start"><span class="badge ${LOT_BADGE[String(r.lot)]||'badge-blue'}">${r.lot}'</span></td>`
+      : '<td></td>';
     const bldCell = isFirst ? `<td>${r.bld}</td>` : '<td></td>';
-    // For the "Section / Metric" column: Completed Homes shows section, others show metric
+    // Completed Homes row shows section label; subsequent metric rows show the metric name.
     const midLabel = ml === 'completed homes' ? (r.sec || r.metric) : r.metric;
     const delCell = isFirst ? `<td>${r.del || ''}</td>` : '<td></td>';
 
-    html += `<tr class="${cls}${isFirst ? ' lot-start' : ''}">
-      ${lotCell}${bldCell}<td>${midLabel}</td>${delCell}`;
+    html += `<tr class="${cls}${isFirst ? ' lot-start' : ''}">${lotCell}${bldCell}<td>${midLabel}</td>${delCell}`;
     (r.vals || []).forEach(v => {
-      const display = (v === '' || v == null) ? '' : v;
-      html += `<td>${display}</td>`;
+      html += `<td>${(v === '' || v == null) ? '' : v}</td>`;
     });
     html += '</tr>';
     lastKey = key;
@@ -834,8 +884,16 @@ function renderCancelTable(tableId, recents) {
 }
 
 // ── INIT ───────────────────────────────────────────────────────────────────────
+function _initialTab() {
+  const h = (location.hash || '').replace('#', '');
+  return TABS.includes(h) ? h : 'exec';
+}
+
 (async function init() {
   if (localStorage.getItem('ember-theme') === 'light') document.documentElement.dataset.theme = 'light';
+  // Show initial tab immediately so the loading/error state falls under the right title.
+  showTab(_initialTab(), {skipHash: true});
+
   {% if not pipsy_configured %}
   document.getElementById('load-state').style.display = 'none';
   document.getElementById('meta-updated').textContent = 'Configuration required';
@@ -847,6 +905,8 @@ function renderCancelTable(tableId, recents) {
     document.getElementById('load-state').style.display = 'none';
     document.getElementById('dash').style.display = 'block';
     renderAll(data);
+    // After render, re-apply tab to make sure charts resize correctly in the visible panel.
+    showTab(_initialTab(), {skipHash: true});
   } catch (e) {
     document.getElementById('load-state').style.display = 'none';
     document.getElementById('error-state').style.display = 'block';
