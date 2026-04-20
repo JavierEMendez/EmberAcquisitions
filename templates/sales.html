@@ -235,6 +235,11 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="1.5"/><path d="M4.93 4.93l14.14 14.14" stroke-width="1.5" stroke-linecap="round"/></svg>
       Cancellations
     </a>
+    <a href="#starts" class="sidebar-item" data-tab="starts">
+      <span class="tab-accent"></span>
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M2 20h20M5 20V8l7-5 7 5v12M9 20v-6h6v6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Starts &amp; Inventory
+    </a>
 
     <div style="flex:1"></div>
     <div style="padding:8px 10px 4px">
@@ -523,6 +528,21 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
       </div>
       </div><!-- /tab-cancels -->
 
+      <!-- ═══════════════════════ TAB: STARTS & INVENTORY ═══════════════════════ -->
+      <div id="tab-starts" class="tab-content">
+      <div class="section-title">Starts &amp; Inventory <span class="sub">Completed, sold, under construction &amp; vacant lots per drive date</span></div>
+      <div class="kpi-grid" style="grid-template-columns:repeat(2,1fr)">
+        <div class="kpi-card acc-gpd"><div class="kpi-label">GPD Total Inventory</div><div class="kpi-value" id="st-gpd-inv">—</div><div class="kpi-sub" id="st-gpd-drive">Last Drive: —</div></div>
+        <div class="kpi-card acc-wrg"><div class="kpi-label">WRG Total Inventory</div><div class="kpi-value" id="st-wrg-inv">—</div><div class="kpi-sub" id="st-wrg-drive">Last Drive: —</div></div>
+      </div>
+
+      <div class="section-title">GPD — Starts by Drive Date</div>
+      <div class="starts-card"><table class="starts" id="t-starts-gpd-full"></table></div>
+
+      <div class="section-title">Windrose Green — Starts by Drive Date</div>
+      <div class="starts-card"><table class="starts" id="t-starts-wrg-full"></table></div>
+      </div><!-- /tab-starts -->
+
       <div style="height:40px"></div>
     </div>
   </div>
@@ -616,6 +636,7 @@ const TAB_TITLES = {
   wrg:     'Windrose Green',
   proj:    '2026 Projections',
   cancels: 'Cancellations',
+  starts:  'Starts & Inventory',
 };
 const TABS = Object.keys(TAB_TITLES);
 
@@ -951,6 +972,9 @@ function renderAll(data) {
   // Cancellations tab
   renderCancels(data);
 
+  // Starts & Inventory tab
+  renderStarts(data);
+
   // Starts tables
   if (gpd.starts) renderStartsTable('t-starts-gpd', gpd.starts);
   if (wrg.starts) renderStartsTable('t-starts-wrg', wrg.starts);
@@ -1197,6 +1221,36 @@ function renderCancels(data) {
 
   // Recent GPD cancellations table (same data as GPD tab — kept in both places per request)
   renderCancelTable('t-cancels-dedicated', gpd.recent_cancels || []);
+}
+
+// ── STARTS & INVENTORY TAB ────────────────────────────────────────────────────
+// Sum the latest 'Total Inventory' value across all lot/builder rows.
+function totalInventory(starts) {
+  if (!starts || !starts.rows || !starts.rows.length) return 0;
+  const lastIdx = Math.max(0, (starts.months ? starts.months.length : 1) - 1);
+  let total = 0;
+  starts.rows.forEach(r => {
+    if ((r.metric || '').toLowerCase() === 'total inventory') {
+      const v = (r.vals || [])[lastIdx];
+      if (typeof v === 'number') total += v;
+    }
+  });
+  return total;
+}
+function lastDriveLabel(starts) {
+  if (!starts || !starts.dates || !starts.dates.length) return '—';
+  return starts.dates[starts.dates.length - 1];
+}
+
+function renderStarts(data) {
+  const gpd = data.communities.gpd, wrg = data.communities.wrg;
+  document.getElementById('st-gpd-inv').textContent   = fmtN(totalInventory(gpd.starts));
+  document.getElementById('st-gpd-drive').textContent = 'Last Drive: ' + lastDriveLabel(gpd.starts);
+  document.getElementById('st-wrg-inv').textContent   = fmtN(totalInventory(wrg.starts));
+  document.getElementById('st-wrg-drive').textContent = 'Last Drive: ' + lastDriveLabel(wrg.starts);
+
+  if (gpd.starts) renderStartsTable('t-starts-gpd-full', gpd.starts);
+  if (wrg.starts) renderStartsTable('t-starts-wrg-full', wrg.starts);
 }
 
 function renderCommunity(prefix, c, target, year) {
