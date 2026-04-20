@@ -240,6 +240,11 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M2 20h20M5 20V8l7-5 7 5v12M9 20v-6h6v6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Starts &amp; Inventory
     </a>
+    <a href="#weekly" class="sidebar-item" data-tab="weekly">
+      <span class="tab-accent"></span>
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2" stroke-width="1.5"/><path d="M3 10h18M8 2v4M16 2v4" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Sales by Week
+    </a>
 
     <div style="flex:1"></div>
     <div style="padding:8px 10px 4px">
@@ -543,6 +548,38 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
       <div class="starts-card"><table class="starts" id="t-starts-wrg-full"></table></div>
       </div><!-- /tab-starts -->
 
+      <!-- ═══════════════════════ TAB: SALES BY WEEK ═══════════════════════ -->
+      <div id="tab-weekly" class="tab-content">
+      <div class="section-title">Sales by Week <span class="sub" id="wk-range"></span></div>
+      <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+        <div class="kpi-card acc-gpd"><div class="kpi-label">GPD <span id="wk-yr-1">2026</span> Net Sales</div><div class="kpi-value" id="wk-gpd">—</div><div class="kpi-sub" id="wk-gpd-sub"></div></div>
+        <div class="kpi-card acc-hld"><div class="kpi-label">Highlands <span id="wk-yr-2">2026</span> Net Sales</div><div class="kpi-value" id="wk-hld">—</div><div class="kpi-sub" id="wk-hld-sub"></div></div>
+        <div class="kpi-card acc-wrg"><div class="kpi-label">WRG <span id="wk-yr-3">2026</span> Net Sales</div><div class="kpi-value" id="wk-wrg">—</div><div class="kpi-sub" id="wk-wrg-sub"></div></div>
+        <div class="kpi-card acc-amber"><div class="kpi-label">Combined <span id="wk-yr-4">2026</span> Net</div><div class="kpi-value" id="wk-total">—</div><div class="kpi-sub">All communities</div></div>
+      </div>
+
+      <div class="section-title">Grand Prairie Dev — Weekly Net Sales</div>
+      <div class="chart-grid full">
+        <div class="chart-card"><div class="chart-title">GPD — Net Sales by Week</div><div class="chart-wrap tall"><canvas id="c-wk-gpd"></canvas></div></div>
+      </div>
+      <div class="section-title">GPD — Detail by Lot Size &amp; Builder</div>
+      <div class="starts-card" style="overflow-x:auto"><table class="pace-tbl" id="t-wk-gpd"></table></div>
+
+      <div class="section-title">Highlands — Weekly Net Sales</div>
+      <div class="chart-grid full">
+        <div class="chart-card"><div class="chart-title">Highlands — Net Sales by Week</div><div class="chart-wrap tall"><canvas id="c-wk-hld"></canvas></div></div>
+      </div>
+      <div class="section-title">Highlands — Detail by Lot Size &amp; Builder</div>
+      <div class="starts-card" style="overflow-x:auto"><table class="pace-tbl" id="t-wk-hld"></table></div>
+
+      <div class="section-title">Windrose Green — Weekly Net Sales</div>
+      <div class="chart-grid full">
+        <div class="chart-card"><div class="chart-title">WRG — Net Sales by Week</div><div class="chart-wrap tall"><canvas id="c-wk-wrg"></canvas></div></div>
+      </div>
+      <div class="section-title">WRG — Detail by Lot Size &amp; Builder</div>
+      <div class="starts-card" style="overflow-x:auto"><table class="pace-tbl" id="t-wk-wrg"></table></div>
+      </div><!-- /tab-weekly -->
+
       <div style="height:40px"></div>
     </div>
   </div>
@@ -637,6 +674,7 @@ const TAB_TITLES = {
   proj:    '2026 Projections',
   cancels: 'Cancellations',
   starts:  'Starts & Inventory',
+  weekly:  'Sales by Week',
 };
 const TABS = Object.keys(TAB_TITLES);
 
@@ -975,6 +1013,9 @@ function renderAll(data) {
   // Starts & Inventory tab
   renderStarts(data);
 
+  // Sales by Week tab
+  renderWeekly(data);
+
   // Starts tables
   if (gpd.starts) renderStartsTable('t-starts-gpd', gpd.starts);
   if (wrg.starts) renderStartsTable('t-starts-wrg', wrg.starts);
@@ -1251,6 +1292,118 @@ function renderStarts(data) {
 
   if (gpd.starts) renderStartsTable('t-starts-gpd-full', gpd.starts);
   if (wrg.starts) renderStartsTable('t-starts-wrg-full', wrg.starts);
+}
+
+// ── SALES BY WEEK TAB ─────────────────────────────────────────────────────────
+// Weekly chart: gross (green, positive bars) + cancels (red, negative bars) + net line.
+function renderWeeklyChart(canvasId, c, accentHex) {
+  _destroy(canvasId);
+  const el = document.getElementById(canvasId); if (!el) return;
+  if (!c.weekly || !c.weekly.labels || !c.weekly.labels.length) return;
+  const t = themeColors();
+  const accent = accentHex || PALETTE[1];
+  const net = c.weekly.gross.map((g, i) => g + c.weekly.cancel[i]); // cancels are negative
+  _charts[canvasId] = new Chart(el, {
+    type: 'bar',
+    data: {
+      labels: c.weekly.labels,
+      datasets: [
+        { type: 'bar',  label: 'Gross',   data: c.weekly.gross,  backgroundColor: accent + '55', borderColor: accent, borderWidth: 1, borderRadius: 2, order: 3 },
+        { type: 'bar',  label: 'Cancels', data: c.weekly.cancel, backgroundColor: 'rgba(229,62,62,0.3)', borderColor: '#e53e3e', borderWidth: 1, borderRadius: 2, order: 3 },
+        { type: 'line', label: 'Net',     data: net,             borderColor: '#c8a96e', backgroundColor: '#c8a96e33', borderWidth: 2, tension: 0.2, pointRadius: 2, order: 1 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+      plugins: {
+        legend: { labels: { color: t.legend, font: { family: 'DM Sans', size: 10 }, boxWidth: 10, padding: 10 } },
+        tooltip: { mode: 'index', intersect: false, backgroundColor: t.ttBg, titleColor: t.ttTitle, bodyColor: t.ttBody, borderColor: t.ttBorder, borderWidth: 1, padding: 9 }
+      },
+      scales: {
+        x: { border: { color: t.grid }, ticks: { color: t.tick, font: { size: 9 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 20 }, grid: { color: t.grid } },
+        y: { border: { color: t.grid }, ticks: { color: t.tick, font: { size: 9 } }, grid: { color: t.grid } }
+      }
+    }
+  });
+}
+
+// Builder × week detail table. Rows: bm_order (lot, full builder name).
+// Columns: Lot | Builder | [week labels...] | LOP Net
+function renderWeeklyBuilderTable(tableId, c) {
+  const tbl = document.getElementById(tableId);
+  if (!tbl) return;
+  if (!c.weekly || !c.weekly.labels) { tbl.innerHTML = ''; return; }
+  const labels = c.weekly.labels;
+  const bw = c.weekly.builder_weekly || {};
+
+  let html = '<thead><tr><th>Lot</th><th>Builder</th>';
+  labels.forEach(l => { html += '<th>' + l + '</th>'; });
+  html += '<th>LOP Net</th></tr></thead><tbody>';
+
+  let lastLot = null;
+  (c.bm_order || []).forEach(r => {
+    const key = r.lot + '|' + r.full;
+    const wk = bw[key] || {g: [], c: [], n: []};
+    const at = (c.at || {})[key] || {tn: 0};
+    const cls = (lastLot !== null && r.lot !== lastLot) ? 'lot-sep' : '';
+    lastLot = r.lot;
+    const badge = '<span class="badge ' + (LOT_BADGE[r.lot] || 'badge-blue') + '">' + r.lot + '\'</span>';
+    html += `<tr class="${cls}"><td>${badge}</td><td style="text-align:left">${r.full}</td>`;
+    for (let i = 0; i < labels.length; i++) {
+      const v = (wk.n && wk.n[i] != null) ? wk.n[i] : 0;
+      const cell = v === 0 ? '<td style="color:var(--text-dim)">—</td>'
+                 : v < 0  ? '<td style="color:#e86c6c">' + v + '</td>'
+                          : '<td>' + v + '</td>';
+      html += cell;
+    }
+    html += `<td style="font-weight:600">${fmtN(at.tn)}</td></tr>`;
+  });
+  html += '</tbody>';
+  tbl.innerHTML = html;
+}
+
+function renderWeekly(data) {
+  const gpd = data.communities.gpd, hld = data.communities.hld, wrg = data.communities.wrg;
+  const year = data.current_year;
+
+  // Year labels on KPI cards
+  ['wk-yr-1','wk-yr-2','wk-yr-3','wk-yr-4'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = year; });
+
+  // Compute range subtitle from first/last active weeks across all three
+  const allLabels = []
+    .concat(gpd.weekly && gpd.weekly.labels || [])
+    .concat(hld.weekly && hld.weekly.labels || [])
+    .concat(wrg.weekly && wrg.weekly.labels || []);
+  if (allLabels.length) {
+    document.getElementById('wk-range').textContent =
+      'Week of ' + allLabels[0] + ' — ' + allLabels[allLabels.length - 1] + ', ' + year;
+  }
+
+  // KPIs: current-year net (c.ytd_net already represents that)
+  document.getElementById('wk-gpd').textContent   = fmtN(gpd.ytd_net);
+  document.getElementById('wk-hld').textContent   = fmtN(hld.ytd_net);
+  document.getElementById('wk-wrg').textContent   = fmtN(wrg.ytd_net);
+  document.getElementById('wk-total').textContent = fmtN(gpd.ytd_net + hld.ytd_net + wrg.ytd_net);
+  // Sub text: gross/cancel pair this year
+  function wkSub(c) {
+    if (!c.weekly) return '';
+    const gross = c.weekly.gross.reduce((a, b) => a + b, 0);
+    const cancs = c.weekly.cancel.reduce((a, b) => a + b, 0); // negative
+    return fmtN(gross) + ' gross · ' + fmtN(cancs) + ' cancels';
+  }
+  document.getElementById('wk-gpd-sub').textContent = wkSub(gpd);
+  document.getElementById('wk-hld-sub').textContent = wkSub(hld);
+  document.getElementById('wk-wrg-sub').textContent = wkSub(wrg);
+
+  // Weekly charts
+  renderWeeklyChart('c-wk-gpd', gpd, '#4a90e2');
+  renderWeeklyChart('c-wk-hld', hld, '#58b47a');
+  renderWeeklyChart('c-wk-wrg', wrg, '#e07a3e');
+
+  // Builder detail tables
+  renderWeeklyBuilderTable('t-wk-gpd', gpd);
+  renderWeeklyBuilderTable('t-wk-hld', hld);
+  renderWeeklyBuilderTable('t-wk-wrg', wrg);
 }
 
 function renderCommunity(prefix, c, target, year) {
