@@ -252,6 +252,16 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l4-4 4 4 5-5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Bohlke Report
     </a>
+    <a href="#waller" class="sidebar-item" data-tab="waller">
+      <span class="tab-accent"></span>
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2" stroke-width="1.5"/><path d="M3 10h18M8 2v4M16 2v4M7 14h4M7 17h6" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Waller Monthly
+    </a>
+    <a href="#hpermits" class="sidebar-item" data-tab="hpermits">
+      <span class="tab-accent"></span>
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Houston Permits
+    </a>
 
     <div style="flex:1"></div>
     <div style="padding:8px 10px 4px">
@@ -675,6 +685,141 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
       </div>
       </div><!-- /tab-bohlke -->
 
+      <!-- ═══════════════════════ TAB: WALLER MONTHLY ═══════════════════════ -->
+      <div id="tab-waller" class="tab-content">
+      <div class="section-title">
+        Waller ISD — Monthly Permits by Community
+        <span class="sub" id="waller-meta">—</span>
+      </div>
+
+      {% if is_admin %}
+      <div style="display:flex;align-items:center;gap:10px;margin:-6px 0 14px">
+        <input type="file" id="waller-file" accept=".xlsx,.xls" style="display:none">
+        <button id="waller-upload-btn" onclick="document.getElementById('waller-file').click()"
+                style="background:var(--accent);border:none;color:#0d0f13;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;display:inline-flex;align-items:center;gap:6px">
+          <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5-5 5 5M12 5v12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Upload Waller Monthly xlsx
+        </button>
+        <span id="waller-upload-msg" style="font-size:12px;color:var(--text-dim)"></span>
+      </div>
+      {% endif %}
+
+      <div id="waller-empty" style="display:none;background:var(--surface);border:1px dashed var(--border);border-radius:8px;padding:28px;text-align:center;color:var(--text-dim)">
+        <div style="font-size:14px;margin-bottom:6px">No Waller Monthly file uploaded yet.</div>
+        <div style="font-size:12px">
+          {% if is_admin %}Upload the latest "Waller ISD Comps by Month" xlsx to populate this dashboard.
+          {% else %}Ask an admin to upload the latest Waller ISD monthly file.{% endif %}
+        </div>
+      </div>
+
+      <div id="waller-content" style="display:none">
+        <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+          <div class="kpi-card acc-amber"><div class="kpi-label">Waller ISD 2025 Permits</div><div class="kpi-value" id="wm-waller">—</div><div class="kpi-sub" id="wm-waller-sub"></div></div>
+          <div class="kpi-card acc-gpd"><div class="kpi-label">The Grand Prairie 2025</div><div class="kpi-value" id="wm-tgp">—</div><div class="kpi-sub" id="wm-tgp-sub"></div></div>
+          <div class="kpi-card acc-tgp"><div class="kpi-label">TGP Share of Waller ISD</div><div class="kpi-value" id="wm-share">—</div><div class="kpi-sub" id="wm-share-sub"></div></div>
+          <div class="kpi-card acc-hld"><div class="kpi-label" id="wm-latest-label">Latest Month</div><div class="kpi-value" id="wm-latest">—</div><div class="kpi-sub" id="wm-latest-sub"></div></div>
+        </div>
+
+        <div class="chart-grid full">
+          <div class="chart-card"><div class="chart-title">Waller ISD — 36-Month Permit Trend</div><div class="chart-wrap tall"><canvas id="c-wm-total"></canvas></div></div>
+        </div>
+
+        <div class="chart-grid full">
+          <div class="chart-card"><div class="chart-title">Top Communities — Monthly Permit Trend</div><div class="chart-wrap tall"><canvas id="c-wm-top"></canvas></div></div>
+        </div>
+
+        <div class="section-title">All Communities — 2023-2025 Permits</div>
+        <div class="starts-card" style="overflow-x:auto">
+          <table class="pace-tbl" id="t-wm-comms">
+            <thead><tr>
+              <th style="text-align:left">Community</th>
+              <th>'23</th>
+              <th>'24</th>
+              <th>'25</th>
+              <th>YoY</th>
+              <th id="wm-latest-th">Latest</th>
+              <th>Builders</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      </div><!-- /tab-waller -->
+
+      <!-- ═══════════════════════ TAB: HOUSTON PERMITS ═══════════════════════ -->
+      <div id="tab-hpermits" class="tab-content">
+      <div class="section-title">
+        Houston Metro — Monthly Permits
+        <span class="sub" id="hp-meta">—</span>
+      </div>
+
+      {% if is_admin %}
+      <div style="display:flex;align-items:center;gap:10px;margin:-6px 0 14px">
+        <input type="file" id="hp-file" accept=".xlsx,.xls" style="display:none">
+        <button id="hp-upload-btn" onclick="document.getElementById('hp-file').click()"
+                style="background:var(--accent);border:none;color:#0d0f13;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;display:inline-flex;align-items:center;gap:6px">
+          <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5-5 5 5M12 5v12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Upload HPermits xlsx
+        </button>
+        <span id="hp-upload-msg" style="font-size:12px;color:var(--text-dim)"></span>
+      </div>
+      {% endif %}
+
+      <div id="hp-empty" style="display:none;background:var(--surface);border:1px dashed var(--border);border-radius:8px;padding:28px;text-align:center;color:var(--text-dim)">
+        <div style="font-size:14px;margin-bottom:6px">No HPermits file uploaded yet.</div>
+        <div style="font-size:12px">
+          {% if is_admin %}Upload the latest "HPermits" xlsx to populate this dashboard.
+          {% else %}Ask an admin to upload the latest HPermits file.{% endif %}
+        </div>
+      </div>
+
+      <div id="hp-content" style="display:none">
+        <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+          <div class="kpi-card acc-amber"><div class="kpi-label">Houston TTM Permits</div><div class="kpi-value" id="hp-total">—</div><div class="kpi-sub" id="hp-total-sub"></div></div>
+          <div class="kpi-card acc-gpd"><div class="kpi-label" id="hp-top-builder-label">#1 Builder (TTM)</div><div class="kpi-value" id="hp-top-builder" style="font-size:18px">—</div><div class="kpi-sub" id="hp-top-builder-sub"></div></div>
+          <div class="kpi-card acc-tgp"><div class="kpi-label">TGP Rank (Top Projects)</div><div class="kpi-value" id="hp-gpd-rank">—</div><div class="kpi-sub" id="hp-gpd-rank-sub"></div></div>
+          <div class="kpi-card acc-hld"><div class="kpi-label">Houston YoY</div><div class="kpi-value" id="hp-yoy">—</div><div class="kpi-sub" id="hp-yoy-sub"></div></div>
+        </div>
+
+        <div class="chart-grid full">
+          <div class="chart-card"><div class="chart-title">Houston — 24-Month Permit Trend</div><div class="chart-wrap tall"><canvas id="c-hp-trend"></canvas></div></div>
+        </div>
+
+        <div class="chart-grid" style="grid-template-columns:1fr 1fr">
+          <div class="chart-card"><div class="chart-title">Top 10 Builders — TTM Permits</div><div class="chart-wrap tall"><canvas id="c-hp-builders"></canvas></div></div>
+          <div class="chart-card"><div class="chart-title">Top Projects — TTM Permits</div><div class="chart-wrap tall"><canvas id="c-hp-projects"></canvas></div></div>
+        </div>
+
+        <div class="section-title">Markets — TTM Permit Leaderboard</div>
+        <div class="starts-card" style="overflow-x:auto">
+          <table class="pace-tbl" id="t-hp-markets">
+            <thead><tr>
+              <th style="text-align:left">Market</th>
+              <th>Rank</th>
+              <th id="hp-mkt-prev-th">Prior TTM</th>
+              <th id="hp-mkt-curr-th">Current TTM</th>
+              <th>YoY</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="section-title">Top 30 Builders — TTM Permits</div>
+        <div class="starts-card" style="overflow-x:auto">
+          <table class="pace-tbl" id="t-hp-builders">
+            <thead><tr>
+              <th style="text-align:left">Builder</th>
+              <th>Rank</th>
+              <th id="hp-bld-prev-th">Prior TTM</th>
+              <th id="hp-bld-curr-th">Current TTM</th>
+              <th>YoY</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      </div><!-- /tab-hpermits -->
+
       <div style="height:40px"></div>
     </div>
   </div>
@@ -771,6 +916,8 @@ const TAB_TITLES = {
   starts:  'Starts & Inventory',
   weekly:  'Sales by Week',
   bohlke:  'Bohlke Report',
+  waller:  'Waller Monthly',
+  hpermits:'Houston Permits',
 };
 const TABS = Object.keys(TAB_TITLES);
 
@@ -1933,6 +2080,399 @@ function renderBohlke(data) {
   }, 40);
 }
 
+// ── WALLER MONTHLY TAB ─────────────────────────────────────────────────────────
+async function loadWallerMonthly() {
+  try {
+    const res = await fetch('/api/waller-monthly-data');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    window._WALLER_DATA = data;
+    renderWallerMonthly(data);
+  } catch (e) {
+    const m = document.getElementById('waller-meta');
+    if (m) m.textContent = 'Error: ' + e.message;
+  }
+}
+
+function renderWallerMonthly(data) {
+  const empty = document.getElementById('waller-empty');
+  const content = document.getElementById('waller-content');
+  const meta = document.getElementById('waller-meta');
+
+  const hasData = data && data.waller_total && (data.communities || []).length;
+  if (!hasData) {
+    if (empty) empty.style.display = 'block';
+    if (content) content.style.display = 'none';
+    if (meta) meta.textContent = 'No data uploaded';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  if (content) content.style.display = 'block';
+
+  const months = data.months || [];
+  const wt = data.waller_total;
+  const comms = data.communities || [];
+
+  // Locate the most recent non-zero month
+  let latestIdx = months.length - 1;
+  while (latestIdx >= 0 && !(wt.monthly[latestIdx] > 0)) latestIdx--;
+  const latestLabel = latestIdx >= 0 ? months[latestIdx] : '—';
+  const latestTotal = latestIdx >= 0 ? wt.monthly[latestIdx] : 0;
+
+  if (data.uploaded_at) {
+    const d = new Date(data.uploaded_at);
+    meta.textContent = 'Last uploaded ' + d.toLocaleDateString() + ' · ' +
+      comms.length + ' communities · through ' + latestLabel;
+  } else {
+    meta.textContent = '';
+  }
+
+  // ── KPIs ──
+  const tgp = comms.find(c => (c.community || '').toUpperCase() === 'THE GRAND PRAIRIE');
+  const wallerY25 = wt.yearly[2025] || 0;
+  const wallerY24 = wt.yearly[2024] || 0;
+  const wallerYoY = wallerY24 ? (((wallerY25 - wallerY24) / wallerY24) * 100).toFixed(1) : null;
+  const tgpY25    = tgp ? (tgp.yearly[2025] || 0) : 0;
+  const tgpY24    = tgp ? (tgp.yearly[2024] || 0) : 0;
+  const tgpYoY    = tgpY24 ? (((tgpY25 - tgpY24) / tgpY24) * 100).toFixed(1) : null;
+  const share     = wallerY25 ? (tgpY25 / wallerY25 * 100).toFixed(1) : '—';
+
+  document.getElementById('wm-waller').textContent = fmtN(wallerY25);
+  document.getElementById('wm-waller-sub').textContent =
+    wallerYoY != null ? 'YoY ' + (wallerYoY >= 0 ? '+' : '') + wallerYoY + '% · ' + fmtN(wallerY24) + ' in 2024' : '';
+  document.getElementById('wm-tgp').textContent = fmtN(tgpY25);
+  document.getElementById('wm-tgp-sub').textContent =
+    tgpYoY != null ? 'YoY ' + (tgpYoY >= 0 ? '+' : '') + tgpYoY + '% · ' + fmtN(tgpY24) + ' in 2024' : '';
+  document.getElementById('wm-share').textContent = share + '%';
+  document.getElementById('wm-share-sub').textContent = fmtN(tgpY25) + ' of ' + fmtN(wallerY25) + ' Waller permits';
+  document.getElementById('wm-latest-label').textContent = latestLabel + ' — Waller ISD';
+  document.getElementById('wm-latest').textContent = fmtN(latestTotal);
+  document.getElementById('wm-latest-sub').textContent = 'Latest reported month';
+  document.getElementById('wm-latest-th').textContent = latestLabel;
+
+  const tC = themeColors();
+
+  // ── Chart: Waller ISD 36-month trend ──
+  _destroy('c-wm-total');
+  _charts['c-wm-total'] = new Chart(document.getElementById('c-wm-total'), {
+    type: 'line',
+    data: {
+      labels: months,
+      datasets: [{
+        label: 'Waller ISD permits',
+        data: wt.monthly,
+        borderColor: '#c8a96e',
+        backgroundColor: 'rgba(200,169,110,0.15)',
+        borderWidth: 2, tension: 0.3, fill: true,
+        pointRadius: 2, pointHoverRadius: 4,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: tC.ttBg, titleColor: tC.ttTitle, bodyColor: tC.ttBody,
+          borderColor: tC.ttBorder, borderWidth: 1, padding: 9,
+        },
+      },
+      scales: {
+        x: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 9 }, maxRotation: 60, minRotation: 45, autoSkip: true, maxTicksLimit: 18 }, grid: { color: tC.grid } },
+        y: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 10 }, callback: v => v.toLocaleString() }, grid: { color: tC.grid }, beginAtZero: true },
+      },
+    },
+  });
+
+  // ── Chart: Top 5 communities multi-line ──
+  const top5 = comms.slice(0, 5);
+  const palette = ['#c8a96e','#4a90e2','#58b47a','#e07a3e','#8b7db8'];
+  _destroy('c-wm-top');
+  _charts['c-wm-top'] = new Chart(document.getElementById('c-wm-top'), {
+    type: 'line',
+    data: {
+      labels: months,
+      datasets: top5.map((c, i) => ({
+        label: c.community,
+        data: c.monthly,
+        borderColor: palette[i],
+        backgroundColor: palette[i] + '22',
+        borderWidth: 2, tension: 0.3, fill: false,
+        pointRadius: 1.5, pointHoverRadius: 4,
+      })),
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top', labels: { color: tC.legend, font: { family: 'DM Sans', size: 11 }, boxWidth: 12, padding: 10 } },
+        tooltip: {
+          backgroundColor: tC.ttBg, titleColor: tC.ttTitle, bodyColor: tC.ttBody,
+          borderColor: tC.ttBorder, borderWidth: 1, padding: 9,
+        },
+      },
+      scales: {
+        x: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 9 }, maxRotation: 60, minRotation: 45, autoSkip: true, maxTicksLimit: 18 }, grid: { color: tC.grid } },
+        y: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 10 }, callback: v => v.toLocaleString() }, grid: { color: tC.grid }, beginAtZero: true },
+      },
+    },
+  });
+
+  // ── Communities table ──
+  const tbody = document.querySelector('#t-wm-comms tbody');
+  tbody.innerHTML = comms.map(c => {
+    const y23 = c.yearly[2023] || 0, y24 = c.yearly[2024] || 0, y25 = c.yearly[2025] || 0;
+    const yoy = y24 ? (((y25 - y24) / y24) * 100).toFixed(1) : null;
+    const yoyColor = yoy == null ? 'var(--text-dim)' : (yoy >= 0 ? '#58b47a' : '#e06f6f');
+    const yoyTxt = yoy == null ? '—' : ((yoy >= 0 ? '+' : '') + yoy + '%');
+    const latestVal = latestIdx >= 0 ? (c.monthly[latestIdx] || 0) : 0;
+    const up = (c.community || '').toUpperCase();
+    const isOurs = up === 'THE GRAND PRAIRIE' || up.includes('HIGHLAND');
+    const highlightStyle = isOurs ? 'background:rgba(200,169,110,.08);font-weight:600' : '';
+    return `<tr style="${highlightStyle}">
+      <td style="text-align:left">${c.community}</td>
+      <td>${y23 || '—'}</td>
+      <td>${y24 || '—'}</td>
+      <td style="font-weight:600">${y25 || 0}</td>
+      <td style="color:${yoyColor}">${yoyTxt}</td>
+      <td>${latestVal || '—'}</td>
+      <td style="color:var(--text-dim)">${(c.builders || []).length}</td>
+    </tr>`;
+  }).join('');
+
+  setTimeout(() => {
+    ['c-wm-total','c-wm-top'].forEach(id => {
+      if (_charts[id]) { try { _charts[id].resize(); } catch(e){} }
+    });
+  }, 40);
+}
+
+// ── HOUSTON PERMITS TAB ────────────────────────────────────────────────────────
+async function loadHPermits() {
+  try {
+    const res = await fetch('/api/hpermits-data');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    window._HPERMITS_DATA = data;
+    renderHPermits(data);
+  } catch (e) {
+    const m = document.getElementById('hp-meta');
+    if (m) m.textContent = 'Error: ' + e.message;
+  }
+}
+
+function renderHPermits(data) {
+  const empty = document.getElementById('hp-empty');
+  const content = document.getElementById('hp-content');
+  const meta = document.getElementById('hp-meta');
+
+  const hasData = data && data.grand_total && (data.markets || []).length;
+  if (!hasData) {
+    if (empty) empty.style.display = 'block';
+    if (content) content.style.display = 'none';
+    if (meta) meta.textContent = 'No data uploaded';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  if (content) content.style.display = 'block';
+
+  const gt = data.grand_total;
+  const markets = data.markets || [];
+  const builders = data.builders || [];
+  const projects = data.top_projects || [];
+
+  if (data.uploaded_at) {
+    const d = new Date(data.uploaded_at);
+    meta.textContent = 'Last uploaded ' + d.toLocaleDateString() + ' · ' +
+      data.ttm_curr_label + ' (' + markets.length + ' markets · ' + builders.length + ' builders)';
+  } else {
+    meta.textContent = '';
+  }
+
+  // ── KPIs ──
+  const topBuilder = builders[0];
+  const tgpProj = projects.find(p => (p.community || '').toUpperCase() === 'THE GRAND PRAIRIE');
+  const tgpIdx = tgpProj ? (projects.indexOf(tgpProj) + 1) : null;
+
+  document.getElementById('hp-total').textContent = fmtN(gt.ttm_curr);
+  document.getElementById('hp-total-sub').textContent =
+    'Prior TTM ' + fmtN(gt.ttm_prev) + (gt.yoy_pct != null ? ' · YoY ' + (gt.yoy_pct >= 0 ? '+' : '') + gt.yoy_pct + '%' : '');
+  if (topBuilder) {
+    document.getElementById('hp-top-builder').textContent = (topBuilder.builder || '').replace(/ HOMES$/i, '').replace(/ COMMUNITIES$/i, '');
+    document.getElementById('hp-top-builder-sub').textContent =
+      fmtN(topBuilder.ttm_curr) + ' permits' + (topBuilder.yoy_pct != null ? ' · YoY ' + (topBuilder.yoy_pct >= 0 ? '+' : '') + topBuilder.yoy_pct + '%' : '');
+  }
+  if (tgpProj) {
+    document.getElementById('hp-gpd-rank').textContent = '#' + tgpIdx;
+    document.getElementById('hp-gpd-rank-sub').textContent =
+      'TGP ' + fmtN(tgpProj.ttm_curr) + ' permits' + (tgpProj.yoy_pct != null ? ' · YoY ' + (tgpProj.yoy_pct >= 0 ? '+' : '') + tgpProj.yoy_pct + '%' : '');
+  } else {
+    document.getElementById('hp-gpd-rank').textContent = '—';
+    document.getElementById('hp-gpd-rank-sub').textContent = 'Not in top ' + projects.length;
+  }
+  document.getElementById('hp-yoy').textContent = (gt.yoy_pct != null ? (gt.yoy_pct >= 0 ? '+' : '') + gt.yoy_pct + '%' : '—');
+  document.getElementById('hp-yoy-sub').textContent =
+    fmtN(gt.ttm_prev) + ' → ' + fmtN(gt.ttm_curr);
+
+  // Update table header labels with actual TTM period labels
+  document.getElementById('hp-mkt-prev-th').textContent = data.ttm_prev_label || 'Prior TTM';
+  document.getElementById('hp-mkt-curr-th').textContent = data.ttm_curr_label || 'Current TTM';
+  document.getElementById('hp-bld-prev-th').textContent = data.ttm_prev_label || 'Prior TTM';
+  document.getElementById('hp-bld-curr-th').textContent = data.ttm_curr_label || 'Current TTM';
+  document.getElementById('hp-top-builder-label').textContent =
+    '#1 Builder (' + (data.ttm_curr_label || 'TTM') + ')';
+
+  const tC = themeColors();
+
+  // ── Chart: 24-month trend (merge prev + curr) ──
+  const trendLabels = [...(data.months_prev || []), ...(data.months_curr || [])];
+  const trendData   = [...(gt.monthly_prev || []), ...(gt.monthly_curr || [])];
+  _destroy('c-hp-trend');
+  _charts['c-hp-trend'] = new Chart(document.getElementById('c-hp-trend'), {
+    type: 'line',
+    data: {
+      labels: trendLabels,
+      datasets: [{
+        label: 'Houston permits',
+        data: trendData,
+        borderColor: '#4a90e2',
+        backgroundColor: 'rgba(74,144,226,0.15)',
+        borderWidth: 2, tension: 0.3, fill: true,
+        pointRadius: 2, pointHoverRadius: 4,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: tC.ttBg, titleColor: tC.ttTitle, bodyColor: tC.ttBody,
+          borderColor: tC.ttBorder, borderWidth: 1, padding: 9,
+        },
+      },
+      scales: {
+        x: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 9 }, maxRotation: 60, minRotation: 45, autoSkip: true, maxTicksLimit: 16 }, grid: { color: tC.grid } },
+        y: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 10 }, callback: v => v.toLocaleString() }, grid: { color: tC.grid }, beginAtZero: true },
+      },
+    },
+  });
+
+  // ── Chart: Top 10 builders ──
+  const top10b = builders.slice(0, 10);
+  const bLabels = top10b.map(b => (b.builder || '').replace(/ HOMES$/i, '').replace(/ COMMUNITIES$/i, ''));
+  _destroy('c-hp-builders');
+  _charts['c-hp-builders'] = new Chart(document.getElementById('c-hp-builders'), {
+    type: 'bar',
+    data: {
+      labels: bLabels,
+      datasets: [{
+        label: data.ttm_curr_label || 'Current TTM',
+        data: top10b.map(b => b.ttm_curr),
+        backgroundColor: '#4a90e2cc', borderColor: '#4a90e2',
+        borderWidth: 1, borderRadius: 3,
+      }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: tC.ttBg, titleColor: tC.ttTitle, bodyColor: tC.ttBody,
+          borderColor: tC.ttBorder, borderWidth: 1, padding: 9,
+          callbacks: {
+            afterLabel: (ctx) => {
+              const b = top10b[ctx.dataIndex];
+              const lines = ['Prior: ' + (b.ttm_prev || 0).toLocaleString()];
+              if (b.yoy_pct != null) lines.push('YoY: ' + (b.yoy_pct >= 0 ? '+' : '') + b.yoy_pct + '%');
+              return lines;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 10 }, callback: v => v.toLocaleString() }, grid: { color: tC.grid }, beginAtZero: true },
+        y: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 11 } }, grid: { color: 'transparent' } },
+      },
+    },
+  });
+
+  // ── Chart: Top projects (highlight TGP) ──
+  const pLabels = projects.map(p => p.community);
+  const pColors = projects.map(p => (p.community || '').toUpperCase() === 'THE GRAND PRAIRIE' ? '#c8a96e' : '#58b47acc');
+  const pBorder = projects.map(p => (p.community || '').toUpperCase() === 'THE GRAND PRAIRIE' ? '#c8a96e' : '#58b47a');
+  _destroy('c-hp-projects');
+  _charts['c-hp-projects'] = new Chart(document.getElementById('c-hp-projects'), {
+    type: 'bar',
+    data: {
+      labels: pLabels,
+      datasets: [{
+        label: data.ttm_curr_label || 'Current TTM',
+        data: projects.map(p => p.ttm_curr),
+        backgroundColor: pColors, borderColor: pBorder,
+        borderWidth: 1, borderRadius: 3,
+      }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: tC.ttBg, titleColor: tC.ttTitle, bodyColor: tC.ttBody,
+          borderColor: tC.ttBorder, borderWidth: 1, padding: 9,
+          callbacks: {
+            afterLabel: (ctx) => {
+              const p = projects[ctx.dataIndex];
+              const lines = ['Prior: ' + (p.ttm_prev || 0).toLocaleString()];
+              if (p.yoy_pct != null) lines.push('YoY: ' + (p.yoy_pct >= 0 ? '+' : '') + p.yoy_pct + '%');
+              return lines;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 10 }, callback: v => v.toLocaleString() }, grid: { color: tC.grid }, beginAtZero: true },
+        y: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 11 } }, grid: { color: 'transparent' } },
+      },
+    },
+  });
+
+  // ── Markets table ──
+  const mBody = document.querySelector('#t-hp-markets tbody');
+  mBody.innerHTML = markets.map(m => {
+    const yoy = m.yoy_pct;
+    const yoyColor = yoy == null ? 'var(--text-dim)' : (yoy >= 0 ? '#58b47a' : '#e06f6f');
+    const yoyTxt = yoy == null ? '—' : ((yoy >= 0 ? '+' : '') + yoy + '%');
+    return `<tr>
+      <td style="text-align:left">${m.market}</td>
+      <td style="color:var(--text-dim)">#${m.rank || '—'}</td>
+      <td>${(m.ttm_prev || 0).toLocaleString()}</td>
+      <td style="font-weight:600">${(m.ttm_curr || 0).toLocaleString()}</td>
+      <td style="color:${yoyColor}">${yoyTxt}</td>
+    </tr>`;
+  }).join('');
+
+  // ── Top 30 builders table ──
+  const bBody = document.querySelector('#t-hp-builders tbody');
+  bBody.innerHTML = builders.slice(0, 30).map(b => {
+    const yoy = b.yoy_pct;
+    const yoyColor = yoy == null ? 'var(--text-dim)' : (yoy >= 0 ? '#58b47a' : '#e06f6f');
+    const yoyTxt = yoy == null ? '—' : ((yoy >= 0 ? '+' : '') + yoy + '%');
+    return `<tr>
+      <td style="text-align:left">${b.builder}</td>
+      <td style="color:var(--text-dim)">#${b.rank || '—'}</td>
+      <td>${(b.ttm_prev || 0).toLocaleString()}</td>
+      <td style="font-weight:600">${(b.ttm_curr || 0).toLocaleString()}</td>
+      <td style="color:${yoyColor}">${yoyTxt}</td>
+    </tr>`;
+  }).join('');
+
+  setTimeout(() => {
+    ['c-hp-trend','c-hp-builders','c-hp-projects'].forEach(id => {
+      if (_charts[id]) { try { _charts[id].resize(); } catch(e){} }
+    });
+  }, 40);
+}
+
 {% if is_admin %}
 // Admin upload handler
 (function wireBohlkeUpload() {
@@ -1964,6 +2504,66 @@ function renderBohlke(data) {
     }
   });
 })();
+
+(function wireWallerUpload() {
+  const input = document.getElementById('waller-file');
+  const msgEl = document.getElementById('waller-upload-msg');
+  const btn   = document.getElementById('waller-upload-btn');
+  if (!input) return;
+  input.addEventListener('change', async function() {
+    const f = this.files[0];
+    if (!f) return;
+    const fd = new FormData(); fd.append('file', f);
+    if (btn) { btn.disabled = true; }
+    msgEl.style.color = 'var(--text-dim)';
+    msgEl.textContent = 'Uploading ' + f.name + '…';
+    try {
+      const res = await fetch('/api/upload-waller-monthly', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      msgEl.style.color = '#58b47a';
+      msgEl.textContent = 'Imported ' + data.months + ' months, ' + data.communities + ' communities.';
+      await loadWallerMonthly();
+      setTimeout(() => { msgEl.textContent = ''; }, 4000);
+    } catch (e) {
+      msgEl.style.color = '#e06f6f';
+      msgEl.textContent = 'Error: ' + e.message;
+    } finally {
+      if (btn) { btn.disabled = false; }
+      input.value = '';
+    }
+  });
+})();
+
+(function wireHPermitsUpload() {
+  const input = document.getElementById('hp-file');
+  const msgEl = document.getElementById('hp-upload-msg');
+  const btn   = document.getElementById('hp-upload-btn');
+  if (!input) return;
+  input.addEventListener('change', async function() {
+    const f = this.files[0];
+    if (!f) return;
+    const fd = new FormData(); fd.append('file', f);
+    if (btn) { btn.disabled = true; }
+    msgEl.style.color = 'var(--text-dim)';
+    msgEl.textContent = 'Uploading ' + f.name + '…';
+    try {
+      const res = await fetch('/api/upload-hpermits', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      msgEl.style.color = '#58b47a';
+      msgEl.textContent = 'Imported ' + data.markets + ' markets, ' + data.builders + ' builders, ' + data.top_projects + ' top projects.';
+      await loadHPermits();
+      setTimeout(() => { msgEl.textContent = ''; }, 4000);
+    } catch (e) {
+      msgEl.style.color = '#e06f6f';
+      msgEl.textContent = 'Error: ' + e.message;
+    } finally {
+      if (btn) { btn.disabled = false; }
+      input.value = '';
+    }
+  });
+})();
 {% endif %}
 
 // ── INIT ───────────────────────────────────────────────────────────────────────
@@ -1980,6 +2580,10 @@ function _initialTab() {
   {% if not pipsy_configured %}
   document.getElementById('load-state').style.display = 'none';
   document.getElementById('meta-updated').textContent = 'Configuration required';
+  // Market tabs don't depend on Pipsy, so still load them
+  loadBohlke();
+  loadWallerMonthly();
+  loadHPermits();
   return;
   {% endif %}
   try {
@@ -1988,8 +2592,10 @@ function _initialTab() {
     document.getElementById('load-state').style.display = 'none';
     document.getElementById('dash').style.display = 'block';
     renderAll(data);
-    // Load Bohlke report data in parallel (independent of Pipsy sales data)
+    // Load market-tab data in parallel (independent of Pipsy sales data)
     loadBohlke();
+    loadWallerMonthly();
+    loadHPermits();
     // After render, re-apply tab to make sure charts resize correctly in the visible panel.
     showTab(_initialTab(), {skipHash: true});
   } catch (e) {

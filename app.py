@@ -16,6 +16,8 @@ from macro_parser import parse_macro
 from data_puller import run_pull
 from sales_parser import get_sales_dashboard_data
 from bohlke_parser import parse_bohlke
+from waller_parser import parse_waller_monthly
+from hpermits_parser import parse_hpermits
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -2377,6 +2379,119 @@ def bohlke_data():
     if isinstance(data, str):
         data = json.loads(data)
     data["uploaded_at"] = uploaded_at.isoformat() if uploaded_at else None
+    return jsonify(data)
+
+
+@app.route("/api/upload-waller-monthly", methods=["POST"])
+@login_required
+def upload_waller_monthly():
+    """Admin-only — accepts the raw 'Waller ISD Comps by Month' xlsx and
+    stores the parsed JSON in reports (report_type='waller_monthly')."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Admin only"}), 403
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No file"}), 400
+    try:
+        data = parse_waller_monthly(f.read())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM reports WHERE report_type = 'waller_monthly'")
+    cur.execute("INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+                ("waller_monthly", json.dumps(data), session["user_id"]))
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({
+        "ok": True,
+        "months": len(data.get("months", [])),
+        "communities": len(data.get("communities", [])),
+        "has_waller_total": data.get("waller_total") is not None,
+    })
+
+
+@app.route("/api/waller-monthly-data")
+@login_required
+def waller_monthly_data():
+    """Return the latest stored Waller Monthly report, or an empty shell."""
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("sales", True):
+        return jsonify({"error": "Access denied"}), 403
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("""
+        SELECT data, uploaded_at, uploaded_by
+        FROM reports
+        WHERE report_type = 'waller_monthly'
+        ORDER BY uploaded_at DESC
+        LIMIT 1
+    """)
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    if not row:
+        return jsonify({"months": [], "waller_total": None, "communities": [],
+                        "uploaded_at": None})
+    data = row["data"]
+    if isinstance(data, str):
+        data = json.loads(data)
+    data["uploaded_at"] = row["uploaded_at"].isoformat() if row["uploaded_at"] else None
+    return jsonify(data)
+
+
+@app.route("/api/upload-hpermits", methods=["POST"])
+@login_required
+def upload_hpermits():
+    """Admin-only — accepts the raw 'HPermits' xlsx and stores the parsed
+    JSON in reports (report_type='hpermits')."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Admin only"}), 403
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No file"}), 400
+    try:
+        data = parse_hpermits(f.read())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM reports WHERE report_type = 'hpermits'")
+    cur.execute("INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+                ("hpermits", json.dumps(data), session["user_id"]))
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({
+        "ok": True,
+        "markets": len(data.get("markets", [])),
+        "builders": len(data.get("builders", [])),
+        "top_projects": len(data.get("top_projects", [])),
+    })
+
+
+@app.route("/api/hpermits-data")
+@login_required
+def hpermits_data():
+    """Return the latest stored HPermits report, or an empty shell."""
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("sales", True):
+        return jsonify({"error": "Access denied"}), 403
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("""
+        SELECT data, uploaded_at, uploaded_by
+        FROM reports
+        WHERE report_type = 'hpermits'
+        ORDER BY uploaded_at DESC
+        LIMIT 1
+    """)
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    if not row:
+        return jsonify({
+            "months_prev": [], "months_curr": [],
+            "ttm_prev_label": "", "ttm_curr_label": "",
+            "grand_total": None, "markets": [], "submarkets": [],
+            "builders": [], "companies": [], "top_projects": [],
+            "uploaded_at": None,
+        })
+    data = row["data"]
+    if isinstance(data, str):
+        data = json.loads(data)
+    data["uploaded_at"] = row["uploaded_at"].isoformat() if row["uploaded_at"] else None
     return jsonify(data)
 
 
