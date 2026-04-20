@@ -230,6 +230,11 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       2026 Projections
     </a>
+    <a href="#cancels" class="sidebar-item" data-tab="cancels">
+      <span class="tab-accent"></span>
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="1.5"/><path d="M4.93 4.93l14.14 14.14" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Cancellations
+    </a>
 
     <div style="flex:1"></div>
     <div style="padding:8px 10px 4px">
@@ -489,6 +494,35 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
       </div>
       </div><!-- /tab-proj -->
 
+      <!-- ═══════════════════════ TAB: CANCELLATIONS ═══════════════════════ -->
+      <div id="tab-cancels" class="tab-content">
+      <div class="section-title">Cancellations <span class="sub" id="cancels-sub"></span></div>
+      <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+        <div class="kpi-card acc-gpd"><div class="kpi-label">GPD Cancellations</div><div class="kpi-value" id="cnc-gpd">—</div><div class="kpi-sub" id="cnc-gpd-sub">Life of Project</div></div>
+        <div class="kpi-card acc-hld"><div class="kpi-label">Highlands Cancellations</div><div class="kpi-value" id="cnc-hld">—</div><div class="kpi-sub" id="cnc-hld-sub">Life of Project</div></div>
+        <div class="kpi-card acc-wrg"><div class="kpi-label">WRG Cancellations</div><div class="kpi-value" id="cnc-wrg">—</div><div class="kpi-sub" id="cnc-wrg-sub">Life of Project</div></div>
+        <div class="kpi-card acc-amber"><div class="kpi-label">Total Cancellations</div><div class="kpi-value amber" id="cnc-total">—</div><div class="kpi-sub">All Communities</div></div>
+      </div>
+
+      <div class="chart-grid">
+        <div class="chart-card">
+          <div class="chart-title">Cancellations by Community <span style="color:var(--text-dim);text-transform:none;letter-spacing:0">— LOP vs YTD</span></div>
+          <div class="chart-wrap tall"><canvas id="c-cancels"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">Cancel Rate vs Total Gross Sales</div>
+          <div class="chart-wrap tall"><canvas id="c-cancel-rate"></canvas></div>
+        </div>
+      </div>
+
+      <div class="section-title">Recent GPD Cancellations <span class="sub">Most recent 5</span></div>
+      <div class="table-card">
+        <table class="cancel-table" id="t-cancels-dedicated"><thead><tr>
+          <th>Cancel Date</th><th>Original Sale</th><th>Address</th><th>Builder</th><th>Lot</th><th>Reason</th>
+        </tr></thead><tbody></tbody></table>
+      </div>
+      </div><!-- /tab-cancels -->
+
       <div style="height:40px"></div>
     </div>
   </div>
@@ -575,12 +609,13 @@ async function saveAcctPw() {
 }
 // ── TABS ──────────────────────────────────────────────────────────────────────
 const TAB_TITLES = {
-  exec: 'Executive Summary',
-  tgp:  'The Grand Prairie',
-  gpd:  'Grand Prairie Dev',
-  hld:  'Highlands',
-  wrg:  'Windrose Green',
-  proj: '2026 Projections',
+  exec:    'Executive Summary',
+  tgp:     'The Grand Prairie',
+  gpd:     'Grand Prairie Dev',
+  hld:     'Highlands',
+  wrg:     'Windrose Green',
+  proj:    '2026 Projections',
+  cancels: 'Cancellations',
 };
 const TABS = Object.keys(TAB_TITLES);
 
@@ -913,6 +948,9 @@ function renderAll(data) {
   // 2026 Projections tab
   renderProj(data);
 
+  // Cancellations tab
+  renderCancels(data);
+
   // Starts tables
   if (gpd.starts) renderStartsTable('t-starts-gpd', gpd.starts);
   if (wrg.starts) renderStartsTable('t-starts-wrg', wrg.starts);
@@ -1093,6 +1131,72 @@ function renderProj(data) {
      data: [t_gpd, t_hld, t_gpd + t_hld, t_wrg],
      color: PALETTE[0]},
   ]);
+}
+
+// ── CANCELLATIONS TAB ─────────────────────────────────────────────────────────
+function renderCancels(data) {
+  const gpd = data.communities.gpd, hld = data.communities.hld, wrg = data.communities.wrg;
+  const year = data.current_year;
+  const total = gpd.canc_total + hld.canc_total + wrg.canc_total;
+
+  document.getElementById('cancels-sub').textContent = 'As of ' + data.generated_at;
+
+  // KPIs
+  document.getElementById('cnc-gpd').textContent = fmtN(gpd.canc_total);
+  document.getElementById('cnc-gpd-sub').textContent = 'LOP · ' + fmtN(gpd.canc_ytd) + ' in ' + year;
+  document.getElementById('cnc-hld').textContent = fmtN(hld.canc_total);
+  document.getElementById('cnc-hld-sub').textContent = 'LOP · ' + fmtN(hld.canc_ytd) + ' in ' + year;
+  document.getElementById('cnc-wrg').textContent = fmtN(wrg.canc_total);
+  document.getElementById('cnc-wrg-sub').textContent = 'LOP · ' + fmtN(wrg.canc_ytd) + ' in ' + year;
+  document.getElementById('cnc-total').textContent = fmtN(total);
+
+  // Cancellations by Community — LOP vs YTD grouped bar
+  mkBar('c-cancels', ['GPD', 'Highlands', 'Windrose Green'], [
+    {label: 'LOP Cancellations', data: [gpd.canc_total, hld.canc_total, wrg.canc_total], color: '#c8a96e'},
+    {label: year + ' YTD',       data: [gpd.canc_ytd,   hld.canc_ytd,   wrg.canc_ytd],   color: '#e07a3e'},
+  ]);
+
+  // Cancel Rate chart — Gross vs Cancels per community, with cancel rate in tooltip
+  (function() {
+    _destroy('c-cancel-rate');
+    const el = document.getElementById('c-cancel-rate'); if (!el) return;
+    const t = themeColors();
+    const labels = ['GPD', 'Highlands', 'Windrose Green'];
+    const gross  = [gpd.gross_total || 0, hld.gross_total || 0, wrg.gross_total || 0];
+    const cancs  = [gpd.canc_total, hld.canc_total, wrg.canc_total];
+    const rates  = gross.map((g, i) => g ? (cancs[i] / g) * 100 : 0);
+    _charts['c-cancel-rate'] = new Chart(el, {
+      type: 'bar',
+      data: { labels, datasets: [
+        { label: 'Gross Sales (LOP)', data: gross, backgroundColor: 'rgba(94,158,140,.35)', borderColor: '#5e9e8c', borderWidth: 1, borderRadius: 3 },
+        { label: 'Cancellations',     data: cancs, backgroundColor: '#e07a3ecc',             borderColor: '#e07a3e', borderWidth: 1, borderRadius: 3 },
+      ] },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+        plugins: {
+          legend: { labels: { color: t.legend, font: { family: 'DM Sans', size: 10 }, boxWidth: 10, padding: 10 } },
+          tooltip: {
+            mode: 'index', intersect: false,
+            backgroundColor: t.ttBg, titleColor: t.ttTitle, bodyColor: t.ttBody,
+            borderColor: t.ttBorder, borderWidth: 1, padding: 9,
+            callbacks: {
+              afterBody: (items) => {
+                const i = items[0].dataIndex;
+                return 'Cancel rate: ' + rates[i].toFixed(1) + '%';
+              }
+            }
+          }
+        },
+        scales: {
+          x: { border: { color: t.grid }, ticks: { color: t.tick, font: { size: 10 } }, grid: { color: t.grid } },
+          y: { border: { color: t.grid }, ticks: { color: t.tick, font: { size: 9 } }, grid: { color: t.grid }, beginAtZero: true }
+        }
+      }
+    });
+  })();
+
+  // Recent GPD cancellations table (same data as GPD tab — kept in both places per request)
+  renderCancelTable('t-cancels-dedicated', gpd.recent_cancels || []);
 }
 
 function renderCommunity(prefix, c, target, year) {
