@@ -263,6 +263,13 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
       Houston Permits
     </a>
 
+    <div class="sidebar-section">Finance</div>
+    <a href="#uw" class="sidebar-item" data-tab="uw">
+      <span class="tab-accent"></span>
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 2v20M5 6h10a3 3 0 010 6H9a3 3 0 000 6h10" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Underwriting
+    </a>
+
     <div style="flex:1"></div>
     <div style="padding:8px 10px 4px">
       <button onclick="openAcct()" style="width:100%;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--text-dim);font-size:12px;cursor:pointer;transition:all .15s;justify-content:center;font-family:'DM Sans',sans-serif">
@@ -820,6 +827,88 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
       </div>
       </div><!-- /tab-hpermits -->
 
+      <!-- ═══════════════════════ TAB: UNDERWRITING ═══════════════════════ -->
+      <div id="tab-uw" class="tab-content">
+      <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <div>
+          Underwriting Performance — GPD
+          <span class="sub" id="uw-meta">—</span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="uw-metric"
+                  style="padding:6px 12px;font-size:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:6px;cursor:pointer;font-family:'DM Sans',sans-serif">
+            <option value="homeSales" selected>Home Sales</option>
+            <option value="lotTakedowns">Lot Takedowns</option>
+            <option value="bem">BEM ($)</option>
+          </select>
+          {% if is_admin %}
+          <input type="file" id="uw-file" accept=".xlsx,.xls" style="display:none">
+          <button id="uw-upload-btn" onclick="document.getElementById('uw-file').click()"
+                  style="background:var(--accent);border:none;color:#0d0f13;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;display:inline-flex;align-items:center;gap:6px">
+            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5-5 5 5M12 5v12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Upload UW Export
+          </button>
+          {% endif %}
+        </div>
+      </div>
+      <div id="uw-upload-msg" style="font-size:12px;color:var(--text-dim);margin:-6px 0 10px"></div>
+
+      <div id="uw-empty" style="display:none;background:var(--surface);border:1px dashed var(--border);border-radius:8px;padding:28px;text-align:center;color:var(--text-dim)">
+        <div style="font-size:14px;margin-bottom:6px">No UW Performance Export uploaded yet.</div>
+        <div style="font-size:12px">
+          {% if is_admin %}Upload the latest "UW Performance Export - GPD.xlsx" to populate this dashboard.
+          {% else %}Ask an admin to upload the latest UW Performance Export.{% endif %}
+        </div>
+      </div>
+
+      <div id="uw-content" style="display:none">
+        <!-- KPIs -->
+        <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+          <div class="kpi-card acc-tgp"><div class="kpi-label" id="uw-k1-label">UW Modeled — Total</div><div class="kpi-value" id="uw-k1">—</div><div class="kpi-sub" id="uw-k1-sub"></div></div>
+          <div class="kpi-card acc-gpd"><div class="kpi-label" id="uw-k2-label">Current Year</div><div class="kpi-value" id="uw-k2">—</div><div class="kpi-sub" id="uw-k2-sub"></div></div>
+          <div class="kpi-card acc-hld"><div class="kpi-label" id="uw-k3-label">Next Year</div><div class="kpi-value" id="uw-k3">—</div><div class="kpi-sub" id="uw-k3-sub"></div></div>
+          <div class="kpi-card acc-amber"><div class="kpi-label">Sections Modeled</div><div class="kpi-value" id="uw-k4">—</div><div class="kpi-sub" id="uw-k4-sub"></div></div>
+        </div>
+
+        <!-- Annual roll-up -->
+        <div class="chart-grid full">
+          <div class="chart-card">
+            <div class="chart-title">Annual Summary — UW Modeled</div>
+            <div class="chart-wrap tall"><canvas id="c-uw-annual"></canvas></div>
+          </div>
+        </div>
+        <div class="starts-card" style="overflow-x:auto;margin-top:-8px">
+          <table class="pace-tbl" id="t-uw-annual">
+            <thead><tr>
+              <th style="text-align:left">Year</th>
+              <th id="uw-annual-uw-th">UW Modeled</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <!-- Monthly roll-up -->
+        <div class="section-title" style="display:flex;align-items:center;justify-content:space-between">
+          <span>Monthly Roll-up — UW Modeled</span>
+          <select id="uw-monthly-year"
+                  style="padding:4px 10px;font-size:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:6px;font-family:'DM Sans',sans-serif"></select>
+        </div>
+        <div class="chart-grid full">
+          <div class="chart-card"><div class="chart-wrap tall"><canvas id="c-uw-monthly"></canvas></div></div>
+        </div>
+
+        <!-- Section detail -->
+        <div class="section-title" style="display:flex;align-items:center;justify-content:space-between">
+          <span>Section Detail — UW Modeled by Month</span>
+          <select id="uw-section-year"
+                  style="padding:4px 10px;font-size:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:6px;font-family:'DM Sans',sans-serif"></select>
+        </div>
+        <div class="starts-card" style="overflow-x:auto">
+          <div id="uw-section-wrap"></div>
+        </div>
+      </div>
+      </div><!-- /tab-uw -->
+
       <div style="height:40px"></div>
     </div>
   </div>
@@ -918,6 +1007,7 @@ const TAB_TITLES = {
   bohlke:  'Bohlke Report',
   waller:  'Waller Permits',
   hpermits:'Houston Permits',
+  uw:      'Underwriting',
 };
 const TABS = Object.keys(TAB_TITLES);
 
@@ -2473,6 +2563,313 @@ function renderHPermits(data) {
   }, 40);
 }
 
+// ── UNDERWRITING TAB ───────────────────────────────────────────────────────────
+async function loadUW() {
+  try {
+    const res = await fetch('/api/uw-data');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    window._UW_DATA = data;
+    renderUW(data);
+  } catch (e) {
+    const m = document.getElementById('uw-meta');
+    if (m) m.textContent = 'Error: ' + e.message;
+  }
+}
+
+function _uwMetric() {
+  const sel = document.getElementById('uw-metric');
+  return (sel && sel.value) || 'homeSales';
+}
+
+function _uwModeled(data) {
+  const m = _uwMetric();
+  if (m === 'lotTakedowns') return { data: data.lot_takedowns || {}, label: 'Lot Takedowns', isCurrency: false };
+  if (m === 'bem')          return { data: data.bem            || {}, label: 'BEM ($)',      isCurrency: true  };
+  return                           { data: data.home_sales     || {}, label: 'Home Sales',   isCurrency: false };
+}
+
+function _uwFmt(v, isCurrency) {
+  if (isCurrency) return '$' + Math.round(v).toLocaleString();
+  return Number.isInteger(v) ? v.toLocaleString() : v.toFixed(1);
+}
+
+function _normSection(s) { return String(s).replace(/[^0-9]/g, ''); }
+
+function renderUW(data) {
+  const empty = document.getElementById('uw-empty');
+  const content = document.getElementById('uw-content');
+  const meta = document.getElementById('uw-meta');
+
+  const hasAny = data && (
+    Object.keys(data.home_sales || {}).length ||
+    Object.keys(data.lot_takedowns || {}).length ||
+    Object.keys(data.bem || {}).length
+  );
+  if (!hasAny) {
+    if (empty) empty.style.display = 'block';
+    if (content) content.style.display = 'none';
+    if (meta) meta.textContent = 'No data uploaded';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  if (content) content.style.display = 'block';
+
+  if (data.uploaded_at) {
+    const d = new Date(data.uploaded_at);
+    const hsCount = Object.keys(data.home_sales || {}).length;
+    meta.textContent = 'Last uploaded ' + d.toLocaleDateString() + ' · ' + hsCount + ' sections';
+  } else {
+    meta.textContent = '';
+  }
+
+  renderUWKPIs(data);
+  renderUWAnnual(data);
+  renderUWMonthly(data);
+  renderUWSection(data);
+
+  setTimeout(() => {
+    ['c-uw-annual','c-uw-monthly'].forEach(id => {
+      if (_charts[id]) { try { _charts[id].resize(); } catch(e){} }
+    });
+  }, 40);
+}
+
+function renderUWKPIs(data) {
+  const { data: modeled, label, isCurrency } = _uwModeled(data);
+  const byYear = {};
+  Object.values(modeled).forEach(mo => {
+    Object.entries(mo).forEach(([k, v]) => {
+      const y = k.split('-')[0];
+      byYear[y] = (byYear[y] || 0) + v;
+    });
+  });
+  const years = Object.keys(byYear).sort();
+  const total = years.reduce((s, y) => s + byYear[y], 0);
+  const thisYear = String(new Date().getFullYear());
+  const nextYear = String(new Date().getFullYear() + 1);
+
+  document.getElementById('uw-k1-label').textContent = label + ' — Total Modeled';
+  document.getElementById('uw-k1').textContent = _uwFmt(total, isCurrency);
+  document.getElementById('uw-k1-sub').textContent = years.length
+    ? (years[0] + '–' + years[years.length-1] + ' · ' + Object.keys(modeled).length + ' sections')
+    : '';
+
+  document.getElementById('uw-k2-label').textContent = thisYear + ' Modeled';
+  document.getElementById('uw-k2').textContent = _uwFmt(byYear[thisYear] || 0, isCurrency);
+  document.getElementById('uw-k2-sub').textContent = label;
+
+  document.getElementById('uw-k3-label').textContent = nextYear + ' Modeled';
+  document.getElementById('uw-k3').textContent = _uwFmt(byYear[nextYear] || 0, isCurrency);
+  document.getElementById('uw-k3-sub').textContent = label;
+
+  const hsCount = Object.keys(data.home_sales || {}).length;
+  const bemCount = Object.keys(data.bem || {}).length;
+  document.getElementById('uw-k4').textContent = hsCount;
+  document.getElementById('uw-k4-sub').textContent =
+    bemCount + ' sections with BEM · ' + Object.keys(data.section_lots || {}).length + ' lot sizes mapped';
+}
+
+function renderUWAnnual(data) {
+  const { data: modeled, label, isCurrency } = _uwModeled(data);
+  const yearSet = new Set();
+  Object.values(modeled).forEach(mo => Object.keys(mo).forEach(k => yearSet.add(k.split('-')[0])));
+  const years = [...yearSet].sort();
+  const byYear = {};
+  years.forEach(y => byYear[y] = 0);
+  Object.values(modeled).forEach(mo => {
+    Object.entries(mo).forEach(([k, v]) => {
+      const y = k.split('-')[0];
+      if (byYear[y] !== undefined) byYear[y] += v;
+    });
+  });
+
+  const tC = themeColors();
+  _destroy('c-uw-annual');
+  _charts['c-uw-annual'] = new Chart(document.getElementById('c-uw-annual'), {
+    type: 'bar',
+    data: {
+      labels: years,
+      datasets: [{
+        label: 'UW Modeled',
+        data: years.map(y => byYear[y] || 0),
+        backgroundColor: 'rgba(200,169,110,0.45)',
+        borderColor: '#c8a96e', borderWidth: 1, borderRadius: 3,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: tC.ttBg, titleColor: tC.ttTitle, bodyColor: tC.ttBody,
+          borderColor: tC.ttBorder, borderWidth: 1, padding: 9,
+          callbacks: { label: (ctx) => 'UW: ' + _uwFmt(ctx.parsed.y, isCurrency) },
+        },
+      },
+      scales: {
+        x: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 10 } }, grid: { color: tC.grid } },
+        y: { border: { color: tC.grid },
+             ticks: { color: tC.tick, font: { size: 10 },
+                      callback: v => isCurrency ? '$' + v.toLocaleString() : v.toLocaleString() },
+             grid: { color: tC.grid }, beginAtZero: true },
+      },
+    },
+  });
+
+  // Annual table
+  document.getElementById('uw-annual-uw-th').textContent = label + ' (UW)';
+  const tbody = document.querySelector('#t-uw-annual tbody');
+  let total = 0;
+  tbody.innerHTML = years.map(y => {
+    const v = byYear[y] || 0; total += v;
+    return `<tr><td style="text-align:left;font-weight:600">${y}</td><td>${_uwFmt(v, isCurrency)}</td></tr>`;
+  }).join('') +
+  `<tr style="border-top:2px solid var(--border);font-weight:700"><td style="text-align:left">Total</td><td>${_uwFmt(total, isCurrency)}</td></tr>`;
+}
+
+function renderUWMonthly(data) {
+  const { data: modeled, label, isCurrency } = _uwModeled(data);
+  const yearSet = new Set();
+  Object.values(modeled).forEach(mo => Object.keys(mo).forEach(k => yearSet.add(k.split('-')[0])));
+  const years = [...yearSet].sort();
+
+  const sel = document.getElementById('uw-monthly-year');
+  if (sel && sel.options.length === 0) {
+    const thisYear = String(new Date().getFullYear());
+    sel.innerHTML = '<option value="all">All Years</option>' +
+      years.map(y => `<option value="${y}"${y === thisYear ? ' selected' : ''}>${y}</option>`).join('');
+    sel.onchange = () => renderUWMonthly(window._UW_DATA);
+  }
+  const filterYear = sel ? sel.value : 'all';
+
+  const monthSet = new Set();
+  Object.values(modeled).forEach(mo => Object.keys(mo).forEach(k => {
+    if (filterYear === 'all' || k.startsWith(filterYear)) monthSet.add(k);
+  }));
+  const months = [...monthSet].sort();
+  const byMonth = {};
+  months.forEach(m => byMonth[m] = 0);
+  Object.values(modeled).forEach(mo => {
+    Object.entries(mo).forEach(([k, v]) => { if (byMonth[k] !== undefined) byMonth[k] += v; });
+  });
+
+  const mAbbr = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const labels = months.map(m => {
+    const [y, mo] = m.split('-');
+    return mAbbr[parseInt(mo, 10) - 1] + ' ' + y.slice(-2);
+  });
+
+  const tC = themeColors();
+  _destroy('c-uw-monthly');
+  _charts['c-uw-monthly'] = new Chart(document.getElementById('c-uw-monthly'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'UW Modeled',
+        data: months.map(m => byMonth[m] || 0),
+        backgroundColor: 'rgba(200,169,110,0.45)',
+        borderColor: '#c8a96e', borderWidth: 1, borderRadius: 2,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: tC.ttBg, titleColor: tC.ttTitle, bodyColor: tC.ttBody,
+          borderColor: tC.ttBorder, borderWidth: 1, padding: 9,
+          callbacks: { label: (ctx) => 'UW: ' + _uwFmt(ctx.parsed.y, isCurrency) },
+        },
+      },
+      scales: {
+        x: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 9 }, maxRotation: 60, minRotation: 45, autoSkip: true, maxTicksLimit: 18 }, grid: { color: tC.grid } },
+        y: { border: { color: tC.grid },
+             ticks: { color: tC.tick, font: { size: 10 },
+                      callback: v => isCurrency ? '$' + v.toLocaleString() : v.toLocaleString() },
+             grid: { color: tC.grid }, beginAtZero: true },
+      },
+    },
+  });
+}
+
+function renderUWSection(data) {
+  const { data: modeled, isCurrency } = _uwModeled(data);
+  const lotMap = data.section_lots || {};
+  const allMonths = new Set();
+  Object.values(modeled).forEach(mo => Object.keys(mo).forEach(k => allMonths.add(k)));
+  const yearSet = new Set();
+  allMonths.forEach(k => yearSet.add(k.split('-')[0]));
+  const years = [...yearSet].sort();
+
+  const sel = document.getElementById('uw-section-year');
+  if (sel && sel.options.length === 0) {
+    const thisYear = String(new Date().getFullYear());
+    sel.innerHTML = '<option value="all">All Years</option>' +
+      years.map(y => `<option value="${y}"${y === thisYear ? ' selected' : ''}>${y}</option>`).join('');
+    sel.onchange = () => renderUWSection(window._UW_DATA);
+  }
+  const filterYear = sel ? sel.value : 'all';
+
+  const months = [...allMonths].filter(k => filterYear === 'all' || k.startsWith(filterYear)).sort();
+  const wrap = document.getElementById('uw-section-wrap');
+  if (months.length === 0) {
+    wrap.innerHTML = '<p style="color:var(--text-dim);font-size:12px;padding:18px">No data for this metric / year.</p>';
+    return;
+  }
+  const mAbbr = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const monthLabels = months.map(m => {
+    const [y, mo] = m.split('-');
+    return mAbbr[parseInt(mo, 10) - 1] + ' ' + y.slice(-2);
+  });
+  const sections = Object.keys(modeled).sort((a, b) => {
+    const na = parseInt(a.replace(/[^0-9]/g, ''), 10) || 0;
+    const nb = parseInt(b.replace(/[^0-9]/g, ''), 10) || 0;
+    return na - nb;
+  });
+
+  let html = '<table class="pace-tbl" style="font-size:12px;white-space:nowrap"><thead><tr>';
+  html += '<th style="text-align:left;position:sticky;left:0;background:var(--surface);z-index:1">Section</th>';
+  html += '<th style="text-align:left">Lot</th>';
+  monthLabels.forEach(l => { html += `<th>${l}</th>`; });
+  html += '<th style="font-weight:700">Total</th></tr></thead><tbody>';
+
+  let grandTotal = 0;
+  const monthTotals = months.map(() => 0);
+  sections.forEach(sec => {
+    const lot = lotMap[sec] || '';
+    let rowTotal = 0;
+    html += `<tr><td style="text-align:left;font-weight:600;position:sticky;left:0;background:var(--surface);z-index:1">${sec}</td>`;
+    html += `<td style="text-align:left;color:var(--text-dim)">${lot}</td>`;
+    months.forEach((m, i) => {
+      const v = (modeled[sec] || {})[m] || 0;
+      rowTotal += v;
+      monthTotals[i] += v;
+      html += `<td style="color:${v ? 'var(--text)' : 'var(--text-dim)'}">${v ? _uwFmt(v, isCurrency) : '—'}</td>`;
+    });
+    grandTotal += rowTotal;
+    html += `<td style="font-weight:600">${_uwFmt(rowTotal, isCurrency)}</td></tr>`;
+  });
+  html += `<tr style="border-top:2px solid var(--border);font-weight:700;background:var(--bg)">`;
+  html += `<td style="text-align:left;position:sticky;left:0;background:var(--bg);z-index:1" colspan="2">Total</td>`;
+  monthTotals.forEach(v => { html += `<td>${_uwFmt(v, isCurrency)}</td>`; });
+  html += `<td>${_uwFmt(grandTotal, isCurrency)}</td></tr>`;
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+// Wire metric dropdown to re-render all UW views
+(function wireUWMetric() {
+  const sel = document.getElementById('uw-metric');
+  if (sel) sel.addEventListener('change', () => {
+    // Reset year filters so they rebuild for the new metric's year range
+    const y1 = document.getElementById('uw-monthly-year'); if (y1) y1.innerHTML = '';
+    const y2 = document.getElementById('uw-section-year'); if (y2) y2.innerHTML = '';
+    if (window._UW_DATA) renderUW(window._UW_DATA);
+  });
+})();
+
 {% if is_admin %}
 // Admin upload handler
 (function wireBohlkeUpload() {
@@ -2535,6 +2932,37 @@ function renderHPermits(data) {
   });
 })();
 
+(function wireUWUpload() {
+  const input = document.getElementById('uw-file');
+  const msgEl = document.getElementById('uw-upload-msg');
+  const btn   = document.getElementById('uw-upload-btn');
+  if (!input) return;
+  input.addEventListener('change', async function() {
+    const f = this.files[0];
+    if (!f) return;
+    const fd = new FormData(); fd.append('file', f);
+    if (btn) { btn.disabled = true; }
+    msgEl.style.color = 'var(--text-dim)';
+    msgEl.textContent = 'Uploading ' + f.name + '…';
+    try {
+      const res = await fetch('/api/upload-uw', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      msgEl.style.color = '#58b47a';
+      msgEl.textContent = 'Imported ' + data.home_sales_sections + ' home-sale sections, ' +
+        data.lot_takedowns_sections + ' lot-takedown sections, ' + data.bem_sections + ' BEM sections.';
+      await loadUW();
+      setTimeout(() => { msgEl.textContent = ''; }, 4000);
+    } catch (e) {
+      msgEl.style.color = '#e06f6f';
+      msgEl.textContent = 'Error: ' + e.message;
+    } finally {
+      if (btn) { btn.disabled = false; }
+      input.value = '';
+    }
+  });
+})();
+
 (function wireHPermitsUpload() {
   const input = document.getElementById('hp-file');
   const msgEl = document.getElementById('hp-upload-msg');
@@ -2580,10 +3008,11 @@ function _initialTab() {
   {% if not pipsy_configured %}
   document.getElementById('load-state').style.display = 'none';
   document.getElementById('meta-updated').textContent = 'Configuration required';
-  // Market tabs don't depend on Pipsy, so still load them
+  // Market/finance tabs don't depend on Pipsy, so still load them
   loadBohlke();
   loadWallerMonthly();
   loadHPermits();
+  loadUW();
   return;
   {% endif %}
   try {
@@ -2592,10 +3021,11 @@ function _initialTab() {
     document.getElementById('load-state').style.display = 'none';
     document.getElementById('dash').style.display = 'block';
     renderAll(data);
-    // Load market-tab data in parallel (independent of Pipsy sales data)
+    // Load market/finance-tab data in parallel (independent of Pipsy sales data)
     loadBohlke();
     loadWallerMonthly();
     loadHPermits();
+    loadUW();
     // After render, re-apply tab to make sure charts resize correctly in the visible panel.
     showTab(_initialTab(), {skipHash: true});
   } catch (e) {

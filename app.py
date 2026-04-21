@@ -18,6 +18,7 @@ from sales_parser import get_sales_dashboard_data
 from bohlke_parser import parse_bohlke
 from waller_parser import parse_waller_monthly
 from hpermits_parser import parse_hpermits
+from uw_parser import parse_uw
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -2487,6 +2488,62 @@ def hpermits_data():
             "grand_total": None, "markets": [], "submarkets": [],
             "builders": [], "companies": [], "top_projects": [],
             "uploaded_at": None,
+        })
+    data = row["data"]
+    if isinstance(data, str):
+        data = json.loads(data)
+    data["uploaded_at"] = row["uploaded_at"].isoformat() if row["uploaded_at"] else None
+    return jsonify(data)
+
+
+@app.route("/api/upload-uw", methods=["POST"])
+@login_required
+def upload_uw():
+    """Admin-only — accepts the raw 'UW Performance Export' xlsx and stores
+    the parsed JSON in reports (report_type='uw_performance')."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Admin only"}), 403
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No file"}), 400
+    try:
+        data = parse_uw(f.read())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM reports WHERE report_type = 'uw_performance'")
+    cur.execute("INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+                ("uw_performance", json.dumps(data), session["user_id"]))
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({
+        "ok": True,
+        "home_sales_sections":   len(data.get("home_sales", {})),
+        "lot_takedowns_sections": len(data.get("lot_takedowns", {})),
+        "bem_sections":          len(data.get("bem", {})),
+    })
+
+
+@app.route("/api/uw-data")
+@login_required
+def uw_data():
+    """Return the latest stored UW Performance report, or an empty shell."""
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("sales", True):
+        return jsonify({"error": "Access denied"}), 403
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("""
+        SELECT data, uploaded_at, uploaded_by
+        FROM reports
+        WHERE report_type = 'uw_performance'
+        ORDER BY uploaded_at DESC
+        LIMIT 1
+    """)
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    if not row:
+        return jsonify({
+            "home_sales": {}, "lot_takedowns": {}, "bem": {},
+            "section_lots": {}, "sheet_names": [], "uploaded_at": None,
         })
     data = row["data"]
     if isinstance(data, str):
