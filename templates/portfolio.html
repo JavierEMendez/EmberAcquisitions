@@ -3,19 +3,22 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ember Portfolio — Ember</title>
+<title>Ember Capital — Ember</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   :root{
     --bg:#0d0f13;--surface:#151921;--card:#151921;--border:#1e2535;--border-light:#2e3750;
     --accent:#c8a96e;--text:#e8eaf0;--text-muted:#8b95a8;--text-dim:#4a5568;
     --teal:#5e9e8c;--green:#4ade80;--red:#f87171;--success:#5e9e8c;
+    --lp:#5e9e8c;--promote:#c8a96e;--leave:#e07a3e;
   }
   [data-theme="light"]{
     --bg:#f0f2f5;--surface:#ffffff;--card:#ffffff;--border:#e2e8f0;--border-light:#cbd5e0;
     --accent:#003552;--text:#1a2a3a;--text-muted:#718096;--text-dim:#a0aec0;--teal:#38a169;--success:#38a169;
+    --lp:#2d8b76;--promote:#a4832a;--leave:#c56028;
   }
   [data-theme="light"] #sidebar{background:var(--bg);}
   [data-theme="light"] th{background:var(--card);color:var(--text-muted);}
@@ -42,43 +45,63 @@
   .page-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:24px;color:var(--text);margin-bottom:4px}
   .page-sub{font-size:12px;color:var(--text-muted);margin-bottom:24px}
 
-  /* Aggregate Cards */
-  .agg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:28px}
-  .agg-card{background:var(--card);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:8px;padding:14px 16px}
-  .agg-label{font-size:10px;color:var(--text-dim);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}
-  .agg-value{font-size:22px;font-weight:600;color:var(--accent);font-family:'Plus Jakarta Sans',sans-serif}
-  .agg-sub{font-size:11px;color:var(--text-muted);margin-top:2px}
+  /* KPI Cards */
+  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:24px}
+  .kpi{background:var(--card);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:8px;padding:14px 16px}
+  .kpi.lp{border-left-color:var(--lp)}
+  .kpi.promote{border-left-color:var(--promote)}
+  .kpi.leave{border-left-color:var(--leave)}
+  .kpi .lbl{font-size:10px;color:var(--text-dim);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}
+  .kpi .val{font-size:22px;font-weight:600;color:var(--accent);font-family:'Plus Jakarta Sans',sans-serif}
+  .kpi.lp .val{color:var(--lp)}
+  .kpi.promote .val{color:var(--promote)}
+  .kpi.leave .val{color:var(--leave)}
+  .kpi .sub{font-size:11px;color:var(--text-muted);margin-top:2px}
 
-  /* Filter pills */
-  .filter-bar{display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap}
-  .filter-bar label{font-size:11px;color:var(--text-muted)}
-  .fp{font-size:11px;padding:3px 10px;border-radius:12px;border:1px solid var(--border);background:none;color:var(--text-dim);cursor:pointer;transition:all .12s;font-family:'DM Sans',sans-serif}
-  .fp.active{background:rgba(200,169,110,.12);border-color:rgba(200,169,110,.4);color:var(--accent)}
+  /* Section headers */
+  .section-h{font-family:'Plus Jakarta Sans',sans-serif;font-weight:500;font-size:15px;color:var(--text);margin:28px 0 10px;display:flex;align-items:center;gap:10px}
+  .section-h::before{content:"";display:block;width:3px;height:14px;background:var(--accent);border-radius:2px}
+  .section-sub{font-size:11px;color:var(--text-dim);margin-bottom:14px;margin-left:13px}
 
-  /* Status badges */
-  .sbadge{font-size:9px;border-radius:3px;padding:1px 6px;font-weight:600}
-  .s-active{background:rgba(94,158,140,.15);color:#5e9e8c}
-  .s-under-contract{background:rgba(200,169,110,.15);color:#c8a96e}
-  [data-theme="light"] .s-under-contract{background:rgba(0,53,82,.12);color:#003552}
-  .s-closed{background:rgba(123,143,212,.15);color:#7b8fd4}
-  .s-dead{background:rgba(224,82,82,.12);color:#e05252}
+  /* Global controls card */
+  .ctrl-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px 20px;margin-bottom:18px;display:flex;flex-wrap:wrap;align-items:center;gap:18px}
+  .ctrl-row{display:flex;align-items:center;gap:8px}
+  .ctrl-row label{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em}
+  .ctrl-row input[type="range"]{width:140px;accent-color:var(--accent)}
+  .ctrl-row .val-chip{min-width:46px;text-align:center;padding:3px 8px;border-radius:6px;background:var(--bg);border:1px solid var(--border);font-size:12px;color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
+  .ctrl-row.lp input[type="range"]{accent-color:var(--lp)}
+  .ctrl-row.promote input[type="range"]{accent-color:var(--promote)}
+  .ctrl-btn{font-size:11px;padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text-muted);cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .12s}
+  .ctrl-btn:hover{border-color:var(--border-light);color:var(--text)}
+  .ctrl-sep{width:1px;height:24px;background:var(--border)}
 
-  /* Table */
-  .tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:8px}
-  table{border-collapse:collapse;width:100%;min-width:800px;font-size:12px}
-  th{padding:8px 12px;background:#141820;color:var(--text-muted);font-weight:600;text-align:right;white-space:nowrap;position:sticky;top:0;z-index:1;border-bottom:1px solid var(--border);cursor:pointer;user-select:none}
+  /* Project table */
+  .tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:8px;margin-bottom:24px}
+  table{border-collapse:collapse;width:100%;min-width:960px;font-size:12px}
+  th{padding:9px 12px;background:#141820;color:var(--text-muted);font-weight:600;text-align:right;white-space:nowrap;position:sticky;top:0;z-index:1;border-bottom:1px solid var(--border);user-select:none}
   th:first-child{text-align:left}
-  th:hover{color:var(--text)}
-  th.sort-asc::after{content:' ↑';color:var(--accent)}
-  th.sort-desc::after{content:' ↓';color:var(--accent)}
-  td{padding:8px 12px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap}
+  th.grp-lp{color:var(--lp);border-bottom-color:var(--lp)}
+  th.grp-prom{color:var(--promote);border-bottom-color:var(--promote)}
+  td{padding:9px 12px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
   td:first-child{text-align:left;color:var(--text);font-weight:500}
   tr:last-child td{border-bottom:none}
-  tr:hover td{background:rgba(200,169,110,.03)}
-  tr.total-row td{font-weight:700;border-top:2px solid var(--border-light);color:var(--accent)}
-  .proj-link{color:var(--accent);cursor:pointer;text-decoration:none}
-  .proj-link:hover{text-decoration:underline}
+  tr.total-row td{font-weight:700;border-top:2px solid var(--border-light);background:rgba(200,169,110,.04);color:var(--accent)}
+  .recycle-input{width:70px;padding:4px 6px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:12px;text-align:right;font-family:'DM Sans',sans-serif;font-variant-numeric:tabular-nums}
+  .recycle-input:focus{outline:none;border-color:var(--accent)}
+  .recycle-input.lp:focus{border-color:var(--lp)}
+  .recycle-input.prom:focus{border-color:var(--promote)}
+  .pos{color:var(--lp)}
+  .neg{color:var(--leave)}
+
+  .legend{display:flex;gap:18px;font-size:11px;color:var(--text-muted);margin-bottom:10px;flex-wrap:wrap}
+  .legend-dot{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:middle;margin-right:4px}
+
+  .chart-wrap{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px 18px;margin-bottom:24px;height:360px;position:relative}
+  .chart-title{font-size:12px;color:var(--text-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.06em}
+
   .empty{text-align:center;padding:60px 20px;color:var(--text-dim)}
+  .upload-note{background:rgba(200,169,110,.08);border:1px solid rgba(200,169,110,.25);border-radius:8px;padding:16px 20px;margin-bottom:20px;font-size:12px;color:var(--text-muted)}
+  .upload-note strong{color:var(--accent)}
 </style>
 </head>
 <body>
@@ -87,7 +110,7 @@
     <div class="sidebar-logo">
       <img src="/static/img/ember_logo.png" alt="Ember" class="logo-img logo-dark">
       <img src="/static/img/ember_logo_light.png" alt="Ember" class="logo-img logo-light">
-      <div class="logo-sub">Ember Portfolio</div>
+      <div class="logo-sub">Ember Capital</div>
     </div>
 
     <div class="sidebar-section">Ember Apps</div>
@@ -122,9 +145,9 @@
     </a>
     {% endif %}
     {% if page_access.get('portfolio', true) %}
-    <a href="/portfolio" class="sidebar-item active">
+    <a href="/ember-capital" class="sidebar-item active">
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 3.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      Ember Portfolio
+      Ember Capital
     </a>
     {% endif %}
     {% if page_access.get('sales', true) %}
@@ -150,174 +173,466 @@
   </nav>
 
   <div id="main-content">
-    <div class="page-title">Ember Portfolio</div>
-    <div class="page-sub">Aggregate view of all MPC underwriting projects.</div>
+    <div class="page-title">Ember Capital</div>
+    <div class="page-sub">Portfolio view of active projects — LP &amp; Promote cashflows with recyclable-equity sensitivity. All dollar values in $000s.</div>
 
-    <!-- Aggregate KPI cards -->
-    <div class="agg-grid" id="agg-cards">
-      <div class="agg-card"><div class="agg-label">Total Projects</div><div class="agg-value" id="agg-count">—</div></div>
-      <div class="agg-card"><div class="agg-label">Total Lots</div><div class="agg-value" id="agg-lots">—</div></div>
-      <div class="agg-card"><div class="agg-label">Total Revenue</div><div class="agg-value" id="agg-rev">—</div><div class="agg-sub">combined</div></div>
-      <div class="agg-card"><div class="agg-label">Avg Gross Margin</div><div class="agg-value" id="agg-gm">—</div><div class="agg-sub">simple avg</div></div>
-      <div class="agg-card"><div class="agg-label">Avg Unlevered IRR</div><div class="agg-value" id="agg-irr">—</div><div class="agg-sub">simple avg</div></div>
+    <div id="empty-msg" style="display:none" class="empty">
+      <h3 style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:500;margin-bottom:8px;color:var(--text-muted)">No report data yet</h3>
+      <p style="font-size:13px">Upload the Ember Dashboard Excel from the home page to populate this view.</p>
     </div>
 
-    <!-- Filter bar -->
-    <div class="filter-bar">
-      <label>Status:</label>
-      <button class="fp active" onclick="setFilter('All',this)">All</button>
-      <button class="fp" onclick="setFilter('Active',this)">Active</button>
-      <button class="fp" onclick="setFilter('Under Contract',this)">Under Contract</button>
-      <button class="fp" onclick="setFilter('Closed',this)">Closed</button>
-      <button class="fp" onclick="setFilter('Dead',this)">Dead</button>
-      <span style="margin-left:auto;font-size:11px;color:var(--text-dim)" id="row-count"></span>
-    </div>
+    <div id="main-body" style="display:none">
 
-    <!-- Project table -->
-    <div class="tbl-wrap">
-      <table id="port-table">
-        <thead>
-          <tr>
-            <th data-col="name" onclick="sortBy('name')">Project</th>
-            <th data-col="status" onclick="sortBy('status')">Status</th>
-            <th data-col="total_lots" onclick="sortBy('total_lots')">Total Lots</th>
-            <th data-col="total_revenue" onclick="sortBy('total_revenue')">Total Revenue</th>
-            <th data-col="gross_costs" onclick="sortBy('gross_costs')">Gross Costs</th>
-            <th data-col="gross_margin_amt" onclick="sortBy('gross_margin_amt')">Gross Margin $</th>
-            <th data-col="gross_margin_pct" onclick="sortBy('gross_margin_pct')">Gross Margin %</th>
-            <th data-col="unlevered_irr" onclick="sortBy('unlevered_irr')">Unlevered IRR</th>
-            <th data-col="project_length_months" onclick="sortBy('project_length_months')">Length (mo)</th>
-          </tr>
-        </thead>
-        <tbody id="port-tbody"></tbody>
-        <tfoot id="port-tfoot"></tfoot>
-      </table>
+      <!-- KPI cards -->
+      <div class="kpi-grid">
+        <div class="kpi"><div class="lbl">Active Projects</div><div class="val" id="k-count">—</div></div>
+        <div class="kpi lp"><div class="lbl">Total LP Profit</div><div class="val" id="k-lp-profit">—</div><div class="sub">across all projects</div></div>
+        <div class="kpi promote"><div class="lbl">Total Promote</div><div class="val" id="k-prom">—</div><div class="sub">across all projects</div></div>
+        <div class="kpi lp"><div class="lbl">Weighted LP IRR</div><div class="val" id="k-wirr">—</div><div class="sub">LP-equity-weighted</div></div>
+        <div class="kpi"><div class="lbl">Recyclable Capital</div><div class="val" id="k-recyc">—</div><div class="sub">LP + Promote combined</div></div>
+        <div class="kpi leave"><div class="lbl">Capital Leaving</div><div class="val" id="k-leave">—</div><div class="sub">LP + Promote combined</div></div>
+      </div>
+
+      <!-- Global recycle controls -->
+      <div class="section-h">Recycle Assumptions</div>
+      <div class="section-sub">Set the share of each project's distributions that stays in the portfolio (recycles as new equity) vs. leaves to investors / owners. Per-project overrides below.</div>
+
+      <div class="ctrl-card">
+        <div class="ctrl-row lp">
+          <span style="width:10px;height:10px;background:var(--lp);border-radius:2px"></span>
+          <label>LP Recycle</label>
+          <input type="range" id="g-lp" min="0" max="100" step="5" value="0">
+          <span class="val-chip" id="g-lp-v">0%</span>
+        </div>
+        <div class="ctrl-sep"></div>
+        <div class="ctrl-row promote">
+          <span style="width:10px;height:10px;background:var(--promote);border-radius:2px"></span>
+          <label>Promote Recycle</label>
+          <input type="range" id="g-prom" min="0" max="100" step="5" value="0">
+          <span class="val-chip" id="g-prom-v">0%</span>
+        </div>
+        <div class="ctrl-sep"></div>
+        <button class="ctrl-btn" onclick="applyGlobal()">Apply to all projects</button>
+        <button class="ctrl-btn" onclick="resetRecycle()">Reset</button>
+      </div>
+
+      <!-- Project table -->
+      <div class="section-h">Projects</div>
+      <div class="section-sub">Per-project distributions, returns and recycling sensitivity. Adjust the % inputs to sweep portfolio recycling totals in real-time.</div>
+
+      <div class="tbl-wrap">
+        <table id="proj-table">
+          <thead>
+            <tr>
+              <th rowspan="2" style="vertical-align:middle">Project</th>
+              <th colspan="4" class="grp-lp" style="text-align:center">LP</th>
+              <th colspan="2" class="grp-prom" style="text-align:center">Promote</th>
+              <th colspan="2" style="text-align:center">Recycled Capital</th>
+              <th colspan="2" style="text-align:center">Leaving Capital</th>
+            </tr>
+            <tr>
+              <th class="grp-lp">IRR</th>
+              <th class="grp-lp">EM</th>
+              <th class="grp-lp">Distributions</th>
+              <th class="grp-lp">Recycle %</th>
+              <th class="grp-prom">Total</th>
+              <th class="grp-prom">Recycle %</th>
+              <th style="color:var(--lp)">LP</th>
+              <th style="color:var(--promote)">Promote</th>
+              <th style="color:var(--leave)">LP</th>
+              <th style="color:var(--leave)">Promote</th>
+            </tr>
+          </thead>
+          <tbody id="proj-tbody"></tbody>
+          <tfoot id="proj-tfoot"></tfoot>
+        </table>
+      </div>
+
+      <!-- Annual recycling chart -->
+      <div class="section-h">Annual Capital Recycling</div>
+      <div class="section-sub">Distributions recycled back into the portfolio by year, stacked by source (LP vs. Promote), with capital leaving overlaid.</div>
+      <div class="legend">
+        <span><span class="legend-dot" style="background:var(--lp)"></span>LP Recycled</span>
+        <span><span class="legend-dot" style="background:var(--promote)"></span>Promote Recycled</span>
+        <span><span class="legend-dot" style="background:var(--leave);opacity:.55"></span>Total Leaving (dashed)</span>
+      </div>
+      <div class="chart-wrap"><canvas id="c-annual"></canvas></div>
+
+      <!-- Cumulative chart -->
+      <div class="section-h">Cumulative Recyclable Capital</div>
+      <div class="section-sub">Running total of capital available for redeployment into new projects.</div>
+      <div class="chart-wrap"><canvas id="c-cumul"></canvas></div>
+
+      <!-- Yearly breakdown table -->
+      <div class="section-h">Yearly Cashflow Breakdown</div>
+      <div class="section-sub">Portfolio-level yearly totals after applying recycle %. Values in $000s.</div>
+      <div class="tbl-wrap">
+        <table id="year-table">
+          <thead>
+            <tr>
+              <th>Year</th>
+              <th class="grp-lp">LP Distributions</th>
+              <th class="grp-lp">LP Recycled</th>
+              <th style="color:var(--leave)">LP Leaving</th>
+              <th class="grp-prom">Promote</th>
+              <th class="grp-prom">Promote Recycled</th>
+              <th style="color:var(--leave)">Promote Leaving</th>
+              <th style="color:var(--accent)">Total Recycled</th>
+            </tr>
+          </thead>
+          <tbody id="year-tbody"></tbody>
+          <tfoot id="year-tfoot"></tfoot>
+        </table>
+      </div>
+
     </div>
   </div>
 </div>
 
 <script>
-let _allData = [];
-let _filter  = 'All';
-let _sort    = {col: 'unlevered_irr', dir: -1};
+/* ---------- state ---------- */
+let _data = null;          // {years, projects:[{name, lp_*, promote_*, ...}], uploaded_at}
+let _recycle = {};         // { projectName: {lp: 0..100, prom: 0..100} }
+const _charts = {};
+const LS_KEY = 'ember-capital-recycle-v1';
 
+/* ---------- helpers ---------- */
+function fmtK(v) {
+  if (v == null || isNaN(v)) return '—';
+  const n = +v;
+  if (Math.abs(n) < 1) return '0';
+  if (n < 0) return '(' + Math.abs(Math.round(n)).toLocaleString() + ')';
+  return Math.round(n).toLocaleString();
+}
+function fmtKMillions(v) {
+  // Input is $K; output as $M or $K.
+  if (v == null || isNaN(v)) return '—';
+  const n = +v;
+  if (Math.abs(n) >= 1000) return '$' + (n/1000).toFixed(1) + 'M';
+  if (Math.abs(n) >= 1)    return '$' + Math.round(n).toLocaleString() + 'K';
+  return '$0';
+}
+function fmtPct(v) { return v == null || isNaN(v) ? '—' : (v*100).toFixed(1) + '%'; }
+function fmtEM(v)  { return v == null || isNaN(v) ? '—' : v.toFixed(2) + 'x'; }
+function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
+function loadRecycleFromLS() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; }
+  catch(e) { return {}; }
+}
+function saveRecycleToLS() {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(_recycle)); } catch(e) {}
+}
+
+/* ---------- load ---------- */
 async function load() {
-  const res = await fetch('/api/portfolio?include_archived=false');
-  _allData = await res.json();
+  try {
+    const res = await fetch('/api/ember-capital');
+    _data = await res.json();
+  } catch(e) {
+    _data = {years: [], projects: []};
+  }
+  if (!_data.projects || !_data.projects.length) {
+    document.getElementById('empty-msg').style.display = 'block';
+    document.getElementById('main-body').style.display = 'none';
+    return;
+  }
+  document.getElementById('empty-msg').style.display = 'none';
+  document.getElementById('main-body').style.display = 'block';
+
+  // Seed recycle % state
+  const saved = loadRecycleFromLS();
+  _recycle = {};
+  _data.projects.forEach(p => {
+    _recycle[p.name] = saved[p.name] || {lp: 0, prom: 0};
+  });
+
   renderAll();
 }
 
-function setFilter(f, btn) {
-  _filter = f;
-  document.querySelectorAll('.fp').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-  renderTable();
+/* ---------- global controls ---------- */
+document.getElementById('g-lp').addEventListener('input', e => {
+  document.getElementById('g-lp-v').textContent = e.target.value + '%';
+});
+document.getElementById('g-prom').addEventListener('input', e => {
+  document.getElementById('g-prom-v').textContent = e.target.value + '%';
+});
+function applyGlobal() {
+  const lp = +document.getElementById('g-lp').value;
+  const pr = +document.getElementById('g-prom').value;
+  _data.projects.forEach(p => { _recycle[p.name] = {lp, prom: pr}; });
+  saveRecycleToLS();
+  renderAll();
+}
+function resetRecycle() {
+  _data.projects.forEach(p => { _recycle[p.name] = {lp: 0, prom: 0}; });
+  document.getElementById('g-lp').value = 0;
+  document.getElementById('g-prom').value = 0;
+  document.getElementById('g-lp-v').textContent = '0%';
+  document.getElementById('g-prom-v').textContent = '0%';
+  saveRecycleToLS();
+  renderAll();
 }
 
-function sortBy(col) {
-  if (_sort.col === col) _sort.dir *= -1;
-  else _sort = {col, dir: -1};
-  document.querySelectorAll('th').forEach(th => {
-    th.classList.remove('sort-asc','sort-desc');
-    if (th.dataset.col === col) th.classList.add(_sort.dir === 1 ? 'sort-asc' : 'sort-desc');
-  });
-  renderTable();
-}
-
-function fmtM(v) {
-  if (v == null || isNaN(v)) return '—';
-  const n = parseFloat(v);
-  if (Math.abs(n) >= 1e6) return '$' + (n/1e6).toFixed(1) + 'M';
-  if (Math.abs(n) >= 1e3) return '$' + (n/1e3).toFixed(0) + 'K';
-  return '$' + Math.round(n).toLocaleString();
-}
-function fmtPct(v) { return v == null ? '—' : (parseFloat(v)*100).toFixed(1)+'%'; }
-function fmtInt(v) { return v == null ? '—' : Math.round(parseFloat(v)).toLocaleString(); }
-function fmtMo(v)  { return v == null ? '—' : Math.round(parseFloat(v)) + ' mo'; }
-
-function statusBadge(s) {
-  const cls = 's-' + (s||'Active').toLowerCase().replace(/ /g,'-');
-  return `<span class="sbadge ${cls}">${s||'Active'}</span>`;
-}
-
+/* ---------- render ---------- */
 function renderAll() {
-  renderAggCards();
   renderTable();
-}
-
-function renderAggCards() {
-  const data = _allData;
-  document.getElementById('agg-count').textContent = data.length;
-  const lots = data.reduce((s,p) => s + (parseFloat(p.outputs?.total_lots)||0), 0);
-  const rev  = data.reduce((s,p) => s + (parseFloat(p.outputs?.total_revenue)||0), 0);
-  const irrs = data.map(p => parseFloat(p.outputs?.unlevered_irr)).filter(v => !isNaN(v));
-  const gms  = data.map(p => parseFloat(p.outputs?.gross_margin_pct)).filter(v => !isNaN(v));
-  document.getElementById('agg-lots').textContent = fmtInt(lots);
-  document.getElementById('agg-rev').textContent  = fmtM(rev);
-  document.getElementById('agg-irr').textContent  = irrs.length ? fmtPct(irrs.reduce((a,b)=>a+b,0)/irrs.length) : '—';
-  document.getElementById('agg-gm').textContent   = gms.length  ? fmtPct(gms.reduce((a,b)=>a+b,0)/gms.length)  : '—';
+  renderYearTable();
+  renderCharts();
+  renderKPIs();
 }
 
 function renderTable() {
-  const filtered = _filter === 'All' ? _allData : _allData.filter(p => (p.status||'Active') === _filter);
-  document.getElementById('row-count').textContent = filtered.length + ' project' + (filtered.length === 1 ? '' : 's');
+  const tbody = document.getElementById('proj-tbody');
+  const tfoot = document.getElementById('proj-tfoot');
+  let html = '';
+  let totals = {
+    dist: 0, prom: 0, lpRec: 0, promRec: 0, lpLeave: 0, promLeave: 0
+  };
+  _data.projects.forEach(p => {
+    const rec = _recycle[p.name] || {lp: 0, prom: 0};
+    const dist = p.lp_distributions_total || 0;
+    const prom = p.promote_total || 0;
+    const lpRec    = dist * rec.lp  / 100;
+    const lpLeave  = dist - lpRec;
+    const promRec  = prom * rec.prom / 100;
+    const promLeave= prom - promRec;
 
-  const col = _sort.col;
-  const sorted = [...filtered].sort((a, b) => {
-    let av = col === 'name' ? a.name : col === 'status' ? (a.status||'Active')
-           : (a.outputs?.[col] != null ? parseFloat(a.outputs[col]) : -Infinity);
-    let bv = col === 'name' ? b.name : col === 'status' ? (b.status||'Active')
-           : (b.outputs?.[col] != null ? parseFloat(b.outputs[col]) : -Infinity);
-    if (typeof av === 'string') return _sort.dir * av.localeCompare(bv);
-    return _sort.dir * (av - bv);
+    totals.dist     += dist;
+    totals.prom     += prom;
+    totals.lpRec    += lpRec;
+    totals.promRec  += promRec;
+    totals.lpLeave  += lpLeave;
+    totals.promLeave+= promLeave;
+
+    const key = encodeURIComponent(p.name);
+    html += `<tr data-proj="${key}">
+      <td>${p.name}</td>
+      <td class="pos">${fmtPct(p.lp_irr)}</td>
+      <td>${fmtEM(p.lp_em)}</td>
+      <td>${fmtK(dist)}</td>
+      <td><input type="number" min="0" max="100" step="5" value="${rec.lp}" class="recycle-input lp"  oninput="setRecycle('${key}','lp',this.value)"> %</td>
+      <td>${fmtK(prom)}</td>
+      <td><input type="number" min="0" max="100" step="5" value="${rec.prom}" class="recycle-input prom" oninput="setRecycle('${key}','prom',this.value)"> %</td>
+      <td class="pos">${fmtK(lpRec)}</td>
+      <td class="pos">${fmtK(promRec)}</td>
+      <td class="neg">${fmtK(lpLeave)}</td>
+      <td class="neg">${fmtK(promLeave)}</td>
+    </tr>`;
   });
-
-  const tbody = document.getElementById('port-tbody');
-  if (!sorted.length) {
-    tbody.innerHTML = `<tr><td colspan="9" class="empty">No projects found</td></tr>`;
-    document.getElementById('port-tfoot').innerHTML = '';
-    return;
-  }
-
-  tbody.innerHTML = sorted.map(p => {
-    const o = p.outputs || {};
-    return `<tr>
-      <td><a class="proj-link" href="/?project=${p.id}">${p.name || 'Unnamed'}</a></td>
-      <td style="text-align:left">${statusBadge(p.status)}</td>
-      <td>${fmtInt(o.total_lots)}</td>
-      <td>${fmtM(o.total_revenue)}</td>
-      <td>${fmtM(o.gross_costs)}</td>
-      <td>${fmtM(o.gross_margin_amt)}</td>
-      <td>${fmtPct(o.gross_margin_pct)}</td>
-      <td style="color:var(--success)">${fmtPct(o.unlevered_irr)}</td>
-      <td>${fmtMo(o.project_length_months)}</td>
-    </tr>`;
-  }).join('');
-
-  // Totals row
-  const totLots = filtered.reduce((s,p)=>s+(parseFloat(p.outputs?.total_lots)||0),0);
-  const totRev  = filtered.reduce((s,p)=>s+(parseFloat(p.outputs?.total_revenue)||0),0);
-  const totCosts= filtered.reduce((s,p)=>s+(parseFloat(p.outputs?.gross_costs)||0),0);
-  const totGmAmt= filtered.reduce((s,p)=>s+(parseFloat(p.outputs?.gross_margin_amt)||0),0);
-  const avgGm   = totRev > 0 ? totGmAmt / totRev : null;
-  const irrs    = filtered.map(p=>parseFloat(p.outputs?.unlevered_irr)).filter(v=>!isNaN(v));
-  const avgIrr  = irrs.length ? irrs.reduce((a,b)=>a+b,0)/irrs.length : null;
-  document.getElementById('port-tfoot').innerHTML = `
-    <tr class="total-row">
-      <td>Totals / Avg (${filtered.length})</td>
-      <td></td>
-      <td>${fmtInt(totLots)}</td>
-      <td>${fmtM(totRev)}</td>
-      <td>${fmtM(totCosts)}</td>
-      <td>${fmtM(totGmAmt)}</td>
-      <td>${fmtPct(avgGm)}</td>
-      <td>${fmtPct(avgIrr)}</td>
-      <td>—</td>
-    </tr>`;
+  tbody.innerHTML = html;
+  tfoot.innerHTML = `<tr class="total-row">
+    <td>Totals (${_data.projects.length})</td>
+    <td></td><td></td>
+    <td>${fmtK(totals.dist)}</td><td></td>
+    <td>${fmtK(totals.prom)}</td><td></td>
+    <td>${fmtK(totals.lpRec)}</td>
+    <td>${fmtK(totals.promRec)}</td>
+    <td>${fmtK(totals.lpLeave)}</td>
+    <td>${fmtK(totals.promLeave)}</td>
+  </tr>`;
 }
 
-// Set default sort indicator
-document.querySelector('th[data-col="unlevered_irr"]')?.classList.add('sort-desc');
+function setRecycle(keyEnc, which, val) {
+  const name = decodeURIComponent(keyEnc);
+  const n = Math.max(0, Math.min(100, +val || 0));
+  if (!_recycle[name]) _recycle[name] = {lp: 0, prom: 0};
+  _recycle[name][which] = n;
+  saveRecycleToLS();
+  // Light re-render (table totals + year table + charts + KPIs)
+  renderTable();
+  renderYearTable();
+  renderCharts();
+  renderKPIs();
+}
+
+/* Portfolio yearly sums after recycling */
+function portfolioYearly() {
+  const years = _data.years || [];
+  const nY = years.length;
+  const out = {
+    years,
+    lpDist:   new Array(nY).fill(0),
+    promDist: new Array(nY).fill(0),
+    lpRec:    new Array(nY).fill(0),
+    lpLeave:  new Array(nY).fill(0),
+    promRec:  new Array(nY).fill(0),
+    promLeave:new Array(nY).fill(0),
+  };
+  _data.projects.forEach(p => {
+    const rec = _recycle[p.name] || {lp: 0, prom: 0};
+    const rLp = rec.lp / 100, rPr = rec.prom / 100;
+    const lpY = p.lp_distributions_yearly || [];
+    const prY = p.promote_yearly || [];
+    for (let i = 0; i < nY; i++) {
+      const ld = +lpY[i] || 0;
+      const pd = +prY[i] || 0;
+      out.lpDist[i]    += ld;
+      out.promDist[i]  += pd;
+      out.lpRec[i]     += ld * rLp;
+      out.lpLeave[i]   += ld * (1 - rLp);
+      out.promRec[i]   += pd * rPr;
+      out.promLeave[i] += pd * (1 - rPr);
+    }
+  });
+  return out;
+}
+
+function renderYearTable() {
+  const y = portfolioYearly();
+  const tbody = document.getElementById('year-tbody');
+  const tfoot = document.getElementById('year-tfoot');
+  // Only show years with any activity
+  const activeIdx = [];
+  for (let i = 0; i < y.years.length; i++) {
+    if (y.lpDist[i] || y.promDist[i]) activeIdx.push(i);
+  }
+  let html = '';
+  let totals = {dist:0, lpR:0, lpL:0, prom:0, prR:0, prL:0, rec:0};
+  activeIdx.forEach(i => {
+    const totRec = y.lpRec[i] + y.promRec[i];
+    totals.dist += y.lpDist[i];
+    totals.lpR  += y.lpRec[i];
+    totals.lpL  += y.lpLeave[i];
+    totals.prom += y.promDist[i];
+    totals.prR  += y.promRec[i];
+    totals.prL  += y.promLeave[i];
+    totals.rec  += totRec;
+    html += `<tr>
+      <td>${y.years[i]}</td>
+      <td>${fmtK(y.lpDist[i])}</td>
+      <td class="pos">${fmtK(y.lpRec[i])}</td>
+      <td class="neg">${fmtK(y.lpLeave[i])}</td>
+      <td>${fmtK(y.promDist[i])}</td>
+      <td class="pos">${fmtK(y.promRec[i])}</td>
+      <td class="neg">${fmtK(y.promLeave[i])}</td>
+      <td style="color:var(--accent);font-weight:600">${fmtK(totRec)}</td>
+    </tr>`;
+  });
+  tbody.innerHTML = html || `<tr><td colspan="8" class="empty">No yearly activity</td></tr>`;
+  tfoot.innerHTML = activeIdx.length ? `<tr class="total-row">
+    <td>Total</td>
+    <td>${fmtK(totals.dist)}</td>
+    <td>${fmtK(totals.lpR)}</td>
+    <td>${fmtK(totals.lpL)}</td>
+    <td>${fmtK(totals.prom)}</td>
+    <td>${fmtK(totals.prR)}</td>
+    <td>${fmtK(totals.prL)}</td>
+    <td>${fmtK(totals.rec)}</td>
+  </tr>` : '';
+}
+
+function renderKPIs() {
+  // Totals
+  let lpProfit = 0, prom = 0;
+  let lpEquity = 0, lpEquityIrr = 0;  // LP-contrib-weighted IRR
+  _data.projects.forEach(p => {
+    lpProfit += (+p.lp_profit || 0);
+    prom     += (+p.promote_total || 0);
+    // Weight LP IRR by absolute LP contributions (negative in source)
+    const w = Math.abs(+p.lp_contributions_total || 0);
+    if (w && p.lp_irr != null) {
+      lpEquity += w;
+      lpEquityIrr += (+p.lp_irr) * w;
+    }
+  });
+  const wIrr = lpEquity > 0 ? lpEquityIrr / lpEquity : null;
+
+  const y = portfolioYearly();
+  const totLpRec   = y.lpRec.reduce((a,b)=>a+b,0);
+  const totPromRec = y.promRec.reduce((a,b)=>a+b,0);
+  const totLpLeave = y.lpLeave.reduce((a,b)=>a+b,0);
+  const totPrLeave = y.promLeave.reduce((a,b)=>a+b,0);
+
+  document.getElementById('k-count').textContent     = _data.projects.length;
+  document.getElementById('k-lp-profit').textContent = fmtKMillions(lpProfit);
+  document.getElementById('k-prom').textContent      = fmtKMillions(prom);
+  document.getElementById('k-wirr').textContent      = wIrr == null ? '—' : fmtPct(wIrr);
+  document.getElementById('k-recyc').textContent     = fmtKMillions(totLpRec + totPromRec);
+  document.getElementById('k-leave').textContent     = fmtKMillions(totLpLeave + totPrLeave);
+}
+
+function _destroy(id) {
+  if (_charts[id]) { _charts[id].destroy(); _charts[id] = null; }
+}
+
+function renderCharts() {
+  const y = portfolioYearly();
+  const grid = cssVar('--border');
+  const muted = cssVar('--text-muted');
+  const lpCol = cssVar('--lp');
+  const prCol = cssVar('--promote');
+  const lvCol = cssVar('--leave');
+
+  // --- Annual stacked chart ---
+  _destroy('c-annual');
+  const ctxA = document.getElementById('c-annual').getContext('2d');
+  _charts['c-annual'] = new Chart(ctxA, {
+    type: 'bar',
+    data: {
+      labels: y.years,
+      datasets: [
+        { label: 'LP Recycled',      data: y.lpRec,     backgroundColor: lpCol,  stack: 'rec' },
+        { label: 'Promote Recycled', data: y.promRec,   backgroundColor: prCol,  stack: 'rec' },
+        {
+          label: 'Total Leaving', type: 'line',
+          data: y.lpLeave.map((v,i) => v + y.promLeave[i]),
+          borderColor: lvCol, borderDash: [6,4], borderWidth: 2, tension: .25,
+          pointRadius: 2, pointBackgroundColor: lvCol, backgroundColor: 'rgba(0,0,0,0)', fill: false,
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: {mode:'index', intersect:false},
+      plugins: {
+        legend: { position: 'bottom', labels: { color: muted, font:{size:11}, boxWidth:10 } },
+        tooltip: { callbacks: { label: c => c.dataset.label + ': ' + fmtK(c.parsed.y) } }
+      },
+      scales: {
+        x: { stacked: true, grid: {color: grid}, ticks: {color: muted, font:{size:10}} },
+        y: { stacked: true, grid: {color: grid}, ticks: {color: muted, font:{size:10}, callback: v => fmtK(v) } }
+      }
+    }
+  });
+
+  // --- Cumulative line chart ---
+  _destroy('c-cumul');
+  let cumLp = 0, cumPr = 0;
+  const cumLpArr = [], cumPrArr = [], cumTotArr = [];
+  for (let i = 0; i < y.years.length; i++) {
+    cumLp += y.lpRec[i];
+    cumPr += y.promRec[i];
+    cumLpArr.push(cumLp);
+    cumPrArr.push(cumPr);
+    cumTotArr.push(cumLp + cumPr);
+  }
+  const ctxC = document.getElementById('c-cumul').getContext('2d');
+  _charts['c-cumul'] = new Chart(ctxC, {
+    type: 'line',
+    data: {
+      labels: y.years,
+      datasets: [
+        { label: 'Cumulative LP Recycled',      data: cumLpArr,  borderColor: lpCol, backgroundColor: lpCol+'22', tension: .25, fill: true, pointRadius: 2 },
+        { label: 'Cumulative Promote Recycled', data: cumPrArr,  borderColor: prCol, backgroundColor: prCol+'22', tension: .25, fill: true, pointRadius: 2 },
+        { label: 'Total Recyclable Capital',    data: cumTotArr, borderColor: cssVar('--accent'), borderWidth: 2, tension: .25, fill: false, pointRadius: 3 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: {mode:'index', intersect:false},
+      plugins: {
+        legend: { position: 'bottom', labels: { color: muted, font:{size:11}, boxWidth:10 } },
+        tooltip: { callbacks: { label: c => c.dataset.label + ': ' + fmtK(c.parsed.y) } }
+      },
+      scales: {
+        x: { grid: {color: grid}, ticks: {color: muted, font:{size:10}} },
+        y: { grid: {color: grid}, ticks: {color: muted, font:{size:10}, callback: v => fmtK(v) } }
+      }
+    }
+  });
+}
+
 load();
 </script>
 
@@ -391,6 +706,8 @@ function applyTheme(theme) {
   else { delete document.documentElement.dataset.theme; }
   localStorage.setItem('ember-theme', theme);
   _updateThemeButtons();
+  // Re-render charts to pick up new var() colors
+  if (_data && _data.projects && _data.projects.length) renderCharts();
 }
 (function(){ if (localStorage.getItem('ember-theme') === 'light') document.documentElement.dataset.theme = 'light'; })();
 async function openAcct() {

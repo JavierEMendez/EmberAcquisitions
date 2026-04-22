@@ -913,6 +913,7 @@ def _apply_sensitivity_override(inp, field, value):
 
 
 @app.route("/portfolio")
+@app.route("/ember-capital")
 @login_required
 def portfolio_page():
     if not session.get("is_admin"):
@@ -920,6 +921,97 @@ def portfolio_page():
     pa = {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True, "portfolio": True}
     return render_template("portfolio.html", username=session.get("username"),
                            is_admin=True, page_access=pa)
+
+
+@app.route("/api/ember-capital", methods=["GET"])
+@login_required
+def ember_capital_data():
+    """
+    Return the shape the Ember Capital dashboard needs:
+      {
+        "years":        [2024, 2025, ..., 2045],
+        "uploaded_at":  "YYYY-MM-DD" or None,
+        "projects": [
+          {
+            "name": "...",
+            "lp_irr":       0.22,     # decimal
+            "lp_em":        1.84,     # multiplier
+            "lp_profit":    12345.67, # total ($K)
+            "lp_distributions_total":  ...,
+            "lp_contributions_total":  ...,    # negative
+            "promote_total":           ...,
+            "lp_distributions_yearly": [...],  # per year ($K)
+            "lp_contributions_yearly": [...],  # per year ($K), negative
+            "lp_profit_yearly":        [...],  # per year ($K)
+            "promote_yearly":          [...],  # per year ($K)
+          },
+          ...
+        ]
+      }
+    Values are pulled from the latest 'returns' report uploaded via the
+    Ember Dashboard Excel.
+    """
+    if not session.get("is_admin"):
+        return jsonify({"error": "Access denied"}), 403
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT data, uploaded_at FROM reports "
+        "WHERE report_type = 'returns' ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    row = cur.fetchone()
+    cur.close(); conn.close()
+
+    if not row or not row["data"]:
+        return jsonify({"years": [], "projects": [], "uploaded_at": None})
+
+    src = row["data"] or {}
+    years = src.get("years", []) or []
+    uploaded_at = row["uploaded_at"].isoformat() if row["uploaded_at"] else None
+
+    projects = []
+    for p in src.get("projects", []) or []:
+        by_label = {m.get("label"): m for m in (p.get("metrics") or [])}
+
+        def _m(label):
+            return by_label.get(label) or {}
+
+        def _yearly(label):
+            m = _m(label)
+            y = m.get("yearly") or []
+            # pad/truncate to match years length
+            n = len(years)
+            if len(y) < n:
+                y = list(y) + [0] * (n - len(y))
+            return y[:n]
+
+        def _total(label):
+            m = _m(label)
+            t = m.get("total")
+            try:
+                return float(t) if t is not None else 0.0
+            except (TypeError, ValueError):
+                return 0.0
+
+        projects.append({
+            "name": p.get("name", ""),
+            "lp_irr":                  _total("LP IRR"),
+            "lp_em":                   _total("LP Equity Multiple"),
+            "lp_profit":               _total("Total LP Profit"),
+            "lp_distributions_total":  _total("Total LP Distributions"),
+            "lp_contributions_total":  _total("Total LP Contributions"),
+            "promote_total":           _total("Promote"),
+            "lp_distributions_yearly": _yearly("Total LP Distributions"),
+            "lp_contributions_yearly": _yearly("Total LP Contributions"),
+            "lp_profit_yearly":        _yearly("Total LP Profit"),
+            "promote_yearly":          _yearly("Promote"),
+        })
+
+    return jsonify({
+        "years":       years,
+        "uploaded_at": uploaded_at,
+        "projects":    projects,
+    })
 
 @app.route("/api/portfolio", methods=["GET"])
 @login_required
