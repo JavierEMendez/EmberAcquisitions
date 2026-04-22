@@ -102,6 +102,61 @@
   .empty{text-align:center;padding:60px 20px;color:var(--text-dim)}
   .upload-note{background:rgba(200,169,110,.08);border:1px solid rgba(200,169,110,.25);border-radius:8px;padding:16px 20px;margin-bottom:20px;font-size:12px;color:var(--text-muted)}
   .upload-note strong{color:var(--accent)}
+
+  /* Top actions */
+  .top-actions{display:flex;justify-content:flex-end;gap:8px;margin-bottom:14px}
+  .top-actions .ctrl-btn{background:var(--accent);color:#0d0f13;border-color:var(--accent);font-weight:600}
+  .top-actions .ctrl-btn:hover{opacity:.92;color:#0d0f13}
+
+  /* Commitments */
+  .commit-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 46px;gap:10px;align-items:center}
+  .commit-hdr{font-size:10px;color:var(--text-dim);letter-spacing:.08em;text-transform:uppercase;padding:4px 0}
+  .commit-hdr.r{text-align:right}
+  .commit-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px 18px;margin-bottom:10px}
+  .commit-row{padding:6px 0;border-bottom:1px solid var(--border)}
+  .commit-row:last-child{border-bottom:none}
+  .commit-row input{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:6px 8px;font-size:12px;font-family:'DM Sans',sans-serif;width:100%;font-variant-numeric:tabular-nums}
+  .commit-row input[type="number"]{text-align:right}
+  .commit-row input:focus{outline:none;border-color:var(--accent)}
+  .commit-row .del-btn{background:none;border:1px solid var(--border);color:var(--text-dim);border-radius:5px;width:34px;height:30px;cursor:pointer;font-size:16px;line-height:1;transition:all .12s}
+  .commit-row .del-btn:hover{border-color:var(--leave);color:var(--leave)}
+  .commit-row .total-chip{text-align:right;font-weight:600;color:var(--accent);font-variant-numeric:tabular-nums}
+  .commit-totals{margin-top:10px;padding-top:10px;border-top:2px solid var(--border-light);display:grid;grid-template-columns:2fr 1fr 1fr 1fr 46px;gap:10px;font-weight:700;font-size:13px}
+  .commit-totals > div.r{text-align:right;color:var(--accent);font-variant-numeric:tabular-nums}
+  .commit-save-row{display:flex;align-items:center;gap:10px;margin-top:12px}
+  .commit-save-row .ctrl-btn.primary{background:var(--accent);color:#0d0f13;border-color:var(--accent);font-weight:600}
+  .commit-save-row .ctrl-btn.primary:hover{opacity:.92;color:#0d0f13}
+  .commit-save-row #commit-msg{font-size:11px;color:var(--text-muted)}
+  .commit-save-row #commit-msg.ok{color:var(--lp)}
+  .commit-save-row #commit-msg.err{color:var(--leave)}
+
+  /* Print — executive report layout */
+  @media print {
+    @page { size: A3 landscape; margin: 12mm; }
+    html, body { background: #fff !important; color: #1a1a1a !important; font-size: 10pt; height: auto; overflow: visible; }
+    #sidebar, .no-print, .top-actions, .ctrl-card, .recycle-input { display: none !important; }
+    #app { display: block !important; height: auto; }
+    #main-content { padding: 0 !important; overflow: visible !important; }
+    .page-title { font-size: 22pt; color: #1a2535 !important; }
+    .page-sub { color: #555 !important; }
+    .kpi, .chart-wrap, .tbl-wrap, .commit-card { break-inside: avoid; page-break-inside: avoid; box-shadow: none; }
+    .kpi { border: 1px solid #ccc !important; background: #fff !important; border-left-width: 4px !important; }
+    .kpi .val { color: #1a2535 !important; }
+    .kpi.lp .val { color: #2d8b76 !important; }
+    .kpi.promote .val { color: #a4832a !important; }
+    .kpi.leave .val { color: #c56028 !important; }
+    .section-h { color: #1a2535 !important; page-break-after: avoid; }
+    th { background: #f5f5f5 !important; color: #555 !important; }
+    td { color: #1a1a1a !important; border-color: #ddd !important; }
+    tr:hover td { background: transparent !important; }
+    tr.total-row td { background: #faf6ec !important; color: #7a5c1e !important; }
+    .chart-wrap { border-color: #ccc !important; background: #fff !important; }
+    .pos { color: #2d8b76 !important; }
+    .neg { color: #c56028 !important; }
+    /* In print, show static read-only values instead of sliders */
+    td .recycle-ro { display: inline !important; }
+  }
+  .recycle-ro { display: none; font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
@@ -183,6 +238,11 @@
 
     <div id="main-body" style="display:none">
 
+      <!-- Top-right actions -->
+      <div class="top-actions no-print">
+        <button class="ctrl-btn" onclick="window.print()">&#128424; Print / Save PDF</button>
+      </div>
+
       <!-- KPI cards -->
       <div class="kpi-grid">
         <div class="kpi"><div class="lbl">Active Projects</div><div class="val" id="k-count">—</div></div>
@@ -191,6 +251,9 @@
         <div class="kpi lp"><div class="lbl">Weighted LP IRR</div><div class="val" id="k-wirr">—</div><div class="sub">LP-equity-weighted</div></div>
         <div class="kpi"><div class="lbl">Recyclable Capital</div><div class="val" id="k-recyc">—</div><div class="sub">LP + Promote combined</div></div>
         <div class="kpi leave"><div class="lbl">Capital Leaving</div><div class="val" id="k-leave">—</div><div class="sub">LP + Promote combined</div></div>
+        <div class="kpi"><div class="lbl">MPC Committed</div><div class="val" id="k-mpc">—</div><div class="sub" id="k-mpc-sub">0 groups</div></div>
+        <div class="kpi promote"><div class="lbl">Vertical Committed</div><div class="val" id="k-vert">—</div><div class="sub" id="k-vert-sub">0 groups</div></div>
+        <div class="kpi"><div class="lbl">Total Committed Capital</div><div class="val" id="k-tcc">—</div><div class="sub">MPC + Vertical</div></div>
       </div>
 
       <!-- Global recycle controls -->
@@ -225,7 +288,7 @@
           <thead>
             <tr>
               <th rowspan="2" style="vertical-align:middle">Project</th>
-              <th colspan="4" class="grp-lp" style="text-align:center">LP</th>
+              <th colspan="5" class="grp-lp" style="text-align:center">LP</th>
               <th colspan="2" class="grp-prom" style="text-align:center">Promote</th>
               <th colspan="2" style="text-align:center">Recycled Capital</th>
               <th colspan="2" style="text-align:center">Leaving Capital</th>
@@ -233,6 +296,7 @@
             <tr>
               <th class="grp-lp">IRR</th>
               <th class="grp-lp">EM</th>
+              <th class="grp-lp">Equity</th>
               <th class="grp-lp">Distributions</th>
               <th class="grp-lp">Recycle %</th>
               <th class="grp-prom">Total</th>
@@ -263,6 +327,33 @@
       <div class="section-sub">Running total of capital available for redeployment into new projects.</div>
       <div class="chart-wrap"><canvas id="c-cumul"></canvas></div>
 
+      <!-- Commitments -->
+      <div class="section-h">Capital Commitments</div>
+      <div class="section-sub">Investor-group commitments by asset class. Feeds the monthly executive report and the Total Committed Capital KPI.</div>
+
+      <div class="commit-card">
+        <div class="commit-grid commit-hdr">
+          <div>Group</div>
+          <div class="r">MPC Commitment ($)</div>
+          <div class="r">Vertical Commitment ($)</div>
+          <div class="r">Total</div>
+          <div></div>
+        </div>
+        <div id="commit-rows"></div>
+        <div class="commit-totals">
+          <div>Total</div>
+          <div class="r" id="commit-tot-mpc">—</div>
+          <div class="r" id="commit-tot-vert">—</div>
+          <div class="r" id="commit-tot-all">—</div>
+          <div></div>
+        </div>
+        <div class="commit-save-row no-print">
+          <button class="ctrl-btn" onclick="addCommitGroup()">+ Add group</button>
+          <button class="ctrl-btn primary" onclick="saveCommitments()">Save commitments</button>
+          <span id="commit-msg"></span>
+        </div>
+      </div>
+
       <!-- Yearly breakdown table -->
       <div class="section-h">Yearly Cashflow Breakdown</div>
       <div class="section-sub">Portfolio-level yearly totals after applying recycle %. Values in $000s.</div>
@@ -291,10 +382,11 @@
 
 <script>
 /* ---------- state ---------- */
-let _data = null;          // {years, projects:[{name, lp_*, promote_*, ...}], uploaded_at}
+let _data = null;          // {years, projects:[{name, lp_*, promote_*, ...}], settings, commitments}
 let _recycle = {};         // { projectName: {lp: 0..100, prom: 0..100} }
+let _commitGroups = [];    // [{name, mpc, vertical}]
 const _charts = {};
-const LS_KEY = 'ember-capital-recycle-v1';
+let _recycleSaveTimer = null;
 
 /* ---------- helpers ---------- */
 function fmtK(v) {
@@ -316,12 +408,17 @@ function fmtPct(v) { return v == null || isNaN(v) ? '—' : (v*100).toFixed(1) +
 function fmtEM(v)  { return v == null || isNaN(v) ? '—' : v.toFixed(2) + 'x'; }
 function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
 
-function loadRecycleFromLS() {
-  try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; }
-  catch(e) { return {}; }
-}
-function saveRecycleToLS() {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(_recycle)); } catch(e) {}
+/* Persist recycle state to the server (debounced). Shared across users so the
+ * monthly executive report uses the same assumptions everyone sees. */
+function saveRecycleDebounced() {
+  if (_recycleSaveTimer) clearTimeout(_recycleSaveTimer);
+  _recycleSaveTimer = setTimeout(() => {
+    fetch('/api/ember-capital/settings', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({recycle: _recycle})
+    }).catch(() => {});
+  }, 500);
 }
 
 /* ---------- load ---------- */
@@ -330,7 +427,7 @@ async function load() {
     const res = await fetch('/api/ember-capital');
     _data = await res.json();
   } catch(e) {
-    _data = {years: [], projects: []};
+    _data = {years: [], projects: [], settings: {}, commitments: {groups: []}};
   }
   if (!_data.projects || !_data.projects.length) {
     document.getElementById('empty-msg').style.display = 'block';
@@ -340,14 +437,22 @@ async function load() {
   document.getElementById('empty-msg').style.display = 'none';
   document.getElementById('main-body').style.display = 'block';
 
-  // Seed recycle % state
-  const saved = loadRecycleFromLS();
+  // Seed recycle % state from server
+  const saved = (_data.settings && _data.settings.recycle) || {};
   _recycle = {};
   _data.projects.forEach(p => {
     _recycle[p.name] = saved[p.name] || {lp: 0, prom: 0};
   });
 
+  // Seed commitments from server
+  _commitGroups = ((_data.commitments && _data.commitments.groups) || []).map(g => ({
+    name: g.name || '',
+    mpc: +g.mpc || 0,
+    vertical: +g.vertical || 0,
+  }));
+
   renderAll();
+  renderCommitments();
 }
 
 /* ---------- global controls ---------- */
@@ -361,7 +466,7 @@ function applyGlobal() {
   const lp = +document.getElementById('g-lp').value;
   const pr = +document.getElementById('g-prom').value;
   _data.projects.forEach(p => { _recycle[p.name] = {lp, prom: pr}; });
-  saveRecycleToLS();
+  saveRecycleDebounced();
   renderAll();
 }
 function resetRecycle() {
@@ -370,7 +475,7 @@ function resetRecycle() {
   document.getElementById('g-prom').value = 0;
   document.getElementById('g-lp-v').textContent = '0%';
   document.getElementById('g-prom-v').textContent = '0%';
-  saveRecycleToLS();
+  saveRecycleDebounced();
   renderAll();
 }
 
@@ -389,15 +494,18 @@ function renderTable() {
   let totals = {
     dist: 0, prom: 0, lpRec: 0, promRec: 0, lpLeave: 0, promLeave: 0
   };
+  let totalEq = 0;
   _data.projects.forEach(p => {
     const rec = _recycle[p.name] || {lp: 0, prom: 0};
     const dist = p.lp_distributions_total || 0;
     const prom = p.promote_total || 0;
+    const equity = Math.abs(p.lp_contributions_total || 0);
     const lpRec    = dist * rec.lp  / 100;
     const lpLeave  = dist - lpRec;
     const promRec  = prom * rec.prom / 100;
     const promLeave= prom - promRec;
 
+    totalEq         += equity;
     totals.dist     += dist;
     totals.prom     += prom;
     totals.lpRec    += lpRec;
@@ -410,10 +518,11 @@ function renderTable() {
       <td>${p.name}</td>
       <td class="pos">${fmtPct(p.lp_irr)}</td>
       <td>${fmtEM(p.lp_em)}</td>
+      <td>${fmtK(equity)}</td>
       <td>${fmtK(dist)}</td>
-      <td><input type="number" min="0" max="100" step="5" value="${rec.lp}" class="recycle-input lp"  oninput="setRecycle('${key}','lp',this.value)"> %</td>
+      <td><input type="number" min="0" max="100" step="5" value="${rec.lp}" class="recycle-input lp"  oninput="setRecycle('${key}','lp',this.value)"><span class="recycle-ro">${rec.lp}%</span></td>
       <td>${fmtK(prom)}</td>
-      <td><input type="number" min="0" max="100" step="5" value="${rec.prom}" class="recycle-input prom" oninput="setRecycle('${key}','prom',this.value)"> %</td>
+      <td><input type="number" min="0" max="100" step="5" value="${rec.prom}" class="recycle-input prom" oninput="setRecycle('${key}','prom',this.value)"><span class="recycle-ro">${rec.prom}%</span></td>
       <td class="pos">${fmtK(lpRec)}</td>
       <td class="pos">${fmtK(promRec)}</td>
       <td class="neg">${fmtK(lpLeave)}</td>
@@ -424,6 +533,7 @@ function renderTable() {
   tfoot.innerHTML = `<tr class="total-row">
     <td>Totals (${_data.projects.length})</td>
     <td></td><td></td>
+    <td>${fmtK(totalEq)}</td>
     <td>${fmtK(totals.dist)}</td><td></td>
     <td>${fmtK(totals.prom)}</td><td></td>
     <td>${fmtK(totals.lpRec)}</td>
@@ -438,7 +548,7 @@ function setRecycle(keyEnc, which, val) {
   const n = Math.max(0, Math.min(100, +val || 0));
   if (!_recycle[name]) _recycle[name] = {lp: 0, prom: 0};
   _recycle[name][which] = n;
-  saveRecycleToLS();
+  saveRecycleDebounced();
   // Light re-render (table totals + year table + charts + KPIs)
   renderTable();
   renderYearTable();
@@ -550,6 +660,121 @@ function renderKPIs() {
   document.getElementById('k-wirr').textContent      = wIrr == null ? '—' : fmtPct(wIrr);
   document.getElementById('k-recyc').textContent     = fmtKMillions(totLpRec + totPromRec);
   document.getElementById('k-leave').textContent     = fmtKMillions(totLpLeave + totPrLeave);
+
+  // Commitments KPIs — values stored in raw $ (not $K) for clarity
+  let mpc = 0, vert = 0;
+  _commitGroups.forEach(g => { mpc += +g.mpc || 0; vert += +g.vertical || 0; });
+  document.getElementById('k-mpc').textContent      = fmtDollars(mpc);
+  document.getElementById('k-vert').textContent     = fmtDollars(vert);
+  document.getElementById('k-tcc').textContent      = fmtDollars(mpc + vert);
+  const nGroups = _commitGroups.length;
+  document.getElementById('k-mpc-sub').textContent  = nGroups + (nGroups === 1 ? ' group' : ' groups');
+  document.getElementById('k-vert-sub').textContent = nGroups + (nGroups === 1 ? ' group' : ' groups');
+}
+
+/* ---------- Commitments ---------- */
+function fmtDollars(v) {
+  if (v == null || isNaN(v)) return '—';
+  const n = +v;
+  if (Math.abs(n) >= 1e6) return '$' + (n/1e6).toFixed(1) + 'M';
+  if (Math.abs(n) >= 1e3) return '$' + (n/1e3).toFixed(0) + 'K';
+  return '$' + Math.round(n).toLocaleString();
+}
+
+function renderCommitments() {
+  const wrap = document.getElementById('commit-rows');
+  let html = '';
+  let tMpc = 0, tVert = 0;
+  _commitGroups.forEach((g, i) => {
+    tMpc  += +g.mpc || 0;
+    tVert += +g.vertical || 0;
+    const tot = (+g.mpc || 0) + (+g.vertical || 0);
+    html += `<div class="commit-row commit-grid">
+      <input type="text" value="${g.name.replace(/"/g,'&quot;')}" placeholder="Investor / Group name" oninput="editCommit(${i},'name',this.value)">
+      <input type="number" min="0" step="1000" value="${g.mpc || ''}" placeholder="0" oninput="editCommit(${i},'mpc',this.value)">
+      <input type="number" min="0" step="1000" value="${g.vertical || ''}" placeholder="0" oninput="editCommit(${i},'vertical',this.value)">
+      <div class="total-chip">${tot ? fmtDollars(tot) : '—'}</div>
+      <button class="del-btn no-print" onclick="removeCommit(${i})" title="Remove group">&times;</button>
+    </div>`;
+  });
+  if (!_commitGroups.length) {
+    html = `<div style="color:var(--text-dim);font-size:12px;padding:12px 0;text-align:center">No commitment groups yet. Click <strong style="color:var(--accent)">+ Add group</strong> to start.</div>`;
+  }
+  wrap.innerHTML = html;
+  document.getElementById('commit-tot-mpc').textContent  = tMpc ? fmtDollars(tMpc) : '—';
+  document.getElementById('commit-tot-vert').textContent = tVert ? fmtDollars(tVert) : '—';
+  document.getElementById('commit-tot-all').textContent  = (tMpc+tVert) ? fmtDollars(tMpc + tVert) : '—';
+  renderKPIs();  // refresh MPC/Vertical/Total KPI tiles
+}
+
+function editCommit(i, field, val) {
+  if (!_commitGroups[i]) return;
+  _commitGroups[i][field] = (field === 'name') ? val : (+val || 0);
+  // Don't re-render the row itself (would steal focus). Just refresh totals.
+  let tMpc = 0, tVert = 0;
+  _commitGroups.forEach(g => { tMpc += +g.mpc || 0; tVert += +g.vertical || 0; });
+  document.getElementById('commit-tot-mpc').textContent  = tMpc ? fmtDollars(tMpc) : '—';
+  document.getElementById('commit-tot-vert').textContent = tVert ? fmtDollars(tVert) : '—';
+  document.getElementById('commit-tot-all').textContent  = (tMpc+tVert) ? fmtDollars(tMpc + tVert) : '—';
+  // Update the row-level Total chip
+  const row = document.querySelectorAll('#commit-rows .commit-row')[i];
+  if (row) {
+    const chip = row.querySelector('.total-chip');
+    const tot = (+_commitGroups[i].mpc || 0) + (+_commitGroups[i].vertical || 0);
+    if (chip) chip.textContent = tot ? fmtDollars(tot) : '—';
+  }
+  renderKPIs();
+  markDirty();
+}
+
+function addCommitGroup() {
+  _commitGroups.push({name: '', mpc: 0, vertical: 0});
+  renderCommitments();
+  // Focus the new name input
+  const rows = document.querySelectorAll('#commit-rows .commit-row');
+  const last = rows[rows.length - 1];
+  if (last) last.querySelector('input[type="text"]').focus();
+  markDirty();
+}
+
+function removeCommit(i) {
+  _commitGroups.splice(i, 1);
+  renderCommitments();
+  markDirty();
+}
+
+function markDirty() {
+  const msg = document.getElementById('commit-msg');
+  msg.className = '';
+  msg.textContent = 'Unsaved changes';
+}
+
+async function saveCommitments() {
+  const msg = document.getElementById('commit-msg');
+  const cleaned = _commitGroups
+    .filter(g => g.name && g.name.trim())
+    .map(g => ({name: g.name.trim(), mpc: +g.mpc || 0, vertical: +g.vertical || 0}));
+  try {
+    const res = await fetch('/api/ember-capital/commitments', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({groups: cleaned}),
+    });
+    const d = await res.json();
+    if (d.ok) {
+      _commitGroups = d.groups || cleaned;
+      renderCommitments();
+      msg.className = 'ok';
+      msg.textContent = 'Saved';
+      setTimeout(() => { if (msg.className === 'ok') msg.textContent = ''; }, 2500);
+    } else {
+      msg.className = 'err';
+      msg.textContent = d.error || 'Save failed';
+    }
+  } catch(e) {
+    msg.className = 'err';
+    msg.textContent = 'Save failed: ' + e.message;
+  }
 }
 
 function _destroy(id) {
@@ -681,7 +906,7 @@ load();
             <input type="radio" name="acct-report-fmt" value="excel" id="acct-fmt-excel" style="accent-color:#5e9e8c"> Excel
           </label>
         </div>
-        <div style="font-size:11px;color:var(--text-dim);margin-top:8px">Includes: Active Project Returns, Loan Capacities & Debt Schedules, Ember Operating Revenues</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:8px">Includes: Active Project Returns, Loan Capacities & Debt Schedules, Ember Operating Revenues, Ember Capital Executive Report</div>
       </div>
       <div id="acct-report-msg" style="font-size:12px;margin-bottom:8px;display:none"></div>
       <button onclick="saveReportSettings()" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:9px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s" onmouseover="this.style.borderColor='#5e9e8c';this.style.color='#5e9e8c'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">Save Report Preferences</button>

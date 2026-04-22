@@ -1007,11 +1007,111 @@ def ember_capital_data():
             "promote_yearly":          _yearly("Promote"),
         })
 
+    # Pull saved recycle assumptions + commitments so the UI can hydrate from DB
+    cur2 = get_db().cursor()
+    cur2.execute(
+        "SELECT data FROM reports WHERE report_type = 'ember_capital_settings' "
+        "ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    srow = cur2.fetchone()
+    settings = (srow["data"] or {}) if srow else {}
+
+    cur2.execute(
+        "SELECT data FROM reports WHERE report_type = 'ember_capital_commitments' "
+        "ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    crow = cur2.fetchone()
+    commitments = (crow["data"] or {}) if crow else {"groups": []}
+    cur2.close()
+
     return jsonify({
         "years":       years,
         "uploaded_at": uploaded_at,
         "projects":    projects,
+        "settings":    settings,       # {recycle: {ProjName: {lp, prom}}}
+        "commitments": commitments,    # {groups: [{name, mpc, vertical}]}
     })
+
+
+@app.route("/api/ember-capital/settings", methods=["POST"])
+@login_required
+def ember_capital_save_settings():
+    """Save the recycle-% assumptions. Admin-only; shared across users."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Access denied"}), 403
+    body = request.get_json(silent=True) or {}
+    recycle = body.get("recycle") or {}
+    # Validate shape: {name: {lp: 0..100, prom: 0..100}}
+    clean = {}
+    for name, v in recycle.items():
+        if not isinstance(v, dict):
+            continue
+        try:
+            lp  = max(0, min(100, float(v.get("lp",  0))))
+            pr  = max(0, min(100, float(v.get("prom", 0))))
+        except (TypeError, ValueError):
+            continue
+        clean[str(name)] = {"lp": lp, "prom": pr}
+
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM reports WHERE report_type = 'ember_capital_settings'")
+    cur.execute(
+        "INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+        ("ember_capital_settings", json.dumps({"recycle": clean}), session["user_id"])
+    )
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/ember-capital/commitments", methods=["GET", "POST"])
+@login_required
+def ember_capital_commitments():
+    """GET or replace the commitments object {groups: [{name, mpc, vertical}]}."""
+    if request.method == "GET":
+        conn = get_db(); cur = conn.cursor()
+        cur.execute(
+            "SELECT data, uploaded_at FROM reports "
+            "WHERE report_type = 'ember_capital_commitments' "
+            "ORDER BY uploaded_at DESC LIMIT 1"
+        )
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if not row:
+            return jsonify({"groups": [], "uploaded_at": None})
+        d = row["data"] or {"groups": []}
+        d["uploaded_at"] = row["uploaded_at"].isoformat() if row["uploaded_at"] else None
+        return jsonify(d)
+
+    # POST — admin-only
+    if not session.get("is_admin"):
+        return jsonify({"error": "Access denied"}), 403
+    body = request.get_json(silent=True) or {}
+    groups_in = body.get("groups") or []
+    clean_groups = []
+    for g in groups_in:
+        if not isinstance(g, dict):
+            continue
+        name = str(g.get("name", "")).strip()
+        if not name:
+            continue
+        try:
+            mpc = float(g.get("mpc", 0) or 0)
+        except (TypeError, ValueError):
+            mpc = 0
+        try:
+            vert = float(g.get("vertical", 0) or 0)
+        except (TypeError, ValueError):
+            vert = 0
+        clean_groups.append({"name": name, "mpc": mpc, "vertical": vert})
+
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM reports WHERE report_type = 'ember_capital_commitments'")
+    cur.execute(
+        "INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+        ("ember_capital_commitments", json.dumps({"groups": clean_groups}), session["user_id"])
+    )
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True, "groups": clean_groups})
 
 @app.route("/api/portfolio", methods=["GET"])
 @login_required
@@ -1721,6 +1821,292 @@ def _gen_excel_loans(data):
     return out.read()
 
 
+def _build_ember_capital_payload():
+    """Assemble the Ember Capital data bundle for reports.
+    Same shape as /api/ember-capital, plus resolved commitments + settings.
+    Used by both the Excel and PDF generators so they render from the same
+    source of truth the UI shows."""
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute(
+        "SELECT data, uploaded_at FROM reports "
+        "WHERE report_type = 'returns' ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    returns_row = cur.fetchone()
+    src = (returns_row["data"] if returns_row else {}) or {}
+    years = src.get("years", []) or []
+
+    projects = []
+    for p in src.get("projects", []) or []:
+        by_label = {m.get("label"): m for m in (p.get("metrics") or [])}
+
+        def _m(lbl):
+            return by_label.get(lbl) or {}
+
+        def _yearly(lbl):
+            m = _m(lbl); y = m.get("yearly") or []
+            n = len(years)
+            return (list(y) + [0] * max(0, n - len(y)))[:n]
+
+        def _total(lbl):
+            t = _m(lbl).get("total")
+            try: return float(t) if t is not None else 0.0
+            except (TypeError, ValueError): return 0.0
+
+        projects.append({
+            "name":                    p.get("name", ""),
+            "lp_irr":                  _total("LP IRR"),
+            "lp_em":                   _total("LP Equity Multiple"),
+            "lp_profit":               _total("Total LP Profit"),
+            "lp_contributions_total":  _total("Total LP Contributions"),
+            "lp_distributions_total":  _total("Total LP Distributions"),
+            "promote_total":           _total("Promote"),
+            "lp_distributions_yearly": _yearly("Total LP Distributions"),
+            "promote_yearly":          _yearly("Promote"),
+        })
+
+    cur.execute(
+        "SELECT data FROM reports WHERE report_type = 'ember_capital_settings' "
+        "ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    srow = cur.fetchone()
+    settings = (srow["data"] or {}) if srow else {}
+    recycle_map = settings.get("recycle", {}) or {}
+
+    cur.execute(
+        "SELECT data FROM reports WHERE report_type = 'ember_capital_commitments' "
+        "ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    crow = cur.fetchone()
+    commitments = (crow["data"] or {"groups": []}) if crow else {"groups": []}
+
+    cur.close(); conn.close()
+
+    return {
+        "years":       years,
+        "projects":    projects,
+        "recycle":     recycle_map,
+        "commitments": commitments,
+        "uploaded_at": (returns_row["uploaded_at"].isoformat() if returns_row and returns_row["uploaded_at"] else None),
+    }
+
+
+def _gen_excel_ember_capital(data):
+    """Excel export of the Ember Capital executive report."""
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Ember Capital"
+
+    GOLD = "C8A96E"; LP_COL = "2D8B76"; PR_COL = "A4832A"; LV_COL = "C56028"
+    HDR_FILL = PatternFill("solid", fgColor="F2EFE8")
+    TOT_FILL = PatternFill("solid", fgColor="FAF6EC")
+    thin = Side(style="thin", color="CCCCCC")
+    cell_border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    def _f(bold=False, color="1A1A1A", size=10):
+        return Font(name="Calibri", size=size, bold=bold, color=color)
+    def _money(cell, v):
+        if isinstance(v, (int, float)) and v:
+            cell.value = v; cell.number_format = '"$"#,##0'
+        else:
+            cell.value = None
+    def _numK(cell, v):
+        if isinstance(v, (int, float)) and v:
+            cell.value = v; cell.number_format = '#,##0'
+        else:
+            cell.value = None
+    def _pct(cell, v):
+        if isinstance(v, (int, float)):
+            cell.value = v; cell.number_format = '0.0%'
+    def _em(cell, v):
+        if isinstance(v, (int, float)):
+            cell.value = v; cell.number_format = '0.00"x"'
+
+    r = 1
+    ws.cell(row=r, column=1, value="Ember Capital — Executive Report").font = Font(name="Calibri", bold=True, size=14, color=GOLD); r += 1
+    ws.cell(row=r, column=1, value=f"Generated {datetime.datetime.now().strftime('%B %d, %Y')}  |  Portfolio values in $000s").font = _f(color="888888", size=9); r += 2
+
+    projects = data.get("projects", []) or []
+    recycle  = data.get("recycle",  {}) or {}
+
+    # --- Portfolio summary / KPIs -----------------------------------------
+    ws.cell(row=r, column=1, value="Portfolio Summary").font = _f(bold=True, color=GOLD, size=12); r += 1
+    kpis = []
+    lp_profit_tot = sum((p.get("lp_profit") or 0) for p in projects)
+    prom_tot      = sum((p.get("promote_total") or 0) for p in projects)
+    # Weighted LP IRR (by LP contributions)
+    eq, eq_irr = 0.0, 0.0
+    for p in projects:
+        w = abs(p.get("lp_contributions_total") or 0)
+        if w and p.get("lp_irr") is not None:
+            eq += w; eq_irr += (p.get("lp_irr") or 0) * w
+    w_irr = (eq_irr / eq) if eq else None
+
+    # Commitments totals
+    groups = (data.get("commitments") or {}).get("groups") or []
+    mpc_tot  = sum((g.get("mpc")      or 0) for g in groups)
+    vert_tot = sum((g.get("vertical") or 0) for g in groups)
+
+    kpis = [
+        ("Active Projects",        len(projects),       "count"),
+        ("Total LP Profit",        lp_profit_tot * 1000,"money"),
+        ("Total Promote",          prom_tot * 1000,     "money"),
+        ("Weighted LP IRR",        w_irr,               "pct"),
+        ("MPC Committed",          mpc_tot,             "money"),
+        ("Vertical Committed",     vert_tot,            "money"),
+        ("Total Committed Capital",mpc_tot + vert_tot,  "money"),
+    ]
+    for label, val, kind in kpis:
+        ws.cell(row=r, column=1, value=label).font = _f()
+        vc = ws.cell(row=r, column=2, value=None); vc.font = _f(bold=True); vc.alignment = Alignment(horizontal="right")
+        if kind == "money":   _money(vc, val)
+        elif kind == "pct":   _pct(vc, val)
+        elif kind == "count": vc.value = val; vc.number_format = '#,##0'
+        r += 1
+    r += 1
+
+    # --- Projects table ---------------------------------------------------
+    ws.cell(row=r, column=1, value="Projects").font = _f(bold=True, color=GOLD, size=12); r += 1
+    hdrs = ["Project", "LP IRR", "LP EM", "LP Equity", "Distributions", "LP Recycle %",
+            "Promote", "Promote Recycle %", "LP Recycled", "Promote Recycled",
+            "LP Leaving", "Promote Leaving"]
+    for ci, h in enumerate(hdrs, 1):
+        c = ws.cell(row=r, column=ci, value=h); c.font = _f(bold=True, color="555555", size=9)
+        c.fill = HDR_FILL; c.border = cell_border
+        c.alignment = Alignment(horizontal="left" if ci == 1 else "right")
+    r += 1
+
+    tots = {"eq":0, "dist":0, "prom":0, "lpR":0, "prR":0, "lpL":0, "prL":0}
+    for p in projects:
+        rec = recycle.get(p["name"], {"lp": 0, "prom": 0})
+        rLp, rPr = (rec.get("lp") or 0)/100.0, (rec.get("prom") or 0)/100.0
+        eq   = abs(p.get("lp_contributions_total") or 0)
+        dist = p.get("lp_distributions_total") or 0
+        prom = p.get("promote_total") or 0
+        lpR, lpL  = dist * rLp, dist * (1 - rLp)
+        prR, prL  = prom * rPr, prom * (1 - rPr)
+        tots["eq"]  += eq;   tots["dist"] += dist; tots["prom"] += prom
+        tots["lpR"] += lpR;  tots["prR"]  += prR;  tots["lpL"]  += lpL;  tots["prL"] += prL
+
+        row_vals = [p["name"], p.get("lp_irr"), p.get("lp_em"), eq, dist,
+                    (rec.get("lp") or 0)/100.0, prom, (rec.get("prom") or 0)/100.0,
+                    lpR, prR, lpL, prL]
+        for ci, v in enumerate(row_vals, 1):
+            c = ws.cell(row=r, column=ci); c.border = cell_border; c.font = _f(size=9)
+            c.alignment = Alignment(horizontal="left" if ci == 1 else "right")
+            if ci == 1: c.value = v
+            elif ci == 2: _pct(c, v)
+            elif ci == 3: _em(c, v)
+            elif ci in (6, 8): _pct(c, v)
+            else: _numK(c, v)
+        r += 1
+
+    # Totals row
+    tot_row_vals = ["Totals", None, None, tots["eq"], tots["dist"], None, tots["prom"], None,
+                    tots["lpR"], tots["prR"], tots["lpL"], tots["prL"]]
+    for ci, v in enumerate(tot_row_vals, 1):
+        c = ws.cell(row=r, column=ci); c.border = cell_border; c.fill = TOT_FILL
+        c.font = _f(bold=True, color="7A5C1E", size=9)
+        c.alignment = Alignment(horizontal="left" if ci == 1 else "right")
+        if ci == 1: c.value = v
+        elif ci in (4, 5, 7, 9, 10, 11, 12): _numK(c, v)
+    r += 2
+
+    # --- Yearly breakdown -------------------------------------------------
+    years = data.get("years") or []
+    if years:
+        ws.cell(row=r, column=1, value="Yearly Cashflow Breakdown").font = _f(bold=True, color=GOLD, size=12); r += 1
+        y_hdrs = ["Year", "LP Distributions", "LP Recycled", "LP Leaving",
+                  "Promote", "Promote Recycled", "Promote Leaving", "Total Recycled"]
+        for ci, h in enumerate(y_hdrs, 1):
+            c = ws.cell(row=r, column=ci, value=h); c.font = _f(bold=True, color="555555", size=9)
+            c.fill = HDR_FILL; c.border = cell_border
+            c.alignment = Alignment(horizontal="left" if ci == 1 else "right")
+        r += 1
+
+        # Aggregate yearly
+        n = len(years)
+        agg = {k: [0.0]*n for k in ("lpD", "prD", "lpR", "lpL", "prR", "prL")}
+        for p in projects:
+            rec = recycle.get(p["name"], {"lp": 0, "prom": 0})
+            rLp, rPr = (rec.get("lp") or 0)/100.0, (rec.get("prom") or 0)/100.0
+            lpY = p.get("lp_distributions_yearly") or []
+            prY = p.get("promote_yearly") or []
+            for i in range(n):
+                ld = lpY[i] if i < len(lpY) else 0
+                pd = prY[i] if i < len(prY) else 0
+                agg["lpD"][i] += ld; agg["prD"][i] += pd
+                agg["lpR"][i] += ld*rLp;   agg["lpL"][i] += ld*(1-rLp)
+                agg["prR"][i] += pd*rPr;   agg["prL"][i] += pd*(1-rPr)
+
+        tots_y = {k: 0.0 for k in agg}
+        for i, yr in enumerate(years):
+            if not (agg["lpD"][i] or agg["prD"][i]):
+                continue
+            tot_rec = agg["lpR"][i] + agg["prR"][i]
+            row_vals = [yr, agg["lpD"][i], agg["lpR"][i], agg["lpL"][i],
+                        agg["prD"][i], agg["prR"][i], agg["prL"][i], tot_rec]
+            for ci, v in enumerate(row_vals, 1):
+                c = ws.cell(row=r, column=ci); c.border = cell_border; c.font = _f(size=9)
+                c.alignment = Alignment(horizontal="left" if ci == 1 else "right")
+                if ci == 1: c.value = v
+                else: _numK(c, v)
+            for k, i2 in zip(("lpD","lpR","lpL","prD","prR","prL"), range(6)):
+                tots_y[k] += agg[k][i]
+            r += 1
+        # Yearly totals
+        row_tot = ["Total", tots_y["lpD"], tots_y["lpR"], tots_y["lpL"],
+                   tots_y["prD"], tots_y["prR"], tots_y["prL"],
+                   tots_y["lpR"] + tots_y["prR"]]
+        for ci, v in enumerate(row_tot, 1):
+            c = ws.cell(row=r, column=ci); c.border = cell_border; c.fill = TOT_FILL
+            c.font = _f(bold=True, color="7A5C1E", size=9)
+            c.alignment = Alignment(horizontal="left" if ci == 1 else "right")
+            if ci == 1: c.value = v
+            else: _numK(c, v)
+        r += 2
+
+    # --- Commitments ------------------------------------------------------
+    if groups:
+        ws.cell(row=r, column=1, value="Capital Commitments").font = _f(bold=True, color=GOLD, size=12); r += 1
+        c_hdrs = ["Group", "MPC Commitment", "Vertical Commitment", "Total"]
+        for ci, h in enumerate(c_hdrs, 1):
+            c = ws.cell(row=r, column=ci, value=h); c.font = _f(bold=True, color="555555", size=9)
+            c.fill = HDR_FILL; c.border = cell_border
+            c.alignment = Alignment(horizontal="left" if ci == 1 else "right")
+        r += 1
+        for g in groups:
+            vals = [g.get("name",""), g.get("mpc") or 0, g.get("vertical") or 0,
+                    (g.get("mpc") or 0) + (g.get("vertical") or 0)]
+            for ci, v in enumerate(vals, 1):
+                c = ws.cell(row=r, column=ci); c.border = cell_border; c.font = _f(size=9)
+                c.alignment = Alignment(horizontal="left" if ci == 1 else "right")
+                if ci == 1: c.value = v
+                else: _money(c, v)
+            r += 1
+        row_tot = ["Total", mpc_tot, vert_tot, mpc_tot + vert_tot]
+        for ci, v in enumerate(row_tot, 1):
+            c = ws.cell(row=r, column=ci); c.border = cell_border; c.fill = TOT_FILL
+            c.font = _f(bold=True, color="7A5C1E", size=9)
+            c.alignment = Alignment(horizontal="left" if ci == 1 else "right")
+            if ci == 1: c.value = v
+            else: _money(c, v)
+        r += 2
+
+    # Column widths
+    ws.column_dimensions["A"].width = 32
+    for ci in range(2, 14):
+        ws.column_dimensions[get_column_letter(ci)].width = 15
+
+    out = io.BytesIO(); wb.save(out); out.seek(0)
+    return out.read()
+
+
 def _gen_pdf_report(report_type, data):
     """Generate a simple PDF for the given report type. Returns bytes."""
     from fpdf import FPDF
@@ -1732,6 +2118,7 @@ def _gen_pdf_report(report_type, data):
                 "returns": "Active Project Returns",
                 "loans": "Loan Capacities & Debt Schedules",
                 "operations": "Ember Operating Revenues",
+                "ember_capital": "Ember Capital — Executive Report",
             }
             self.set_text_color(26, 58, 92)
             self.cell(0, 10, titles.get(report_type, "Ember Report"), ln=True)
@@ -1870,6 +2257,175 @@ def _gen_pdf_report(report_type, data):
                          for r in mo.get("rows", [])]
             draw_table(hdrs, rows_data)
 
+    elif report_type == "ember_capital":
+        projects = data.get("projects", []) or []
+        recycle  = data.get("recycle", {}) or {}
+        groups   = (data.get("commitments") or {}).get("groups") or []
+        years    = data.get("years", []) or []
+
+        # --- Portfolio Summary KPIs ----------------------------------------
+        lp_profit_tot = sum((p.get("lp_profit") or 0) for p in projects)
+        prom_tot      = sum((p.get("promote_total") or 0) for p in projects)
+        eq_w, irr_w = 0.0, 0.0
+        for p in projects:
+            w = abs(p.get("lp_contributions_total") or 0)
+            if w and p.get("lp_irr") is not None:
+                eq_w += w; irr_w += (p.get("lp_irr") or 0) * w
+        w_irr = (irr_w / eq_w) if eq_w else None
+        mpc_tot  = sum((g.get("mpc")      or 0) for g in groups)
+        vert_tot = sum((g.get("vertical") or 0) for g in groups)
+
+        def _fmt_money(v):
+            if v is None: return ""
+            return f"${v:,.0f}"
+        def _fmt_pct(v):
+            if v is None: return ""
+            return f"{v*100:.1f}%"
+
+        draw_section("Portfolio Summary")
+        kpi_rows = [
+            ("Active Projects",         f"{len(projects):,}"),
+            ("Total LP Profit",         _fmt_money(lp_profit_tot * 1000)),
+            ("Total Promote",           _fmt_money(prom_tot * 1000)),
+            ("Weighted LP IRR",         _fmt_pct(w_irr)),
+            ("MPC Committed",           _fmt_money(mpc_tot)),
+            ("Vertical Committed",      _fmt_money(vert_tot)),
+            ("Total Committed Capital", _fmt_money(mpc_tot + vert_tot)),
+        ]
+        for label, val in kpi_rows:
+            pdf.set_font("Helvetica", "", 9)
+            pdf.set_text_color(60, 60, 60)
+            pdf.cell(70, 5, label, ln=False)
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.set_text_color(30, 30, 30)
+            pdf.cell(0, 5, val, ln=True)
+        pdf.ln(3)
+
+        # --- Projects table -----------------------------------------------
+        draw_section("Projects")
+        p_hdrs = ["Project", "LP IRR", "EM", "Equity", "Dist", "LP Rec %",
+                  "Promote", "Prom Rec %", "LP Recycled", "Prom Recycled",
+                  "LP Leaving", "Prom Leaving"]
+        p_rows = []
+        tots = {"eq":0, "dist":0, "prom":0, "lpR":0, "prR":0, "lpL":0, "prL":0}
+        for p in projects:
+            rec  = recycle.get(p.get("name",""), {"lp": 0, "prom": 0})
+            rLp, rPr = (rec.get("lp") or 0)/100.0, (rec.get("prom") or 0)/100.0
+            eq   = abs(p.get("lp_contributions_total") or 0)
+            dist = p.get("lp_distributions_total") or 0
+            prom = p.get("promote_total") or 0
+            lpR, lpL = dist * rLp, dist * (1 - rLp)
+            prR, prL = prom * rPr, prom * (1 - rPr)
+            tots["eq"]  += eq;  tots["dist"] += dist; tots["prom"] += prom
+            tots["lpR"] += lpR; tots["prR"]  += prR;  tots["lpL"]  += lpL;  tots["prL"] += prL
+            p_rows.append([
+                p.get("name",""),
+                _fmt_pct(p.get("lp_irr")),
+                f"{p.get('lp_em') or 0:.2f}x" if p.get("lp_em") else "",
+                f"{eq:,.0f}"   if eq   else "",
+                f"{dist:,.0f}" if dist else "",
+                f"{(rec.get('lp') or 0):.0f}%",
+                f"{prom:,.0f}" if prom else "",
+                f"{(rec.get('prom') or 0):.0f}%",
+                f"{lpR:,.0f}"  if lpR  else "",
+                f"{prR:,.0f}"  if prR  else "",
+                f"{lpL:,.0f}"  if lpL  else "",
+                f"{prL:,.0f}"  if prL  else "",
+            ])
+        # Totals row
+        p_rows.append([
+            "Totals", "", "",
+            f"{tots['eq']:,.0f}"   if tots["eq"]   else "",
+            f"{tots['dist']:,.0f}" if tots["dist"] else "",
+            "",
+            f"{tots['prom']:,.0f}" if tots["prom"] else "",
+            "",
+            f"{tots['lpR']:,.0f}"  if tots["lpR"]  else "",
+            f"{tots['prR']:,.0f}"  if tots["prR"]  else "",
+            f"{tots['lpL']:,.0f}"  if tots["lpL"]  else "",
+            f"{tots['prL']:,.0f}"  if tots["prL"]  else "",
+        ])
+        usable = pdf.w - pdf.l_margin - pdf.r_margin
+        p_widths = [usable*0.18] + [usable*0.082]*5 + [usable*0.082]*6
+        # Adjust to sum to usable
+        total_w = sum(p_widths)
+        p_widths = [w * (usable/total_w) for w in p_widths]
+        draw_table(p_hdrs, p_rows, p_widths)
+
+        # --- Yearly breakdown ---------------------------------------------
+        if years:
+            draw_section("Yearly Cashflow Breakdown")
+            n = len(years)
+            agg = {k: [0.0]*n for k in ("lpD", "prD", "lpR", "lpL", "prR", "prL")}
+            for p in projects:
+                rec = recycle.get(p.get("name",""), {"lp": 0, "prom": 0})
+                rLp, rPr = (rec.get("lp") or 0)/100.0, (rec.get("prom") or 0)/100.0
+                lpY = p.get("lp_distributions_yearly") or []
+                prY = p.get("promote_yearly") or []
+                for i in range(n):
+                    ld = lpY[i] if i < len(lpY) else 0
+                    pd = prY[i] if i < len(prY) else 0
+                    agg["lpD"][i] += ld; agg["prD"][i] += pd
+                    agg["lpR"][i] += ld*rLp;  agg["lpL"][i] += ld*(1-rLp)
+                    agg["prR"][i] += pd*rPr;  agg["prL"][i] += pd*(1-rPr)
+
+            y_hdrs = ["Year", "LP Dist", "LP Recycled", "LP Leaving",
+                      "Promote", "Prom Recycled", "Prom Leaving", "Total Rec"]
+            y_rows = []
+            tots_y = {k: 0.0 for k in agg}
+            for i, yr in enumerate(years):
+                if not (agg["lpD"][i] or agg["prD"][i]):
+                    continue
+                tot_rec = agg["lpR"][i] + agg["prR"][i]
+                y_rows.append([
+                    str(yr),
+                    f"{agg['lpD'][i]:,.0f}" if agg['lpD'][i] else "",
+                    f"{agg['lpR'][i]:,.0f}" if agg['lpR'][i] else "",
+                    f"{agg['lpL'][i]:,.0f}" if agg['lpL'][i] else "",
+                    f"{agg['prD'][i]:,.0f}" if agg['prD'][i] else "",
+                    f"{agg['prR'][i]:,.0f}" if agg['prR'][i] else "",
+                    f"{agg['prL'][i]:,.0f}" if agg['prL'][i] else "",
+                    f"{tot_rec:,.0f}"      if tot_rec      else "",
+                ])
+                for k in ("lpD","lpR","lpL","prD","prR","prL"):
+                    tots_y[k] += agg[k][i]
+            # Totals row
+            tot_rec_all = tots_y["lpR"] + tots_y["prR"]
+            y_rows.append([
+                "Total",
+                f"{tots_y['lpD']:,.0f}" if tots_y['lpD'] else "",
+                f"{tots_y['lpR']:,.0f}" if tots_y['lpR'] else "",
+                f"{tots_y['lpL']:,.0f}" if tots_y['lpL'] else "",
+                f"{tots_y['prD']:,.0f}" if tots_y['prD'] else "",
+                f"{tots_y['prR']:,.0f}" if tots_y['prR'] else "",
+                f"{tots_y['prL']:,.0f}" if tots_y['prL'] else "",
+                f"{tot_rec_all:,.0f}"   if tot_rec_all   else "",
+            ])
+            draw_table(y_hdrs, y_rows)
+
+        # --- Capital Commitments ------------------------------------------
+        if groups:
+            draw_section("Capital Commitments")
+            c_hdrs = ["Group", "MPC Commitment", "Vertical Commitment", "Total"]
+            c_rows = []
+            for g in groups:
+                mpc = g.get("mpc") or 0
+                vrt = g.get("vertical") or 0
+                c_rows.append([
+                    g.get("name",""),
+                    _fmt_money(mpc)       if mpc       else "",
+                    _fmt_money(vrt)       if vrt       else "",
+                    _fmt_money(mpc + vrt) if (mpc+vrt) else "",
+                ])
+            c_rows.append([
+                "Total",
+                _fmt_money(mpc_tot),
+                _fmt_money(vert_tot),
+                _fmt_money(mpc_tot + vert_tot),
+            ])
+            usable = pdf.w - pdf.l_margin - pdf.r_margin
+            draw_table(c_hdrs, c_rows, [usable*0.4] + [usable*0.2]*3)
+
     return pdf.output()
 
 
@@ -1900,6 +2456,14 @@ def _send_monthly_emails(force=False):
 
     cur.close(); conn.close()
 
+    # Ember Capital uses a composite payload (returns + settings + commitments)
+    try:
+        ec_payload = _build_ember_capital_payload()
+        report_data["ember_capital"] = ec_payload if ec_payload.get("projects") else None
+    except Exception as e:
+        print(f"Error building ember_capital payload: {e}")
+        report_data["ember_capital"] = None
+
     if not recipients:
         return 0
 
@@ -1917,6 +2481,7 @@ def _send_monthly_emails(force=False):
         "returns": "Active Project Returns",
         "loans": "Loan Capacities & Debt Schedules",
         "operations": "Ember Operating Revenues",
+        "ember_capital": "Ember Capital Executive Report",
     }
 
     sg = SendGridAPIClient(sendgrid_key)
@@ -2022,6 +2587,10 @@ def _send_monthly_emails(force=False):
                     elif rt == "loans":
                         file_bytes = _gen_excel_loans(data)
                         filename = "Loan_Capacities.xlsx"
+                        mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    elif rt == "ember_capital":
+                        file_bytes = _gen_excel_ember_capital(data)
+                        filename = "Ember_Capital_Executive_Report.xlsx"
                         mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     else:
                         file_bytes = _gen_excel_operations(data)
