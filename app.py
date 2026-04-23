@@ -3106,6 +3106,13 @@ def _gen_pdf_report(report_type, data):
             self._fill(ORANGE); self.rect(12, y_rule, 10, 0.5, style="F")
             self.set_y(y_rule + 2.5)
 
+        # ---- vertical-space guard: force a new page if there isn't
+        #      at least `mm` of vertical space left before the footer.
+        #      Used to keep sub-section titles glued to their tables.
+        def ensure_space(self, mm):
+            if self.get_y() + mm > self.h - 20:
+                self.add_page()
+
         # ---- branded table
         def branded_table(self, headers, rows, col_widths=None,
                           first_align="L", header_align=None):
@@ -3190,6 +3197,35 @@ def _gen_pdf_report(report_type, data):
         pdf.branded_table(headers, rows, col_widths=col_widths)
 
     if report_type == "returns":
+        # Helper: find the first year index where this project actually has
+        # capital contributions. Avoids leading columns of zeros when a
+        # project starts later than the portfolio-wide year range.
+        def _first_contrib_idx(metrics):
+            pref = {"Total LP Contributions", "LP Contributions",
+                    "Total Equity Contributions", "Equity Contributions"}
+            for m in metrics:
+                if m.get("label") in pref:
+                    yearly = m.get("yearly") or []
+                    for i, v in enumerate(yearly):
+                        try:
+                            if v not in (None, "") and abs(float(v)) > 0:
+                                return i
+                        except (TypeError, ValueError):
+                            pass
+            # Fallback: first column with any non-zero value across metrics
+            max_len = max((len(m.get("yearly") or []) for m in metrics), default=0)
+            for i in range(max_len):
+                for m in metrics:
+                    yearly = m.get("yearly") or []
+                    if i < len(yearly):
+                        v = yearly[i]
+                        try:
+                            if v not in (None, "") and abs(float(v)) > 0:
+                                return i
+                        except (TypeError, ValueError):
+                            pass
+            return 0
+
         summary_cols = ["Project", "LP IRR", "Equity Multiple", "Total LP Profit", "Promote"]
         sum_rows = []
         for proj in data.get("projects", []):
@@ -3204,12 +3240,25 @@ def _gen_pdf_report(report_type, data):
         draw_section("Portfolio Summary")
         draw_table(summary_cols, sum_rows, [70, 22, 28, 30, 25])
         years = data.get("years", [])
+
+        # Target: two projects per page, never split a table from its title.
+        # Usable vertical region per page (after page-1 header/eyebrow/title):
+        #   ~ y=46 start -> y=179 safe (footer at 199, auto-break margin 20).
+        # Two projects in ~130mm -> budget ~62mm per project block.
         for proj in data.get("projects", []):
+            metrics = proj.get("metrics", [])
+            start_idx = _first_contrib_idx(metrics)
+            proj_years = years[start_idx:start_idx + 10]
+            # Estimate block height so we can keep the title + table together.
+            # sub_section ~= 10mm; table header ~= 7mm; each row ~= 5mm; pad 6mm.
+            est_block = 10 + 7 + len(metrics) * 5 + 6
+            pdf.ensure_space(est_block)
             draw_section(proj["name"])
-            hdrs = ["Metric", "Total"] + [str(y) for y in years[:10]]
+            hdrs = ["Metric", "Total"] + [str(y) for y in proj_years]
             rows_data = []
-            for m in proj.get("metrics", []):
-                row_vals = [m["label"], m.get("total", "")] + (m.get("yearly", [])[:10])
+            for m in metrics:
+                yearly_slice = (m.get("yearly") or [])[start_idx:start_idx + 10]
+                row_vals = [m["label"], m.get("total", "")] + yearly_slice
                 rows_data.append(row_vals)
             draw_table(hdrs, rows_data)
 
