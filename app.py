@@ -1113,6 +1113,29 @@ def ember_capital_commitments():
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True, "groups": clean_groups})
 
+
+@app.route("/api/ember-capital/pdf", methods=["GET"])
+@login_required
+def ember_capital_pdf():
+    """Stream the branded 2-page Ember Capital executive report as a PDF.
+    Opens inline in the browser — user can print or save from there.
+    ?download=1 forces a download instead of inline view."""
+    try:
+        payload = _build_ember_capital_payload()
+        pdf_bytes = bytes(_gen_pdf_ember_capital(payload))
+    except Exception as e:
+        return jsonify({"error": f"PDF generation failed: {e}"}), 500
+
+    as_attachment = request.args.get("download") in ("1", "true", "yes")
+    fname = f"Ember_Capital_Executive_Report_{datetime.datetime.now().strftime('%Y-%m')}.pdf"
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=as_attachment,
+        download_name=fname,
+    )
+
+
 @app.route("/api/portfolio", methods=["GET"])
 @login_required
 def portfolio():

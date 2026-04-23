@@ -240,7 +240,8 @@
 
       <!-- Top-right actions -->
       <div class="top-actions no-print">
-        <button class="ctrl-btn" onclick="window.print()">&#128424; Print / Save PDF</button>
+        <button class="ctrl-btn" onclick="openExecReport()" title="Open the branded 2-page executive report PDF — print or save from the PDF viewer">&#128424; Executive Report (PDF)</button>
+        <button class="ctrl-btn" onclick="downloadExecReport()" title="Download the PDF file directly">&#8681; Download PDF</button>
       </div>
 
       <!-- KPI cards -->
@@ -407,6 +408,30 @@ function fmtKMillions(v) {
 function fmtPct(v) { return v == null || isNaN(v) ? '—' : (v*100).toFixed(1) + '%'; }
 function fmtEM(v)  { return v == null || isNaN(v) ? '—' : v.toFixed(2) + 'x'; }
 function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
+/* Open the server-generated branded 2-page executive PDF in a new tab.
+ * This matches the PDF that gets emailed out monthly — same template. */
+function openExecReport() {
+  // Flush any pending recycle edits first so the PDF reflects current UI state
+  if (_recycleSaveTimer) { clearTimeout(_recycleSaveTimer); _recycleSaveTimer = null; }
+  fetch('/api/ember-capital/settings', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({recycle: _recycle})
+  }).finally(() => {
+    window.open('/api/ember-capital/pdf?ts=' + Date.now(), '_blank');
+  });
+}
+function downloadExecReport() {
+  if (_recycleSaveTimer) { clearTimeout(_recycleSaveTimer); _recycleSaveTimer = null; }
+  fetch('/api/ember-capital/settings', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({recycle: _recycle})
+  }).finally(() => {
+    window.location.href = '/api/ember-capital/pdf?download=1&ts=' + Date.now();
+  });
+}
 
 /* Persist recycle state to the server (debounced). Shared across users so the
  * monthly executive report uses the same assumptions everyone sees. */
