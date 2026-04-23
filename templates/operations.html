@@ -6,8 +6,6 @@
 <title>Ember Operating Revenues</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   :root{
@@ -244,7 +242,11 @@
     </div>
     {% if data %}
     <div style="display:flex;gap:8px;">
-    <button class="pdf-btn" onclick="downloadOperationsPDF()">
+    <button class="pdf-btn" onclick="openExecReport()" title="Open the branded executive PDF in a new tab">
+      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14L21 3M19 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Executive Report
+    </button>
+    <button class="pdf-btn" onclick="downloadExecReport()" title="Download the branded executive PDF">
       <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m4-5l5 5 5-5m-5 5V3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Download PDF
     </button>
@@ -434,82 +436,12 @@ applyMonthlyFilter();
 
 {% endif %}
 
-// ── PDF Download ──
-async function downloadOperationsPDF(){
-  const btn = document.querySelector('.pdf-btn');
-  btn.disabled = true;
-  btn.textContent = 'Generating PDF...';
-
-  const metaText = document.querySelector('.top-right .meta')?.textContent?.trim() || '';
-  const PW = 1056, PH = 816, SCALE = 2;
-
-  function makeHeader(){
-    return `<div class="pdf-header">
-      <h1>Ember Operating Revenues</h1>
-      <span class="pdf-meta">${metaText}</span>
-    </div>`;
-  }
-
-  function makeKPIs(){
-    const cards = document.querySelectorAll('.kpi-card');
-    if(!cards.length) return '';
-    let h = '<div class="pdf-kpi-grid">';
-    cards.forEach(c => {
-      const lbl = c.querySelector('.kpi-label')?.textContent || '';
-      const val = c.querySelector('.kpi-value')?.textContent || '';
-      h += `<div class="pdf-kpi-card"><div class="pdf-kpi-label">${lbl}</div><div class="pdf-kpi-value">${val}</div></div>`;
-    });
-    return h + '</div>';
-  }
-
-  function cloneTable(id, title){
-    const tbl = document.getElementById(id);
-    if(!tbl) return '';
-    return `<div class="pdf-section-title">${title}</div>${tbl.outerHTML}`;
-  }
-
-  // Page 1: KPIs + Yearly rollup
-  const page1 = makeHeader() + makeKPIs() + cloneTable('yearly-table', 'Annual Revenue Forecast (Next 5 Years)');
-
-  // Page 2+: Next 12 months + Next 12 quarters
-  const page2 = makeHeader() + cloneTable('next12m-table', 'Next 12 Months');
-  const page3 = makeHeader() + cloneTable('quarterly-table', 'Next 12 Quarters');
-
-  const pages = [page1, page2, page3];
-
-  const {jsPDF} = window.jspdf;
-  const pdf = new jsPDF({orientation:'landscape', unit:'px', format:[PW,PH], hotfixes:['px_scaling']});
-
-  for(let p = 0; p < pages.length; p++){
-    if(p > 0) pdf.addPage([PW, PH], 'landscape');
-
-    const div = document.createElement('div');
-    div.id = 'pdf-render';
-    div.innerHTML = `<div class="pdf-page">${pages[p]}</div>`;
-    document.body.appendChild(div);
-
-    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-
-    const canvas = await html2canvas(div, {
-      scale: SCALE,
-      useCORS: true,
-      backgroundColor: '#ffffff',
-      width: PW,
-      height: PH,
-      scrollX: 0,
-      scrollY: 0,
-      windowWidth: PW,
-      windowHeight: PH
-    });
-
-    const imgData = canvas.toDataURL('image/jpeg', 0.95);
-    pdf.addImage(imgData, 'JPEG', 0, 0, PW, PH);
-    div.remove();
-  }
-
-  pdf.save('Ember_Operating_Revenues.pdf');
-  btn.disabled = false;
-  btn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m4-5l5 5 5-5m-5 5V3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Download PDF';
+// ── Branded executive PDF — served by Flask (same format as Ember Capital) ──
+function openExecReport(){
+  window.open('/api/operations/pdf?ts=' + Date.now(), '_blank');
+}
+function downloadExecReport(){
+  window.location.href = '/api/operations/pdf?download=1&ts=' + Date.now();
 }
 </script>
 </div></div>

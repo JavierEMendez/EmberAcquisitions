@@ -6,8 +6,6 @@
 <title>Loan Capacities & Debt Schedules — Ember</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   :root{
@@ -268,10 +266,16 @@
       {% if uploaded_at %}Last updated: {{ uploaded_at }}{% else %}No data uploaded yet{% endif %}
     </div>
     {% if data %}
-    <button class="pdf-btn" onclick="downloadLoansPDF()">
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+    <button class="pdf-btn" onclick="openExecReport()" title="Open the branded executive PDF in a new tab">
+      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14L21 3M19 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Executive Report
+    </button>
+    <button class="pdf-btn" onclick="downloadExecReport()" title="Download the branded executive PDF">
       <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m4-5l5 5 5-5m-5 5V3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Download PDF
     </button>
+    </div>
     {% endif %}
   </div>
 </div>
@@ -488,112 +492,13 @@
 
 {% if data %}
 <script>
-async function downloadLoansPDF(){
-  const btn=document.querySelector('.pdf-btn');
-  const origHTML=btn.innerHTML;
-  btn.disabled=true;
-  btn.textContent='Generating PDF...';
-
-  const metaText=document.querySelector('.meta')?.textContent?.trim()||'';
-  const PW=1056,PH=816,SCALE=2;
-
-  function hdr(){
-    return `<div class="pdf-header">
-      <h1>Loan Capacities & Debt Schedules</h1>
-      <span class="pdf-meta">${metaText}</span>
-    </div>`;
-  }
-
-  // Clone a section's table from the live DOM
-  function cloneTable(sectionTitle, tableWrap, footnote){
-    let html=`<div class="pdf-section-title">${sectionTitle}</div>`;
-    if(tableWrap){
-      const tbl=tableWrap.querySelector('table');
-      if(tbl) html+=tbl.outerHTML;
-    }
-    if(footnote) html+=`<div class="footnote">${footnote}</div>`;
-    return html;
-  }
-
-  // Gather content sections
-  const sectionTitles=[...document.querySelectorAll('.section-title')];
-  const tableWraps=[...document.querySelectorAll('.report-table-wrap')];
-  const footnotes=[...document.querySelectorAll('.footnote')];
-  const dsSections=[...document.querySelectorAll('.ds-section')];
-
-  // PAGE 1: MPC Loans + Vertical Loans tables
-  let page1=hdr();
-  // MPC Loans — first section title + first table wrap
-  if(sectionTitles.length>=1 && tableWraps.length>=1){
-    page1+=cloneTable('MPC Loans', tableWraps[0]);
-  }
-  // Vertical Loans — second section title + second table wrap
-  if(sectionTitles.length>=2 && tableWraps.length>=2){
-    const fn=footnotes.length>0?footnotes[0].textContent:'';
-    page1+=cloneTable('Vertical Loans', tableWraps[1], fn);
-  }
-
-  // Debt schedule pages — one per debt schedule block
-  const dsPages=[];
-  dsSections.forEach(ds=>{
-    const projTitle=ds.querySelector('h3')?.textContent||'Debt Schedule';
-    let dsHTML=hdr()+`<div class="pdf-section-title">Debt Schedule — ${projTitle}</div>`;
-
-    // Payments table
-    const subTitles=[...ds.querySelectorAll('.ds-subtitle')];
-    const subWraps=[...ds.querySelectorAll('.report-table-wrap')];
-
-    // Two-column layout: payments left, revenues right
-    dsHTML+=`<div style="display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start">`;
-
-    // Payments
-    if(subTitles.length>=1 && subWraps.length>=1){
-      dsHTML+=`<div><div class="ds-subtitle">${subTitles[0].textContent}</div>${subWraps[0].querySelector('table')?.outerHTML||''}</div>`;
-    }
-    // Revenues
-    if(subTitles.length>=2 && subWraps.length>=2){
-      const revTbl=subWraps[1].querySelector('table')?.outerHTML||'';
-      const legend=ds.querySelector('.chart-legend')?.outerHTML||'';
-      dsHTML+=`<div><div class="ds-subtitle">${subTitles[1].textContent}</div>${revTbl}${legend}</div>`;
-    }
-    dsHTML+='</div>';
-    dsPages.push(dsHTML);
-  });
-
-  // Combine all pages
-  const allPages=[page1,...dsPages];
-
-  try{
-    const {jsPDF}=window.jspdf;
-    const pdf=new jsPDF({orientation:'landscape',unit:'px',format:[PW,PH],hotfixes:['px_scaling']});
-
-    for(let p=0;p<allPages.length;p++){
-      if(p>0) pdf.addPage([PW,PH],'landscape');
-
-      const div=document.createElement('div');
-      div.id='pdf-render';
-      div.innerHTML=`<div class="pdf-page">${allPages[p]}</div>`;
-      document.body.appendChild(div);
-
-      await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-
-      const canvas=await html2canvas(div,{
-        scale:SCALE,useCORS:true,backgroundColor:'#ffffff',
-        width:PW,height:PH,scrollX:0,scrollY:0,windowWidth:PW,windowHeight:PH
-      });
-
-      pdf.addImage(canvas.toDataURL('image/jpeg',0.95),'JPEG',0,0,PW,PH);
-      div.remove();
-    }
-
-    pdf.save('Ember_Loan_Capacities_Debt_Schedules.pdf');
-  }catch(e){
-    console.error('PDF error:',e);
-    alert('Error generating PDF — see console for details');
-  }
-
-  btn.disabled=false;
-  btn.innerHTML=origHTML;
+/* Open the server-rendered branded executive PDF in a new tab. */
+function openExecReport(){
+  window.open('/api/loans/pdf?ts=' + Date.now(), '_blank');
+}
+/* Download the branded executive PDF. */
+function downloadExecReport(){
+  window.location.href = '/api/loans/pdf?download=1&ts=' + Date.now();
 }
 </script>
 {% endif %}

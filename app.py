@@ -1134,6 +1134,77 @@ def ember_capital_pdf():
     )
 
 
+# ---------------------------------------------------------------------------
+# Branded executive PDFs for Returns / Loans / Operations
+# Same look-and-feel as the Ember Capital PDF — full header/footer, branded
+# tables, etc. Mount behind /api/<report>/pdf with ?download=1 for attachment.
+# ---------------------------------------------------------------------------
+_EXEC_REPORT_CONFIG = {
+    "returns":    {"label": "Active_Project_Returns",         "access": "returns"},
+    "loans":      {"label": "Loan_Capacities_and_Debt_Schedules", "access": "loans"},
+    "operations": {"label": "Ember_Operating_Revenues",       "access": "operations"},
+}
+
+
+def _send_exec_report_pdf(report_type):
+    cfg = _EXEC_REPORT_CONFIG.get(report_type)
+    if not cfg:
+        return jsonify({"error": "Unknown report type"}), 404
+
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get(cfg["access"], True):
+        return jsonify({"error": "Access denied"}), 403
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT data FROM reports WHERE report_type = %s ORDER BY uploaded_at DESC LIMIT 1",
+        (report_type,),
+    )
+    row = cur.fetchone()
+    cur.close(); conn.close()
+
+    if not row or not row["data"]:
+        return jsonify({"error": "No data uploaded yet for this report."}), 404
+
+    try:
+        pdf_bytes = bytes(_gen_pdf_report(report_type, row["data"]))
+    except Exception as e:
+        return jsonify({"error": f"PDF generation failed: {e}"}), 500
+
+    as_attachment = request.args.get("download") in ("1", "true", "yes")
+    stamp = datetime.datetime.now().strftime("%Y-%m")
+    fname = f"{cfg['label']}_{stamp}.pdf"
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=as_attachment,
+        download_name=fname,
+    )
+
+
+@app.route("/api/returns/pdf", methods=["GET"])
+@login_required
+def returns_pdf():
+    """Branded executive PDF for Active Project Returns.
+    Inline by default; ?download=1 forces attachment."""
+    return _send_exec_report_pdf("returns")
+
+
+@app.route("/api/loans/pdf", methods=["GET"])
+@login_required
+def loans_pdf():
+    """Branded executive PDF for Loan Capacities & Debt Schedules."""
+    return _send_exec_report_pdf("loans")
+
+
+@app.route("/api/operations/pdf", methods=["GET"])
+@login_required
+def operations_pdf():
+    """Branded executive PDF for Ember Operating Revenues."""
+    return _send_exec_report_pdf("operations")
+
+
 @app.route("/api/portfolio", methods=["GET"])
 @login_required
 def portfolio():
