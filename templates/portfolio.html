@@ -17,7 +17,7 @@
   }
   [data-theme="light"]{
     --bg:#f0f2f5;--surface:#ffffff;--card:#ffffff;--border:#e2e8f0;--border-light:#cbd5e0;
-    --accent:#003552;--text:#1a2a3a;--text-muted:#718096;--text-dim:#a0aec0;--teal:#38a169;--success:#38a169;
+    --accent:#003552;--text:#1a2a3a;--text-muted:#4a5568;--text-dim:#718096;--teal:#38a169;--success:#38a169;
     --lp:#2d8b76;--promote:#a4832a;--leave:#c56028;
   }
   [data-theme="light"] #sidebar{background:var(--bg);}
@@ -948,7 +948,7 @@ function _updateThemeButtons() {
   darkBtn.style.color       = isLight ? 'var(--text-muted)' : '#000';
   darkBtn.style.fontWeight  = isLight ? '400' : '600';
   lightBtn.style.background = isLight ? 'var(--accent)' : 'transparent';
-  lightBtn.style.color      = isLight ? '#000' : 'var(--text-muted)';
+  lightBtn.style.color      = isLight ? '#fff' : 'var(--text-muted)';
   lightBtn.style.fontWeight = isLight ? '600' : '400';
 }
 function applyTheme(theme) {

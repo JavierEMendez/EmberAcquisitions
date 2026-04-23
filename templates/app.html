@@ -39,8 +39,8 @@
   --accent2: #38a169;
   --accent3: #003552;
   --text: #1a2a3a;
-  --text-muted: #718096;
-  --text-dim: #a0aec0;
+  --text-muted: #4a5568;
+  --text-dim: #718096;
   --danger: #e53e3e;
   --success: #38a169;
   --warn: #d69e2e;
@@ -454,6 +454,12 @@ tr.pod-inactive input { pointer-events: none; }
     <a href="/macro" class="sidebar-item" style="text-decoration:none">
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="1.5"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20" stroke-width="1.5" stroke-linecap="round"/></svg>
       Macro Dashboard
+    </a>
+    {% endif %}
+    {% if page_access.get('portfolio', true) %}
+    <a href="/ember-capital" class="sidebar-item" style="text-decoration:none">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 3.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Ember Capital
     </a>
     {% endif %}
     {% if page_access.get('sales', true) %}
@@ -4834,7 +4840,7 @@ function _updateThemeButtons() {
   darkBtn.style.color       = isLight ? 'var(--text-muted)' : '#000';
   darkBtn.style.fontWeight  = isLight ? '400' : '600';
   lightBtn.style.background = isLight ? 'var(--accent)' : 'transparent';
-  lightBtn.style.color      = isLight ? '#000' : 'var(--text-muted)';
+  lightBtn.style.color      = isLight ? '#fff' : 'var(--text-muted)';
   lightBtn.style.fontWeight = isLight ? '600' : '400';
 }
 function applyTheme(theme) {

@@ -20,7 +20,7 @@
 }
 [data-theme="light"]{
   --bg:#f0f2f5;--surface:#ffffff;--card:#ffffff;--border:#e2e8f0;--border-light:#cbd5e0;
-  --accent:#003552;--text:#1a2a3a;--text-muted:#718096;--text-dim:#a0aec0;--teal:#38a169;
+  --accent:#003552;--text:#1a2a3a;--text-muted:#4a5568;--text-dim:#718096;--teal:#38a169;
 }
 [data-theme="light"] #sidebar{background:var(--bg);}
 [data-theme="light"] .map-select{background:var(--bg);}
@@ -129,6 +129,12 @@ a:hover{text-decoration:underline}
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="1.5"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20" stroke-width="1.5" stroke-linecap="round"/></svg>
       Macro Dashboard
     </a>
+    {% if page_access.get('portfolio', true) %}
+    <a href="/ember-capital" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 3.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Ember Capital
+    </a>
+    {% endif %}
     {% if page_access.get('sales', true) %}
     <a href="/sales" class="sidebar-item">
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l3-3 4 4 5-6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -1110,7 +1116,7 @@ function _updateThemeButtons() {
   darkBtn.style.color       = isLight ? 'var(--text-muted)' : '#000';
   darkBtn.style.fontWeight  = isLight ? '400' : '600';
   lightBtn.style.background = isLight ? 'var(--accent)' : 'transparent';
-  lightBtn.style.color      = isLight ? '#000' : 'var(--text-muted)';
+  lightBtn.style.color      = isLight ? '#fff' : 'var(--text-muted)';
   lightBtn.style.fontWeight = isLight ? '600' : '400';
 }
 function applyTheme(theme) {
