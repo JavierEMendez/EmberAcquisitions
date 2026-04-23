@@ -203,7 +203,6 @@
     </a>
     {% endif %}
 
-    {% if is_admin %}
     <a href="/ember-capital" style="text-decoration:none;display:flex;flex-direction:column">
       <div class="dash-card clickable" style="flex:1">
         <div class="type-pill pill-dash">Dashboard</div>
@@ -215,14 +214,6 @@
         </div>
       </div>
     </a>
-    {% else %}
-    <div class="dash-card disabled">
-      <div class="type-pill pill-soon">Coming Soon</div>
-      <div class="app-title">Ember Capital</div>
-      <div class="app-desc">Portfolio-level LP &amp; Promote cashflows across active projects with recyclable-equity sensitivity analysis.</div>
-      <div class="app-arrow">Coming Soon</div>
-    </div>
-    {% endif %}
 
     {% if page_access.get('macro', true) %}
     <a href="/macro" style="text-decoration:none;display:flex;flex-direction:column">

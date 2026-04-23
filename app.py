@@ -916,11 +916,9 @@ def _apply_sensitivity_override(inp, field, value):
 @app.route("/ember-capital")
 @login_required
 def portfolio_page():
-    if not session.get("is_admin"):
-        return redirect(url_for("home"))
     pa = {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True, "portfolio": True}
     return render_template("portfolio.html", username=session.get("username"),
-                           is_admin=True, page_access=pa)
+                           is_admin=session.get("is_admin", False), page_access=pa)
 
 
 @app.route("/api/ember-capital", methods=["GET"])
