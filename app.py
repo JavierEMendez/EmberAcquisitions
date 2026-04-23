@@ -2107,9 +2107,627 @@ def _gen_excel_ember_capital(data):
     return out.read()
 
 
+def _gen_pdf_ember_capital(data):
+    """Branded 2-page executive PDF for the Ember Capital dashboard.
+
+    Layout — A4 Landscape, 2 pages max:
+      Page 1  Branded header, Portfolio-at-a-glance KPI grid, Capital Commitments
+      Page 2  Project Returns table + Annual Capital Recycling visual
+
+    Uses Ember brand palette from the 1.25.24 logo guide:
+      Ember Blue #13344E / Ember Orange #F25929, warm paper #FAF7F2.
+    """
+    from fpdf import FPDF
+
+    # ---- Brand palette ---------------------------------------------------
+    BLUE      = (19, 52, 78)       # #13344E — primary
+    BLUE_DK   = (13, 43, 68)       # #0D2B44
+    BLUE_XDK  = (8, 35, 59)        # #08233B
+    ORANGE    = (242, 89, 41)      # #F25929 — accent
+    ORANGE_DK = (217, 68, 20)      # #D94414
+    ORANGE_T  = (254, 238, 231)    # tint for subtle fills
+    PAPER     = (250, 247, 242)    # #FAF7F2 — warm canvas
+    ROW_ALT   = (248, 245, 239)    # slightly darker paper tint for alt rows
+    G700 = (88, 89, 91); G500 = (147, 149, 152); G300 = (209, 211, 212)
+    G200 = (229, 230, 231); G100 = (241, 242, 243)
+    WHITE = (255, 255, 255)
+    BLUE_SOFT = (210, 220, 230)    # header subtitle on dark
+
+    # ---- Data resolution -------------------------------------------------
+    projects = data.get("projects", []) or []
+    recycle  = data.get("recycle", {}) or {}
+    groups   = (data.get("commitments") or {}).get("groups") or []
+    years    = data.get("years", []) or []
+
+    lp_profit_tot = sum((p.get("lp_profit") or 0) for p in projects)
+    prom_tot      = sum((p.get("promote_total") or 0) for p in projects)
+    eq_w, irr_w = 0.0, 0.0
+    for p in projects:
+        w = abs(p.get("lp_contributions_total") or 0)
+        if w and p.get("lp_irr") is not None:
+            eq_w += w; irr_w += (p.get("lp_irr") or 0) * w
+    w_irr = (irr_w / eq_w) if eq_w else 0.0
+    mpc_tot  = sum((g.get("mpc")      or 0) for g in groups)
+    vert_tot = sum((g.get("vertical") or 0) for g in groups)
+
+    # Aggregate annual recycling data across all projects
+    n_yr = len(years)
+    agg = {k: [0.0]*n_yr for k in ("lpD", "prD", "lpR", "lpL", "prR", "prL")}
+    for p in projects:
+        rec  = recycle.get(p.get("name",""), {"lp": 0, "prom": 0})
+        rLp, rPr = (rec.get("lp") or 0)/100.0, (rec.get("prom") or 0)/100.0
+        lpY = p.get("lp_distributions_yearly") or []
+        prY = p.get("promote_yearly") or []
+        for i in range(n_yr):
+            ld = lpY[i] if i < len(lpY) else 0
+            pd = prY[i] if i < len(prY) else 0
+            agg["lpD"][i] += ld; agg["prD"][i] += pd
+            agg["lpR"][i] += ld*rLp;  agg["lpL"][i] += ld*(1-rLp)
+            agg["prR"][i] += pd*rPr;  agg["prL"][i] += pd*(1-rPr)
+
+    today_label = datetime.datetime.now().strftime("%B %Y")
+
+    # ---- Text safety: Helvetica is Latin-1 only; normalize user strings --
+    _UNI_MAP = {"\u2014": "-", "\u2013": "-", "\u2018": "'", "\u2019": "'",
+                "\u201C": '"', "\u201D": '"', "\u2026": "...", "\u2022": "*"}
+    def safe(s):
+        if s is None: return ""
+        t = str(s)
+        for k, v in _UNI_MAP.items():
+            t = t.replace(k, v)
+        try:
+            t.encode("latin-1")
+            return t
+        except UnicodeEncodeError:
+            return t.encode("latin-1", "replace").decode("latin-1")
+
+    # ---- Formatters ------------------------------------------------------
+    def fmt_money_k(v):
+        """Values from returns data are already in $000s."""
+        if v is None or v == 0: return "--"
+        av = abs(v)
+        if av >= 1_000:   return f"${v/1000:,.1f}M"
+        elif av >= 1:     return f"${v:,.0f}K"
+        else:             return f"${v*1000:,.0f}"
+    def fmt_money_raw(v):
+        """Raw dollar values (commitments)."""
+        if v is None or v == 0: return "--"
+        av = abs(v)
+        if av >= 1_000_000:   return f"${v/1_000_000:,.2f}M"
+        elif av >= 1_000:     return f"${v/1000:,.0f}K"
+        else:                 return f"${v:,.0f}"
+    def fmt_pct(v):
+        if v is None: return "--"
+        return f"{v*100:,.1f}%"
+    def fmt_em(v):
+        if not v: return "--"
+        return f"{v:,.2f}x"
+
+    # ---- PDF class -------------------------------------------------------
+    class PDF(FPDF):
+        def __init__(self):
+            super().__init__(orientation="L", unit="mm", format="A4")
+            self.set_auto_page_break(auto=False)
+            self.set_margins(10, 10, 10)
+
+        # helpers
+        def _fill(self, rgb):  self.set_fill_color(*rgb)
+        def _draw(self, rgb):  self.set_draw_color(*rgb)
+        def _text(self, rgb):  self.set_text_color(*rgb)
+
+        def tracked_caps(self, x, y, w, h, text, rgb, size=7, bold=True,
+                         spacing=0.35, align="L"):
+            """Render text as tracked uppercase caps — for eyebrows/labels."""
+            self.set_xy(x, y)
+            self.set_font("Helvetica", "B" if bold else "", size)
+            self._text(rgb)
+            # Approximate letter spacing by inserting thin spaces between chars
+            txt = " ".join(list(text.upper()))
+            # Character spacing — a more precise approach
+            try:
+                # fpdf2 supports set_char_spacing in newer versions
+                self.set_char_spacing(spacing)
+                self.cell(w, h, text.upper(), ln=False, align=align)
+                self.set_char_spacing(0)
+            except Exception:
+                self.cell(w, h, txt, ln=False, align=align)
+
+        def header_bar_tall(self):
+            """Full-width branded Ember-blue header (page 1). 22mm tall."""
+            self._fill(BLUE); self.rect(0, 0, 297, 22, style="F")
+            # Subtle darker lower band for depth
+            self._fill(BLUE_DK); self.rect(0, 18, 297, 4, style="F")
+            # Orange accent stripe below
+            self._fill(ORANGE); self.rect(0, 22, 297, 1.2, style="F")
+
+            # EMBER wordmark — orange "bars" accent + white caps
+            # Orange mark: a tiny stack of pill bars like the logo icon
+            self._fill(ORANGE)
+            bx, by = 12, 8
+            bar_w, gap = 0.9, 0.8
+            heights = [3.5, 5.5, 4.5, 6.5, 4.0]  # subtle "equalizer" shape
+            for i, bh in enumerate(heights):
+                self.rect(bx + i*(bar_w+gap), by + (6.5-bh), bar_w, bh, style="F")
+
+            # "EMBER" wordmark
+            self.set_xy(22, 6.5)
+            self.set_font("Helvetica", "B", 16)
+            self._text(WHITE)
+            try:
+                self.set_char_spacing(1.4)
+                self.cell(80, 8, "EMBER", ln=False)
+                self.set_char_spacing(0)
+            except Exception:
+                self.cell(80, 8, "E M B E R", ln=False)
+            # Tagline
+            self.set_xy(22, 14.5)
+            self.set_font("Helvetica", "", 6.5)
+            self._text(BLUE_SOFT)
+            try:
+                self.set_char_spacing(0.9)
+                self.cell(80, 4, "FINANCE & ANALYTICS", ln=False)
+                self.set_char_spacing(0)
+            except Exception:
+                self.cell(80, 4, "F I N A N C E  &  A N A L Y T I C S", ln=False)
+
+            # Right side: EXECUTIVE REPORT + date
+            self.set_xy(297-12-80, 6.5)
+            self.set_font("Helvetica", "B", 8)
+            self._text(WHITE)
+            try:
+                self.set_char_spacing(1.2)
+                self.cell(80, 5, "EXECUTIVE REPORT", ln=False, align="R")
+                self.set_char_spacing(0)
+            except Exception:
+                self.cell(80, 5, "EXECUTIVE REPORT", ln=False, align="R")
+            self.set_xy(297-12-80, 13)
+            self.set_font("Helvetica", "", 7.5)
+            self._text(BLUE_SOFT)
+            self.cell(80, 4, f"As of {today_label}", ln=False, align="R")
+
+            self._text(BLUE)
+
+        def header_bar_thin(self):
+            """Slim ember-blue bar for page 2. 13mm tall."""
+            self._fill(BLUE); self.rect(0, 0, 297, 13, style="F")
+            self._fill(ORANGE); self.rect(0, 13, 297, 0.9, style="F")
+
+            # orange accent mark (mini bars)
+            self._fill(ORANGE)
+            bx, by = 12, 5
+            bar_w, gap = 0.65, 0.55
+            heights = [2.4, 3.8, 3.0, 4.4, 2.7]
+            for i, bh in enumerate(heights):
+                self.rect(bx + i*(bar_w+gap), by + (4.6-bh), bar_w, bh, style="F")
+
+            self.set_xy(19, 4)
+            self.set_font("Helvetica", "B", 10)
+            self._text(WHITE)
+            try:
+                self.set_char_spacing(1.0)
+                self.cell(80, 5, "EMBER", ln=False)
+                self.set_char_spacing(0)
+            except Exception:
+                self.cell(80, 5, "EMBER", ln=False)
+            self.set_xy(38, 4)
+            self.set_font("Helvetica", "", 8)
+            self._text(BLUE_SOFT)
+            self.cell(100, 5, "- EXECUTIVE REPORT", ln=False)
+
+            self.set_xy(297-12-60, 4)
+            self.set_font("Helvetica", "", 7.5)
+            self._text(BLUE_SOFT)
+            self.cell(60, 5, f"As of {today_label}", ln=False, align="R")
+
+            self._text(BLUE)
+
+        def section_heading(self, x, y, eyebrow, title):
+            # Orange eyebrow with tracked caps
+            self.set_xy(x, y)
+            self.set_font("Helvetica", "B", 7)
+            self._text(ORANGE)
+            try:
+                self.set_char_spacing(1.0)
+                self.cell(120, 4, eyebrow.upper(), ln=False)
+                self.set_char_spacing(0)
+            except Exception:
+                self.cell(120, 4, eyebrow.upper(), ln=False)
+            # Title
+            self.set_xy(x, y+4.5)
+            self.set_font("Helvetica", "B", 15)
+            self._text(BLUE)
+            self.cell(200, 8, title, ln=False)
+            # Accent underline rule
+            self._draw(ORANGE); self.set_line_width(0.7)
+            self.line(x, y+13, x+14, y+13)
+
+        def kpi_card(self, x, y, w, h, label, value, caption="", accent=ORANGE):
+            # Background
+            self._fill(WHITE); self._draw(G300)
+            self.set_line_width(0.3)
+            self.rect(x, y, w, h, style="DF")
+            # Left accent line
+            self._fill(accent)
+            self.rect(x, y, 1.8, h, style="F")
+            # Label (eyebrow)
+            self.set_xy(x+6, y+5)
+            self.set_font("Helvetica", "B", 6.5)
+            self._text(accent)
+            try:
+                self.set_char_spacing(0.9)
+                self.cell(w-8, 3.5, label.upper(), ln=False)
+                self.set_char_spacing(0)
+            except Exception:
+                self.cell(w-8, 3.5, label.upper(), ln=False)
+            # Big value
+            self.set_xy(x+6, y+10)
+            self.set_font("Helvetica", "B", 20)
+            self._text(BLUE)
+            self.cell(w-8, 11, str(value), ln=False)
+            # Caption
+            if caption:
+                self.set_xy(x+6, y+h-6)
+                self.set_font("Helvetica", "", 7)
+                self._text(G500)
+                self.cell(w-8, 4, caption, ln=False)
+
+        def footer_bar(self, page_num, total):
+            y = 199
+            self._draw(G300); self.set_line_width(0.2)
+            self.line(12, y, 297-12, y)
+            self.set_xy(12, y+2)
+            self.set_font("Helvetica", "B", 6.5)
+            self._text(G500)
+            try:
+                self.set_char_spacing(0.9)
+                self.cell(0, 4, "EMBER CAPITAL   |   FINANCE & ANALYTICS", ln=False)
+                self.set_char_spacing(0)
+            except Exception:
+                self.cell(0, 4, "EMBER CAPITAL | FINANCE & ANALYTICS", ln=False)
+            self.set_xy(297-12-40, y+2)
+            self.set_font("Helvetica", "B", 7)
+            self._text(BLUE)
+            self.cell(40, 4, f"PAGE {page_num} OF {total}", ln=False, align="R")
+            # Confidential watermark
+            self.set_xy(12, y+6)
+            self.set_font("Helvetica", "", 6.5)
+            self._text(G500)
+            self.cell(0, 3, "Confidential - for internal Ember stakeholders only.", ln=False)
+
+    pdf = PDF()
+    # ========================= PAGE 1 =========================
+    pdf.add_page()
+    pdf.header_bar_tall()
+
+    # Section: Portfolio at a glance
+    pdf.section_heading(12, 29, "Ember Capital", "Portfolio at a Glance")
+
+    # Subtitle line
+    pdf.set_xy(12, 45)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(*G700)
+    pdf.cell(200, 4,
+             f"Capital position across {len(projects)} active project(s). "
+             f"Returns shown net to LP.",
+             ln=False)
+
+    # --- KPI row 1: four hero metrics ---
+    y1 = 53
+    cw1 = (277 - 3*4) / 4
+    kpis1 = [
+        ("Active Projects",    f"{len(projects):,}",              "",                 ORANGE),
+        ("Total LP Profit",    fmt_money_k(lp_profit_tot),        "Net of recycling", BLUE),
+        ("Weighted LP IRR",    fmt_pct(w_irr),                    "Equity-weighted",  ORANGE),
+        ("Total Promote",      fmt_money_k(prom_tot),             "GP economics",     BLUE),
+    ]
+    for i, (lbl, val, cap, acc) in enumerate(kpis1):
+        x = 10 + i*(cw1+4)
+        pdf.kpi_card(x, y1, cw1, 30, lbl, val, cap, acc)
+
+    # --- KPI row 2: commitments ---
+    y2 = 88
+    cw2 = (277 - 2*4) / 3
+    kpis2 = [
+        ("MPC Committed",          fmt_money_raw(mpc_tot),           "Master-planned",    BLUE),
+        ("Vertical Committed",     fmt_money_raw(vert_tot),          "Vertical product",  BLUE),
+        ("Total Committed Capital",fmt_money_raw(mpc_tot+vert_tot),  "Across asset classes", ORANGE),
+    ]
+    for i, (lbl, val, cap, acc) in enumerate(kpis2):
+        x = 10 + i*(cw2+4)
+        pdf.kpi_card(x, y2, cw2, 26, lbl, val, cap, acc)
+
+    # --- Capital Commitments section ---
+    pdf.section_heading(12, 122, "Investor Groups", "Capital Commitments")
+
+    pdf.set_xy(12, 138)
+    pdf.set_font("Helvetica", "", 8.5)
+    pdf.set_text_color(*G700)
+    if groups:
+        pdf.cell(0, 4,
+                 f"{len(groups)} investor group(s) committed {fmt_money_raw(mpc_tot+vert_tot)} "
+                 f"({fmt_money_raw(mpc_tot)} MPC + {fmt_money_raw(vert_tot)} Vertical).",
+                 ln=False)
+    else:
+        pdf.cell(0, 4, "No investor commitments recorded yet.", ln=False)
+
+    # Commitments table
+    y = 146
+    col_w = [100, 55, 55, 55]
+    x0 = 10
+    # Header
+    pdf.set_xy(x0, y)
+    pdf.set_fill_color(*BLUE)
+    pdf.set_text_color(*WHITE)
+    pdf.set_font("Helvetica", "B", 7.5)
+    hdrs = ["GROUP", "MPC COMMITMENT", "VERTICAL COMMITMENT", "TOTAL"]
+    for i, h in enumerate(hdrs):
+        try: pdf.set_char_spacing(0.8)
+        except Exception: pass
+        pdf.cell(col_w[i], 7, h, border=0, fill=True,
+                 align="L" if i == 0 else "R")
+    try: pdf.set_char_spacing(0)
+    except Exception: pass
+    pdf.ln()
+    y += 7
+    # Body
+    pdf.set_font("Helvetica", "", 9)
+    shown_groups = groups[:10]  # keep page tight
+    for i, g in enumerate(shown_groups):
+        mpc = g.get("mpc") or 0; vrt = g.get("vertical") or 0
+        pdf.set_xy(x0, y)
+        pdf.set_fill_color(*(PAPER if i % 2 == 0 else WHITE))
+        pdf.set_text_color(*BLUE_XDK)
+        vals = [safe(g.get("name","")), fmt_money_raw(mpc), fmt_money_raw(vrt),
+                fmt_money_raw(mpc + vrt)]
+        for j, v in enumerate(vals):
+            pdf.cell(col_w[j], 6, v, border=0, fill=True,
+                     align="L" if j == 0 else "R")
+        pdf.ln()
+        y += 6
+    if len(groups) > len(shown_groups):
+        pdf.set_xy(x0, y)
+        pdf.set_font("Helvetica", "I", 7.5)
+        pdf.set_text_color(*G500)
+        pdf.cell(0, 5,
+                 f"+ {len(groups) - len(shown_groups)} additional group(s) not shown.",
+                 ln=False)
+        pdf.ln()
+        y += 5
+    # Totals row
+    if groups:
+        pdf.set_xy(x0, y)
+        pdf.set_fill_color(*BLUE)
+        pdf.set_text_color(*WHITE)
+        pdf.set_font("Helvetica", "B", 9)
+        vals = ["TOTAL", fmt_money_raw(mpc_tot), fmt_money_raw(vert_tot),
+                fmt_money_raw(mpc_tot + vert_tot)]
+        for j, v in enumerate(vals):
+            pdf.cell(col_w[j], 7.5, v, border=0, fill=True,
+                     align="L" if j == 0 else "R")
+        pdf.ln()
+
+    pdf.footer_bar(1, 2)
+
+    # ========================= PAGE 2 =========================
+    pdf.add_page()
+    pdf.header_bar_thin()
+
+    pdf.section_heading(12, 19, "Project Detail", "Returns & Capital Recycling")
+
+    pdf.set_xy(12, 35)
+    pdf.set_font("Helvetica", "", 8.5)
+    pdf.set_text_color(*G700)
+    pdf.cell(0, 4,
+             "Per-project returns with LP and Promote recycling splits. "
+             "Values in $000s unless noted.", ln=False)
+
+    # --- Projects table -------------------------------------------------
+    # 10 columns tuned for landscape
+    hdrs = ["PROJECT", "LP IRR", "LP EM", "EQUITY", "DIST", "PROMOTE",
+            "LP REC %", "LP RECYCLED", "PROM REC %", "PROM RECYCLED"]
+    widths = [52, 17, 17, 26, 26, 26, 22, 30, 22, 30]  # sum = 268
+    y = 42
+    x0 = 10
+    # Header
+    pdf.set_xy(x0, y)
+    pdf.set_fill_color(*BLUE)
+    pdf.set_text_color(*WHITE)
+    pdf.set_font("Helvetica", "B", 7)
+    try: pdf.set_char_spacing(0.7)
+    except Exception: pass
+    for i, h in enumerate(hdrs):
+        pdf.cell(widths[i], 7, h, border=0, fill=True,
+                 align="L" if i == 0 else "R")
+    try: pdf.set_char_spacing(0)
+    except Exception: pass
+    pdf.ln()
+    y += 7
+    # Body rows
+    pdf.set_font("Helvetica", "", 8)
+    tots = {"eq":0, "dist":0, "prom":0, "lpR":0, "prR":0}
+    # Cap at 12 projects to keep to one page
+    shown_projects = projects[:12]
+    for i, p in enumerate(shown_projects):
+        rec = recycle.get(p.get("name",""), {"lp": 0, "prom": 0})
+        rLp, rPr = (rec.get("lp") or 0)/100.0, (rec.get("prom") or 0)/100.0
+        eq   = abs(p.get("lp_contributions_total") or 0)
+        dist = p.get("lp_distributions_total") or 0
+        prom = p.get("promote_total") or 0
+        lpR  = dist * rLp
+        prR  = prom * rPr
+        tots["eq"]  += eq;  tots["dist"] += dist; tots["prom"] += prom
+        tots["lpR"] += lpR; tots["prR"]  += prR
+
+        pdf.set_xy(x0, y)
+        pdf.set_fill_color(*(ROW_ALT if i % 2 == 0 else WHITE))
+        pdf.set_text_color(*BLUE_XDK)
+        name = safe(p.get("name","") or "")
+        if len(name) > 34: name = name[:32] + ".."
+        vals = [
+            name,
+            fmt_pct(p.get("lp_irr")),
+            fmt_em(p.get("lp_em")),
+            fmt_money_k(eq),
+            fmt_money_k(dist),
+            fmt_money_k(prom),
+            f"{(rec.get('lp') or 0):.0f}%",
+            fmt_money_k(lpR),
+            f"{(rec.get('prom') or 0):.0f}%",
+            fmt_money_k(prR),
+        ]
+        for j, v in enumerate(vals):
+            pdf.cell(widths[j], 5.5, v, border=0, fill=True,
+                     align="L" if j == 0 else "R")
+        pdf.ln()
+        y += 5.5
+    if len(projects) > len(shown_projects):
+        pdf.set_xy(x0, y)
+        pdf.set_font("Helvetica", "I", 7.5)
+        pdf.set_text_color(*G500)
+        pdf.cell(0, 4,
+                 f"+ {len(projects) - len(shown_projects)} additional project(s) not shown.",
+                 ln=False)
+        pdf.ln()
+        y += 4
+    # Totals row
+    pdf.set_xy(x0, y)
+    pdf.set_fill_color(*ORANGE_T); pdf.set_text_color(*ORANGE_DK)
+    pdf.set_font("Helvetica", "B", 8)
+    tot_vals = ["PORTFOLIO TOTAL", "", "",
+                fmt_money_k(tots["eq"]), fmt_money_k(tots["dist"]),
+                fmt_money_k(tots["prom"]), "",
+                fmt_money_k(tots["lpR"]), "",
+                fmt_money_k(tots["prR"])]
+    for j, v in enumerate(tot_vals):
+        pdf.cell(widths[j], 7, v, border=0, fill=True,
+                 align="L" if j == 0 else "R")
+    pdf.ln()
+    y += 7 + 4
+
+    # --- Annual Capital Recycling visual --------------------------------
+    if years and any(agg["lpR"][i] + agg["prR"][i] for i in range(n_yr)):
+        pdf.section_heading(12, y, "Capital Flow", "Annual Capital Recycling")
+        y += 18
+
+        # Legend
+        pdf.set_xy(12, y)
+        pdf.set_fill_color(*ORANGE)
+        pdf.rect(12, y+1, 3, 3, style="F")
+        pdf.set_xy(16.5, y)
+        pdf.set_font("Helvetica", "", 8)
+        pdf.set_text_color(*G700)
+        pdf.cell(28, 5, "LP Recycled", ln=False)
+        pdf.set_fill_color(*BLUE)
+        pdf.rect(44, y+1, 3, 3, style="F")
+        pdf.set_xy(48.5, y)
+        pdf.cell(34, 5, "Promote Recycled", ln=False)
+        pdf.set_fill_color(*G300)
+        pdf.rect(83, y+1, 3, 3, style="F")
+        pdf.set_xy(87.5, y)
+        pdf.cell(34, 5, "Capital Leaving", ln=False)
+        y += 8
+
+        # Compute scale
+        year_totals = [agg["lpD"][i] + agg["prD"][i] for i in range(n_yr)]
+        max_total = max(year_totals) if year_totals else 0
+        if max_total > 0:
+            # Filter to years with activity
+            active_years = [(i, years[i]) for i in range(n_yr)
+                            if agg["lpD"][i] or agg["prD"][i]]
+            # Cap at 8 years for space
+            active_years = active_years[:8]
+            # Bar area:
+            label_w = 18
+            bar_x = 30
+            bar_right = 297 - 12 - 72  # leave room for right-side numbers
+            bar_w_max = bar_right - bar_x
+            numbers_x = bar_right + 4
+            row_h = 8
+            total_recycled = 0.0
+
+            for i, yr in active_years:
+                total_yr = agg["lpD"][i] + agg["prD"][i]
+                lpR = agg["lpR"][i]; prR = agg["prR"][i]
+                lpL = agg["lpL"][i]; prL = agg["prL"][i]
+                rec_total = lpR + prR
+                total_recycled += rec_total
+                pct = (rec_total / total_yr * 100) if total_yr else 0
+
+                # Year label
+                pdf.set_xy(12, y+1.5)
+                pdf.set_font("Helvetica", "B", 9)
+                pdf.set_text_color(*BLUE)
+                pdf.cell(label_w, 4, str(yr), ln=False)
+
+                # Proportional widths
+                scale = bar_w_max / max_total
+                w_lpR = lpR * scale
+                w_prR = prR * scale
+                w_leav = (lpL + prL) * scale
+                bar_y = y + 1.2
+                bar_h = 4.5
+                # Background track
+                pdf.set_fill_color(*G100)
+                pdf.rect(bar_x, bar_y, bar_w_max, bar_h, style="F")
+                # Segments
+                cx = bar_x
+                if w_lpR > 0:
+                    pdf.set_fill_color(*ORANGE)
+                    pdf.rect(cx, bar_y, w_lpR, bar_h, style="F")
+                    cx += w_lpR
+                if w_prR > 0:
+                    pdf.set_fill_color(*BLUE)
+                    pdf.rect(cx, bar_y, w_prR, bar_h, style="F")
+                    cx += w_prR
+                if w_leav > 0:
+                    pdf.set_fill_color(*G300)
+                    pdf.rect(cx, bar_y, w_leav, bar_h, style="F")
+
+                # Right-side totals
+                pdf.set_xy(numbers_x, y+0.5)
+                pdf.set_font("Helvetica", "B", 8.5)
+                pdf.set_text_color(*BLUE)
+                pdf.cell(28, 4, fmt_money_k(rec_total), ln=False, align="R")
+                pdf.set_xy(numbers_x+30, y+0.5)
+                pdf.set_font("Helvetica", "", 7.5)
+                pdf.set_text_color(*G700)
+                pdf.cell(28, 4, f"{pct:.0f}% recycled", ln=False, align="L")
+                # Second line: raw distribution total
+                pdf.set_xy(numbers_x, y+4.5)
+                pdf.set_font("Helvetica", "", 7)
+                pdf.set_text_color(*G500)
+                pdf.cell(58, 3.5,
+                         f"Total distributions {fmt_money_k(total_yr)}",
+                         ln=False)
+                y += row_h
+
+            # Summary line below
+            y += 2
+            pdf.set_xy(12, y)
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.set_text_color(*ORANGE_DK)
+            try: pdf.set_char_spacing(0.7)
+            except Exception: pass
+            pdf.cell(0, 4,
+                     f"PORTFOLIO RECYCLING   {fmt_money_k(total_recycled)}   "
+                     f"LP {fmt_money_k(sum(agg['lpR']))}   +   "
+                     f"PROMOTE {fmt_money_k(sum(agg['prR']))}",
+                     ln=False)
+            try: pdf.set_char_spacing(0)
+            except Exception: pass
+
+    pdf.footer_bar(2, 2)
+
+    return pdf.output()
+
+
 def _gen_pdf_report(report_type, data):
     """Generate a simple PDF for the given report type. Returns bytes."""
     from fpdf import FPDF
+
+    # Ember Capital uses a fully branded 2-page executive layout.
+    if report_type == "ember_capital":
+        return _gen_pdf_ember_capital(data)
 
     class PDF(FPDF):
         def header(self):
@@ -2118,7 +2736,6 @@ def _gen_pdf_report(report_type, data):
                 "returns": "Active Project Returns",
                 "loans": "Loan Capacities & Debt Schedules",
                 "operations": "Ember Operating Revenues",
-                "ember_capital": "Ember Capital — Executive Report",
             }
             self.set_text_color(26, 58, 92)
             self.cell(0, 10, titles.get(report_type, "Ember Report"), ln=True)
@@ -2256,175 +2873,6 @@ def _gen_pdf_report(report_type, data):
             rows_data = [[f"{r['project']} — {r['category']}"] + r.get("values", [])[:12]
                          for r in mo.get("rows", [])]
             draw_table(hdrs, rows_data)
-
-    elif report_type == "ember_capital":
-        projects = data.get("projects", []) or []
-        recycle  = data.get("recycle", {}) or {}
-        groups   = (data.get("commitments") or {}).get("groups") or []
-        years    = data.get("years", []) or []
-
-        # --- Portfolio Summary KPIs ----------------------------------------
-        lp_profit_tot = sum((p.get("lp_profit") or 0) for p in projects)
-        prom_tot      = sum((p.get("promote_total") or 0) for p in projects)
-        eq_w, irr_w = 0.0, 0.0
-        for p in projects:
-            w = abs(p.get("lp_contributions_total") or 0)
-            if w and p.get("lp_irr") is not None:
-                eq_w += w; irr_w += (p.get("lp_irr") or 0) * w
-        w_irr = (irr_w / eq_w) if eq_w else None
-        mpc_tot  = sum((g.get("mpc")      or 0) for g in groups)
-        vert_tot = sum((g.get("vertical") or 0) for g in groups)
-
-        def _fmt_money(v):
-            if v is None: return ""
-            return f"${v:,.0f}"
-        def _fmt_pct(v):
-            if v is None: return ""
-            return f"{v*100:.1f}%"
-
-        draw_section("Portfolio Summary")
-        kpi_rows = [
-            ("Active Projects",         f"{len(projects):,}"),
-            ("Total LP Profit",         _fmt_money(lp_profit_tot * 1000)),
-            ("Total Promote",           _fmt_money(prom_tot * 1000)),
-            ("Weighted LP IRR",         _fmt_pct(w_irr)),
-            ("MPC Committed",           _fmt_money(mpc_tot)),
-            ("Vertical Committed",      _fmt_money(vert_tot)),
-            ("Total Committed Capital", _fmt_money(mpc_tot + vert_tot)),
-        ]
-        for label, val in kpi_rows:
-            pdf.set_font("Helvetica", "", 9)
-            pdf.set_text_color(60, 60, 60)
-            pdf.cell(70, 5, label, ln=False)
-            pdf.set_font("Helvetica", "B", 9)
-            pdf.set_text_color(30, 30, 30)
-            pdf.cell(0, 5, val, ln=True)
-        pdf.ln(3)
-
-        # --- Projects table -----------------------------------------------
-        draw_section("Projects")
-        p_hdrs = ["Project", "LP IRR", "EM", "Equity", "Dist", "LP Rec %",
-                  "Promote", "Prom Rec %", "LP Recycled", "Prom Recycled",
-                  "LP Leaving", "Prom Leaving"]
-        p_rows = []
-        tots = {"eq":0, "dist":0, "prom":0, "lpR":0, "prR":0, "lpL":0, "prL":0}
-        for p in projects:
-            rec  = recycle.get(p.get("name",""), {"lp": 0, "prom": 0})
-            rLp, rPr = (rec.get("lp") or 0)/100.0, (rec.get("prom") or 0)/100.0
-            eq   = abs(p.get("lp_contributions_total") or 0)
-            dist = p.get("lp_distributions_total") or 0
-            prom = p.get("promote_total") or 0
-            lpR, lpL = dist * rLp, dist * (1 - rLp)
-            prR, prL = prom * rPr, prom * (1 - rPr)
-            tots["eq"]  += eq;  tots["dist"] += dist; tots["prom"] += prom
-            tots["lpR"] += lpR; tots["prR"]  += prR;  tots["lpL"]  += lpL;  tots["prL"] += prL
-            p_rows.append([
-                p.get("name",""),
-                _fmt_pct(p.get("lp_irr")),
-                f"{p.get('lp_em') or 0:.2f}x" if p.get("lp_em") else "",
-                f"{eq:,.0f}"   if eq   else "",
-                f"{dist:,.0f}" if dist else "",
-                f"{(rec.get('lp') or 0):.0f}%",
-                f"{prom:,.0f}" if prom else "",
-                f"{(rec.get('prom') or 0):.0f}%",
-                f"{lpR:,.0f}"  if lpR  else "",
-                f"{prR:,.0f}"  if prR  else "",
-                f"{lpL:,.0f}"  if lpL  else "",
-                f"{prL:,.0f}"  if prL  else "",
-            ])
-        # Totals row
-        p_rows.append([
-            "Totals", "", "",
-            f"{tots['eq']:,.0f}"   if tots["eq"]   else "",
-            f"{tots['dist']:,.0f}" if tots["dist"] else "",
-            "",
-            f"{tots['prom']:,.0f}" if tots["prom"] else "",
-            "",
-            f"{tots['lpR']:,.0f}"  if tots["lpR"]  else "",
-            f"{tots['prR']:,.0f}"  if tots["prR"]  else "",
-            f"{tots['lpL']:,.0f}"  if tots["lpL"]  else "",
-            f"{tots['prL']:,.0f}"  if tots["prL"]  else "",
-        ])
-        usable = pdf.w - pdf.l_margin - pdf.r_margin
-        p_widths = [usable*0.18] + [usable*0.082]*5 + [usable*0.082]*6
-        # Adjust to sum to usable
-        total_w = sum(p_widths)
-        p_widths = [w * (usable/total_w) for w in p_widths]
-        draw_table(p_hdrs, p_rows, p_widths)
-
-        # --- Yearly breakdown ---------------------------------------------
-        if years:
-            draw_section("Yearly Cashflow Breakdown")
-            n = len(years)
-            agg = {k: [0.0]*n for k in ("lpD", "prD", "lpR", "lpL", "prR", "prL")}
-            for p in projects:
-                rec = recycle.get(p.get("name",""), {"lp": 0, "prom": 0})
-                rLp, rPr = (rec.get("lp") or 0)/100.0, (rec.get("prom") or 0)/100.0
-                lpY = p.get("lp_distributions_yearly") or []
-                prY = p.get("promote_yearly") or []
-                for i in range(n):
-                    ld = lpY[i] if i < len(lpY) else 0
-                    pd = prY[i] if i < len(prY) else 0
-                    agg["lpD"][i] += ld; agg["prD"][i] += pd
-                    agg["lpR"][i] += ld*rLp;  agg["lpL"][i] += ld*(1-rLp)
-                    agg["prR"][i] += pd*rPr;  agg["prL"][i] += pd*(1-rPr)
-
-            y_hdrs = ["Year", "LP Dist", "LP Recycled", "LP Leaving",
-                      "Promote", "Prom Recycled", "Prom Leaving", "Total Rec"]
-            y_rows = []
-            tots_y = {k: 0.0 for k in agg}
-            for i, yr in enumerate(years):
-                if not (agg["lpD"][i] or agg["prD"][i]):
-                    continue
-                tot_rec = agg["lpR"][i] + agg["prR"][i]
-                y_rows.append([
-                    str(yr),
-                    f"{agg['lpD'][i]:,.0f}" if agg['lpD'][i] else "",
-                    f"{agg['lpR'][i]:,.0f}" if agg['lpR'][i] else "",
-                    f"{agg['lpL'][i]:,.0f}" if agg['lpL'][i] else "",
-                    f"{agg['prD'][i]:,.0f}" if agg['prD'][i] else "",
-                    f"{agg['prR'][i]:,.0f}" if agg['prR'][i] else "",
-                    f"{agg['prL'][i]:,.0f}" if agg['prL'][i] else "",
-                    f"{tot_rec:,.0f}"      if tot_rec      else "",
-                ])
-                for k in ("lpD","lpR","lpL","prD","prR","prL"):
-                    tots_y[k] += agg[k][i]
-            # Totals row
-            tot_rec_all = tots_y["lpR"] + tots_y["prR"]
-            y_rows.append([
-                "Total",
-                f"{tots_y['lpD']:,.0f}" if tots_y['lpD'] else "",
-                f"{tots_y['lpR']:,.0f}" if tots_y['lpR'] else "",
-                f"{tots_y['lpL']:,.0f}" if tots_y['lpL'] else "",
-                f"{tots_y['prD']:,.0f}" if tots_y['prD'] else "",
-                f"{tots_y['prR']:,.0f}" if tots_y['prR'] else "",
-                f"{tots_y['prL']:,.0f}" if tots_y['prL'] else "",
-                f"{tot_rec_all:,.0f}"   if tot_rec_all   else "",
-            ])
-            draw_table(y_hdrs, y_rows)
-
-        # --- Capital Commitments ------------------------------------------
-        if groups:
-            draw_section("Capital Commitments")
-            c_hdrs = ["Group", "MPC Commitment", "Vertical Commitment", "Total"]
-            c_rows = []
-            for g in groups:
-                mpc = g.get("mpc") or 0
-                vrt = g.get("vertical") or 0
-                c_rows.append([
-                    g.get("name",""),
-                    _fmt_money(mpc)       if mpc       else "",
-                    _fmt_money(vrt)       if vrt       else "",
-                    _fmt_money(mpc + vrt) if (mpc+vrt) else "",
-                ])
-            c_rows.append([
-                "Total",
-                _fmt_money(mpc_tot),
-                _fmt_money(vert_tot),
-                _fmt_money(mpc_tot + vert_tot),
-            ])
-            usable = pdf.w - pdf.l_margin - pdf.r_margin
-            draw_table(c_hdrs, c_rows, [usable*0.4] + [usable*0.2]*3)
 
     return pdf.output()
 
