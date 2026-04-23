@@ -2142,6 +2142,20 @@ def _gen_pdf_ember_capital(data):
     """
     from fpdf import FPDF
 
+    # ---- Brand assets ----------------------------------------------------
+    # Official Ember artwork. Two variants available:
+    #   ember_logo_white.png  = orange mark + white wordmark, tight-cropped
+    #                           (used on dark Ember-blue header bars)
+    #   ember_mark.png        = the orange mark alone (fallback)
+    # Falls back gracefully if assets are missing so the PDF still renders.
+    _STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+    _LOGO_WHITE_PATH = os.path.join(_STATIC, "ember_logo_white.png")
+    if not os.path.exists(_LOGO_WHITE_PATH):
+        _LOGO_WHITE_PATH = None
+    _MARK_PATH = os.path.join(_STATIC, "ember_mark.png")
+    if not os.path.exists(_MARK_PATH):
+        _MARK_PATH = None
+
     # ---- Brand palette ---------------------------------------------------
     BLUE      = (19, 52, 78)       # #13344E — primary
     BLUE_DK   = (13, 43, 68)       # #0D2B44
@@ -2263,27 +2277,37 @@ def _gen_pdf_ember_capital(data):
             # Orange accent stripe below
             self._fill(ORANGE); self.rect(0, 22, 297, 1.2, style="F")
 
-            # EMBER wordmark — orange "bars" accent + white caps
-            # Orange mark: a tiny stack of pill bars like the logo icon
-            self._fill(ORANGE)
-            bx, by = 12, 8
-            bar_w, gap = 0.9, 0.8
-            heights = [3.5, 5.5, 4.5, 6.5, 4.0]  # subtle "equalizer" shape
-            for i, bh in enumerate(heights):
-                self.rect(bx + i*(bar_w+gap), by + (6.5-bh), bar_w, bh, style="F")
+            # Official Ember logo lockup (orange mark + white wordmark in
+            # brand display font). Falls back to mark + Helvetica wordmark
+            # if the lockup asset is missing.
+            _LOGO_OK = False
+            if _LOGO_WHITE_PATH:
+                try:
+                    # Cropped asset is ~7.78:1; h=6.5mm → w≈50.6mm
+                    self.image(_LOGO_WHITE_PATH, x=12, y=7.5, h=6.5)
+                    _LOGO_OK = True
+                except Exception:
+                    _LOGO_OK = False
 
-            # "EMBER" wordmark
-            self.set_xy(22, 6.5)
-            self.set_font("Helvetica", "B", 16)
-            self._text(WHITE)
-            try:
-                self.set_char_spacing(1.4)
-                self.cell(80, 8, "EMBER", ln=False)
-                self.set_char_spacing(0)
-            except Exception:
-                self.cell(80, 8, "E M B E R", ln=False)
-            # Tagline
-            self.set_xy(22, 14.5)
+            if not _LOGO_OK:
+                # Fallback: mark image + typed wordmark
+                if _MARK_PATH:
+                    try:
+                        self.image(_MARK_PATH, x=11, y=4, h=15)
+                    except Exception:
+                        pass
+                self.set_xy(29, 6.5)
+                self.set_font("Helvetica", "B", 16)
+                self._text(WHITE)
+                try:
+                    self.set_char_spacing(1.4)
+                    self.cell(80, 8, "EMBER", ln=False)
+                    self.set_char_spacing(0)
+                except Exception:
+                    self.cell(80, 8, "E M B E R", ln=False)
+
+            # Tagline under the lockup
+            self.set_xy(12, 15.5)
             self.set_font("Helvetica", "", 6.5)
             self._text(BLUE_SOFT)
             try:
@@ -2315,24 +2339,35 @@ def _gen_pdf_ember_capital(data):
             self._fill(BLUE); self.rect(0, 0, 297, 13, style="F")
             self._fill(ORANGE); self.rect(0, 13, 297, 0.9, style="F")
 
-            # orange accent mark (mini bars)
-            self._fill(ORANGE)
-            bx, by = 12, 5
-            bar_w, gap = 0.65, 0.55
-            heights = [2.4, 3.8, 3.0, 4.4, 2.7]
-            for i, bh in enumerate(heights):
-                self.rect(bx + i*(bar_w+gap), by + (4.6-bh), bar_w, bh, style="F")
+            # Official Ember logo lockup (orange mark + white wordmark).
+            # h=5mm × 7.78 ratio ≈ 39mm wide — compact slim-header scale.
+            _LOGO_OK = False
+            if _LOGO_WHITE_PATH:
+                try:
+                    self.image(_LOGO_WHITE_PATH, x=12, y=4, h=5)
+                    _LOGO_OK = True
+                except Exception:
+                    _LOGO_OK = False
 
-            self.set_xy(19, 4)
-            self.set_font("Helvetica", "B", 10)
-            self._text(WHITE)
-            try:
-                self.set_char_spacing(1.0)
-                self.cell(80, 5, "EMBER", ln=False)
-                self.set_char_spacing(0)
-            except Exception:
-                self.cell(80, 5, "EMBER", ln=False)
-            self.set_xy(38, 4)
+            if not _LOGO_OK:
+                # Fallback path
+                if _MARK_PATH:
+                    try:
+                        self.image(_MARK_PATH, x=11, y=1.8, h=9.5)
+                    except Exception:
+                        pass
+                self.set_xy(23, 4)
+                self.set_font("Helvetica", "B", 10)
+                self._text(WHITE)
+                try:
+                    self.set_char_spacing(1.0)
+                    self.cell(80, 5, "EMBER", ln=False)
+                    self.set_char_spacing(0)
+                except Exception:
+                    self.cell(80, 5, "EMBER", ln=False)
+
+            # Executive report tag to the right of the lockup
+            self.set_xy(54, 4.3)
             self.set_font("Helvetica", "", 8)
             self._text(BLUE_SOFT)
             self.cell(100, 5, "- EXECUTIVE REPORT", ln=False)
@@ -2628,9 +2663,29 @@ def _gen_pdf_ember_capital(data):
     y += 7 + 4
 
     # --- Annual Capital Recycling visual --------------------------------
+    # Footer bar begins at y=199; leave ~5mm safety margin above it.
+    FOOTER_TOP = 199
+    CHART_BOTTOM = FOOTER_TOP - 5  # 194
     if years and any(agg["lpR"][i] + agg["prR"][i] for i in range(n_yr)):
         pdf.section_heading(12, y, "Capital Flow", "Annual Capital Recycling")
-        y += 18
+        y += 15
+
+        # Summary line — placed above the chart so it can never collide
+        # with the page footer regardless of how many years we render.
+        total_recycled_all = sum(agg["lpR"]) + sum(agg["prR"])
+        pdf.set_xy(12, y)
+        pdf.set_font("Helvetica", "B", 8)
+        pdf.set_text_color(*ORANGE_DK)
+        try: pdf.set_char_spacing(0.7)
+        except Exception: pass
+        pdf.cell(0, 4,
+                 f"PORTFOLIO RECYCLING   {fmt_money_k(total_recycled_all)}   "
+                 f"LP {fmt_money_k(sum(agg['lpR']))}   +   "
+                 f"PROMOTE {fmt_money_k(sum(agg['prR']))}",
+                 ln=False)
+        try: pdf.set_char_spacing(0)
+        except Exception: pass
+        y += 6
 
         # Legend
         pdf.set_xy(12, y)
@@ -2648,7 +2703,7 @@ def _gen_pdf_ember_capital(data):
         pdf.rect(83, y+1, 3, 3, style="F")
         pdf.set_xy(87.5, y)
         pdf.cell(34, 5, "Capital Leaving", ln=False)
-        y += 8
+        y += 7
 
         # Compute scale
         year_totals = [agg["lpD"][i] + agg["prD"][i] for i in range(n_yr)]
@@ -2659,25 +2714,29 @@ def _gen_pdf_ember_capital(data):
                             if agg["lpD"][i] or agg["prD"][i]]
             # Cap at 8 years for space
             active_years = active_years[:8]
+            n_rows = len(active_years)
+            # Adaptive row height: fill available space without overflow
+            avail = CHART_BOTTOM - y
+            if n_rows > 0:
+                row_h = max(5.5, min(8.0, avail / n_rows))
+            else:
+                row_h = 8.0
             # Bar area:
             label_w = 18
             bar_x = 30
             bar_right = 297 - 12 - 72  # leave room for right-side numbers
             bar_w_max = bar_right - bar_x
             numbers_x = bar_right + 4
-            row_h = 8
-            total_recycled = 0.0
 
             for i, yr in active_years:
                 total_yr = agg["lpD"][i] + agg["prD"][i]
                 lpR = agg["lpR"][i]; prR = agg["prR"][i]
                 lpL = agg["lpL"][i]; prL = agg["prL"][i]
                 rec_total = lpR + prR
-                total_recycled += rec_total
                 pct = (rec_total / total_yr * 100) if total_yr else 0
 
                 # Year label
-                pdf.set_xy(12, y+1.5)
+                pdf.set_xy(12, y+1.2)
                 pdf.set_font("Helvetica", "B", 9)
                 pdf.set_text_color(*BLUE)
                 pdf.cell(label_w, 4, str(yr), ln=False)
@@ -2687,8 +2746,8 @@ def _gen_pdf_ember_capital(data):
                 w_lpR = lpR * scale
                 w_prR = prR * scale
                 w_leav = (lpL + prL) * scale
-                bar_y = y + 1.2
-                bar_h = 4.5
+                bar_y = y + 1.0
+                bar_h = min(4.5, row_h - 2.0)
                 # Background track
                 pdf.set_fill_color(*G100)
                 pdf.rect(bar_x, bar_y, bar_w_max, bar_h, style="F")
@@ -2707,37 +2766,24 @@ def _gen_pdf_ember_capital(data):
                     pdf.rect(cx, bar_y, w_leav, bar_h, style="F")
 
                 # Right-side totals
-                pdf.set_xy(numbers_x, y+0.5)
+                pdf.set_xy(numbers_x, y+0.2)
                 pdf.set_font("Helvetica", "B", 8.5)
                 pdf.set_text_color(*BLUE)
                 pdf.cell(28, 4, fmt_money_k(rec_total), ln=False, align="R")
-                pdf.set_xy(numbers_x+30, y+0.5)
+                pdf.set_xy(numbers_x+30, y+0.2)
                 pdf.set_font("Helvetica", "", 7.5)
                 pdf.set_text_color(*G700)
                 pdf.cell(28, 4, f"{pct:.0f}% recycled", ln=False, align="L")
-                # Second line: raw distribution total
-                pdf.set_xy(numbers_x, y+4.5)
-                pdf.set_font("Helvetica", "", 7)
-                pdf.set_text_color(*G500)
-                pdf.cell(58, 3.5,
-                         f"Total distributions {fmt_money_k(total_yr)}",
-                         ln=False)
+                # Second line: raw distribution total — only show if we
+                # have enough row height to fit it comfortably.
+                if row_h >= 7.0:
+                    pdf.set_xy(numbers_x, y+4.2)
+                    pdf.set_font("Helvetica", "", 7)
+                    pdf.set_text_color(*G500)
+                    pdf.cell(58, 3.5,
+                             f"Total distributions {fmt_money_k(total_yr)}",
+                             ln=False)
                 y += row_h
-
-            # Summary line below
-            y += 2
-            pdf.set_xy(12, y)
-            pdf.set_font("Helvetica", "B", 8)
-            pdf.set_text_color(*ORANGE_DK)
-            try: pdf.set_char_spacing(0.7)
-            except Exception: pass
-            pdf.cell(0, 4,
-                     f"PORTFOLIO RECYCLING   {fmt_money_k(total_recycled)}   "
-                     f"LP {fmt_money_k(sum(agg['lpR']))}   +   "
-                     f"PROMOTE {fmt_money_k(sum(agg['prR']))}",
-                     ln=False)
-            try: pdf.set_char_spacing(0)
-            except Exception: pass
 
     pdf.footer_bar(2, 2)
 
