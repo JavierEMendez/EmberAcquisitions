@@ -2789,83 +2789,334 @@ def _gen_pdf_ember_capital(data):
 
 
 def _gen_pdf_report(report_type, data):
-    """Generate a simple PDF for the given report type. Returns bytes."""
+    """Branded executive PDF for returns / loans / operations reports.
+
+    Matches the Ember Capital dashboard PDF styling: official Ember logo
+    lockup on an Ember-blue header bar with orange accent stripe,
+    tracked-caps eyebrows, orange section-underline rules, and a
+    confidential footer bar with page numbering.
+
+    Palette (Ember 1.25.24 logo guide):
+        Ember Blue #13344E, Ember Orange #F25929, warm paper #FAF7F2.
+    """
     from fpdf import FPDF
 
-    # Ember Capital uses a fully branded 2-page executive layout.
+    # Ember Capital uses its own bespoke 2-page layout.
     if report_type == "ember_capital":
         return _gen_pdf_ember_capital(data)
 
+    # ---- Brand assets (shared with Ember Capital PDF) ---------------------
+    _STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+    _LOGO_WHITE_PATH = os.path.join(_STATIC, "ember_logo_white.png")
+    if not os.path.exists(_LOGO_WHITE_PATH):
+        _LOGO_WHITE_PATH = None
+    _MARK_PATH = os.path.join(_STATIC, "ember_mark.png")
+    if not os.path.exists(_MARK_PATH):
+        _MARK_PATH = None
+
+    # ---- Brand palette ---------------------------------------------------
+    BLUE      = (19, 52, 78)       # #13344E — primary
+    BLUE_DK   = (13, 43, 68)       # #0D2B44
+    ORANGE    = (242, 89, 41)      # #F25929 — accent
+    PAPER     = (250, 247, 242)    # #FAF7F2 — warm canvas
+    ROW_ALT   = (243, 238, 229)    # slightly deeper paper tint for alt rows
+    G700 = (88, 89, 91); G500 = (147, 149, 152); G300 = (209, 211, 212)
+    WHITE = (255, 255, 255)
+    BLUE_SOFT = (210, 220, 230)
+
+    titles = {
+        "returns":    "Active Project Returns",
+        "loans":      "Loan Capacities & Debt Schedules",
+        "operations": "Ember Operating Revenues",
+    }
+    eyebrows = {
+        "returns":    "Ember Capital",
+        "loans":      "Ember Capital",
+        "operations": "Ember Operations",
+    }
+    right_tags = {
+        "returns":    "PROJECT RETURNS",
+        "loans":      "LOAN CAPACITIES",
+        "operations": "OPERATING REVENUES",
+    }
+    page_title  = titles.get(report_type, "Ember Report")
+    eyebrow_txt = eyebrows.get(report_type, "Ember")
+    right_tag   = right_tags.get(report_type, "EXECUTIVE REPORT")
+    today_label = datetime.datetime.now().strftime("%B %Y")
+
+    # ---- Text safety: Helvetica is Latin-1 only ---------------------------
+    _UNI_MAP = {"\u2014": "-", "\u2013": "-", "\u2018": "'", "\u2019": "'",
+                "\u201C": '"', "\u201D": '"', "\u2026": "...", "\u2022": "*"}
+    def safe(s):
+        if s is None: return ""
+        t = str(s)
+        for k, v in _UNI_MAP.items():
+            t = t.replace(k, v)
+        try:
+            t.encode("latin-1"); return t
+        except UnicodeEncodeError:
+            return t.encode("latin-1", "replace").decode("latin-1")
+
+    def fmt_cell(v):
+        if v is None or v == "":
+            return ""
+        if isinstance(v, bool):
+            return "Yes" if v else "No"
+        if isinstance(v, float):
+            av = abs(v)
+            if av >= 1_000_000:   return f"{v/1_000_000:,.2f}M"
+            if av >= 1_000:       return f"{v:,.0f}"
+            if 0 < av < 1:        return f"{v:.1%}"
+            return f"{v:,.2f}"
+        if isinstance(v, int):
+            return f"{v:,}"
+        return safe(str(v))
+
     class PDF(FPDF):
+        def __init__(self):
+            super().__init__(orientation="L", unit="mm", format="A4")
+            self.set_auto_page_break(auto=True, margin=20)
+            self.set_margins(12, 12, 12)
+            self.alias_nb_pages("{nb}")
+
+        # ---- palette helpers
+        def _fill(self, rgb): self.set_fill_color(*rgb)
+        def _draw(self, rgb): self.set_draw_color(*rgb)
+        def _text(self, rgb): self.set_text_color(*rgb)
+
+        # ---- standard header/footer (drive auto page-break)
         def header(self):
-            self.set_font("Helvetica", "B", 14)
-            titles = {
-                "returns": "Active Project Returns",
-                "loans": "Loan Capacities & Debt Schedules",
-                "operations": "Ember Operating Revenues",
-            }
-            self.set_text_color(26, 58, 92)
-            self.cell(0, 10, titles.get(report_type, "Ember Report"), ln=True)
-            self.set_font("Helvetica", "", 8)
-            self.set_text_color(120, 120, 120)
-            self.cell(0, 5, f"Generated {datetime.datetime.now().strftime('%B %d, %Y')}", ln=True)
-            self.ln(3)
+            if self.page_no() == 1:
+                self._header_tall()
+                self.set_xy(12, 29)
+                self._section_block(eyebrow_txt, page_title)
+                self.set_y(self.get_y() + 2)
+            else:
+                self._header_thin()
+                self.set_xy(12, 18)
 
         def footer(self):
-            self.set_y(-15)
-            self.set_font("Helvetica", "", 7)
-            self.set_text_color(150, 150, 150)
-            self.cell(0, 10, f"Page {self.page_no()}", align="C")
+            self._footer_bar()
 
-    pdf = PDF(orientation="L", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=True, margin=15)
+        # ---- branded header (page 1, 22mm)
+        def _header_tall(self):
+            self._fill(BLUE);    self.rect(0, 0, 297, 22, style="F")
+            self._fill(BLUE_DK); self.rect(0, 18, 297, 4, style="F")
+            self._fill(ORANGE);  self.rect(0, 22, 297, 1.2, style="F")
+
+            _LOGO_OK = False
+            if _LOGO_WHITE_PATH:
+                try:
+                    self.image(_LOGO_WHITE_PATH, x=12, y=7.5, h=6.5)
+                    _LOGO_OK = True
+                except Exception:
+                    _LOGO_OK = False
+            if not _LOGO_OK:
+                if _MARK_PATH:
+                    try: self.image(_MARK_PATH, x=11, y=4, h=15)
+                    except Exception: pass
+                self.set_xy(29, 6.5)
+                self.set_font("Helvetica", "B", 16); self._text(WHITE)
+                try:
+                    self.set_char_spacing(1.4)
+                    self.cell(80, 8, "EMBER", ln=False)
+                    self.set_char_spacing(0)
+                except Exception:
+                    self.cell(80, 8, "EMBER", ln=False)
+
+            # Tagline
+            self.set_xy(12, 15.5)
+            self.set_font("Helvetica", "", 6.5); self._text(BLUE_SOFT)
+            try:
+                self.set_char_spacing(0.9)
+                self.cell(80, 4, "FINANCE & ANALYTICS", ln=False)
+                self.set_char_spacing(0)
+            except Exception:
+                self.cell(80, 4, "FINANCE & ANALYTICS", ln=False)
+
+            # Right: section tag + as-of
+            self.set_xy(297-12-80, 6.5)
+            self.set_font("Helvetica", "B", 8); self._text(WHITE)
+            try:
+                self.set_char_spacing(1.2)
+                self.cell(80, 5, right_tag, ln=False, align="R")
+                self.set_char_spacing(0)
+            except Exception:
+                self.cell(80, 5, right_tag, ln=False, align="R")
+            self.set_xy(297-12-80, 13)
+            self.set_font("Helvetica", "", 7.5); self._text(BLUE_SOFT)
+            self.cell(80, 4, f"As of {today_label}", ln=False, align="R")
+
+            self._text(BLUE)
+
+        # ---- slim header (page 2+, 13mm)
+        def _header_thin(self):
+            self._fill(BLUE);   self.rect(0, 0, 297, 13, style="F")
+            self._fill(ORANGE); self.rect(0, 13, 297, 0.9, style="F")
+
+            _LOGO_OK = False
+            if _LOGO_WHITE_PATH:
+                try:
+                    self.image(_LOGO_WHITE_PATH, x=12, y=4, h=5)
+                    _LOGO_OK = True
+                except Exception:
+                    _LOGO_OK = False
+            if not _LOGO_OK:
+                if _MARK_PATH:
+                    try: self.image(_MARK_PATH, x=11, y=1.8, h=9.5)
+                    except Exception: pass
+                self.set_xy(23, 4)
+                self.set_font("Helvetica", "B", 10); self._text(WHITE)
+                self.cell(80, 5, "EMBER", ln=False)
+
+            # Report title next to lockup
+            self.set_xy(54, 4.3)
+            self.set_font("Helvetica", "", 8); self._text(BLUE_SOFT)
+            self.cell(140, 5, f"- {page_title.upper()}", ln=False)
+
+            self.set_xy(297-12-60, 4)
+            self.set_font("Helvetica", "", 7.5); self._text(BLUE_SOFT)
+            self.cell(60, 5, f"As of {today_label}", ln=False, align="R")
+
+            self._text(BLUE)
+
+        # ---- footer bar
+        def _footer_bar(self):
+            y = 199
+            self._draw(G300); self.set_line_width(0.2)
+            self.line(12, y, 297-12, y)
+            self.set_xy(12, y+2)
+            self.set_font("Helvetica", "B", 6.5); self._text(G500)
+            try:
+                self.set_char_spacing(0.9)
+                self.cell(0, 4, "EMBER CAPITAL   |   FINANCE & ANALYTICS", ln=False)
+                self.set_char_spacing(0)
+            except Exception:
+                self.cell(0, 4, "EMBER CAPITAL | FINANCE & ANALYTICS", ln=False)
+            # Page number — avoid char_spacing so {nb} alias substitutes cleanly
+            self.set_xy(297-12-40, y+2)
+            self.set_font("Helvetica", "B", 7); self._text(BLUE)
+            self.cell(40, 4, f"PAGE {self.page_no()} OF {{nb}}", ln=False, align="R")
+            self.set_xy(12, y+6)
+            self.set_font("Helvetica", "", 6.5); self._text(G500)
+            self.cell(0, 3, "Confidential - for internal Ember stakeholders only.", ln=False)
+
+        # ---- section heading block (eyebrow + title + underline)
+        def _section_block(self, eyebrow, title):
+            x = self.get_x(); y = self.get_y()
+            self.set_font("Helvetica", "B", 7); self._text(ORANGE)
+            try:
+                self.set_char_spacing(1.0)
+                self.cell(200, 4, eyebrow.upper(), ln=True)
+                self.set_char_spacing(0)
+            except Exception:
+                self.cell(200, 4, eyebrow.upper(), ln=True)
+            self.set_x(x)
+            self.set_font("Helvetica", "B", 15); self._text(BLUE)
+            self.cell(200, 8, title, ln=True)
+            # Accent rule
+            self._fill(ORANGE); self.rect(x, self.get_y()+0.5, 14, 0.7, style="F")
+            self.set_y(self.get_y() + 4)
+            self._text(BLUE)
+
+        # ---- sub-section heading (within a page): clean blue title
+        #      with a short orange mini-rule. No redundant eyebrow — the
+        #      main page heading already establishes the section.
+        def sub_section(self, title):
+            # Give breathing room and avoid landing on the footer
+            if self.get_y() > 180:
+                self.add_page()
+            self.set_y(self.get_y() + 1)
+            self.set_x(12)
+            self.set_font("Helvetica", "B", 11); self._text(BLUE)
+            self.cell(0, 6, safe(title), ln=True)
+            # Mini orange rule under the title
+            y_rule = self.get_y() + 0.2
+            self._fill(ORANGE); self.rect(12, y_rule, 10, 0.5, style="F")
+            self.set_y(y_rule + 2.5)
+
+        # ---- branded table
+        def branded_table(self, headers, rows, col_widths=None,
+                          first_align="L", header_align=None):
+            if not headers:
+                return
+            n = len(headers)
+            usable = 297 - 24  # 12mm margins both sides
+            if col_widths is None:
+                first = min(70, usable * 0.35)
+                rest = (usable - first) / max(n - 1, 1)
+                col_widths = [first] + [rest] * (n - 1)
+            total_w = sum(col_widths)
+
+            hdr_h = 6.2
+            row_h = 5.0
+
+            def draw_header_row():
+                # Top orange hairline
+                y0 = self.get_y()
+                self._fill(ORANGE); self.rect(12, y0, total_w, 0.5, style="F")
+                self.set_xy(12, y0 + 0.6)
+                self.set_font("Helvetica", "B", 7); self._text(WHITE)
+                for i, h in enumerate(headers):
+                    if header_align and i < len(header_align):
+                        align = header_align[i]
+                    else:
+                        align = first_align if i == 0 else "R"
+                    self._fill(BLUE)
+                    self.cell(col_widths[i], hdr_h, safe(str(h))[:40],
+                              border=0, fill=True, align=align)
+                self.ln(hdr_h)
+
+            draw_header_row()
+
+            self.set_font("Helvetica", "", 7.2)
+            for ri, row in enumerate(rows):
+                # manual page break — leave room for footer (20mm margin)
+                if self.get_y() + row_h > self.h - 20:
+                    self.add_page()
+                    draw_header_row()
+                    self.set_font("Helvetica", "", 7.2)
+                fill_rgb = ROW_ALT if ri % 2 == 0 else PAPER
+                self._fill(fill_rgb); self._text(G700)
+                self.set_x(12)
+                for i, val in enumerate(row[:n]):
+                    align = first_align if i == 0 else "R"
+                    self.cell(col_widths[i], row_h, fmt_cell(val),
+                              border=0, fill=True, align=align)
+                self.ln(row_h)
+
+            # Bottom hairline
+            self._fill(ORANGE); self.rect(12, self.get_y()+0.5, total_w, 0.4, style="F")
+            self.set_y(self.get_y() + 4)
+
+        # ---- KPI card (for operations header)
+        def kpi_card(self, x, y, w, h, label, value, caption="", accent=ORANGE):
+            self._fill(WHITE); self._draw(G300); self.set_line_width(0.3)
+            self.rect(x, y, w, h, style="DF")
+            self._fill(accent); self.rect(x, y, 1.8, h, style="F")
+            self.set_xy(x+6, y+4.5)
+            self.set_font("Helvetica", "B", 6.5); self._text(accent)
+            try:
+                self.set_char_spacing(0.9)
+                self.cell(w-8, 3.5, label.upper(), ln=False)
+                self.set_char_spacing(0)
+            except Exception:
+                self.cell(w-8, 3.5, label.upper(), ln=False)
+            self.set_xy(x+6, y+9)
+            self.set_font("Helvetica", "B", 16); self._text(BLUE)
+            self.cell(w-8, 9, str(value), ln=False)
+            if caption:
+                self.set_xy(x+6, y+h-5)
+                self.set_font("Helvetica", "", 6.8); self._text(G500)
+                self.cell(w-8, 3.5, caption, ln=False)
+
+    pdf = PDF()
     pdf.add_page()
 
-    def draw_section(title):
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.set_text_color(26, 58, 92)
-        pdf.cell(0, 7, title, ln=True)
-        pdf.set_text_color(30, 30, 30)
-
+    # Keep legacy helper names so the existing per-report logic below still works
+    def draw_section(title): pdf.sub_section(title)
     def draw_table(headers, rows, col_widths=None):
-        if not headers:
-            return
-        n = len(headers)
-        usable = pdf.w - pdf.l_margin - pdf.r_margin
-        if col_widths is None:
-            first = min(70, usable * 0.35)
-            rest = (usable - first) / max(n - 1, 1)
-            col_widths = [first] + [rest] * (n - 1)
-
-        # Header row
-        pdf.set_font("Helvetica", "B", 7)
-        pdf.set_fill_color(30, 37, 53)
-        pdf.set_text_color(139, 149, 168)
-        for i, h in enumerate(headers):
-            pdf.cell(col_widths[i], 5, str(h)[:30], border=0, fill=True,
-                     align="L" if i == 0 else "R")
-        pdf.ln()
-
-        # Data rows
-        pdf.set_font("Helvetica", "", 7)
-        for ri, row_data in enumerate(rows):
-            if pdf.get_y() > pdf.h - 25:
-                pdf.add_page()
-            fill = ri % 2 == 0
-            pdf.set_fill_color(247, 248, 250) if fill else pdf.set_fill_color(255, 255, 255)
-            pdf.set_text_color(30, 30, 30)
-            for i, val in enumerate(row_data[:n]):
-                txt = ""
-                if isinstance(val, float):
-                    txt = f"{val:,.0f}" if abs(val) >= 1 else f"{val:.1%}"
-                elif isinstance(val, int):
-                    txt = f"{val:,}"
-                elif val is not None:
-                    txt = str(val)[:30]
-                pdf.cell(col_widths[i], 4.5, txt, border=0, fill=True,
-                         align="L" if i == 0 else "R")
-            pdf.ln()
-        pdf.ln(3)
+        pdf.branded_table(headers, rows, col_widths=col_widths)
 
     if report_type == "returns":
         summary_cols = ["Project", "LP IRR", "Equity Multiple", "Total LP Profit", "Promote"]
@@ -2917,15 +3168,36 @@ def _gen_pdf_report(report_type, data):
             draw_table(hdrs, rows_data)
 
     elif report_type == "operations":
-        for kpi in data.get("kpis", []):
-            pdf.set_font("Helvetica", "", 9)
-            pdf.set_text_color(30, 30, 30)
-            pdf.cell(80, 5, kpi.get("label", ""), ln=False)
-            pdf.set_font("Helvetica", "B", 9)
-            val = kpi.get("value", "")
-            txt = f"{val:,}" if isinstance(val, (int, float)) else str(val)
-            pdf.cell(0, 5, txt, ln=True)
-        pdf.ln(3)
+        kpis = data.get("kpis", []) or []
+        if kpis:
+            def _fmt_kpi(v):
+                if isinstance(v, (int, float)):
+                    av = abs(v)
+                    if av >= 1_000_000: return f"${v/1_000_000:,.1f}M"
+                    if av >= 1_000:     return f"${v/1000:,.0f}K"
+                    return f"${v:,.0f}"
+                return safe(str(v))
+            # Up to 4 KPIs per row, card grid
+            cards = kpis[:8]
+            per_row = 4 if len(cards) >= 4 else len(cards)
+            gap = 4
+            usable = 297 - 24
+            cw = (usable - gap*(per_row-1)) / per_row if per_row else usable
+            ch = 26
+            y0 = pdf.get_y()
+            for i, kpi in enumerate(cards):
+                col = i % per_row
+                row = i // per_row
+                x = 12 + col*(cw+gap)
+                y = y0 + row*(ch+gap)
+                accent = ORANGE if (i % 2 == 0) else BLUE
+                pdf.kpi_card(x, y, cw, ch,
+                             kpi.get("label", ""),
+                             _fmt_kpi(kpi.get("value", "")),
+                             "", accent)
+            rows_used = (len(cards) + per_row - 1)//per_row
+            pdf.set_y(y0 + rows_used*(ch+gap) + 2)
+
         yr = data.get("yearly_rollup", {})
         if yr.get("years"):
             draw_section("Annual Revenue Forecast")
