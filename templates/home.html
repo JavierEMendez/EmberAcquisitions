@@ -395,15 +395,15 @@
     <div class="greet-eyebrow"><span id="greeting-text">Welcome back</span></div>
     <h1 class="hero-title">Welcome back, {{ (display_name or username or 'team').split()[0] }}.</h1>
     <p class="hero-sub">
-      {% if reports_updated_today %}
-        {{ {1:'One', 2:'Two', 3:'Three', 4:'Four'}.get(reports_updated_today, reports_updated_today) }} report{{ 's' if reports_updated_today != 1 else '' }} updated overnight
-      {% else %}
-        Reports stable
-      {% endif %}
+      {{ lp_equity_label }} LP equity
+      <span class="sep">·</span>
+      {{ portfolio_irr_label }} portfolio IRR
       <span class="sep">·</span>
       {{ active_project_count or '—' }} active project{{ 's' if active_project_count != 1 else '' }}
+      {% if reports_updated_today %}
       <span class="sep">·</span>
-      {{ lp_equity_label }} LP equity
+      {{ {1:'one', 2:'two', 3:'three', 4:'four', 5:'five', 6:'six'}.get(reports_updated_today, reports_updated_today) }} report{{ 's' if reports_updated_today != 1 else '' }} updated overnight
+      {% endif %}
     </p>
   </div>
 
@@ -414,9 +414,13 @@
   </div>
 </section>
 
-{# ───────── Featured Application ───────── #}
+{# ───────── Applications ───────── #}
 {% if page_access.get('mpc_underwriting', true) %}
-<section class="featured">
+<section class="section">
+  <div class="section-head">
+    <div class="section-eyebrow">Applications</div>
+    <div class="section-counter">01 / 01</div>
+  </div>
   <a class="featured-card" href="/">
     <div class="featured-icon">
       {{ motion.bars(width=28, height=14) }}

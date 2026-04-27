@@ -202,20 +202,27 @@ def logout():
 def _home_portfolio_summary():
     """Compute the at-a-glance portfolio numbers shown on the home hero.
 
+    The total equity figure mirrors the Ember Capital page's "Totals" row
+    so the home and Ember Capital pages always agree:
+        total LP equity = sum across projects of |Total LP Contributions|
+    Values in the returns report are stored in $K (thousands of dollars,
+    matching the Excel pro-forma convention), so we multiply by 1000 to
+    get raw dollars before formatting.
+
     Returns a dict with:
-      - lp_equity_outstanding (float, dollars): sum across active projects of
-        max(0, |LP contributions| - LP distributions). The capital still in
-        the ground.
-      - lp_equity_label (str): human-readable formatting, e.g. '$1.2B'.
-      - active_project_count (int): number of projects with at least one
-        non-zero metric in the latest returns report.
-      - report_dates (dict): per-report-type last-updated date strings.
-      - reports_updated_today (int): how many report types were updated in
-        the last 24 hours (used in the 'three reports updated overnight' line).
+      - lp_equity_dollars (float)       — total LP equity in raw dollars
+      - lp_equity_label (str)           — '$94.4M', '$1.2B', or '—'
+      - portfolio_irr (float|None)      — LP-contribution-weighted IRR
+      - portfolio_irr_label (str)       — '22%', or '—'
+      - active_project_count (int)      — projects with any non-zero metric
+      - report_dates (dict)             — last-updated date string per type
+      - reports_updated_today (int)     — types updated in last ~36h
     """
     out = {
-        "lp_equity_outstanding": 0.0,
+        "lp_equity_dollars": 0.0,
         "lp_equity_label": "—",
+        "portfolio_irr": None,
+        "portfolio_irr_label": "—",
         "active_project_count": 0,
         "report_dates": {},
         "reports_updated_today": 0,
@@ -237,8 +244,8 @@ def _home_portfolio_summary():
             1 for r in rows if r["last_updated"] and r["last_updated"].replace(tzinfo=None) >= cutoff
         )
 
-        # Pull the latest returns report and aggregate LP contributions vs.
-        # distributions per project.
+        # Pull the latest returns report — same source the Ember Capital page
+        # reads from.
         cur.execute(
             "SELECT data FROM reports WHERE report_type = 'returns' "
             "ORDER BY uploaded_at DESC LIMIT 1"
@@ -248,32 +255,47 @@ def _home_portfolio_summary():
         if row and row["data"]:
             data = row["data"]
             projects = data.get("projects") or []
-            total_outstanding = 0.0
+            total_equity_k = 0.0      # in $K, matches Ember Capital totals row
             active = 0
+            irr_weighted = 0.0
+            irr_weight   = 0.0
             for p in projects:
                 by_label = {m.get("label"): m for m in (p.get("metrics") or [])}
                 def _f(label):
                     v = (by_label.get(label) or {}).get("total")
                     try: return float(v) if v is not None else 0.0
                     except (TypeError, ValueError): return 0.0
-                contrib = abs(_f("Total LP Contributions"))
-                distrib = _f("Total LP Distributions")
-                if contrib > 0 or distrib > 0:
+                contrib_abs = abs(_f("Total LP Contributions"))
+                distrib     = _f("Total LP Distributions")
+                irr         = _f("LP IRR")
+                if contrib_abs > 0 or distrib > 0:
                     active += 1
-                outstanding = max(0.0, contrib - distrib)
-                total_outstanding += outstanding
-            out["lp_equity_outstanding"] = total_outstanding
-            out["active_project_count"] = active
+                total_equity_k += contrib_abs
+                # LP-contribution-weighted IRR — bigger checks weigh more.
+                if irr and contrib_abs > 0:
+                    irr_weighted += irr * contrib_abs
+                    irr_weight   += contrib_abs
 
-            v = total_outstanding
-            if v >= 1e9:
-                out["lp_equity_label"] = f"${v/1e9:.2f}B".rstrip("0").rstrip(".") + ("B" if not f"${v/1e9:.2f}B".rstrip("0").rstrip(".").endswith("B") else "")
-                # Cleaner: keep one decimal
-                out["lp_equity_label"] = f"${v/1e9:.1f}B"
-            elif v >= 1e6:
-                out["lp_equity_label"] = f"${v/1e6:.0f}M"
-            elif v > 0:
-                out["lp_equity_label"] = f"${v:,.0f}"
+            out["active_project_count"] = active
+            dollars = total_equity_k * 1000.0   # $K -> $
+            out["lp_equity_dollars"] = dollars
+            # Round DOWN (truncate) to one decimal — finance convention so the
+            # headline never overstates capital. $94,454,000 -> "$94.4M",
+            # not "$94.5M".
+            def _trunc1(x): return int(x * 10) / 10.0
+            if dollars >= 1e9:
+                out["lp_equity_label"] = f"${_trunc1(dollars/1e9):.1f}B"
+            elif dollars >= 1e6:
+                out["lp_equity_label"] = f"${_trunc1(dollars/1e6):.1f}M"
+            elif dollars >= 1e3:
+                out["lp_equity_label"] = f"${dollars/1e3:.0f}K"
+            elif dollars > 0:
+                out["lp_equity_label"] = f"${dollars:,.0f}"
+
+            if irr_weight > 0:
+                irr_blended = irr_weighted / irr_weight
+                out["portfolio_irr"] = irr_blended
+                out["portfolio_irr_label"] = f"{irr_blended*100:.0f}%"
     except Exception:
         # Home page must never blow up on a dashboard summary glitch.
         pass
@@ -294,6 +316,7 @@ def home():
         page_access=pa,
         report_dates=summary["report_dates"],
         lp_equity_label=summary["lp_equity_label"],
+        portfolio_irr_label=summary["portfolio_irr_label"],
         active_project_count=summary["active_project_count"],
         reports_updated_today=summary["reports_updated_today"])
 
