@@ -1,0 +1,250 @@
+/* ============================================================
+   Ember Acquisitions — theme tokens + brand motion + loader
+   ============================================================
+   Paper (light) is the default. Add data-theme="dark" on <html>
+   for navy mode. Both blocks expose the canonical --eax-* tokens
+   AND keep the legacy --bg / --surface / --card / --border /
+   --text / --accent / --teal aliases pointing at the same values
+   so existing var(--bg) calls in templates flip cleanly.
+   ============================================================ */
+
+/* ---------- Light · Warm Paper (default) ---------- */
+:root,
+[data-theme="light"] {
+  /* Canonical Ember tokens */
+  --eax-bg:           #F8F4EE;
+  --eax-bg-2:         #F1EBE1;
+  --eax-surface:      #FFFFFF;
+  --eax-ink:          #08233B;
+  --eax-ink-2:        #13344E;
+  --eax-muted:        #5B6B7B;
+  --eax-subtle:       #8D9AA7;
+  --eax-line:         rgba(8, 35, 59, 0.10);
+  --eax-line-2:       rgba(8, 35, 59, 0.18);
+  --eax-accent:       #F25929;
+  --eax-accent-soft:  rgba(242, 89, 41, 0.10);
+  --eax-accent-fg:    #FFFFFF;             /* readable text on accent fill */
+  --eax-good:         #1F7A4D;
+  --eax-bad:          #C0311A;
+  --eax-shadow-card:  0 1px 0 rgba(8,35,59,0.04), 0 8px 28px rgba(8,35,59,0.06);
+
+  /* Legacy aliases — keep all existing var(--bg) etc. references working */
+  --bg:           var(--eax-bg);
+  --bg-2:         var(--eax-bg-2);
+  --surface:      var(--eax-surface);
+  --card:         var(--eax-surface);
+  --border:       var(--eax-line);
+  --border-light: var(--eax-line-2);
+  --text:         var(--eax-ink);
+  --text-strong:  var(--eax-ink-2);
+  --text-muted:   var(--eax-muted);
+  --text-dim:     var(--eax-subtle);
+  --accent:       var(--eax-accent);
+  --accent-soft:  var(--eax-accent-soft);
+  --accent-fg:    var(--eax-accent-fg);
+  --teal:         var(--eax-good);
+  --good:         var(--eax-good);
+  --bad:          var(--eax-bad);
+}
+
+/* ---------- Dark · Deep Navy ---------- */
+[data-theme="dark"] {
+  --eax-bg:           #08233B;
+  --eax-bg-2:         #0D2B44;
+  --eax-surface:      #11324B;
+  --eax-ink:          #F4ECDD;
+  --eax-ink-2:        #FFFFFF;
+  --eax-muted:        rgba(244, 236, 221, 0.66);
+  --eax-subtle:       rgba(244, 236, 221, 0.42);
+  --eax-line:         rgba(244, 236, 221, 0.10);
+  --eax-line-2:       rgba(244, 236, 221, 0.20);
+  --eax-accent:       #F57346;
+  --eax-accent-soft:  rgba(242, 89, 41, 0.14);
+  --eax-accent-fg:    #FFFFFF;             /* readable text on accent fill */
+  --eax-good:         #6BC793;
+  --eax-bad:          #F09686;
+  --eax-shadow-card:  0 1px 0 rgba(0,0,0,0.18), 0 14px 40px rgba(0,0,0,0.30);
+
+  /* Legacy aliases re-resolved against the dark token block */
+  --bg:           var(--eax-bg);
+  --bg-2:         var(--eax-bg-2);
+  --surface:      var(--eax-surface);
+  --card:         var(--eax-surface);
+  --border:       var(--eax-line);
+  --border-light: var(--eax-line-2);
+  --text:         var(--eax-ink);
+  --text-strong:  var(--eax-ink-2);
+  --text-muted:   var(--eax-muted);
+  --text-dim:     var(--eax-subtle);
+  --accent:       var(--eax-accent);
+  --accent-soft:  var(--eax-accent-soft);
+  --accent-fg:    var(--eax-accent-fg);
+  --teal:         var(--eax-good);
+  --good:         var(--eax-good);
+  --bad:          var(--eax-bad);
+}
+
+/* ============================================================
+   Body shell — theme-aware defaults so a fresh <body> picks up
+   the active palette without each template repeating itself.
+   ============================================================ */
+body {
+  background: var(--eax-bg);
+  color: var(--eax-ink);
+}
+
+/* ============================================================
+   Brand motion · Ember "Wave"
+   Single keyframe used by Loader, LoaderPanel, and animated bars.
+   ============================================================ */
+@keyframes eax-wave {
+  0%, 100% { transform: scaleY(0.35); }
+  50%      { transform: scaleY(3.2);  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loader-wave rect,
+  [data-eax-bars-animated] rect {
+    animation: none !important;
+    opacity: 0.45;
+  }
+  .loader-wave rect:nth-child(2n),
+  [data-eax-bars-animated] rect:nth-child(2n) {
+    opacity: 0.75;
+  }
+}
+
+/* ============================================================
+   Loader — Ember "Wave" loading indicator.
+   Drop in <span class="ember-loader ember-loader--md">…</span>
+   Sizes: sm (28x16, button-fit), md (56x28, inline/card),
+          lg (96x48, page-level / splash).
+   Pair with .ember-loader__label for an inline status string.
+   ============================================================ */
+.ember-loader {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--eax-accent);
+  vertical-align: middle;
+}
+.ember-loader .loader-wave rect {
+  transform-box: fill-box;
+  transform-origin: center;
+  fill: currentColor;
+  will-change: transform;
+  animation: eax-wave 1.2s ease-in-out infinite;
+}
+.ember-loader__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--eax-muted);
+}
+
+/* The 9 bars use a left→right wave with 0.09s stagger. */
+.ember-loader .loader-wave rect:nth-child(1) { animation-delay: 0.00s; }
+.ember-loader .loader-wave rect:nth-child(2) { animation-delay: 0.09s; }
+.ember-loader .loader-wave rect:nth-child(3) { animation-delay: 0.18s; }
+.ember-loader .loader-wave rect:nth-child(4) { animation-delay: 0.27s; }
+.ember-loader .loader-wave rect:nth-child(5) { animation-delay: 0.36s; }
+.ember-loader .loader-wave rect:nth-child(6) { animation-delay: 0.45s; }
+.ember-loader .loader-wave rect:nth-child(7) { animation-delay: 0.54s; }
+.ember-loader .loader-wave rect:nth-child(8) { animation-delay: 0.63s; }
+.ember-loader .loader-wave rect:nth-child(9) { animation-delay: 0.72s; }
+
+/* Sizes. Each variant sets the SVG dimensions; bar geometry is
+   already laid out in the SVG markup itself. */
+.ember-loader--sm .loader-wave { width: 28px;  height: 16px; }
+.ember-loader--md .loader-wave { width: 56px;  height: 28px; }
+.ember-loader--lg .loader-wave { width: 96px;  height: 48px; }
+
+/* Full-card placeholder. Use for skeleton replacements inside
+   a dashboard card while data is loading. */
+.ember-loader-panel {
+  width: 100%;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: var(--eax-surface);
+  color: var(--eax-accent);
+  border: 1px solid var(--eax-line);
+  border-radius: 14px;
+}
+.ember-loader-panel__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--eax-muted);
+}
+
+/* ============================================================
+   Animated brand-mark bars (the 17-bar Ember wordmark glyph).
+   Used on splash screens / hero panels. Apply class
+   "ember-bars" to the SVG. Add data-eax-bars-animated for the
+   wave; otherwise the SVG renders static.
+   ============================================================ */
+.ember-bars rect {
+  fill: currentColor;
+}
+.ember-bars[data-eax-bars-animated] rect {
+  transform-box: fill-box;
+  transform-origin: center;
+  will-change: transform;
+  animation: eax-wave 1.4s ease-in-out infinite;
+}
+.ember-bars[data-eax-bars-animated] rect:nth-child(1)  { animation-delay: 0.00s; }
+.ember-bars[data-eax-bars-animated] rect:nth-child(2)  { animation-delay: 0.06s; }
+.ember-bars[data-eax-bars-animated] rect:nth-child(3)  { animation-delay: 0.12s; }
+.ember-bars[data-eax-bars-animated] rect:nth-child(4)  { animation-delay: 0.18s; }
+.ember-bars[data-eax-bars-animated] rect:nth-child(5)  { animation-delay: 0.24s; }
+.ember-bars[data-eax-bars-animated] rect:nth-child(6)  { animation-delay: 0.30s; }
+.ember-bars[data-eax-bars-animated] rect:nth-child(7)  { animation-delay: 0.36s; }
+.ember-bars[data-eax-bars-animated] rect:nth-child(8)  { animation-delay: 0.42s; }
+.ember-bars[data-eax-bars-animated] rect:nth-child(9)  { animation-delay: 0.48s; }
+.ember-bars[data-eax-bars-animated] rect:nth-child(10) { animation-delay: 0.54s; }
+.ember-bars[data-eax-bars-animated] rect:nth-child(11) { animation-delay: 0.60s; }
+.ember-bars[data-eax-bars-animated] rect:nth-child(12) { animation-delay: 0.66s; }
+.ember-bars[data-eax-bars-animated] rect:nth-child(13) { animation-delay: 0.72s; }
+.ember-bars[data-eax-bars-animated] rect:nth-child(14) { animation-delay: 0.78s; }
+.ember-bars[data-eax-bars-animated] rect:nth-child(15) { animation-delay: 0.84s; }
+.ember-bars[data-eax-bars-animated] rect:nth-child(16) { animation-delay: 0.90s; }
+.ember-bars[data-eax-bars-animated] rect:nth-child(17) { animation-delay: 0.96s; }
+
+/* ============================================================
+   Legacy loader bridge — keeps existing markup like
+   <div class="loading"></div>  /  <div class="spinner"></div>
+   working with the new brand motion. Each renders as a single
+   bar that pulses with the eax-wave keyframe in brand orange.
+   For the proper 9-bar wave, use the <span class="ember-loader …">
+   markup or the {{ motion.loader(…) }} Jinja macro.
+   ============================================================ */
+.loading,
+.spinner {
+  display: inline-block;
+  width: 4px;
+  height: 14px;
+  background: var(--eax-accent);
+  border-radius: 2px;
+  vertical-align: middle;
+  margin-right: 6px;
+  transform-origin: center;
+  animation: eax-wave 1.2s ease-in-out infinite;
+  /* Reset border-based legacy spinner styling so we don't get a
+     ring AND a bar at the same time. */
+  border: none;
+}
+.spinner {
+  width: 4px;
+  height: 22px;
+  margin: 0 auto 12px;
+  display: block;
+}
+.full-loading {
+  color: var(--eax-muted);
+}

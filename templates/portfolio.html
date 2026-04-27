@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -28,15 +28,15 @@
   [data-theme="light"] img.logo-light{display:block;margin:0 auto;}
   body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;height:100vh;overflow:hidden}
   #app{display:flex;height:100vh;overflow:hidden}
-  #sidebar{width:240px;background:#141820;border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
+  #sidebar{width:240px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
   #main-content{flex:1;overflow-y:auto;padding:28px 32px}
   .sidebar-logo{padding:16px 18px 14px;border-bottom:1px solid var(--border)}
   .logo-img{width:100%;max-width:160px;height:auto;display:block;margin:0 auto}
   .logo-sub{font-size:10px;color:var(--text-dim);letter-spacing:0.12em;text-transform:uppercase;margin-top:8px;text-align:center}
   .sidebar-section{padding:8px 10px 4px;font-size:10px;color:var(--text-dim);letter-spacing:0.1em;text-transform:uppercase;margin-top:8px}
   .sidebar-item{display:flex;align-items:center;gap:10px;padding:8px 14px;cursor:pointer;border-radius:6px;margin:1px 6px;transition:all .15s;color:var(--text-muted);font-size:13px;text-decoration:none}
-  .sidebar-item:hover{background:rgba(200,169,110,.06);color:var(--text);text-decoration:none}
-  .sidebar-item.active{background:rgba(200,169,110,.12);color:var(--accent)}
+  .sidebar-item:hover{background:rgba(242,89,41,.06);color:var(--text);text-decoration:none}
+  .sidebar-item.active{background:rgba(242,89,41,.12);color:var(--accent)}
   .sidebar-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0}
   .sidebar-item.active .icon{opacity:1}
   a{color:var(--accent);text-decoration:none}
@@ -78,14 +78,14 @@
   /* Project table */
   .tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:8px;margin-bottom:24px}
   table{border-collapse:collapse;width:100%;min-width:960px;font-size:12px}
-  th{padding:9px 12px;background:#141820;color:var(--text-muted);font-weight:600;text-align:right;white-space:nowrap;position:sticky;top:0;z-index:1;border-bottom:1px solid var(--border);user-select:none}
+  th{padding:9px 12px;background:var(--surface);color:var(--text-muted);font-weight:600;text-align:right;white-space:nowrap;position:sticky;top:0;z-index:1;border-bottom:1px solid var(--border);user-select:none}
   th:first-child{text-align:left}
   th.grp-lp{color:var(--lp);border-bottom-color:var(--lp)}
   th.grp-prom{color:var(--promote);border-bottom-color:var(--promote)}
   td{padding:9px 12px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
   td:first-child{text-align:left;color:var(--text);font-weight:500}
   tr:last-child td{border-bottom:none}
-  tr.total-row td{font-weight:700;border-top:2px solid var(--border-light);background:rgba(200,169,110,.04);color:var(--accent)}
+  tr.total-row td{font-weight:700;border-top:2px solid var(--border-light);background:rgba(242,89,41,.04);color:var(--accent)}
   .recycle-input{width:70px;padding:4px 6px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:12px;text-align:right;font-family:'DM Sans',sans-serif;font-variant-numeric:tabular-nums}
   .recycle-input:focus{outline:none;border-color:var(--accent)}
   .recycle-input.lp:focus{border-color:var(--lp)}
@@ -100,13 +100,13 @@
   .chart-title{font-size:12px;color:var(--text-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.06em}
 
   .empty{text-align:center;padding:60px 20px;color:var(--text-dim)}
-  .upload-note{background:rgba(200,169,110,.08);border:1px solid rgba(200,169,110,.25);border-radius:8px;padding:16px 20px;margin-bottom:20px;font-size:12px;color:var(--text-muted)}
+  .upload-note{background:rgba(242,89,41,.08);border:1px solid rgba(242,89,41,.25);border-radius:8px;padding:16px 20px;margin-bottom:20px;font-size:12px;color:var(--text-muted)}
   .upload-note strong{color:var(--accent)}
 
   /* Top actions */
   .top-actions{display:flex;justify-content:flex-end;gap:8px;margin-bottom:14px}
-  .top-actions .ctrl-btn{background:var(--accent);color:#0d0f13;border-color:var(--accent);font-weight:600}
-  .top-actions .ctrl-btn:hover{opacity:.92;color:#0d0f13}
+  .top-actions .ctrl-btn{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600}
+  .top-actions .ctrl-btn:hover{opacity:.92;color:var(--accent-fg)}
 
   /* Commitments */
   .commit-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 46px;gap:10px;align-items:center}
@@ -124,8 +124,8 @@
   .commit-totals{margin-top:10px;padding-top:10px;border-top:2px solid var(--border-light);display:grid;grid-template-columns:2fr 1fr 1fr 1fr 46px;gap:10px;font-weight:700;font-size:13px}
   .commit-totals > div.r{text-align:right;color:var(--accent);font-variant-numeric:tabular-nums}
   .commit-save-row{display:flex;align-items:center;gap:10px;margin-top:12px}
-  .commit-save-row .ctrl-btn.primary{background:var(--accent);color:#0d0f13;border-color:var(--accent);font-weight:600}
-  .commit-save-row .ctrl-btn.primary:hover{opacity:.92;color:#0d0f13}
+  .commit-save-row .ctrl-btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600}
+  .commit-save-row .ctrl-btn.primary:hover{opacity:.92;color:var(--accent-fg)}
   .commit-save-row #commit-msg{font-size:11px;color:var(--text-muted)}
   .commit-save-row #commit-msg.ok{color:var(--lp)}
   .commit-save-row #commit-msg.err{color:var(--leave)}
@@ -158,6 +158,8 @@
   }
   .recycle-ro { display: none; font-variant-numeric: tabular-nums; }
 </style>
+<link rel="stylesheet" href="/static/theme.css">
+<script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 </head>
 <body>
 <div id="app">
@@ -911,7 +913,7 @@ load();
     <input id="acct-new-pw" type="password" placeholder="New password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:8px;outline:none">
     <input id="acct-conf-pw" type="password" placeholder="Confirm new password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:14px;outline:none">
     <div id="acct-msg" style="font-size:12px;margin-bottom:12px;display:none"></div>
-    <button onclick="saveAcctPw()" style="width:100%;background:var(--accent);border:none;color:#0d0f13;padding:10px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:20px">Save Password</button>
+    <button onclick="saveAcctPw()" style="width:100%;background:var(--accent);border:none;color:var(--accent-fg);padding:10px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:20px">Save Password</button>
     <div style="border-top:1px solid var(--border);padding-top:18px">
       <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">Monthly Report Emails</div>
       <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:14px">
@@ -952,14 +954,14 @@ function _updateThemeButtons() {
   lightBtn.style.fontWeight = isLight ? '600' : '400';
 }
 function applyTheme(theme) {
-  if (theme === 'light') { document.documentElement.dataset.theme = 'light'; }
-  else { delete document.documentElement.dataset.theme; }
-  localStorage.setItem('ember-theme', theme);
+  // 'light' = Warm Paper (default) · 'dark' = Deep Navy
+  document.documentElement.dataset.theme = (theme === 'dark') ? 'dark' : 'light';
+  localStorage.setItem('ember-theme', theme === 'dark' ? 'dark' : 'light');
   _updateThemeButtons();
   // Re-render charts to pick up new var() colors
   if (_data && _data.projects && _data.projects.length) renderCharts();
 }
-(function(){ if (localStorage.getItem('ember-theme') === 'light') document.documentElement.dataset.theme = 'light'; })();
+(function(){ var t = localStorage.getItem('ember-theme'); document.documentElement.dataset.theme = (t === 'dark') ? 'dark' : 'light'; })();
 async function openAcct() {
   const m = document.getElementById('acct-modal');
   m.style.display = 'flex';

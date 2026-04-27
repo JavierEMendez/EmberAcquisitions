@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -42,9 +42,9 @@
 
   /* Type pill tags */
   .type-pill{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;border-radius:3px;padding:2px 7px;margin-bottom:10px;}
-  .pill-app{background:rgba(200,169,110,.12);color:var(--accent);border:1px solid rgba(200,169,110,.25);}
-  .pill-dash{background:rgba(94,158,140,.1);color:var(--teal);border:1px solid rgba(94,158,140,.2);}
-  .pill-soon{background:rgba(74,85,104,.1);color:var(--text-dim);border:1px solid rgba(74,85,104,.2);}
+  .pill-app{background:rgba(242,89,41,.12);color:var(--accent);border:1px solid rgba(242,89,41,.25);}
+  .pill-dash{background:rgba(31,122,77,.1);color:var(--teal);border:1px solid rgba(31,122,77,.2);}
+  .pill-soon{background:rgba(141,154,167,.1);color:var(--text-dim);border:1px solid rgba(141,154,167,.2);}
 
   /* Featured app card (full-width horizontal) */
   .app-featured{
@@ -53,16 +53,16 @@
     display:flex;align-items:center;gap:32px;
     cursor:pointer;transition:all .2s;text-decoration:none;
   }
-  .app-featured:hover{border-color:rgba(200,169,110,.35);background:#191e28;transform:translateY(-2px);}
+  .app-featured:hover{border-color:rgba(242,89,41,.35);background:var(--surface);transform:translateY(-2px);}
   .app-featured-body{flex:1;text-align:left;}
   .app-featured .app-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:20px;color:var(--text);margin-bottom:6px;}
   .app-featured .app-desc{font-size:13px;color:var(--text-muted);line-height:1.6;}
   .app-featured-cta{
     flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:6px;
-    background:rgba(200,169,110,.08);border:1px solid rgba(200,169,110,.2);
+    background:rgba(242,89,41,.08);border:1px solid rgba(242,89,41,.2);
     border-radius:10px;padding:18px 28px;transition:all .2s;
   }
-  .app-featured:hover .app-featured-cta{background:rgba(200,169,110,.14);border-color:rgba(200,169,110,.35);}
+  .app-featured:hover .app-featured-cta{background:rgba(242,89,41,.14);border-color:rgba(242,89,41,.35);}
   .app-featured-cta svg{color:var(--accent);}
   .app-featured-cta span{font-size:11px;font-weight:600;color:var(--accent);letter-spacing:.05em;margin-top:2px;}
 
@@ -79,7 +79,7 @@
     border-left:3px solid var(--teal);
   }
   .dash-card.clickable{cursor:pointer;}
-  .dash-card.clickable:hover{border-color:rgba(94,158,140,.35);background:#191e28;transform:translateY(-2px);}
+  .dash-card.clickable:hover{border-color:rgba(31,122,77,.35);background:var(--surface);transform:translateY(-2px);}
   .dash-card.disabled{opacity:.5;cursor:default;}
   .dash-card .app-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:16px;color:var(--text);margin-bottom:6px;}
   .dash-card .app-desc{font-size:12px;color:var(--text-muted);line-height:1.6;}
@@ -109,9 +109,9 @@
   .user-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(37,44,61,.4)}
   .user-row:last-child{border-bottom:none}
   .user-row .uname{flex:1;font-size:13px;color:var(--text)}
-  .user-row .badge{font-size:10px;background:rgba(200,169,110,.12);color:var(--accent);
-    border:1px solid rgba(200,169,110,.2);border-radius:4px;padding:2px 6px}
-  .add-user-form{background:#0d0f13;border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:16px}
+  .user-row .badge{font-size:10px;background:rgba(242,89,41,.12);color:var(--accent);
+    border:1px solid rgba(242,89,41,.2);border-radius:4px;padding:2px 6px}
+  .add-user-form{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:16px}
   .add-user-form h4{font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--text-dim);margin-bottom:14px}
   .form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
   .form-row input{padding:8px 12px;background:var(--card);border:1px solid var(--border);
@@ -127,8 +127,11 @@
   .user-access label{font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:4px;cursor:pointer}
   .user-access input[type=checkbox]{accent-color:var(--teal)}
 </style>
+<link rel="stylesheet" href="/static/theme.css">
+<script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 </head>
 <body>
+{% import "_partials/_brand_motion.html" as motion %}
 <div class="home-wrap">
   <div class="logo-area">
     <img src="/static/img/ember_logo.png" alt="Ember" class="logo-dark">
@@ -247,7 +250,7 @@
   </div>
 
   <div style="margin-top:28px;text-align:center;display:flex;align-items:center;justify-content:center;gap:10px">
-    <button onclick="openAcct()" style="background:none;border:1px solid var(--border);color:var(--text-muted);padding:8px 18px;border-radius:6px;font-size:12px;font-family:'DM Sans',sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:all .15s" onmouseover="this.style.borderColor='rgba(200,169,110,.4)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">
+    <button onclick="openAcct()" style="background:none;border:1px solid var(--border);color:var(--text-muted);padding:8px 18px;border-radius:6px;font-size:12px;font-family:'DM Sans',sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:all .15s" onmouseover="this.style.borderColor='rgba(242,89,41,.4)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">
       <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" stroke-width="1.8"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke-width="1.8" stroke-linecap="round"/></svg>
       Account Settings
     </button>
@@ -311,7 +314,7 @@
     <input id="acct-new-pw" type="password" placeholder="New password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:8px;outline:none">
     <input id="acct-conf-pw" type="password" placeholder="Confirm new password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:14px;outline:none">
     <div id="acct-msg" style="font-size:12px;margin-bottom:12px;display:none"></div>
-    <button onclick="saveAcctPw()" style="width:100%;background:var(--accent);border:none;color:#0d0f13;padding:10px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:20px">Save Password</button>
+    <button onclick="saveAcctPw()" style="width:100%;background:var(--accent);border:none;color:var(--accent-fg);padding:10px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:20px">Save Password</button>
     <div style="border-top:1px solid var(--border);padding-top:18px">
       <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">Monthly Report Emails</div>
       <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:14px">
@@ -348,7 +351,7 @@
       <button onclick="closeAdmin()" style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer">&times;</button>
     </div>
     <div class="admin-body">
-      <div id="user-list">Loading...</div>
+      <div id="user-list" style="padding:24px 0;text-align:center;">{{ motion.loader('md', 'Loading users') }}</div>
       <div style="margin-top:8px;padding-top:16px;border-top:1px solid rgba(37,44,61,.4)">
         <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Report Testing</div>
         <div style="display:flex;align-items:center;gap:10px">
@@ -624,12 +627,12 @@ function _updateThemeButtons() {
   lightBtn.style.fontWeight = isLight ? '600' : '400';
 }
 function applyTheme(theme) {
-  if (theme === 'light') { document.documentElement.dataset.theme = 'light'; }
-  else { delete document.documentElement.dataset.theme; }
-  localStorage.setItem('ember-theme', theme);
+  // 'light' = Warm Paper (default) · 'dark' = Deep Navy
+  document.documentElement.dataset.theme = (theme === 'dark') ? 'dark' : 'light';
+  localStorage.setItem('ember-theme', theme === 'dark' ? 'dark' : 'light');
   _updateThemeButtons();
 }
-(function(){ if (localStorage.getItem('ember-theme') === 'light') document.documentElement.dataset.theme = 'light'; })();
+(function(){ var t = localStorage.getItem('ember-theme'); document.documentElement.dataset.theme = (t === 'dark') ? 'dark' : 'light'; })();
 async function openAcct() {
   const m = document.getElementById('acct-modal');
   m.style.display = 'flex';

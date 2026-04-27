@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Community Sales Tracker</title>
-<script>(function(){var t=localStorage.getItem('ember-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+<script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -28,15 +28,15 @@ img.logo-light{display:none;}
 [data-theme="light"] img.logo-light{display:block;margin:0 auto;}
 body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;height:100vh;overflow:hidden;}
 #app{display:flex;height:100vh;overflow:hidden}
-#sidebar{width:240px;background:#141820;border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
+#sidebar{width:240px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
 #main-content{flex:1;overflow-y:auto;padding:24px 32px}
 .sidebar-logo{padding:16px 18px 14px;border-bottom:1px solid var(--border)}
 .logo-img{width:100%;max-width:160px;height:auto;display:block;margin:0 auto}
 .logo-sub{font-size:10px;color:var(--text-dim);letter-spacing:.12em;text-transform:uppercase;margin-top:8px;text-align:center}
 .sidebar-section{padding:8px 10px 4px;font-size:10px;color:var(--text-dim);letter-spacing:.1em;text-transform:uppercase;margin-top:8px}
 .sidebar-item{display:flex;align-items:center;gap:10px;padding:8px 14px;cursor:pointer;border-radius:6px;margin:1px 6px;transition:all .15s;color:var(--text-muted);font-size:13px;text-decoration:none}
-.sidebar-item:hover{background:rgba(200,169,110,.06);color:var(--text);text-decoration:none}
-.sidebar-item.active{background:rgba(200,169,110,.12);color:var(--accent)}
+.sidebar-item:hover{background:rgba(242,89,41,.06);color:var(--text);text-decoration:none}
+.sidebar-item.active{background:rgba(242,89,41,.12);color:var(--accent)}
 .sidebar-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0}
 .sidebar-item.active .icon{opacity:1}
 a{color:var(--accent);text-decoration:none}
@@ -49,7 +49,7 @@ a:hover{text-decoration:underline}
 .section-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:18px;color:var(--accent);margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px}
 .section-title .sub{font-size:12px;color:var(--text-dim);font-family:'DM Sans',sans-serif;letter-spacing:0;text-transform:none}
 .community-heading{font-family:'Plus Jakarta Sans',sans-serif;font-weight:500;font-size:22px;color:var(--text);margin:36px 0 4px;display:flex;align-items:baseline;gap:10px}
-.community-heading .tag{font-size:11px;color:var(--text-muted);background:rgba(200,169,110,.08);padding:3px 8px;border-radius:4px;letter-spacing:.05em;font-weight:400}
+.community-heading .tag{font-size:11px;color:var(--text-muted);background:rgba(242,89,41,.08);padding:3px 8px;border-radius:4px;letter-spacing:.05em;font-weight:400}
 
 /* KPI grid */
 .kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:8px}
@@ -78,10 +78,10 @@ a:hover{text-decoration:underline}
 table.summary{width:100%;border-collapse:collapse;font-size:12px}
 table.summary th,table.summary td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--border)}
 table.summary th:first-child,table.summary td:first-child{text-align:left}
-table.summary th{font-weight:500;color:var(--text-muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;background:#0f1218;position:sticky;top:0}
+table.summary th{font-weight:500;color:var(--text-muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;background:var(--surface);position:sticky;top:0}
 table.summary td{color:var(--text)}
-table.summary tr.totals-row td{font-weight:600;color:var(--text);background:rgba(200,169,110,.04);border-top:1px solid var(--border-light)}
-table.summary tr.lot-sep td{background:rgba(200,169,110,.02);border-top:1px solid var(--border-light)}
+table.summary tr.totals-row td{font-weight:600;color:var(--text);background:rgba(242,89,41,.04);border-top:1px solid var(--border-light)}
+table.summary tr.lot-sep td{background:rgba(242,89,41,.02);border-top:1px solid var(--border-light)}
 .badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:500;border:1px solid}
 .badge-blue  {background:rgba(74,144,226,.1);color:#6fa7e0;border-color:rgba(74,144,226,.3)}
 .badge-green {background:rgba(80,180,120,.1);color:#58b47a;border-color:rgba(80,180,120,.3)}
@@ -93,14 +93,14 @@ table.starts{width:100%;border-collapse:collapse;font-size:11.5px;min-width:680p
 table.starts th,table.starts td{padding:6px 9px;border-bottom:1px solid var(--border);text-align:right}
 table.starts th:first-child,table.starts th:nth-child(2),table.starts th:nth-child(3),table.starts th:nth-child(4),
 table.starts td:first-child,table.starts td:nth-child(2),table.starts td:nth-child(3),table.starts td:nth-child(4){text-align:left}
-table.starts th{font-weight:500;color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;background:#0f1218}
+table.starts th{font-weight:500;color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;background:var(--surface)}
 table.starts td.lot-start{border-top:1px solid var(--border-light)}
 table.starts tr.metric-sold td{color:var(--text-muted)}
 table.starts tr.metric-net td{color:var(--teal);font-weight:500}
 table.starts tr.metric-total td{font-weight:500}
 
 /* Refresh / status chip */
-.status-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:14px;font-size:11px;background:rgba(94,158,140,.1);color:var(--teal);border:1px solid rgba(94,158,140,.25)}
+.status-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:14px;font-size:11px;background:rgba(31,122,77,.1);color:var(--teal);border:1px solid rgba(31,122,77,.25)}
 .status-pill.err{background:rgba(229,62,62,.1);color:#e86c6c;border-color:rgba(229,62,62,.25)}
 .refresh-btn{padding:5px 12px;border-radius:5px;font-size:11px;cursor:pointer;border:1px solid var(--border);background:none;color:var(--text-muted);font-family:'DM Sans',sans-serif;transition:all .15s;display:inline-flex;align-items:center;gap:6px}
 .refresh-btn:hover{border-color:var(--teal);color:var(--teal)}
@@ -124,7 +124,7 @@ table.starts tr.metric-total td{font-weight:500}
 @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 .sidebar-item[data-tab] .tab-accent{width:3px;height:16px;border-radius:2px;background:transparent;flex-shrink:0;margin-right:2px}
 .sidebar-item[data-tab].active .tab-accent{background:var(--accent)}
-.tab-accent.tgp{background:rgba(200,169,110,.7)}
+.tab-accent.tgp{background:rgba(242,89,41,.7)}
 .tab-accent.gpd{background:rgba(74,144,226,.7)}
 .tab-accent.hld{background:rgba(88,180,122,.7)}
 .tab-accent.wrg{background:rgba(224,122,62,.7)}
@@ -144,15 +144,17 @@ table.starts tr.metric-total td{font-weight:500}
 table.pace-tbl{width:100%;border-collapse:collapse;font-size:11.5px;min-width:1100px}
 table.pace-tbl th,table.pace-tbl td{padding:7px 10px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap}
 table.pace-tbl th:first-child,table.pace-tbl td:first-child{text-align:left;position:sticky;left:0;background:var(--card);z-index:1;font-weight:500}
-table.pace-tbl th{font-weight:500;color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;background:#0f1218}
-[data-theme="light"] table.pace-tbl th{background:#f1f4f8}
-table.pace-tbl tr.pace-combined td{font-weight:600;background:rgba(200,169,110,.06);border-top:1px solid var(--border-light)}
+table.pace-tbl th{font-weight:500;color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;background:var(--surface)}
+[data-theme="light"] table.pace-tbl th{background:var(--bg)}
+table.pace-tbl tr.pace-combined td{font-weight:600;background:rgba(242,89,41,.06);border-top:1px solid var(--border-light)}
 table.pace-tbl tr.pace-combined td:first-child{color:var(--accent)}
 table.pace-tbl tr.pace-gpd td:first-child{color:#4a90e2}
 table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
 </style>
+<link rel="stylesheet" href="/static/theme.css">
 </head>
 <body>
+{% import "_partials/_brand_motion.html" as motion %}
 <div id="app">
   <nav id="sidebar">
     <div class="sidebar-logo">
@@ -315,8 +317,8 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
 
     <!-- Loading state -->
     <div id="load-state" class="load-state">
-      <div class="spinner"></div>
-      <h2>Loading sales data from Pipsy…</h2>
+      {{ motion.loader('lg') }}
+      <h2 style="margin-top:14px;">Loading sales data from Pipsy…</h2>
       <p>First load can take 10–20 seconds while we pull the full sales history for all three communities. Subsequent views are cached for 1 hour.</p>
     </div>
 
@@ -621,7 +623,7 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
       <div style="display:flex;align-items:center;gap:10px;margin:-6px 0 14px">
         <input type="file" id="bohlke-file" accept=".xlsx,.xls" style="display:none">
         <button id="bohlke-upload-btn" onclick="document.getElementById('bohlke-file').click()"
-                style="background:var(--accent);border:none;color:#0d0f13;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;display:inline-flex;align-items:center;gap:6px">
+                style="background:var(--accent);border:none;color:var(--accent-fg);padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;display:inline-flex;align-items:center;gap:6px">
           <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5-5 5 5M12 5v12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           Upload Bohlke xlsx
         </button>
@@ -709,7 +711,7 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
       <div style="display:flex;align-items:center;gap:10px;margin:-6px 0 14px">
         <input type="file" id="waller-file" accept=".xlsx,.xls" style="display:none">
         <button id="waller-upload-btn" onclick="document.getElementById('waller-file').click()"
-                style="background:var(--accent);border:none;color:#0d0f13;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;display:inline-flex;align-items:center;gap:6px">
+                style="background:var(--accent);border:none;color:var(--accent-fg);padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;display:inline-flex;align-items:center;gap:6px">
           <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5-5 5 5M12 5v12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           Upload Waller Permits xlsx
         </button>
@@ -770,7 +772,7 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
       <div style="display:flex;align-items:center;gap:10px;margin:-6px 0 14px">
         <input type="file" id="hp-file" accept=".xlsx,.xls" style="display:none">
         <button id="hp-upload-btn" onclick="document.getElementById('hp-file').click()"
-                style="background:var(--accent);border:none;color:#0d0f13;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;display:inline-flex;align-items:center;gap:6px">
+                style="background:var(--accent);border:none;color:var(--accent-fg);padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;display:inline-flex;align-items:center;gap:6px">
           <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5-5 5 5M12 5v12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           Upload HPermits xlsx
         </button>
@@ -850,7 +852,7 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
           {% if is_admin %}
           <input type="file" id="uw-file" accept=".xlsx,.xls" style="display:none">
           <button id="uw-upload-btn" onclick="document.getElementById('uw-file').click()"
-                  style="background:var(--accent);border:none;color:#0d0f13;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;display:inline-flex;align-items:center;gap:6px">
+                  style="background:var(--accent);border:none;color:var(--accent-fg);padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;display:inline-flex;align-items:center;gap:6px">
             <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5-5 5 5M12 5v12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             Upload UW Export
           </button>
@@ -945,7 +947,7 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
     <input id="acct-new-pw" type="password" placeholder="New password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:9px 11px;font-size:13px;margin-bottom:8px;outline:none">
     <input id="acct-conf-pw" type="password" placeholder="Confirm new password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:9px 11px;font-size:13px;margin-bottom:14px;outline:none">
     <div id="acct-msg" style="font-size:12px;margin-bottom:12px;display:none"></div>
-    <button onclick="saveAcctPw()" style="width:100%;background:var(--accent);border:none;color:#0d0f13;padding:10px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:20px">Save Password</button>
+    <button onclick="saveAcctPw()" style="width:100%;background:var(--accent);border:none;color:var(--accent-fg);padding:10px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:20px">Save Password</button>
     <div style="border-top:1px solid var(--border);padding-top:18px">
       <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">Monthly Report Emails</div>
       <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:14px">
@@ -988,9 +990,9 @@ function _updateThemeButtons() {
   lightBtn.style.fontWeight = isLight ? '600' : '400';
 }
 function applyTheme(theme) {
-  if (theme === 'light') { document.documentElement.dataset.theme = 'light'; }
-  else { delete document.documentElement.dataset.theme; }
-  localStorage.setItem('ember-theme', theme);
+  // 'light' = Warm Paper (default) · 'dark' = Deep Navy
+  document.documentElement.dataset.theme = (theme === 'dark') ? 'dark' : 'light';
+  localStorage.setItem('ember-theme', theme === 'dark' ? 'dark' : 'light');
   _updateThemeButtons();
   if (window._SALES_DATA) renderAll(window._SALES_DATA); // rebuild charts with new colors
 }
@@ -3048,7 +3050,7 @@ function _initialTab() {
 }
 
 (async function init() {
-  if (localStorage.getItem('ember-theme') === 'light') document.documentElement.dataset.theme = 'light';
+  { var __t = localStorage.getItem('ember-theme'); document.documentElement.dataset.theme = (__t === 'dark') ? 'dark' : 'light'; }
   // Show initial tab immediately so the loading/error state falls under the right title.
   showTab(_initialTab(), {skipHash: true});
 

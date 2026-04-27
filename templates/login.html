@@ -1,78 +1,274 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ember — Sign In</title>
+<title>Ember &mdash; Sign In</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/theme.css">
+<script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.setAttribute('data-theme', t==='dark'?'dark':'light');})();</script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  :root{
-    --bg:#0d0f13;--card:#151921;--border:#1e2535;
-    --accent:#c8a96e;--text:#e8eaf0;--text-muted:#8b95a8;--text-dim:#4a5568;
-    --teal:#5e9e8c;--error:#e05555;
+  body{
+    background:var(--eax-bg);
+    color:var(--eax-ink);
+    font-family:'DM Sans','Plus Jakarta Sans',system-ui,sans-serif;
+    min-height:100vh;
+    font-feature-settings:"ss01";
   }
-  body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;
-    min-height:100vh;display:flex;align-items:center;justify-content:center;}
-  .login-wrap{width:100%;max-width:400px;padding:24px;}
-  .logo-area{text-align:center;margin-bottom:40px;}
-  .logo-area img{height:36px;margin-bottom:16px;}
-  .logo-area .tagline{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:15px;
-    color:var(--text-muted);font-style:italic;}
-  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:36px;}
-  .card h2{font-size:18px;font-weight:600;margin-bottom:6px;color:var(--text);}
-  .card .sub{font-size:13px;color:var(--text-muted);margin-bottom:28px;}
+
+  /* Two-panel layout: hero on the left, sign-in card on the right.
+     Collapses to a single column on narrow viewports. */
+  .login-shell{
+    display:grid;
+    grid-template-columns:1.15fr 1fr;
+    min-height:100vh;
+  }
+  @media (max-width: 920px){
+    .login-shell{grid-template-columns:1fr;}
+    .hero{padding:48px 32px 24px;}
+    .signin-pane{padding:24px 32px 56px;}
+  }
+
+  /* ---- Hero panel (left) ---- */
+  .hero{
+    position:relative;
+    background:var(--eax-bg-2);
+    padding:64px 72px;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+    border-right:1px solid var(--eax-line);
+    overflow:hidden;
+  }
+  .hero::before{
+    /* Subtle warm-paper gradient wash for depth */
+    content:"";
+    position:absolute;inset:0;
+    background:radial-gradient(120% 80% at 0% 0%, rgba(242,89,41,0.06), transparent 60%);
+    pointer-events:none;
+  }
+  .hero-top, .hero-mid, .hero-bot{position:relative;z-index:1;}
+
+  .hero-eyebrow{
+    display:inline-flex;align-items:center;gap:10px;
+    font-size:10px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;
+    color:var(--eax-accent);
+  }
+  .hero-eyebrow::before{
+    content:"";display:inline-block;width:18px;height:1px;background:var(--eax-accent);
+  }
+
+  .hero-mark{
+    color:var(--eax-ink-2);
+    margin-bottom:36px;
+  }
+
+  .hero-title{
+    font-family:'Plus Jakarta Sans',sans-serif;
+    font-weight:700;
+    font-size:clamp(40px, 5.2vw, 60px);
+    line-height:1.04;
+    letter-spacing:-0.025em;
+    color:var(--eax-ink);
+    max-width:11ch;
+    margin-bottom:24px;
+  }
+  .hero-sub{
+    font-size:15.5px;
+    line-height:1.6;
+    color:var(--eax-muted);
+    max-width:480px;
+    font-weight:400;
+  }
+
+  .hero-bot{
+    display:flex;justify-content:space-between;align-items:flex-end;
+    gap:24px;flex-wrap:wrap;
+    color:var(--eax-subtle);
+    font-size:11px;letter-spacing:0.16em;text-transform:uppercase;font-weight:600;
+  }
+  .hero-bot .meta{display:flex;flex-direction:column;gap:4px;}
+  .hero-bot .meta strong{color:var(--eax-ink-2);font-size:11px;letter-spacing:0.16em;font-weight:700;}
+
+  /* ---- Sign-in pane (right) ---- */
+  .signin-pane{
+    background:var(--eax-bg);
+    padding:64px 72px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .card{
+    width:100%;max-width:380px;
+    background:var(--eax-surface);
+    border:1px solid var(--eax-line);
+    border-radius:14px;
+    padding:36px;
+    box-shadow:var(--eax-shadow-card);
+  }
+  .card h2{
+    font-family:'Plus Jakarta Sans',sans-serif;
+    font-size:22px;font-weight:700;
+    color:var(--eax-ink-2);
+    letter-spacing:-0.01em;
+    margin-bottom:6px;
+  }
+  .card .sub{
+    font-size:13.5px;
+    color:var(--eax-muted);
+    margin-bottom:28px;
+    line-height:1.55;
+  }
   .field{margin-bottom:18px;}
-  label{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
-    color:var(--text-muted);font-weight:500;margin-bottom:6px;}
-  input[type=text],input[type=password]{
-    width:100%;background:#0d0f13;border:1px solid var(--border);border-radius:8px;
-    color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;
-    padding:10px 14px;outline:none;transition:border-color .15s;
+  label{
+    display:block;font-size:10px;letter-spacing:0.18em;text-transform:uppercase;
+    color:var(--eax-muted);font-weight:700;margin-bottom:8px;
   }
-  input:focus{border-color:var(--teal);}
-  .error-msg{background:rgba(224,85,85,.1);border:1px solid rgba(224,85,85,.3);
-    border-radius:8px;padding:10px 14px;font-size:13px;color:var(--error);margin-bottom:18px;}
-  button{width:100%;background:var(--accent);color:#0d0f13;border:none;border-radius:8px;
-    padding:12px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;
-    cursor:pointer;transition:opacity .15s;}
-  button:hover{opacity:.88;}
-  .footer-note{text-align:center;margin-top:20px;font-size:12px;color:var(--text-dim);}
-  [data-theme="light"]{--bg:#f0f2f5;--card:#ffffff;--border:#e2e8f0;--accent:#003552;--text:#1a2a3a;--text-muted:#4a5568;--text-dim:#718096;}
-  [data-theme="light"] button{color:#fff;}
-  img.logo-light{display:none;}
-  [data-theme="light"] img.logo-dark{display:none;}
-  [data-theme="light"] img.logo-light{display:block;margin:0 auto 16px;}
+  input[type=text],input[type=password]{
+    width:100%;
+    background:var(--eax-bg);
+    border:1px solid var(--eax-line-2);
+    border-radius:10px;
+    color:var(--eax-ink);
+    font-family:inherit;font-size:14px;
+    padding:11px 14px;
+    outline:none;
+    transition:border-color .15s, box-shadow .15s;
+  }
+  input:focus{
+    border-color:var(--eax-accent);
+    box-shadow:0 0 0 3px var(--eax-accent-soft);
+  }
+  .error-msg{
+    background:rgba(192,49,26,0.08);
+    border:1px solid rgba(192,49,26,0.28);
+    border-radius:10px;
+    padding:10px 14px;
+    font-size:13px;color:var(--eax-bad);
+    margin-bottom:18px;
+  }
+  button[type=submit]{
+    width:100%;
+    background:var(--eax-accent);
+    color:#FFF;
+    border:none;border-radius:10px;
+    padding:13px;
+    font-family:'Plus Jakarta Sans',sans-serif;
+    font-size:13px;font-weight:700;letter-spacing:0.04em;
+    text-transform:uppercase;
+    cursor:pointer;
+    transition:transform .12s, box-shadow .15s, opacity .15s;
+    box-shadow:0 6px 18px rgba(242,89,41,0.25);
+    display:flex;align-items:center;justify-content:center;gap:10px;
+  }
+  button[type=submit]:hover{transform:translateY(-1px);box-shadow:0 10px 24px rgba(242,89,41,0.32);}
+  button[type=submit]:active{transform:translateY(0);}
+  button[type=submit][aria-busy="true"] .signin-text{opacity:0.65;}
+
+  .footer-note{
+    text-align:center;
+    margin-top:18px;
+    font-size:12px;color:var(--eax-subtle);
+  }
+
+  /* Loader-in-button fix: ensure the wave bars sit white inside
+     the orange CTA without inheriting the orange color. */
+  button[type=submit] .ember-loader{color:#FFF;}
+  button[type=submit] .ember-loader__label{color:rgba(255,255,255,0.8);}
+
+  /* Theme toggle anchored bottom-left of the sign-in pane. */
+  .theme-toggle{
+    position:absolute;top:18px;right:24px;
+    width:34px;height:34px;border-radius:50%;
+    background:transparent;border:1px solid var(--eax-line-2);
+    color:var(--eax-muted);
+    display:inline-flex;align-items:center;justify-content:center;
+    cursor:pointer;transition:color .15s, border-color .15s, background .15s;
+  }
+  .theme-toggle:hover{color:var(--eax-ink);border-color:var(--eax-accent);background:var(--eax-accent-soft);}
+  .signin-pane{position:relative;}
 </style>
-<script>(function(){var t=localStorage.getItem('ember-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
 </head>
 <body>
-<div class="login-wrap">
-  <div class="logo-area">
-    <img src="/static/img/ember_logo.png" alt="Ember" class="logo-dark">
-    <img src="/static/img/ember_logo_light.png" alt="Ember" class="logo-light">
-    <div class="tagline">Applications and Dashboards</div>
-  </div>
-  <div class="card">
-    <h2>Sign in</h2>
-    <div class="sub">Enter your credentials to access the platform.</div>
-    {% if error %}
-    <div class="error-msg">{{ error }}</div>
-    {% endif %}
-    <form method="POST" action="/login">
-      <div class="field">
-        <label>Username</label>
-        <input type="text" name="username" autocomplete="username" autofocus required>
+{% import "_partials/_brand_motion.html" as motion %}
+
+<div class="login-shell">
+  <!-- Hero (left) -->
+  <section class="hero">
+    <div class="hero-top">
+      <span class="hero-eyebrow">Ember Finance &amp; Analytics &middot; Houston, Texas</span>
+    </div>
+
+    <div class="hero-mid">
+      <div class="hero-mark">
+        {{ motion.bars(width=200, height=64, animated=true) }}
       </div>
-      <div class="field">
-        <label>Password</label>
-        <input type="password" name="password" autocomplete="current-password" required>
+      <h1 class="hero-title">Applications and Dashboards.</h1>
+      <p class="hero-sub">One workspace for underwriting master planned communities and the dashboards that power them. Built by Ember Finance &amp; Analytics.</p>
+    </div>
+
+    <div class="hero-bot">
+      <div class="meta">
+        <strong>Confidential</strong>
+        <span>Ember stakeholders only</span>
       </div>
-      <button type="submit">Sign In</button>
-    </form>
-  </div>
-  <div class="footer-note">Contact your administrator to request access.</div>
+      <div class="meta" style="text-align:right;">
+        <strong>Houston &middot; TX</strong>
+        <span>Finance &amp; Analytics</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Sign-in (right) -->
+  <section class="signin-pane">
+    <button class="theme-toggle" type="button" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle color theme">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+      </svg>
+    </button>
+
+    <div class="card">
+      <h2>Sign in</h2>
+      <div class="sub">Enter your credentials to access the platform.</div>
+      {% if error %}
+      <div class="error-msg">{{ error }}</div>
+      {% endif %}
+      <form method="POST" action="/login" id="signin-form" onsubmit="onSignin(event)">
+        <div class="field">
+          <label>Username</label>
+          <input type="text" name="username" autocomplete="username" autofocus required>
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" name="password" autocomplete="current-password" required>
+        </div>
+        <button type="submit" id="signin-btn">
+          <span class="signin-text">Sign In</span>
+        </button>
+      </form>
+      <div class="footer-note">Contact your administrator to request access.</div>
+    </div>
+  </section>
 </div>
+
+<script>
+  function toggleTheme(){
+    var cur = document.documentElement.getAttribute('data-theme') || 'light';
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('ember-theme', next);
+  }
+  // Replace the submit button label with the wave loader the moment
+  // the form is submitted, so users see immediate feedback.
+  function onSignin(ev){
+    var btn = document.getElementById('signin-btn');
+    btn.setAttribute('aria-busy', 'true');
+    btn.innerHTML = '{{ motion.loader("sm", "Signing in") | replace("\n","") | safe }}';
+    // Allow the form to submit naturally.
+    return true;
+  }
+</script>
 </body>
 </html>

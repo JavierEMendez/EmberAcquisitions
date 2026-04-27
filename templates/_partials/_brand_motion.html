@@ -1,0 +1,64 @@
+{# ============================================================
+   Ember brand motion — Jinja macros for the Wave loader and the
+   animated 17-bar mark. Import once per template:
+
+     {% import "_partials/_brand_motion.html" as motion %}
+
+   Then call:
+     {{ motion.loader('sm') }}
+     {{ motion.loader('md', 'Refreshing') }}
+     {{ motion.loader_panel('Loading project returns') }}
+     {{ motion.bars(width=240, height=80, animated=true) }}
+
+   Styles for these elements live in static/theme.css. They use
+   the eax-wave keyframe + the .ember-loader / .ember-bars hooks.
+   ============================================================ #}
+
+{# ---- Wave loader (sm | md | lg) ---- #}
+{# Bars are 9 vertical rectangles, equal width + gap, centered
+   vertically. Idle height = 20% of the SVG height (the keyframe
+   scales from 0.35 to 3.2 around that resting state). #}
+{% macro loader(size='md', label=None) -%}
+{%- set dims = {'sm': {'w': 28, 'h': 16, 'bw': 2}, 'md': {'w': 56, 'h': 28, 'bw': 3}, 'lg': {'w': 96, 'h': 48, 'bw': 4}} -%}
+{%- set d = dims.get(size, dims['md']) -%}
+{%- set bar_count = 9 -%}
+{%- set total_gap = d.w - bar_count * d.bw -%}
+{%- set gap = total_gap / (bar_count - 1) -%}
+{%- set y = d.h * 0.4 -%}
+{%- set bh = d.h * 0.2 -%}
+<span class="ember-loader ember-loader--{{ size }}" role="status" aria-live="polite" aria-label="{{ label or 'Loading' }}">
+  <svg class="loader-wave" viewBox="0 0 {{ d.w }} {{ d.h }}" width="{{ d.w }}" height="{{ d.h }}" aria-hidden="true">
+    {% for i in range(bar_count) -%}
+    <rect x="{{ i * (d.bw + gap) }}" y="{{ y }}" width="{{ d.bw }}" height="{{ bh }}" rx="{{ d.bw / 2 }}"></rect>
+    {% endfor -%}
+  </svg>
+  {% if label -%}<span class="ember-loader__label">{{ label }}</span>{%- endif %}
+</span>
+{%- endmacro %}
+
+{# ---- Loader panel (full-card placeholder) ---- #}
+{% macro loader_panel(label='Loading', height=200) -%}
+<div class="ember-loader-panel" role="status" aria-live="polite" style="min-height:{{ height }}px;">
+  {{ loader('lg') }}
+  <div class="ember-loader-panel__label">{{ label }}</div>
+</div>
+{%- endmacro %}
+
+{# ---- Animated brand-mark bars (17-bar Ember glyph) ---- #}
+{# Geometry mirrors the React Bars.tsx component: a 240×80 viewbox
+   with 17 rounded rectangles. Pass animated=true for splash /
+   hero moments; defaults to a static mark. #}
+{% macro bars(width=240, height=80, animated=false, color=None) -%}
+{%- set bar_geom = [
+  (0,   22, 44), (14,  10, 62), (28,  0,  80), (42,  14, 56),
+  (56,  28, 36), (70,  6,  68), (84,  20, 48), (98,  2,  76),
+  (112, 18, 50), (126, 30, 32), (140, 10, 60), (154, 22, 44),
+  (168, 4,  72), (182, 16, 52), (196, 26, 38), (210, 12, 60),
+  (224, 22, 44)
+] -%}
+<svg class="ember-bars" viewBox="0 0 240 80" width="{{ width }}" height="{{ height }}" preserveAspectRatio="xMidYMid meet" {% if animated %}data-eax-bars-animated{% endif %} aria-hidden="true"{% if color %} style="color:{{ color }};"{% endif %}>
+  {% for x, y, h in bar_geom -%}
+  <rect x="{{ x }}" y="{{ y }}" width="6" height="{{ h }}" rx="3"></rect>
+  {% endfor -%}
+</svg>
+{%- endmacro %}
