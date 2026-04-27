@@ -5,358 +5,590 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ember Acquisitions</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  :root{
-    --bg:#0d0f13;--surface:#151921;--card:#151921;--border:#1e2535;--border-light:#2e3750;
-    --accent:#c8a96e;--text:#e8eaf0;--text-muted:#8b95a8;--text-dim:#4a5568;
-    --teal:#5e9e8c;
-  }
-  [data-theme="light"]{
-    --bg:#f0f2f5;--surface:#ffffff;--card:#ffffff;--border:#e2e8f0;--border-light:#cbd5e0;
-    --accent:#003552;--text:#1a2a3a;--text-muted:#4a5568;--text-dim:#718096;--teal:#38a169;
-  }
-  [data-theme="light"] .app-featured:hover{background:var(--border);}
-  [data-theme="light"] .dash-card.clickable:hover{background:var(--border);}
-  [data-theme="light"] .add-user-form{background:var(--bg);}
-  [data-theme="light"] button[onclick="saveAcctPw()"]{color:#fff!important;}
-  img.logo-light{display:none;}
-  [data-theme="light"] img.logo-dark{display:none;}
-  [data-theme="light"] img.logo-light{display:block;margin:0 auto 16px;}
-  body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;
-    min-height:100vh;display:flex;align-items:center;justify-content:center;}
-  .home-wrap{width:100%;max-width:960px;padding:24px;}
-  .logo-area{margin-bottom:44px;text-align:center;}
-  .logo-area img{height:40px;margin-bottom:16px;}
-  .logo-area .tagline{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:15px;
-    color:var(--text-muted);font-style:italic;}
-  .welcome{font-size:13px;color:var(--text-muted);margin-bottom:36px;text-align:center;}
-  .welcome strong{color:var(--text);font-weight:500;}
-
-  /* Section labels */
-  .section-label{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
-  .section-label .sl-text{font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);white-space:nowrap;}
-  .section-label .sl-line{flex:1;height:1px;background:var(--border);}
-  .section-divider{height:28px;}
-
-  /* Type pill tags */
-  .type-pill{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;border-radius:3px;padding:2px 7px;margin-bottom:10px;}
-  .pill-app{background:rgba(242,89,41,.12);color:var(--accent);border:1px solid rgba(242,89,41,.25);}
-  .pill-dash{background:rgba(31,122,77,.1);color:var(--teal);border:1px solid rgba(31,122,77,.2);}
-  .pill-soon{background:rgba(141,154,167,.1);color:var(--text-dim);border:1px solid rgba(141,154,167,.2);}
-
-  /* Featured app card (full-width horizontal) */
-  .app-featured{
-    background:var(--card);border:1px solid var(--border);border-radius:12px;
-    border-left:3px solid var(--accent);padding:28px 32px;
-    display:flex;align-items:center;gap:32px;
-    cursor:pointer;transition:all .2s;text-decoration:none;
-  }
-  .app-featured:hover{border-color:rgba(242,89,41,.35);background:var(--surface);transform:translateY(-2px);}
-  .app-featured-body{flex:1;text-align:left;}
-  .app-featured .app-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:20px;color:var(--text);margin-bottom:6px;}
-  .app-featured .app-desc{font-size:13px;color:var(--text-muted);line-height:1.6;}
-  .app-featured-cta{
-    flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:6px;
-    background:rgba(242,89,41,.08);border:1px solid rgba(242,89,41,.2);
-    border-radius:10px;padding:18px 28px;transition:all .2s;
-  }
-  .app-featured:hover .app-featured-cta{background:rgba(242,89,41,.14);border-color:rgba(242,89,41,.35);}
-  .app-featured-cta svg{color:var(--accent);}
-  .app-featured-cta span{font-size:11px;font-weight:600;color:var(--accent);letter-spacing:.05em;margin-top:2px;}
-
-  /* Dashboard grid */
-  .dash-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;grid-auto-rows:1fr;}
-  @media(max-width:700px){
-    .dash-grid{grid-template-columns:1fr;}
-    .app-featured{flex-direction:column;}
-    .app-featured-cta{width:100%;flex-direction:row;justify-content:center;padding:14px 20px;}
-  }
-  .dash-card{
-    background:var(--card);border:1px solid var(--border);border-radius:12px;
-    padding:24px 26px;transition:all .2s;text-align:left;
-    border-left:3px solid var(--teal);
-  }
-  .dash-card.clickable{cursor:pointer;}
-  .dash-card.clickable:hover{border-color:rgba(31,122,77,.35);background:var(--surface);transform:translateY(-2px);}
-  .dash-card.disabled{opacity:.5;cursor:default;}
-  .dash-card .app-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:16px;color:var(--text);margin-bottom:6px;}
-  .dash-card .app-desc{font-size:12px;color:var(--text-muted);line-height:1.6;}
-  .dash-card .app-arrow{display:flex;align-items:center;gap:5px;margin-top:12px;font-size:11px;font-weight:600;color:var(--teal);letter-spacing:.04em;}
-  .dash-card.disabled .app-arrow{color:var(--text-dim);}
-  .last-updated{font-size:10px;color:var(--text-dim);margin-top:8px;letter-spacing:.03em;}
-  .footer{display:flex;align-items:center;justify-content:space-between;margin-top:36px;font-size:12px;color:var(--text-dim);}
-  .footer a{color:var(--text-muted);text-decoration:none;transition:color .15s;}
-  .footer a:hover{color:var(--accent);}
-
-  .upload-area{display:flex;align-items:center;gap:10px;}
-  .upload-btn{
-    background:none;border:1px solid var(--border);color:var(--text-muted);
-    padding:6px 14px;border-radius:6px;font-size:11px;font-family:'DM Sans',sans-serif;
-    cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px;
-  }
-  .upload-btn:hover{border-color:var(--accent);color:var(--accent);}
-  .upload-status{font-size:11px;color:var(--teal);}
-
-  /* Admin modal */
-  .admin-modal{display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.7);align-items:center;justify-content:center}
-  .admin-modal.open{display:flex}
-  .admin-box{background:var(--card);border:1px solid var(--border);border-radius:12px;width:500px;max-width:95vw;max-height:80vh;overflow-y:auto}
-  .admin-header{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
-  .admin-header h3{font-size:15px;font-weight:600;color:var(--text)}
-  .admin-body{padding:20px 24px}
-  .user-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(37,44,61,.4)}
-  .user-row:last-child{border-bottom:none}
-  .user-row .uname{flex:1;font-size:13px;color:var(--text)}
-  .user-row .badge{font-size:10px;background:rgba(242,89,41,.12);color:var(--accent);
-    border:1px solid rgba(242,89,41,.2);border-radius:4px;padding:2px 6px}
-  .add-user-form{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:16px}
-  .add-user-form h4{font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--text-dim);margin-bottom:14px}
-  .form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
-  .form-row input{padding:8px 12px;background:var(--card);border:1px solid var(--border);
-    border-radius:6px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;outline:none}
-  .form-row input:focus{border-color:var(--teal)}
-  .btn-add-user{background:var(--teal);color:#fff;border:none;border-radius:6px;
-    padding:8px 18px;font-family:'DM Sans',sans-serif;font-size:13px;cursor:pointer;}
-  .btn-add-user:hover{opacity:.85}
-  .btn-del-user{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:16px;padding:2px 6px;border-radius:4px}
-  .btn-del-user:hover{background:rgba(224,85,85,.15);color:#e05555}
-  .user-row{flex-wrap:wrap}
-  .user-access{display:flex;gap:10px;width:100%;padding:4px 0 2px;margin-top:2px}
-  .user-access label{font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:4px;cursor:pointer}
-  .user-access input[type=checkbox]{accent-color:var(--teal)}
-</style>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/theme.css">
 <script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{min-height:100vh;}
+  body{
+    background:var(--eax-bg);
+    color:var(--eax-ink);
+    font-family:'DM Sans','Plus Jakarta Sans',system-ui,sans-serif;
+    font-feature-settings:"ss01";
+    -webkit-font-smoothing:antialiased;
+    padding:0 48px 48px;
+  }
+  @media(max-width:780px){ body{padding:0 24px 32px;} }
+
+  /* ---------- Top bar ---------- */
+  .topbar{
+    max-width:1400px;margin:0 auto;
+    height:88px;
+    display:flex;align-items:center;justify-content:space-between;
+    padding:0 8px;
+  }
+  .brand{
+    display:flex;align-items:center;gap:14px;
+    color:var(--eax-ink);
+  }
+  .brand .ember-bars{color:var(--eax-accent);}
+  .brand .wordmark{
+    font-family:'Plus Jakarta Sans',sans-serif;
+    font-size:18px;font-weight:700;
+    letter-spacing:0.32em;
+  }
+  .topbar-right{
+    display:flex;align-items:center;gap:18px;
+    color:var(--eax-muted);
+    font-size:11px;font-weight:600;letter-spacing:0.18em;text-transform:uppercase;
+  }
+  .topbar-divider{width:1px;height:18px;background:var(--eax-line-2);}
+  .user-chip{
+    display:inline-flex;align-items:center;gap:10px;
+    color:var(--eax-ink);
+    background:none;border:none;cursor:pointer;
+    font-family:inherit;
+    padding:4px 6px;border-radius:8px;
+    transition:background .15s;
+  }
+  .user-chip:hover{background:var(--eax-accent-soft);}
+  .user-avatar{
+    width:30px;height:30px;border-radius:50%;
+    background:var(--eax-accent);color:var(--eax-accent-fg);
+    display:inline-flex;align-items:center;justify-content:center;
+    font-size:11px;font-weight:700;letter-spacing:0.04em;
+    font-family:'Plus Jakarta Sans',sans-serif;
+  }
+  .user-chip .uname{
+    font-size:12px;font-weight:600;letter-spacing:0.02em;
+    text-transform:none;
+  }
+
+  /* ---------- Hero ---------- */
+  .hero{
+    max-width:1400px;margin:24px auto 36px;
+    padding:0 8px;
+    display:grid;
+    grid-template-columns:1fr auto;
+    gap:48px;
+    align-items:flex-end;
+  }
+  @media(max-width:900px){ .hero{grid-template-columns:1fr;align-items:flex-start;} }
+
+  .greet-eyebrow{
+    font-size:11px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;
+    color:var(--eax-accent);
+    margin-bottom:18px;
+    display:inline-flex;align-items:center;gap:10px;
+  }
+  .hero-title{
+    font-family:'Plus Jakarta Sans',sans-serif;
+    font-weight:700;
+    font-size:clamp(40px, 5.5vw, 64px);
+    line-height:1.02;
+    letter-spacing:-0.025em;
+    color:var(--eax-ink);
+    margin-bottom:16px;
+  }
+  .hero-sub{
+    font-size:15px;
+    color:var(--eax-muted);
+    line-height:1.55;
+    max-width:640px;
+  }
+  .hero-sub .sep{margin:0 8px;color:var(--eax-line-2);}
+
+  .hero-kpi{text-align:right;}
+  @media(max-width:900px){ .hero-kpi{text-align:left;margin-top:24px;} }
+  .hero-kpi .lbl{
+    font-size:10px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;
+    color:var(--eax-muted);
+    margin-bottom:6px;
+  }
+  .hero-kpi .val{
+    font-family:'Plus Jakarta Sans',sans-serif;
+    font-weight:700;
+    font-size:46px;line-height:1;
+    color:var(--eax-accent);
+    letter-spacing:-0.02em;
+    font-variant-numeric:tabular-nums;
+  }
+  .hero-kpi .cap{
+    font-size:11px;color:var(--eax-subtle);
+    margin-top:8px;
+  }
+
+  /* ---------- Featured Application card ---------- */
+  .featured{
+    max-width:1400px;margin:0 auto 40px;
+    padding:0 8px;
+  }
+  .featured-card{
+    display:flex;align-items:center;gap:24px;
+    background:var(--eax-bg-2);
+    border:1px solid var(--eax-line);
+    border-radius:14px;
+    padding:24px 28px;
+    text-decoration:none;
+    color:inherit;
+    transition:border-color .15s, transform .15s, box-shadow .2s;
+    position:relative;overflow:hidden;
+  }
+  .featured-card:hover{
+    border-color:var(--eax-accent);
+    transform:translateY(-1px);
+    box-shadow:var(--eax-shadow-card);
+  }
+  .featured-icon{
+    flex-shrink:0;
+    width:56px;height:56px;border-radius:12px;
+    background:var(--eax-surface);
+    border:1px solid var(--eax-line);
+    display:inline-flex;align-items:center;justify-content:center;
+    color:var(--eax-accent);
+  }
+  .featured-body{flex:1;min-width:0;}
+  .featured-eyebrow{
+    font-size:10px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;
+    color:var(--eax-accent);
+    margin-bottom:6px;
+  }
+  .featured-title{
+    font-family:'Plus Jakarta Sans',sans-serif;
+    font-weight:700;font-size:22px;
+    color:var(--eax-ink-2);
+    letter-spacing:-0.01em;
+    margin-bottom:4px;
+  }
+  .featured-desc{
+    font-size:13px;color:var(--eax-muted);line-height:1.55;
+    max-width:760px;
+  }
+  .featured-deco{
+    flex-shrink:0;color:var(--eax-accent);opacity:0.55;
+    margin-right:8px;
+  }
+  @media(max-width:760px){ .featured-deco{display:none;} }
+  .featured-cta{
+    flex-shrink:0;
+    display:inline-flex;align-items:center;gap:8px;
+    background:var(--eax-accent);color:var(--eax-accent-fg);
+    border-radius:999px;
+    padding:11px 22px;
+    font-family:'Plus Jakarta Sans',sans-serif;
+    font-size:13px;font-weight:700;
+    box-shadow:0 6px 18px rgba(242,89,41,0.25);
+    transition:transform .12s, box-shadow .15s;
+  }
+  .featured-card:hover .featured-cta{
+    transform:translateY(-1px);
+    box-shadow:0 10px 24px rgba(242,89,41,0.35);
+  }
+
+  /* ---------- Dashboards section ---------- */
+  .section{max-width:1400px;margin:0 auto 48px;padding:0 8px;}
+  .section-head{
+    display:flex;align-items:center;justify-content:space-between;
+    margin-bottom:18px;
+  }
+  .section-eyebrow{
+    font-size:10px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;
+    color:var(--eax-accent);
+    display:inline-flex;align-items:center;gap:14px;
+  }
+  .section-eyebrow::after{
+    content:"";display:inline-block;width:80px;height:1px;background:var(--eax-line-2);
+  }
+  .section-counter{
+    font-family:'Plus Jakarta Sans',sans-serif;
+    font-size:11px;font-weight:600;letter-spacing:0.22em;text-transform:uppercase;
+    color:var(--eax-subtle);
+    font-variant-numeric:tabular-nums;
+  }
+  .dash-grid{
+    display:grid;grid-template-columns:repeat(3,1fr);gap:18px;
+  }
+  @media(max-width:1100px){ .dash-grid{grid-template-columns:repeat(2,1fr);} }
+  @media(max-width:680px){  .dash-grid{grid-template-columns:1fr;} }
+  .dash-card{
+    background:var(--eax-bg-2);
+    border:1px solid var(--eax-line);
+    border-radius:14px;
+    padding:20px 22px;
+    display:flex;flex-direction:column;
+    text-decoration:none;color:inherit;
+    transition:border-color .15s, transform .15s, box-shadow .2s;
+    min-height:180px;
+    position:relative;
+  }
+  .dash-card:hover{
+    border-color:var(--eax-accent);
+    transform:translateY(-1px);
+    box-shadow:var(--eax-shadow-card);
+  }
+  .dash-card.disabled{opacity:0.5;cursor:default;pointer-events:none;}
+  .dash-card-top{
+    display:flex;align-items:center;justify-content:space-between;
+    margin-bottom:10px;
+  }
+  .dash-eyebrow{
+    font-size:10px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;
+    color:var(--eax-accent);
+  }
+  .dash-deco{color:var(--eax-accent);}
+  .dash-title{
+    font-family:'Plus Jakarta Sans',sans-serif;
+    font-weight:700;font-size:17px;
+    color:var(--eax-ink-2);
+    margin-bottom:6px;
+    letter-spacing:-0.005em;
+  }
+  .dash-desc{
+    font-size:13px;color:var(--eax-muted);line-height:1.5;
+    flex:1;
+  }
+  .dash-foot{
+    display:flex;align-items:center;justify-content:space-between;
+    margin-top:14px;
+    padding-top:12px;border-top:1px solid var(--eax-line);
+  }
+  .dash-upd{
+    font-size:10px;font-weight:600;letter-spacing:0.18em;text-transform:uppercase;
+    color:var(--eax-subtle);
+  }
+  .dash-open{
+    font-size:11px;font-weight:700;letter-spacing:0.04em;
+    color:var(--eax-accent);
+    display:inline-flex;align-items:center;gap:5px;
+  }
+
+  /* ---------- Admin utilities (admin-only thin bar) ---------- */
+  .admin-bar{
+    max-width:1400px;margin:0 auto 28px;padding:0 8px;
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    color:var(--eax-muted);font-size:11px;
+  }
+  .admin-bar-label{
+    font-size:10px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;
+    color:var(--eax-subtle);
+    margin-right:8px;
+  }
+  .admin-btn{
+    display:inline-flex;align-items:center;gap:6px;
+    background:transparent;
+    border:1px solid var(--eax-line-2);
+    color:var(--eax-muted);
+    padding:6px 12px;border-radius:8px;
+    font-size:11px;font-family:inherit;cursor:pointer;
+    transition:all .15s;
+  }
+  .admin-btn:hover{
+    border-color:var(--eax-accent);color:var(--eax-accent);
+  }
+  .upload-status{font-size:11px;color:var(--eax-good);}
+
+  /* ---------- Footer ---------- */
+  .footer{
+    max-width:1400px;margin:64px auto 0;padding:24px 8px 0;
+    border-top:1px solid var(--eax-line);
+    display:flex;align-items:center;justify-content:space-between;
+    color:var(--eax-subtle);
+    font-size:11px;letter-spacing:0.04em;
+  }
+  .footer .logout-link{
+    color:var(--eax-muted);text-decoration:none;
+    font-size:11px;font-weight:600;letter-spacing:0.16em;text-transform:uppercase;
+    transition:color .15s;
+  }
+  .footer .logout-link:hover{color:var(--eax-accent);}
+
+  /* ---------- Account modal (preserved) ---------- */
+  .acct-modal{display:none;position:fixed;inset:0;background:rgba(8,35,59,.55);z-index:2000;align-items:center;justify-content:center;}
+  .acct-modal.open{display:flex;}
+  .acct-box{
+    background:var(--eax-surface);
+    border:1px solid var(--eax-line);
+    border-radius:14px;
+    padding:28px;width:380px;max-width:92vw;max-height:92vh;overflow-y:auto;
+    box-shadow:var(--eax-shadow-card);
+  }
+  .acct-box h3{font-family:'Plus Jakarta Sans',sans-serif;font-size:16px;font-weight:700;color:var(--eax-ink-2);}
+  .acct-box .meta-line{font-size:12px;color:var(--eax-subtle);margin-bottom:16px;}
+  .acct-box .meta-line strong{color:var(--eax-muted);}
+  .acct-box .acct-input{
+    width:100%;background:var(--eax-bg);
+    border:1px solid var(--eax-line-2);
+    color:var(--eax-ink);border-radius:8px;
+    padding:9px 11px;font-size:13px;font-family:inherit;
+    outline:none;
+  }
+  .acct-box .acct-input:focus{border-color:var(--eax-accent);}
+  .acct-box .lbl{font-size:10px;color:var(--eax-subtle);text-transform:uppercase;letter-spacing:0.18em;font-weight:700;margin-bottom:8px;}
+  .acct-box .save-btn{
+    width:100%;background:var(--eax-accent);color:var(--eax-accent-fg);
+    border:none;border-radius:8px;padding:11px;
+    font-family:'Plus Jakarta Sans',sans-serif;
+    font-size:13px;font-weight:700;letter-spacing:0.04em;cursor:pointer;
+    box-shadow:0 6px 18px rgba(242,89,41,0.22);
+    transition:transform .1s, box-shadow .15s;
+  }
+  .acct-box .save-btn:hover{transform:translateY(-1px);box-shadow:0 10px 24px rgba(242,89,41,0.30);}
+  .acct-box .save-btn.ghost{background:transparent;color:var(--eax-muted);border:1px solid var(--eax-line-2);box-shadow:none;}
+  .acct-box .save-btn.ghost:hover{border-color:var(--eax-accent);color:var(--eax-accent);transform:none;box-shadow:none;}
+
+  /* ---------- Admin modal (preserved) ---------- */
+  .admin-modal{display:none;position:fixed;inset:0;z-index:2000;background:rgba(8,35,59,.65);align-items:center;justify-content:center;}
+  .admin-modal.open{display:flex;}
+  .admin-box{background:var(--eax-surface);border:1px solid var(--eax-line);border-radius:14px;width:520px;max-width:95vw;max-height:88vh;overflow-y:auto;box-shadow:var(--eax-shadow-card);}
+  .admin-header{padding:20px 24px;border-bottom:1px solid var(--eax-line);display:flex;align-items:center;justify-content:space-between;}
+  .admin-header h3{font-family:'Plus Jakarta Sans',sans-serif;font-size:15px;font-weight:700;color:var(--eax-ink-2);}
+  .admin-body{padding:20px 24px;}
+  .user-row{display:flex;flex-direction:column;gap:6px;padding:10px 0;border-bottom:1px solid var(--eax-line);}
+  .user-row:last-child{border-bottom:none;}
+  .user-row .uname{font-size:13px;color:var(--eax-ink);font-weight:500;flex:1;display:flex;align-items:center;gap:8px;}
+  .user-row .badge{font-size:10px;background:var(--eax-accent-soft);color:var(--eax-accent);border:1px solid rgba(242,89,41,.25);border-radius:4px;padding:2px 6px;}
+  .add-user-form{background:var(--eax-bg);border:1px solid var(--eax-line);border-radius:10px;padding:16px;margin-top:16px;}
+  .add-user-form h4{font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:var(--eax-subtle);margin-bottom:14px;font-weight:700;}
+  .form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}
+  .form-row input{padding:8px 12px;background:var(--eax-surface);border:1px solid var(--eax-line-2);border-radius:6px;color:var(--eax-ink);font-family:inherit;font-size:13px;outline:none;}
+  .form-row input:focus{border-color:var(--eax-accent);}
+  .btn-add-user{background:var(--eax-accent);color:var(--eax-accent-fg);border:none;border-radius:6px;padding:8px 18px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;}
+  .btn-add-user:hover{opacity:.92;}
+  .btn-del-user{background:none;border:none;color:var(--eax-subtle);cursor:pointer;font-size:18px;padding:2px 6px;border-radius:4px;}
+  .btn-del-user:hover{color:var(--eax-bad);}
+  .user-access{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;font-size:11px;color:var(--eax-muted);}
+  .user-access label{display:flex;align-items:center;gap:4px;cursor:pointer;}
+
+  /* ---------- Hidden file inputs ---------- */
+  input[type=file]{display:none;}
+</style>
 </head>
 <body>
 {% import "_partials/_brand_motion.html" as motion %}
-<div class="home-wrap">
-  <div class="logo-area">
-    <img src="/static/img/ember_logo.png" alt="Ember" class="logo-dark">
-    <img src="/static/img/ember_logo_light.png" alt="Ember" class="logo-light">
-    <div class="tagline">Applications &amp; Dashboards</div>
+
+{# ───────── Top bar ───────── #}
+<div class="topbar">
+  <div class="brand">
+    {{ motion.bars(width=44, height=18) }}
+    <span class="wordmark">EMBER</span>
   </div>
-  <div class="welcome"><span id="greeting-text">Welcome back</span>, <strong>{{ display_name }}</strong></div>
-
-  <!-- APPLICATIONS -->
-  {% if page_access.get('mpc_underwriting', true) %}
-  <div class="section-label"><span class="sl-text">Applications</span><span class="sl-line"></span></div>
-  <a href="/" class="app-featured">
-    <div class="app-featured-body">
-      <div class="type-pill pill-app">App</div>
-      <div class="app-title">MPC Underwriting</div>
-      <div class="app-desc">Interactive database and underwriting tool for master-planned community acquisitions. Model lot takedowns, cashflows, IRR, and scenario comparisons.</div>
-    </div>
-    <div class="app-featured-cta">
-      <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <span>Open</span>
-    </div>
-  </a>
-  <div class="section-divider"></div>
-  {% endif %}
-
-  <!-- DASHBOARDS -->
-  <div class="section-label"><span class="sl-text">Dashboards</span><span class="sl-line"></span></div>
-  <div class="dash-grid">
-
-    {% if page_access.get('returns', true) %}
-    <a href="/returns" style="text-decoration:none;display:flex;flex-direction:column">
-      <div class="dash-card clickable" style="flex:1">
-        <div class="type-pill pill-dash">Dashboard</div>
-        <div class="app-title">Active Project Returns</div>
-        <div class="app-desc">Current projected performance of active Ember projects.</div>
-        {% if report_dates.get('returns') %}<div class="last-updated">Updated {{ report_dates['returns'] }}</div>{% endif %}
-        <div class="app-arrow">
-          Open
-          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </div>
-      </div>
-    </a>
-    {% endif %}
-
-    {% if page_access.get('loans', true) %}
-    <a href="/loans" style="text-decoration:none;display:flex;flex-direction:column">
-      <div class="dash-card clickable" style="flex:1">
-        <div class="type-pill pill-dash">Dashboard</div>
-        <div class="app-title">Loan Capacities &amp; Debt Schedules</div>
-        <div class="app-desc">All current active Ember loans and their respective KPIs.</div>
-        {% if report_dates.get('loans') %}<div class="last-updated">Updated {{ report_dates['loans'] }}</div>{% endif %}
-        <div class="app-arrow">
-          Open
-          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </div>
-      </div>
-    </a>
-    {% endif %}
-
-    {% if page_access.get('operations', true) %}
-    <a href="/operations" style="text-decoration:none;display:flex;flex-direction:column">
-      <div class="dash-card clickable" style="flex:1">
-        <div class="type-pill pill-dash">Dashboard</div>
-        <div class="app-title">Ember Operating Revenues</div>
-        <div class="app-desc">Forecasted Ember operating revenues from active projects.</div>
-        {% if report_dates.get('operations') %}<div class="last-updated">Updated {{ report_dates['operations'] }}</div>{% endif %}
-        <div class="app-arrow">
-          Open
-          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </div>
-      </div>
-    </a>
-    {% endif %}
-
-    <a href="/ember-capital" style="text-decoration:none;display:flex;flex-direction:column">
-      <div class="dash-card clickable" style="flex:1">
-        <div class="type-pill pill-dash">Dashboard</div>
-        <div class="app-title">Ember Capital</div>
-        <div class="app-desc">Portfolio-level LP &amp; Promote cashflows across active projects with recyclable-equity sensitivity analysis.</div>
-        <div class="app-arrow">
-          Open
-          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </div>
-      </div>
-    </a>
-
-    {% if page_access.get('macro', true) %}
-    <a href="/macro" style="text-decoration:none;display:flex;flex-direction:column">
-      <div class="dash-card clickable" style="flex:1">
-        <div class="type-pill pill-dash">Dashboard</div>
-        <div class="app-title">Macroeconomic Data</div>
-        <div class="app-desc">Population, income, GDP, employment, real estate, and banking data for the Houston metro counties.</div>
-        {% if report_dates.get('macro') %}<div class="last-updated">Updated {{ report_dates['macro'] }}</div>{% endif %}
-        <div class="app-arrow">
-          Open
-          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </div>
-      </div>
-    </a>
-    {% endif %}
-
-    {% if page_access.get('sales', true) %}
-    <a href="/sales" style="text-decoration:none;display:flex;flex-direction:column">
-      <div class="dash-card clickable" style="flex:1">
-        <div class="type-pill pill-dash">Dashboard</div>
-        <div class="app-title">Community Sales Tracker</div>
-        <div class="app-desc">Home and lot sales data for active Ember MPCs.</div>
-        <div class="app-arrow">
-          Open
-          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </div>
-      </div>
-    </a>
-    {% endif %}
-
-  </div>
-
-  <div style="margin-top:28px;text-align:center;display:flex;align-items:center;justify-content:center;gap:10px">
-    <button onclick="openAcct()" style="background:none;border:1px solid var(--border);color:var(--text-muted);padding:8px 18px;border-radius:6px;font-size:12px;font-family:'DM Sans',sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:all .15s" onmouseover="this.style.borderColor='rgba(242,89,41,.4)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">
-      <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" stroke-width="1.8"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke-width="1.8" stroke-linecap="round"/></svg>
-      Account Settings
-    </button>
+  <div class="topbar-right">
+    <span id="topbar-date">—</span>
+    <span class="topbar-divider"></span>
     {% if is_admin %}
-    <button onclick="openAdmin()" style="background:none;border:1px solid var(--border);color:var(--text-muted);padding:8px 18px;border-radius:6px;font-size:12px;font-family:'DM Sans',sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:all .15s" onmouseover="this.style.borderColor='rgba(123,143,212,.4)';this.style.color='#7b8fd4'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">
-      <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2m22-4l-4.5 4.5M18 13l4.5-4.5M15 3a4 4 0 110 8 4 4 0 010-8z" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      Admin / Users
+    <button class="admin-btn" onclick="openAdmin()" title="Manage users">
+      <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2m22-4l-4.5 4.5M18 13l4.5-4.5M15 3a4 4 0 110 8 4 4 0 010-8z" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Manage
     </button>
     {% endif %}
-  </div>
-
-  <div class="footer">
-    <div class="upload-area">
-      <span>Ember Real Estate &amp; Development</span>
-      {% if is_admin %}
-      <input type="file" id="dashUpload" accept=".xlsx" hidden>
-      <button class="upload-btn" onclick="document.getElementById('dashUpload').click()">
-        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m14-7l-5-5-5 5m5-5v12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Update Dashboard Reports
-      </button>
-      <span id="uploadStatus" class="upload-status"></span>
-      <input type="file" id="macroUpload" accept=".xlsx" hidden>
-      <button class="upload-btn" onclick="document.getElementById('macroUpload').click()">
-        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="2"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20" stroke-width="2" stroke-linecap="round"/></svg>
-        Upload Macro Excel
-      </button>
-      <span id="macroUploadStatus" class="upload-status"></span>
-      <button class="upload-btn" id="refreshMacroBtn" onclick="triggerMacroRefresh()">
-        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Refresh Macro Data
-      </button>
-      <span id="macroRefreshStatus" class="upload-status"></span>
-      {% endif %}
-    </div>
-    <a href="/logout">Sign Out</a>
+    <button class="user-chip" onclick="openAcct()" aria-label="Account settings">
+      <span class="user-avatar">{{ (display_name or username or '?').split()|map('first')|join|upper|truncate(2,end='') }}</span>
+      <span class="uname">{{ display_name or username }}</span>
+    </button>
   </div>
 </div>
 
-<!-- ACCOUNT SETTINGS MODAL -->
-<div id="acct-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;align-items:center;justify-content:center">
-  <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:28px;width:360px;max-width:90vw;max-height:90vh;overflow-y:auto">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
-      <h3 style="margin:0;font-size:15px;font-weight:600">Account Settings</h3>
-      <button onclick="closeAcct()" style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer;line-height:1">&times;</button>
+{# ───────── Hero ───────── #}
+<section class="hero">
+  <div class="hero-left">
+    <div class="greet-eyebrow"><span id="greeting-text">Welcome back</span></div>
+    <h1 class="hero-title">Welcome back, {{ (display_name or username or 'team').split()[0] }}.</h1>
+    <p class="hero-sub">
+      {% if reports_updated_today %}
+        {{ {1:'One', 2:'Two', 3:'Three', 4:'Four'}.get(reports_updated_today, reports_updated_today) }} report{{ 's' if reports_updated_today != 1 else '' }} updated overnight
+      {% else %}
+        Reports stable
+      {% endif %}
+      <span class="sep">·</span>
+      {{ active_project_count or '—' }} active project{{ 's' if active_project_count != 1 else '' }}
+      <span class="sep">·</span>
+      {{ lp_equity_label }} LP equity
+    </p>
+  </div>
+
+  <div class="hero-kpi">
+    <div class="lbl">Portfolio at a glance</div>
+    <div class="val">{{ lp_equity_label }}</div>
+    <div class="cap">total LP equity &middot; {{ active_project_count or 0 }} active projects</div>
+  </div>
+</section>
+
+{# ───────── Featured Application ───────── #}
+{% if page_access.get('mpc_underwriting', true) %}
+<section class="featured">
+  <a class="featured-card" href="/">
+    <div class="featured-icon">
+      {{ motion.bars(width=28, height=14) }}
     </div>
-    <div style="font-size:12px;color:var(--text-dim);margin-bottom:16px">Logged in as <strong style="color:var(--text-muted)">{{ username }}</strong></div>
-    <div style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:16px">
-      <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Appearance</div>
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <span style="font-size:13px;color:var(--text-muted)">Color Theme</span>
-        <div style="display:flex;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:3px;gap:2px">
-          <button id="theme-btn-dark" onclick="applyTheme('dark')" style="padding:5px 14px;border:none;border-radius:4px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s">Dark</button>
-          <button id="theme-btn-light" onclick="applyTheme('light')" style="padding:5px 14px;border:none;border-radius:4px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s">Light</button>
+    <div class="featured-body">
+      <div class="featured-eyebrow">Application</div>
+      <div class="featured-title">MPC Underwriting</div>
+      <div class="featured-desc">Interactive database and underwriting tool for master-planned community acquisitions. Model lot takedowns, cashflows, IRR, and scenario comparisons.</div>
+    </div>
+    <div class="featured-deco">
+      {{ motion.bars(width=120, height=44) }}
+    </div>
+    <span class="featured-cta">Open
+      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </span>
+  </a>
+</section>
+{% endif %}
+
+{# ───────── Dashboards ───────── #}
+{# 4-tuple per card: (page_access_key, href, title, description).
+   ember_capital has no per-user gate — it's available to every signed-in
+   user. The other keys are gated by `page_access`. #}
+{% set dashboards = [
+  ('returns',     '/returns',       'Active Project Returns',          'Current projected performance of active Ember projects.'),
+  ('loans',       '/loans',         'Loan Capacities & Debt Schedules','All current active Ember loans and their respective KPIs.'),
+  ('operations',  '/operations',    'Operating Revenues',              'Forecasted Ember operating revenues from active projects.'),
+  ('ember_capital','/ember-capital','Ember Portfolio',                 'Aggregate view of all active projects: total lots, IRR, margins, and status.'),
+  ('macro',       '/macro',         'Macroeconomic Data',              'Population, income, GDP, employment, real estate for Houston metro.'),
+  ('sales',       '/sales',         'Community Sales Tracker',         'Home and lot sales data for active Ember MPCs.'),
+] %}
+{# Count how many cards will render — used by the "06 / 06" counter. #}
+{% set ns = namespace(count=0) %}
+{% for key, href, title, desc in dashboards %}
+  {% if key == 'ember_capital' or page_access.get(key, true) %}
+    {% set ns.count = ns.count + 1 %}
+  {% endif %}
+{% endfor %}
+<section class="section">
+  <div class="section-head">
+    <div class="section-eyebrow">Dashboards</div>
+    <div class="section-counter">{{ '%02d'|format(ns.count) }} / {{ '%02d'|format(ns.count) }}</div>
+  </div>
+  <div class="dash-grid">
+    {% for key, href, title, desc in dashboards %}
+      {% if key == 'ember_capital' or page_access.get(key, true) %}
+      <a class="dash-card" href="{{ href }}">
+        <div class="dash-card-top">
+          <span class="dash-eyebrow">Dashboard</span>
+          <span class="dash-deco">{{ motion.mini_bars(width=64, height=18) }}</span>
+        </div>
+        <div class="dash-title">{{ title }}</div>
+        <div class="dash-desc">{{ desc }}</div>
+        <div class="dash-foot">
+          <span class="dash-upd">{% if report_dates.get(key) %}UPD {{ report_dates[key]|upper }}{% else %}&nbsp;{% endif %}</span>
+          <span class="dash-open">Open
+            <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+        </div>
+      </a>
+      {% endif %}
+    {% endfor %}
+  </div>
+</section>
+
+{# ───────── Admin utilities (admin-only) ───────── #}
+{% if is_admin %}
+<div class="admin-bar">
+  <span class="admin-bar-label">Admin Utilities</span>
+  <input type="file" id="dashUpload" accept=".xlsx">
+  <button class="admin-btn" onclick="document.getElementById('dashUpload').click()">
+    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m14-7l-5-5-5 5m5-5v12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Update Dashboard Reports
+  </button>
+  <span id="uploadStatus" class="upload-status"></span>
+  <input type="file" id="macroUpload" accept=".xlsx">
+  <button class="admin-btn" onclick="document.getElementById('macroUpload').click()">
+    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="2"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20" stroke-width="2" stroke-linecap="round"/></svg>
+    Upload Macro Excel
+  </button>
+  <span id="macroUploadStatus" class="upload-status"></span>
+  <button class="admin-btn" id="refreshMacroBtn" onclick="triggerMacroRefresh()">
+    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Refresh Macro Data
+  </button>
+  <span id="macroRefreshStatus" class="upload-status"></span>
+</div>
+{% endif %}
+
+{# ───────── Footer ───────── #}
+<div class="footer">
+  <span>Ember Real Estate &amp; Development</span>
+  <a class="logout-link" href="/logout">Sign out</a>
+</div>
+
+{# ============================================================
+   Account Settings modal — preserved markup, restyled to match
+   the new token system. All JS handlers are unchanged.
+   ============================================================ #}
+<div id="acct-modal" class="acct-modal">
+  <div class="acct-box">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <h3>Account Settings</h3>
+      <button onclick="closeAcct()" style="background:none;border:none;color:var(--eax-subtle);font-size:22px;cursor:pointer;line-height:1;">&times;</button>
+    </div>
+    <div class="meta-line">Logged in as <strong>{{ username }}</strong></div>
+
+    <div style="border-bottom:1px solid var(--eax-line);padding-bottom:16px;margin-bottom:16px;">
+      <div class="lbl">Appearance</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <span style="font-size:13px;color:var(--eax-muted);">Color Theme</span>
+        <div style="display:flex;background:var(--eax-bg);border:1px solid var(--eax-line);border-radius:8px;padding:3px;gap:2px;">
+          <button id="theme-btn-light" onclick="applyTheme('light')" style="padding:5px 14px;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit;transition:all .15s;">Paper</button>
+          <button id="theme-btn-dark"  onclick="applyTheme('dark')"  style="padding:5px 14px;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit;transition:all .15s;">Navy</button>
         </div>
       </div>
     </div>
-    <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Email</div>
-    <div id="acct-email" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:16px;min-height:36px">—</div>
-    <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Change Password</div>
-    <input id="acct-cur-pw" type="password" placeholder="Current password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:8px;outline:none">
-    <input id="acct-new-pw" type="password" placeholder="New password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:8px;outline:none">
-    <input id="acct-conf-pw" type="password" placeholder="Confirm new password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:14px;outline:none">
-    <div id="acct-msg" style="font-size:12px;margin-bottom:12px;display:none"></div>
-    <button onclick="saveAcctPw()" style="width:100%;background:var(--accent);border:none;color:var(--accent-fg);padding:10px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:20px">Save Password</button>
-    <div style="border-top:1px solid var(--border);padding-top:18px">
-      <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">Monthly Report Emails</div>
-      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:14px">
-        <input type="checkbox" id="acct-report-optin" style="accent-color:#5e9e8c;width:15px;height:15px">
+
+    <div class="lbl">Email</div>
+    <div id="acct-email" class="acct-input" style="color:var(--eax-subtle);min-height:36px;margin-bottom:16px;">—</div>
+
+    <div class="lbl">Change Password</div>
+    <input id="acct-cur-pw" class="acct-input" type="password" placeholder="Current password" style="margin-bottom:8px;">
+    <input id="acct-new-pw" class="acct-input" type="password" placeholder="New password" style="margin-bottom:8px;">
+    <input id="acct-conf-pw" class="acct-input" type="password" placeholder="Confirm new password" style="margin-bottom:14px;">
+    <div id="acct-msg" style="font-size:12px;margin-bottom:12px;display:none;"></div>
+    <button class="save-btn" onclick="saveAcctPw()" style="margin-bottom:20px;">Save Password</button>
+
+    <div style="border-top:1px solid var(--eax-line);padding-top:18px;">
+      <div class="lbl">Monthly Report Emails</div>
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:14px;">
+        <input type="checkbox" id="acct-report-optin" style="accent-color:var(--eax-accent);width:15px;height:15px;">
         <div>
-          <div style="font-size:13px;color:var(--text)">Receive monthly reports</div>
-          <div style="font-size:11px;color:var(--text-dim);margin-top:2px">Sent on the 1st of each month to your email</div>
+          <div style="font-size:13px;color:var(--eax-ink);">Receive monthly reports</div>
+          <div style="font-size:11px;color:var(--eax-subtle);margin-top:2px;">Sent on the 1st of each month to your email</div>
         </div>
       </label>
-      <div id="acct-format-row" style="display:none;margin-bottom:14px">
-        <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Format</div>
-        <div style="display:flex;gap:16px">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text)">
-            <input type="radio" name="acct-report-fmt" value="pdf" id="acct-fmt-pdf" style="accent-color:#5e9e8c"> PDF
+      <div id="acct-format-row" style="display:none;margin-bottom:14px;">
+        <div class="lbl" style="margin-bottom:8px;">Format</div>
+        <div style="display:flex;gap:16px;">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--eax-ink);">
+            <input type="radio" name="acct-report-fmt" value="pdf" id="acct-fmt-pdf" style="accent-color:var(--eax-accent);"> PDF
           </label>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text)">
-            <input type="radio" name="acct-report-fmt" value="excel" id="acct-fmt-excel" style="accent-color:#5e9e8c"> Excel
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--eax-ink);">
+            <input type="radio" name="acct-report-fmt" value="excel" id="acct-fmt-excel" style="accent-color:var(--eax-accent);"> Excel
           </label>
         </div>
-        <div style="font-size:11px;color:var(--text-dim);margin-top:8px">Includes: Active Project Returns, Loan Capacities & Debt Schedules, Ember Operating Revenues, Ember Capital Executive Report</div>
+        <div style="font-size:11px;color:var(--eax-subtle);margin-top:8px;">Includes: Active Project Returns, Loan Capacities &amp; Debt Schedules, Ember Operating Revenues, Ember Capital Executive Report</div>
       </div>
-      <div id="acct-report-msg" style="font-size:12px;margin-bottom:8px;display:none"></div>
-      <button onclick="saveReportSettings()" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:9px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s" onmouseover="this.style.borderColor='#5e9e8c';this.style.color='#5e9e8c'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">Save Report Preferences</button>
+      <div id="acct-report-msg" style="font-size:12px;margin-bottom:8px;display:none;"></div>
+      <button class="save-btn ghost" onclick="saveReportSettings()">Save Report Preferences</button>
     </div>
   </div>
 </div>
 
 {% if is_admin %}
-<!-- ADMIN MODAL -->
+{# ============================================================
+   Admin (Team Management) modal — preserved markup + JS.
+   ============================================================ #}
 <div id="admin-modal" class="admin-modal">
   <div class="admin-box">
     <div class="admin-header">
       <h3>Team Management</h3>
-      <button onclick="closeAdmin()" style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer">&times;</button>
+      <button onclick="closeAdmin()" style="background:none;border:none;color:var(--eax-subtle);font-size:22px;cursor:pointer;">&times;</button>
     </div>
     <div class="admin-body">
       <div id="user-list" style="padding:24px 0;text-align:center;">{{ motion.loader('md', 'Loading users') }}</div>
-      <div style="margin-top:8px;padding-top:16px;border-top:1px solid rgba(37,44,61,.4)">
-        <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Report Testing</div>
-        <div style="display:flex;align-items:center;gap:10px">
-          <button onclick="sendReportsNow()" style="background:none;border:1px solid var(--border);color:var(--text-muted);padding:7px 14px;border-radius:6px;font-size:12px;font-family:'DM Sans',sans-serif;cursor:pointer;transition:all .15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">Send Reports Now</button>
-          <span id="send-reports-status" style="font-size:11px;color:var(--teal)"></span>
+      <div style="margin-top:8px;padding-top:16px;border-top:1px solid var(--eax-line);">
+        <div style="font-size:11px;color:var(--eax-subtle);text-transform:uppercase;letter-spacing:0.18em;margin-bottom:8px;font-weight:700;">Report Testing</div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <button onclick="sendReportsNow()" class="admin-btn">Send Reports Now</button>
+          <span id="send-reports-status" style="font-size:11px;color:var(--eax-good);"></span>
         </div>
       </div>
       <div class="add-user-form">
@@ -365,15 +597,15 @@
           <input type="text" id="new-username" placeholder="Username">
           <input type="password" id="new-password" placeholder="Password">
         </div>
-        <input type="email" id="new-email" placeholder="Email address (optional)" style="width:100%;margin-bottom:8px">
-        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-muted);margin-bottom:8px;cursor:pointer">
+        <input type="email" id="new-email" placeholder="Email address (optional)" style="width:100%;margin-bottom:8px;padding:8px 12px;background:var(--eax-surface);border:1px solid var(--eax-line-2);border-radius:6px;color:var(--eax-ink);font-family:inherit;font-size:13px;outline:none;">
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--eax-muted);margin-bottom:8px;cursor:pointer;">
           <input type="checkbox" id="new-is-admin"> Grant admin access
         </label>
-        <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;letter-spacing:.05em;text-transform:uppercase">Page Access</div>
-        <div class="user-access" style="margin-bottom:12px;flex-wrap:wrap">
+        <div style="font-size:10px;color:var(--eax-subtle);margin-bottom:4px;letter-spacing:0.18em;text-transform:uppercase;font-weight:700;">Page Access</div>
+        <div class="user-access" style="margin-bottom:12px;">
           <label><input type="checkbox" id="new-pa-mpc" checked>MPC Underwriting</label>
           <label><input type="checkbox" id="new-pa-returns" checked>Project Returns</label>
-          <label><input type="checkbox" id="new-pa-loans" checked>Loans & Debt</label>
+          <label><input type="checkbox" id="new-pa-loans" checked>Loans &amp; Debt</label>
           <label><input type="checkbox" id="new-pa-operations" checked>Operating Revenues</label>
           <label><input type="checkbox" id="new-pa-macro" checked>Macro Data</label>
           <label><input type="checkbox" id="new-pa-sales" checked>Community Sales</label>
@@ -398,7 +630,7 @@ async function refreshUserList() {
   if (!res.ok) return;
   const users = await res.json();
   document.getElementById('user-list').innerHTML = users.length === 0
-    ? '<div style="color:var(--text-dim);font-size:13px">No users.</div>'
+    ? '<div style="color:var(--eax-subtle);font-size:13px;">No users.</div>'
     : users.map(u => {
       const pa = u.page_access || {mpc_underwriting:true, returns:true, loans:true, operations:true, macro:true, sales:true};
       const checks = Object.entries(PAGE_LABELS).map(([k,label]) =>
@@ -406,23 +638,25 @@ async function refreshUserList() {
           onchange="toggleAccess(${u.id},'${k}',this.checked)">${label}</label>`
       ).join('');
       const optInBadge = u.report_opt_in
-        ? `<span class="badge" style="background:rgba(80,180,120,.12);color:#50b478;border-color:rgba(80,180,120,.25)">Reports ${(u.report_format||'pdf').toUpperCase()}</span>`
-        : `<span class="badge" style="background:rgba(150,150,150,.1);color:var(--text-dim);border-color:rgba(150,150,150,.2)">No Reports</span>`;
-      const btnStyle = `background:none;border:1px solid var(--border);color:var(--text-muted);border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;white-space:nowrap;font-family:'DM Sans',sans-serif;transition:all .15s`;
+        ? `<span class="badge">Reports ${(u.report_format||'pdf').toUpperCase()}</span>`
+        : `<span class="badge" style="background:transparent;color:var(--eax-subtle);border-color:var(--eax-line);">No Reports</span>`;
+      const btnStyle = `background:transparent;border:1px solid var(--eax-line-2);color:var(--eax-muted);border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;white-space:nowrap;font-family:inherit;transition:all .15s;`;
       return `<div class="user-row">
-        <div class="uname" style="flex:1">${u.username} ${u.is_admin ? '<span class="badge">Admin</span>' : ''} ${optInBadge}</div>
-        <button class="btn-del-user" onclick="deleteUser(${u.id},'${u.username}')" title="Remove">&times;</button>
-        <div style="display:flex;gap:6px;margin:6px 0 4px;width:100%">
-          <input type="text" id="fname-${u.id}" value="${u.first_name || ''}" placeholder="First name"
-            style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:6px 9px;font-size:12px;font-family:'DM Sans',sans-serif;outline:none">
-          <input type="text" id="lname-${u.id}" value="${u.last_name || ''}" placeholder="Last name"
-            style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:6px 9px;font-size:12px;font-family:'DM Sans',sans-serif;outline:none">
-          <button onclick="saveName(${u.id})" style="${btnStyle}" onmouseover="this.style.borderColor='var(--teal)';this.style.color='var(--teal)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">Name</button>
+        <div style="display:flex;align-items:center;gap:8px;width:100%;">
+          <div class="uname">${u.username} ${u.is_admin ? '<span class="badge">Admin</span>' : ''} ${optInBadge}</div>
+          <button class="btn-del-user" onclick="deleteUser(${u.id},'${u.username}')" title="Remove">&times;</button>
         </div>
-        <div style="display:flex;gap:6px;margin:0 0 4px;width:100%">
+        <div style="display:flex;gap:6px;width:100%;">
+          <input type="text" id="fname-${u.id}" value="${u.first_name || ''}" placeholder="First name"
+            style="flex:1;background:var(--eax-bg);border:1px solid var(--eax-line-2);color:var(--eax-ink);border-radius:6px;padding:6px 9px;font-size:12px;font-family:inherit;outline:none;">
+          <input type="text" id="lname-${u.id}" value="${u.last_name || ''}" placeholder="Last name"
+            style="flex:1;background:var(--eax-bg);border:1px solid var(--eax-line-2);color:var(--eax-ink);border-radius:6px;padding:6px 9px;font-size:12px;font-family:inherit;outline:none;">
+          <button onclick="saveName(${u.id})" style="${btnStyle}" onmouseover="this.style.borderColor='var(--eax-good)';this.style.color='var(--eax-good)';" onmouseout="this.style.borderColor='var(--eax-line-2)';this.style.color='var(--eax-muted)';">Name</button>
+        </div>
+        <div style="display:flex;gap:6px;width:100%;">
           <input type="email" id="email-${u.id}" value="${u.email || ''}" placeholder="Email address"
-            style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:6px 9px;font-size:12px;font-family:'DM Sans',sans-serif;outline:none">
-          <button onclick="saveEmail(${u.id})" style="${btnStyle}" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">Email</button>
+            style="flex:1;background:var(--eax-bg);border:1px solid var(--eax-line-2);color:var(--eax-ink);border-radius:6px;padding:6px 9px;font-size:12px;font-family:inherit;outline:none;">
+          <button onclick="saveEmail(${u.id})" style="${btnStyle}" onmouseover="this.style.borderColor='var(--eax-accent)';this.style.color='var(--eax-accent)';" onmouseout="this.style.borderColor='var(--eax-line-2)';this.style.color='var(--eax-muted)';">Email</button>
         </div>
         ${u.is_admin ? '' : `<div class="user-access">${checks}</div>`}
       </div>`;
@@ -437,8 +671,7 @@ async function toggleAccess(uid, page, enabled) {
   const pa = user.page_access || {mpc_underwriting:true, returns:true, loans:true, operations:true, macro:true, sales:true};
   pa[page] = enabled;
   await fetch('/api/admin/users/' + uid + '/access', {
-    method: 'PUT',
-    headers: {'Content-Type':'application/json'},
+    method: 'PUT', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({page_access: pa})
   });
 }
@@ -457,8 +690,7 @@ async function addUser() {
   const email = document.getElementById('new-email').value.trim();
   if (!username || !password) { alert('Username and password required'); return; }
   const res = await fetch('/api/admin/users', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
+    method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({username, password, email, is_admin, page_access})
   });
   const d = await res.json();
@@ -467,31 +699,22 @@ async function addUser() {
     document.getElementById('new-password').value = '';
     document.getElementById('new-email').value = '';
     document.getElementById('new-is-admin').checked = false;
-    document.getElementById('new-pa-mpc').checked = true;
-    document.getElementById('new-pa-returns').checked = true;
-    document.getElementById('new-pa-loans').checked = true;
-    document.getElementById('new-pa-operations').checked = true;
-    document.getElementById('new-pa-macro').checked = true;
-    document.getElementById('new-pa-sales').checked = true;
+    ['mpc','returns','loans','operations','macro','sales'].forEach(k=>document.getElementById('new-pa-'+k).checked=true);
     await refreshUserList();
-  } else {
-    alert(d.error || 'Error creating user');
-  }
+  } else { alert(d.error || 'Error creating user'); }
 }
 async function saveName(uid) {
   const first_name = document.getElementById('fname-' + uid).value.trim();
   const last_name = document.getElementById('lname-' + uid).value.trim();
   await fetch('/api/admin/users/' + uid + '/name', {
-    method: 'PUT',
-    headers: {'Content-Type':'application/json'},
+    method: 'PUT', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({first_name, last_name})
   });
 }
 async function saveEmail(uid) {
   const email = document.getElementById('email-' + uid).value.trim();
   await fetch('/api/admin/users/' + uid + '/email', {
-    method: 'PUT',
-    headers: {'Content-Type':'application/json'},
+    method: 'PUT', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({email})
   });
 }
@@ -508,24 +731,14 @@ document.getElementById('dashUpload').addEventListener('change', async function(
   const file = this.files[0];
   if (!file) return;
   const status = document.getElementById('uploadStatus');
-  status.textContent = 'Uploading...';
-  status.style.color = 'var(--text-muted)';
-  const fd = new FormData();
-  fd.append('file', file);
+  status.textContent = 'Uploading...'; status.style.color = 'var(--eax-muted)';
+  const fd = new FormData(); fd.append('file', file);
   try {
     const res = await fetch('/api/upload-dashboard', { method: 'POST', body: fd });
     const data = await res.json();
-    if (data.ok) {
-      status.textContent = 'Reports updated!';
-      status.style.color = 'var(--teal)';
-    } else {
-      status.textContent = data.error || 'Upload failed';
-      status.style.color = '#f87171';
-    }
-  } catch (e) {
-    status.textContent = 'Upload failed';
-    status.style.color = '#f87171';
-  }
+    if (data.ok) { status.textContent = 'Reports updated!'; status.style.color = 'var(--eax-good)'; }
+    else { status.textContent = data.error || 'Upload failed'; status.style.color = 'var(--eax-bad)'; }
+  } catch (e) { status.textContent = 'Upload failed'; status.style.color = 'var(--eax-bad)'; }
   this.value = '';
 });
 
@@ -533,53 +746,30 @@ document.getElementById('macroUpload').addEventListener('change', async function
   const file = this.files[0];
   if (!file) return;
   const status = document.getElementById('macroUploadStatus');
-  status.textContent = 'Uploading...';
-  status.style.color = 'var(--text-muted)';
-  const fd = new FormData();
-  fd.append('file', file);
+  status.textContent = 'Uploading...'; status.style.color = 'var(--eax-muted)';
+  const fd = new FormData(); fd.append('file', file);
   try {
     const res = await fetch('/api/upload-macro', { method: 'POST', body: fd });
     const data = await res.json();
-    if (data.ok) {
-      status.textContent = 'Macro data updated!';
-      status.style.color = 'var(--teal)';
-    } else {
-      status.textContent = data.error || 'Upload failed';
-      status.style.color = '#f87171';
-    }
-  } catch (e) {
-    status.textContent = 'Upload failed';
-    status.style.color = '#f87171';
-  }
+    if (data.ok) { status.textContent = 'Macro data updated!'; status.style.color = 'var(--eax-good)'; }
+    else { status.textContent = data.error || 'Upload failed'; status.style.color = 'var(--eax-bad)'; }
+  } catch (e) { status.textContent = 'Upload failed'; status.style.color = 'var(--eax-bad)'; }
   this.value = '';
 });
 
 let _refreshPoller = null;
-
 async function triggerMacroRefresh() {
   const btn = document.getElementById('refreshMacroBtn');
   const status = document.getElementById('macroRefreshStatus');
   btn.disabled = true;
-  status.textContent = 'Starting…';
-  status.style.color = 'var(--text-muted)';
+  status.textContent = 'Starting…'; status.style.color = 'var(--eax-muted)';
   try {
     const res = await fetch('/api/refresh-macro', { method: 'POST' });
     const data = await res.json();
-    if (!data.ok) {
-      status.textContent = data.message || 'Could not start';
-      status.style.color = '#f87171';
-      btn.disabled = false;
-      return;
-    }
-  } catch (e) {
-    status.textContent = 'Request failed';
-    status.style.color = '#f87171';
-    btn.disabled = false;
-    return;
-  }
+    if (!data.ok) { status.textContent = data.message || 'Could not start'; status.style.color = 'var(--eax-bad)'; btn.disabled = false; return; }
+  } catch (e) { status.textContent = 'Request failed'; status.style.color = 'var(--eax-bad)'; btn.disabled = false; return; }
   pollMacroStatus();
 }
-
 async function pollMacroStatus() {
   const btn = document.getElementById('refreshMacroBtn');
   const status = document.getElementById('macroRefreshStatus');
@@ -588,25 +778,15 @@ async function pollMacroStatus() {
     try {
       const res = await fetch('/api/macro-status');
       const d = await res.json();
-      if (d.running) {
-        status.textContent = 'Pulling data from APIs… (this takes ~10 min)';
-        status.style.color = 'var(--text-muted)';
-      } else if (d.last_error) {
-        status.textContent = 'Error: ' + d.last_error.slice(0, 80);
-        status.style.color = '#f87171';
-        btn.disabled = false;
-        clearInterval(_refreshPoller);
-      } else if (d.last_finished) {
-        status.textContent = 'Done! Data stored ' + (d.last_data_stored || '');
-        status.style.color = 'var(--teal)';
-        btn.disabled = false;
-        clearInterval(_refreshPoller);
-      }
-    } catch (e) { /* ignore */ }
+      if (d.running) { status.textContent = 'Pulling data from APIs… (this takes ~10 min)'; status.style.color = 'var(--eax-muted)'; }
+      else if (d.last_error) { status.textContent = 'Error: ' + d.last_error.slice(0, 80); status.style.color = 'var(--eax-bad)'; btn.disabled = false; clearInterval(_refreshPoller); }
+      else if (d.last_finished) { status.textContent = 'Done! Data stored ' + (d.last_data_stored || ''); status.style.color = 'var(--eax-good)'; btn.disabled = false; clearInterval(_refreshPoller); }
+    } catch (e) {}
   }, 8000);
 }
 </script>
 {% endif %}
+
 <script>
 // Time-of-day greeting
 (function() {
@@ -614,17 +794,29 @@ async function pollMacroStatus() {
   const g = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
   document.getElementById('greeting-text').textContent = g;
 })();
+
+// Format the topbar date as "FRI · MMM DD · YYYY"
+(function() {
+  const d = new Date();
+  const days = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+  const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  const txt = `${days[d.getDay()]} · ${months[d.getMonth()]} ${String(d.getDate()).padStart(2,'0')} · ${d.getFullYear()}`;
+  const el = document.getElementById('topbar-date');
+  if (el) el.textContent = txt;
+})();
+
 function _updateThemeButtons() {
-  const isLight = document.documentElement.dataset.theme === 'light';
+  const isDark = document.documentElement.dataset.theme === 'dark';
   const darkBtn  = document.getElementById('theme-btn-dark');
   const lightBtn = document.getElementById('theme-btn-light');
   if (!darkBtn || !lightBtn) return;
-  darkBtn.style.background  = isLight ? 'transparent' : 'var(--accent)';
-  darkBtn.style.color       = isLight ? 'var(--text-muted)' : '#000';
-  darkBtn.style.fontWeight  = isLight ? '400' : '600';
-  lightBtn.style.background = isLight ? 'var(--accent)' : 'transparent';
-  lightBtn.style.color      = isLight ? '#fff' : 'var(--text-muted)';
-  lightBtn.style.fontWeight = isLight ? '600' : '400';
+  // 'Paper' (light) is the brand default — show as active when not dark.
+  lightBtn.style.background = isDark ? 'transparent' : 'var(--eax-accent)';
+  lightBtn.style.color      = isDark ? 'var(--eax-muted)' : 'var(--eax-accent-fg)';
+  lightBtn.style.fontWeight = isDark ? '500' : '700';
+  darkBtn.style.background  = isDark ? 'var(--eax-accent)' : 'transparent';
+  darkBtn.style.color       = isDark ? 'var(--eax-accent-fg)' : 'var(--eax-muted)';
+  darkBtn.style.fontWeight  = isDark ? '700' : '500';
 }
 function applyTheme(theme) {
   // 'light' = Warm Paper (default) · 'dark' = Deep Navy
@@ -633,9 +825,10 @@ function applyTheme(theme) {
   _updateThemeButtons();
 }
 (function(){ var t = localStorage.getItem('ember-theme'); document.documentElement.dataset.theme = (t === 'dark') ? 'dark' : 'light'; })();
+
 async function openAcct() {
   const m = document.getElementById('acct-modal');
-  m.style.display = 'flex';
+  m.classList.add('open');
   _updateThemeButtons();
   document.getElementById('acct-cur-pw').value = '';
   document.getElementById('acct-new-pw').value = '';
@@ -651,7 +844,7 @@ async function openAcct() {
     document.getElementById('acct-format-row').style.display = d.report_opt_in ? 'block' : 'none';
   } catch(e) {}
 }
-function closeAcct() { document.getElementById('acct-modal').style.display = 'none'; }
+function closeAcct() { document.getElementById('acct-modal').classList.remove('open'); }
 document.getElementById('acct-modal').addEventListener('click', function(e) { if (e.target === this) closeAcct(); });
 document.getElementById('acct-report-optin').addEventListener('change', function() {
   document.getElementById('acct-format-row').style.display = this.checked ? 'block' : 'none';
@@ -661,7 +854,7 @@ async function saveAcctPw() {
   const nw  = document.getElementById('acct-new-pw').value;
   const conf= document.getElementById('acct-conf-pw').value;
   const msg = document.getElementById('acct-msg');
-  function showMsg(txt, ok) { msg.textContent=txt; msg.style.color=ok?'#5e9e8c':'#e07a3e'; msg.style.display='block'; }
+  function showMsg(txt, ok) { msg.textContent=txt; msg.style.color=ok?'var(--eax-good)':'var(--eax-bad)'; msg.style.display='block'; }
   if (!cur||!nw||!conf) { showMsg('All fields are required.',false); return; }
   if (nw!==conf)        { showMsg('New passwords do not match.',false); return; }
   const res = await fetch('/api/account/password',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({current_password:cur,new_password:nw})});
@@ -676,27 +869,18 @@ async function saveReportSettings() {
   const res = await fetch('/api/account/report-settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({report_opt_in:opt_in,report_format:fmt})});
   const d = await res.json();
   msg.style.display='block';
-  if (d.ok) { msg.textContent='Preferences saved.'; msg.style.color='#5e9e8c'; }
-  else      { msg.textContent=d.error||'Failed to save.'; msg.style.color='#e07a3e'; }
+  if (d.ok) { msg.textContent='Preferences saved.'; msg.style.color='var(--eax-good)'; }
+  else      { msg.textContent=d.error||'Failed to save.'; msg.style.color='var(--eax-bad)'; }
 }
 async function sendReportsNow() {
   const status = document.getElementById('send-reports-status');
-  status.textContent = 'Sending…';
-  status.style.color = 'var(--text-muted)';
+  status.textContent = 'Sending…'; status.style.color = 'var(--eax-muted)';
   try {
     const res = await fetch('/api/admin/send-reports-now', {method:'POST'});
     const d = await res.json();
-    if (d.ok) {
-      status.textContent = d.queued ? 'Queued — check Railway logs for result.' : `Sent to ${d.sent} recipient${d.sent !== 1 ? 's' : ''}.`;
-      status.style.color = 'var(--teal)';
-    } else {
-      status.textContent = d.error || 'Error';
-      status.style.color = '#e07a3e';
-    }
-  } catch(e) {
-    status.textContent = 'Request failed';
-    status.style.color = '#e07a3e';
-  }
+    if (d.ok) { status.textContent = d.queued ? 'Queued — check Railway logs for result.' : `Sent to ${d.sent} recipient${d.sent !== 1 ? 's' : ''}.`; status.style.color = 'var(--eax-good)'; }
+    else      { status.textContent = d.error || 'Error'; status.style.color = 'var(--eax-bad)'; }
+  } catch(e) { status.textContent = 'Request failed'; status.style.color = 'var(--eax-bad)'; }
 }
 </script>
 </body>

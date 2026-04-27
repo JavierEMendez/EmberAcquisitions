@@ -44,6 +44,21 @@
 </div>
 {%- endmacro %}
 
+{# ---- Mini ascending-bars decoration ----
+   A 7-bar ascending pattern, used as a small chart-like ornament on
+   dashboard cards in the home page. Renders an orange-fade gradient
+   from short/dim on the left to tall/bright on the right. #}
+{% macro mini_bars(width=64, height=20, color=None) -%}
+{%- set heights = [4, 6, 8, 10, 12, 15, 18] -%}
+{%- set bw = 4 -%}
+{%- set gap = 3 -%}
+<svg class="ember-mini-bars" width="{{ width }}" height="{{ height }}" viewBox="0 0 {{ heights|length * (bw + gap) - gap }} 20" aria-hidden="true"{% if color %} style="color:{{ color }};"{% endif %}>
+  {% for h in heights -%}
+  <rect x="{{ loop.index0 * (bw + gap) }}" y="{{ 20 - h }}" width="{{ bw }}" height="{{ h }}" rx="1" fill="currentColor" opacity="{{ 0.45 + loop.index0 * 0.08 }}"></rect>
+  {% endfor -%}
+</svg>
+{%- endmacro %}
+
 {# ---- Animated brand-mark bars (17-bar Ember glyph) ---- #}
 {# Geometry mirrors the React Bars.tsx component: a 240×80 viewbox
    with 17 rounded rectangles. Pass animated=true for splash /

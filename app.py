@@ -199,26 +199,103 @@ def logout():
     return redirect(url_for("login"))
 
 # ─── MAIN APP ─────────────────────────────────────────────────────────────────
+def _home_portfolio_summary():
+    """Compute the at-a-glance portfolio numbers shown on the home hero.
+
+    Returns a dict with:
+      - lp_equity_outstanding (float, dollars): sum across active projects of
+        max(0, |LP contributions| - LP distributions). The capital still in
+        the ground.
+      - lp_equity_label (str): human-readable formatting, e.g. '$1.2B'.
+      - active_project_count (int): number of projects with at least one
+        non-zero metric in the latest returns report.
+      - report_dates (dict): per-report-type last-updated date strings.
+      - reports_updated_today (int): how many report types were updated in
+        the last 24 hours (used in the 'three reports updated overnight' line).
+    """
+    out = {
+        "lp_equity_outstanding": 0.0,
+        "lp_equity_label": "—",
+        "active_project_count": 0,
+        "report_dates": {},
+        "reports_updated_today": 0,
+    }
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT report_type, MAX(uploaded_at) as last_updated
+            FROM reports GROUP BY report_type
+        """)
+        rows = cur.fetchall()
+        out["report_dates"] = {
+            r["report_type"]: r["last_updated"].strftime("%-d %b %Y")
+            for r in rows if r["last_updated"]
+        }
+        cutoff = datetime.datetime.now() - datetime.timedelta(hours=36)
+        out["reports_updated_today"] = sum(
+            1 for r in rows if r["last_updated"] and r["last_updated"].replace(tzinfo=None) >= cutoff
+        )
+
+        # Pull the latest returns report and aggregate LP contributions vs.
+        # distributions per project.
+        cur.execute(
+            "SELECT data FROM reports WHERE report_type = 'returns' "
+            "ORDER BY uploaded_at DESC LIMIT 1"
+        )
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if row and row["data"]:
+            data = row["data"]
+            projects = data.get("projects") or []
+            total_outstanding = 0.0
+            active = 0
+            for p in projects:
+                by_label = {m.get("label"): m for m in (p.get("metrics") or [])}
+                def _f(label):
+                    v = (by_label.get(label) or {}).get("total")
+                    try: return float(v) if v is not None else 0.0
+                    except (TypeError, ValueError): return 0.0
+                contrib = abs(_f("Total LP Contributions"))
+                distrib = _f("Total LP Distributions")
+                if contrib > 0 or distrib > 0:
+                    active += 1
+                outstanding = max(0.0, contrib - distrib)
+                total_outstanding += outstanding
+            out["lp_equity_outstanding"] = total_outstanding
+            out["active_project_count"] = active
+
+            v = total_outstanding
+            if v >= 1e9:
+                out["lp_equity_label"] = f"${v/1e9:.2f}B".rstrip("0").rstrip(".") + ("B" if not f"${v/1e9:.2f}B".rstrip("0").rstrip(".").endswith("B") else "")
+                # Cleaner: keep one decimal
+                out["lp_equity_label"] = f"${v/1e9:.1f}B"
+            elif v >= 1e6:
+                out["lp_equity_label"] = f"${v/1e6:.0f}M"
+            elif v > 0:
+                out["lp_equity_label"] = f"${v:,.0f}"
+    except Exception:
+        # Home page must never blow up on a dashboard summary glitch.
+        pass
+    return out
+
+
 @app.route("/home")
 @login_required
 def home():
     pa = session.get("page_access") or {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
     if session.get("is_admin"):
         pa = {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT report_type, MAX(uploaded_at) as last_updated
-        FROM reports GROUP BY report_type
-    """)
-    report_dates = {row["report_type"]: row["last_updated"].strftime("%-d %b %Y") for row in cur.fetchall() if row["last_updated"]}
-    cur.close(); conn.close()
+    summary = _home_portfolio_summary()
     return render_template("home.html",
         username=session.get("username"),
         display_name=session.get("display_name", session.get("username")),
         is_admin=session.get("is_admin"),
         page_access=pa,
-        report_dates=report_dates)
+        report_dates=summary["report_dates"],
+        lp_equity_label=summary["lp_equity_label"],
+        active_project_count=summary["active_project_count"],
+        reports_updated_today=summary["reports_updated_today"])
 
 @app.route("/")
 @login_required
