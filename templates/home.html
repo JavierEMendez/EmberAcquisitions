@@ -397,13 +397,7 @@
     <p class="hero-sub">
       {{ lp_equity_label }} LP equity
       <span class="sep">·</span>
-      {{ portfolio_irr_label }} portfolio IRR
-      <span class="sep">·</span>
       {{ active_project_count or '—' }} active project{{ 's' if active_project_count != 1 else '' }}
-      {% if reports_updated_today %}
-      <span class="sep">·</span>
-      {{ {1:'one', 2:'two', 3:'three', 4:'four', 5:'five', 6:'six'}.get(reports_updated_today, reports_updated_today) }} report{{ 's' if reports_updated_today != 1 else '' }} updated overnight
-      {% endif %}
     </p>
   </div>
 
