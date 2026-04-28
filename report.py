@@ -536,15 +536,60 @@ def build_context(data: dict[str, Any], run_date: datetime,
         pad_left=64, label_size=12, tick_count=4, label_gap=8, uid="pgrad-prom",
     ) if promote_cum_vals else ""
 
-    # Per-project charts (cumulative net + promote overlay).
+    # Per-project: clip rows to the project's actual active range (first
+    # contribution → last distribution). The portfolio runs 2018-2039 but
+    # a 2025-vintage that wraps in 2032 has no business showing 2018-2024
+    # or 2033-2039 columns of zeros — they crowd the table and force the
+    # year font down to unreadable sizes. We compute the active span from
+    # the row data, slice every per-year array to it, and re-derive the
+    # cumulative net so the chart starts at zero on the project's vintage.
+    _active_keys = ("preferred_return", "return_of_capital", "excess_cashflow",
+                    "lp_distributions", "lp_contributions",
+                    "net_cashflow", "promote")
+    portfolio_start_year = int(years[0])
+
     for idx, p in enumerate(projects_ranked):
-        running = 0.0
-        prom_cum = []
-        for v in p["rows"]["promote"]:
+        rows = p["rows"]
+        first_active = n_years
+        last_active  = -1
+        for i in range(n_years):
+            if any(i < len(rows.get(k, [])) and abs(rows[k][i]) > 1e-9
+                   for k in _active_keys):
+                first_active = min(first_active, i)
+                last_active  = max(last_active,  i)
+
+        if last_active < 0:
+            # No activity at all — fall back to full range.
+            start_idx, end_idx = 0, n_years
+        else:
+            # Floor at vintage so we don't drop the contribution year if
+            # it happens to be all-zeros for a particular row key set.
+            v_idx = max(0, p["vintage"] - portfolio_start_year)
+            start_idx = max(0, min(first_active, v_idx))
+            end_idx   = min(last_active + 1, n_years)
+
+        sliced = {k: list(v[start_idx:end_idx]) for k, v in rows.items()}
+        # Re-derive cumulative_net_cf from the sliced net so the chart
+        # starts at the project's first active year, not from the
+        # portfolio's 2018 baseline.
+        cum, running = [], 0.0
+        for v in sliced.get("net_cashflow", []):
+            running += v
+            cum.append(running)
+        sliced["cumulative_net_cf"] = cum
+
+        p["rows"]              = sliced
+        p["years"]              = years[start_idx:end_idx]
+        p["year_labels_short"]  = [f"'{y[-2:]}" for y in p["years"]]
+        p["pcf_start_year"]     = int(years[start_idx])
+        p["pcf_end_year"]       = int(years[end_idx - 1])
+
+        prom_cum, running = [], 0.0
+        for v in sliced.get("promote", []):
             running += v
             prom_cum.append(running)
         p["cum_chart_svg"] = cumulative_chart(
-            p["rows"]["cumulative_net_cf"], 400, 130, accent_color, prom_cum,
+            sliced["cumulative_net_cf"], 400, 130, accent_color, prom_cum,
             pad_left=50, label_size=11, tick_count=4, label_gap=6,
             uid=f"pcgrad-{idx}",
         )
