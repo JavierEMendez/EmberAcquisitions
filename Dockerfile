@@ -42,8 +42,11 @@ RUN pip install -r requirements.txt
 COPY . .
 
 # Railway sets PORT at runtime; default 8000 lets `docker run` work too.
-ENV PORT=8000
 EXPOSE 8000
 
-# Match the existing Procfile / Railway start command.
-CMD gunicorn app:app --bind 0.0.0.0:${PORT:-8000} --workers 1 --timeout 120 --log-level info
+# Use exec form + explicit `sh -c` so $PORT is unambiguously expanded by
+# the shell. Plain CMD shell form *should* expand it too, but on Railway
+# we saw "'$PORT' is not a valid port number" — gunicorn was getting the
+# literal string. The `exec` keeps gunicorn as PID 1 so SIGTERM still
+# propagates cleanly on container shutdown.
+CMD ["sh", "-c", "exec gunicorn app:app --bind 0.0.0.0:${PORT:-8000} --workers 1 --timeout 120 --log-level info"]
