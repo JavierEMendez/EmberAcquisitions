@@ -7,7 +7,10 @@ the env lookup in Python is bulletproof.
 import os
 
 bind = f"0.0.0.0:{os.environ.get('PORT', '8000')}"
-workers = int(os.environ.get("WEB_CONCURRENCY", "1"))
+# Two workers minimum so an in-process HTTP fetch (e.g. WeasyPrint
+# loading a /static/... resource while rendering a PDF) doesn't
+# deadlock against the same worker that's serving the request.
+workers = int(os.environ.get("WEB_CONCURRENCY", "2"))
 timeout = int(os.environ.get("GUNICORN_TIMEOUT", "120"))
 loglevel = os.environ.get("GUNICORN_LOGLEVEL", "info")
 accesslog = "-"

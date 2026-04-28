@@ -10,11 +10,15 @@
 <meta charset="utf-8"/>
 <title>Ember · Project Returns Report — {{ period_label }}</title>
 <style>
-  /* Brand fonts — paths assumed at /static/fonts/. Adjust if your tree differs. */
-  @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-Bold.ttf") format("truetype"); font-weight: 700; }
-  @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-CondensedBold.ttf") format("truetype"); font-weight: 800; }
-  @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-Light.ttf") format("truetype"); font-weight: 300; }
-  @font-face { font-family: "Gotham"; src: url("/static/fonts/Gotham-Medium.otf") format("opentype"); font-weight: 500; }
+  /* Brand fonts — fallback chain only. We deliberately don't declare
+     @font-face here: the /static/fonts/*.ttf files referenced by the
+     handoff template don't exist in this repo, and WeasyPrint would
+     try to HTTP-fetch them from the same Flask process — with
+     workers=1 each request deadlocks against the worker rendering the
+     PDF, hanging the whole report. The fallback chain to Plus Jakarta
+     Sans / system-ui renders cleanly. To use real brand fonts later,
+     drop the .ttf/.otf files into /static/fonts/ and add @font-face
+     declarations here. */
 
   :root {
     --paper: #FFFFFF;
