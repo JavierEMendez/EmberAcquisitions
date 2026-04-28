@@ -25,7 +25,7 @@ import threading
 import time
 import urllib.request
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # ─── Pipsy GraphQL API ────────────────────────────────────────────────────────
 
@@ -668,8 +668,12 @@ def _build_dashboard_data():
         d = min(r["date"] for r in records)
         return d.strftime("%b %Y")
 
+    # Emit the timestamp as an ISO 8601 UTC string. The browser formats it in
+    # the user's local timezone — Railway runs in UTC, so a naive strftime here
+    # bakes in the wrong wall-clock for anyone outside UTC (e.g. Houston is
+    # UTC-5/6). Front-end uses fmtTimestamp() to localize on render.
     payload = {
-        "generated_at": now.strftime("%B %-d, %Y %-I:%M %p") if os.name != "nt" else now.strftime("%B %d, %Y %I:%M %p").replace(" 0", " "),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "current_year": current_year,
         "current_month": current_month,
         "targets": TARGETS,

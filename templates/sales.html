@@ -1316,12 +1316,30 @@ function mkDoughnut(id, labels, values, colors) {
 }
 
 // ── RENDER ─────────────────────────────────────────────────────────────────────
+// Localize an ISO 8601 UTC timestamp to the browser's timezone. Falls back to
+// the raw string if it isn't a parseable ISO (e.g. an old cached payload that
+// still uses the legacy server-formatted string).
+function fmtTimestamp(s) {
+  if (!s) return '';
+  // Heuristic: ISO strings look like 2026-04-28T14:57:00... — they start with
+  // a 4-digit year and contain a 'T'. Anything else we leave alone.
+  const looksIso = /^\d{4}-\d{2}-\d{2}T/.test(s);
+  if (!looksIso) return s;
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return s;
+  return d.toLocaleString(undefined, {
+    month: 'long', day: 'numeric', year: 'numeric',
+    hour: 'numeric', minute: '2-digit'
+  });
+}
+
 function renderAll(data) {
   const comm = data.communities;
   const gpd = comm.gpd, hld = comm.hld, wrg = comm.wrg;
   const year = data.current_year;
-  document.getElementById('meta-updated').textContent = 'Pulled ' + data.generated_at;
-  document.getElementById('exec-sub').textContent = 'As of ' + data.generated_at;
+  const stamp = fmtTimestamp(data.generated_at);
+  document.getElementById('meta-updated').textContent = 'Pulled ' + stamp;
+  document.getElementById('exec-sub').textContent = 'As of ' + stamp;
 
   // ── The Grand Prairie (GPD + Highlands combined) exec KPIs ─────────────────
   const tgpLop   = gpd.total_net + hld.total_net;
@@ -1586,7 +1604,7 @@ function renderCancels(data) {
   const year = data.current_year;
   const total = gpd.canc_total + hld.canc_total + wrg.canc_total;
 
-  document.getElementById('cancels-sub').textContent = 'As of ' + data.generated_at;
+  document.getElementById('cancels-sub').textContent = 'As of ' + fmtTimestamp(data.generated_at);
 
   // KPIs
   document.getElementById('cnc-gpd').textContent = fmtN(gpd.canc_total);
