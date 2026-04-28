@@ -1,0 +1,7 @@
+# System libraries WeasyPrint links against at runtime.
+# Picked up automatically by Railway's apt buildpack and Heroku's apt buildpack.
+libpango-1.0-0
+libpangoft2-1.0-0
+libcairo2
+libgdk-pixbuf-2.0-0
+shared-mime-info

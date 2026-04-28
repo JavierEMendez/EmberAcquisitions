@@ -1,0 +1,511 @@
+{# ============================================================
+   Project Returns — printable HTML report (Jinja template)
+   Server renders this with context from report.build_context().
+   WeasyPrint converts it to PDF.
+   Visual ground truth: _design_reference/Returns Report.html
+   ============================================================ #}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Ember · Project Returns Report — {{ period_label }}</title>
+<style>
+  /* Brand fonts — paths assumed at /static/fonts/. Adjust if your tree differs. */
+  @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-Bold.ttf") format("truetype"); font-weight: 700; }
+  @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-CondensedBold.ttf") format("truetype"); font-weight: 800; }
+  @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-Light.ttf") format("truetype"); font-weight: 300; }
+  @font-face { font-family: "Gotham"; src: url("/static/fonts/Gotham-Medium.otf") format("opentype"); font-weight: 500; }
+
+  :root {
+    --paper: #FFFFFF;
+    --warm: #F8F4EE;
+    --ink: #08233B;
+    --ink-2: #13344E;
+    --muted: #5b6b7b;
+    --subtle: #97a3b0;
+    --line: rgba(8,35,59,0.10);
+    --line-2: rgba(8,35,59,0.20);
+    --line-3: rgba(8,35,59,0.35);
+    --accent: #F25929;
+    --good: #1F7A4D;
+    --bad: #C0311A;
+    --font-display: "HelveticaNeue Brand", "Plus Jakarta Sans", system-ui, sans-serif;
+    --font-sans: "Plus Jakarta Sans", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, monospace;
+    --font-eyebrow: "Gotham", "Plus Jakarta Sans", system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #fff; font-family: var(--font-sans); color: var(--ink); -webkit-font-smoothing: antialiased; }
+
+  /* Page chrome */
+  .page {
+    width: 11in; height: 8.5in;
+    background: var(--paper);
+    position: relative;
+    overflow: hidden;
+    page-break-after: always;
+    color: var(--ink);
+  }
+  .page:last-child { page-break-after: auto; }
+  .page-pad { position: absolute; inset: 0; padding: 0.55in 0.65in 0.85in 0.65in; display: flex; flex-direction: column; }
+
+  /* Footer */
+  .page-foot {
+    position: absolute; left: 0.65in; right: 0.65in; bottom: 0.32in;
+    display: flex; justify-content: space-between; align-items: center;
+    padding-top: 10px; border-top: 1px solid var(--line);
+    font-family: var(--font-mono); font-size: 8.5px; letter-spacing: 0.06em; color: var(--subtle);
+  }
+  .page-foot .l, .page-foot .c, .page-foot .r { display: flex; gap: 8px; align-items: center; }
+  .page-foot .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); display: inline-block; }
+  .page-foot .conf { font-weight: 600; color: var(--ink-2); letter-spacing: 0.18em; text-transform: uppercase; }
+
+  /* Type */
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .eyebrow { font-family: var(--font-eyebrow); font-weight: 500; font-size: 9.5px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--accent); }
+  .label { font-family: var(--font-sans); font-weight: 600; font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--subtle); }
+
+  /* Cover */
+  .cover .top { display: flex; justify-content: space-between; align-items: flex-start; }
+  .cover .conf-stamp {
+    font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--ink-2); padding: 6px 12px; border: 1px solid var(--line-2); border-radius: 999px;
+    display: inline-flex; gap: 8px; align-items: center;
+  }
+  .cover .conf-stamp::before { content: ""; width: 6px; height: 6px; background: var(--accent); border-radius: 50%; display: inline-block; }
+  .cover .mid { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; padding-bottom: 12px; }
+  .cover h1 { font-family: var(--font-display); font-weight: 700; font-size: 84px; line-height: 0.94; letter-spacing: -0.025em; color: var(--ink); max-width: 9in; text-transform: uppercase; }
+  .cover h1 em { font-style: normal; font-weight: 300; color: var(--accent); }
+  .cover .lede { font-size: 14.5px; line-height: 1.55; color: var(--muted); margin-top: 28px; max-width: 6.4in; }
+  .cover .bot { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0; margin-top: 36px; padding-top: 22px; border-top: 1px solid var(--line-2); }
+  .cover .bot .col { padding-right: 24px; }
+  .cover .bot .col + .col { padding-left: 24px; border-left: 1px solid var(--line); }
+  .cover .bot .col .label { margin-bottom: 8px; }
+  .cover .bot .col .val { font-family: var(--font-display); font-weight: 700; font-size: 16px; color: var(--ink); letter-spacing: 0.01em; text-transform: uppercase; }
+  .cover .bot .col .val.mono { font-family: var(--font-mono); font-weight: 500; font-size: 12.5px; letter-spacing: 0.04em; }
+  .cover .footnote { font-size: 9.5px; line-height: 1.5; color: var(--subtle); max-width: 6.4in; padding-top: 10px; }
+
+  /* Summary */
+  .summary .head { display: flex; justify-content: space-between; align-items: flex-end; padding-bottom: 12px; border-bottom: 1px solid var(--line-2); margin-bottom: 16px; }
+  .summary h2 { font-family: var(--font-display); font-weight: 700; font-size: 26px; letter-spacing: -0.015em; line-height: 1.04; text-transform: uppercase; }
+  .summary h2 em { font-style: normal; font-weight: 300; color: var(--accent); text-transform: none; letter-spacing: -0.02em; }
+  .summary .head-meta { text-align: right; font-family: var(--font-mono); font-size: 9.5px; color: var(--subtle); letter-spacing: 0.06em; }
+
+  .kpi-band { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0; border: 1px solid var(--line); margin-bottom: 14px; }
+  .kpi-band .kpi { padding: 11px 14px; border-left: 1px solid var(--line); }
+  .kpi-band .kpi:first-child { border-left: none; }
+  .kpi .label { font-size: 8.5px; }
+  .kpi .v { font-family: var(--font-display); font-weight: 700; font-size: 20px; letter-spacing: -0.01em; margin-top: 5px; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .kpi.accent .v { color: var(--accent); }
+  .kpi .s { font-size: 9px; color: var(--muted); margin-top: 2px; font-family: var(--font-sans); }
+
+  .summary-body { display: grid; grid-template-columns: 1.55fr 1fr; gap: 18px; flex: 1; min-height: 0; }
+  .summary-charts { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+  .summary-chart { border: 1px solid var(--line); padding: 12px 14px 10px; display: flex; flex-direction: column; min-height: 0; flex: 1; }
+  .summary-chart .ttl { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .summary-chart .ttl .h { font-family: var(--font-display); font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.02em; }
+  .summary-chart .ttl .s { font-size: 10px; color: var(--subtle); font-family: var(--font-mono); letter-spacing: 0.04em; }
+  .summary-chart .chart-area { flex: 1; min-height: 0; display: flex; align-items: stretch; }
+  .summary-chart .chart-area svg { width: 100%; height: 100%; display: block; }
+  .summary-chart .chart-xaxis { display: flex; justify-content: space-between; margin-top: 4px; font-family: var(--font-mono); font-size: 8.5px; color: var(--subtle); letter-spacing: 0.08em; padding-left: 56px; }
+
+  .summary-side { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--line); padding: 0; min-height: 0; overflow: hidden; }
+  .summary-side .ttl { padding: 10px 14px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+  .summary-side .ttl .h { font-family: var(--font-display); font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.02em; }
+  .summary-side .ttl .s { font-size: 9px; color: var(--subtle); font-family: var(--font-mono); margin-top: 2px; }
+  .proj-list { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .proj-row { display: grid; grid-template-columns: 1fr 46px 46px 60px; gap: 8px; padding: 6px 14px; border-bottom: 1px solid var(--line); align-items: baseline; font-size: 10.5px; flex: 1; }
+  .proj-row:last-child { border-bottom: none; }
+  .proj-row .pname { color: var(--ink); font-weight: 500; line-height: 1.15; }
+  .proj-row .pmeta { font-family: var(--font-mono); font-size: 8.5px; color: var(--subtle); margin-top: 1px; letter-spacing: 0.04em; }
+  .proj-row .num-cell { text-align: right; font-family: var(--font-display); font-weight: 700; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .proj-row .num-cell.accent { color: var(--accent); }
+
+  /* Project pages */
+  .projects-page { display: flex; flex-direction: column; }
+  .projects-page .page-head { display: flex; justify-content: space-between; align-items: flex-end; padding-bottom: 12px; border-bottom: 1px solid var(--line-2); margin-bottom: 18px; }
+  .projects-page .page-head h2 { font-family: var(--font-display); font-weight: 700; font-size: 22px; letter-spacing: -0.015em; text-transform: uppercase; }
+  .projects-page .page-head h2 em { font-style: normal; font-weight: 300; color: var(--accent); text-transform: none; letter-spacing: -0.02em; }
+  .projects-page .page-head .meta { font-family: var(--font-mono); font-size: 9.5px; color: var(--subtle); letter-spacing: 0.06em; }
+  .projects-body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .pcard { flex: 0 0 50%; display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; padding: 14px 0; border-bottom: 1px solid var(--line); min-height: 0; overflow: hidden; }
+  .pcard:last-child { border-bottom: none; }
+  .pcard .left, .pcard .right { display: flex; flex-direction: column; min-height: 0; }
+  .pcard .ph-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  .pcard .ph-head .pname { font-family: var(--font-display); font-weight: 700; font-size: 16px; letter-spacing: -0.01em; text-transform: uppercase; }
+  .pcard .ph-head .pmeta { font-family: var(--font-mono); font-size: 9px; color: var(--subtle); letter-spacing: 0.06em; }
+  .stat-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; margin-bottom: 10px; }
+  .stat-row .stat { padding: 6px 8px 6px 0; }
+  .stat-row .stat + .stat { border-left: 1px solid var(--line); padding-left: 10px; }
+  .stat .l { font-family: var(--font-eyebrow); font-size: 8px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 500; color: var(--subtle); }
+  .stat .v { font-family: var(--font-display); font-weight: 700; font-size: 15px; letter-spacing: -0.005em; margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .stat.accent .v { color: var(--accent); }
+
+  table.pcf { width: 100%; border-collapse: collapse; font-size: 8.5px; font-variant-numeric: tabular-nums; flex: 1; }
+  table.pcf th { padding: 4px 4px; font-weight: 600; font-size: 7.5px; letter-spacing: 0.10em; text-transform: uppercase; color: var(--subtle); border-bottom: 1px solid var(--line-2); text-align: right; white-space: nowrap; }
+  table.pcf th:first-child { text-align: left; padding-left: 0; }
+  table.pcf td { padding: 4px 4px; text-align: right; color: var(--muted); border-bottom: 1px solid var(--line); white-space: nowrap; font-feature-settings: 'tnum'; }
+  table.pcf td:first-child { text-align: left; padding-left: 0; color: var(--ink); font-weight: 500; }
+  table.pcf tr.hero td { color: var(--ink); font-weight: 600; border-top: 1px solid var(--line-2); padding-top: 6px; padding-bottom: 6px; }
+  table.pcf tr.hero td:first-child { color: var(--accent); }
+  table.pcf tr.hero td.neg { color: var(--bad); }
+  table.pcf tr.hero td.pos { color: var(--accent); }
+  table.pcf tr.cum td { color: var(--ink); font-weight: 600; }
+  table.pcf tr.cum td.neg { color: var(--muted); }
+
+  .pcard .right .photo { width: 100%; aspect-ratio: 16 / 7; background: linear-gradient(135deg, #d8d2c5, #b6ad9c); position: relative; overflow: hidden; margin-bottom: 8px; flex-shrink: 0; }
+  .pcard .right .photo .ph-tag { position: absolute; left: 10px; bottom: 10px; background: rgba(8,35,59,0.85); color: #fff; padding: 4px 10px; border-radius: 999px; font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.08em; }
+  .pcard .right .photo .ph-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: rgba(8,35,59,0.35); font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; }
+  .pcard .right .photo img { width: 100%; height: 100%; object-fit: cover; }
+  .pcard .right .chartbox { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--line); padding: 10px 12px; }
+  .pcard .right .chartbox .ttl { display: flex; justify-content: space-between; align-items: baseline; }
+  .pcard .right .chartbox .ttl .h { font-family: var(--font-display); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.02em; }
+  .pcard .right .chartbox .ttl .s { font-size: 8.5px; color: var(--subtle); font-family: var(--font-mono); letter-spacing: 0.04em; }
+  .pcard .right .chartbox svg { width: 100%; flex: 1; min-height: 0; display: block; }
+
+  /* Appendix */
+  .appx h2 { font-family: var(--font-display); font-weight: 700; font-size: 22px; letter-spacing: -0.015em; text-transform: uppercase; }
+  .appx .sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .appx .glossary { columns: 2; column-gap: 32px; margin-top: 18px; font-size: 11px; line-height: 1.55; color: var(--muted); }
+  .appx .glossary dt { font-family: var(--font-display); font-weight: 700; color: var(--ink); margin-top: 8px; text-transform: uppercase; font-size: 11px; letter-spacing: 0.01em; }
+  .appx .glossary dd { margin-bottom: 6px; }
+  .appx .disclaimer { margin-top: 22px; padding: 16px 20px; background: var(--warm); border-left: 3px solid var(--accent); font-size: 10.5px; line-height: 1.6; color: var(--muted); }
+  .appx .disclaimer .h { font-family: var(--font-sans); font-weight: 700; font-size: 9.5px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink); margin-bottom: 8px; }
+
+  /* Editorial tone overrides */
+  .tone-editorial .cover { background: var(--ink); color: #fff; }
+  .tone-editorial .cover h1 { color: #fff; font-weight: 300; font-size: 96px; text-transform: none; letter-spacing: -0.025em; }
+  .tone-editorial .cover h1 em { color: #F57346; font-weight: 700; text-transform: uppercase; font-size: 0.92em; }
+  .tone-editorial .cover .lede { color: rgba(255,255,255,0.78); }
+  .tone-editorial .cover .conf-stamp { color: rgba(255,255,255,0.85); border-color: rgba(255,255,255,0.25); }
+  .tone-editorial .cover .bot { border-top-color: rgba(255,255,255,0.18); }
+  .tone-editorial .cover .bot .col + .col { border-left-color: rgba(255,255,255,0.10); }
+  .tone-editorial .cover .bot .col .label { color: rgba(255,255,255,0.5); }
+  .tone-editorial .cover .bot .col .val { color: #fff; }
+  .tone-editorial .cover .footnote { color: rgba(255,255,255,0.55); }
+  .tone-editorial .summary h2 { font-weight: 300; font-size: 32px; text-transform: none; letter-spacing: -0.02em; }
+  .tone-editorial .summary h2 em { font-style: normal; color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: -0.005em; }
+  .tone-editorial .kpi-band { border: none; border-top: 1px solid var(--line-3); border-bottom: 1px solid var(--line-3); }
+  .tone-editorial .kpi-band .kpi { border-left: 1px solid var(--line); padding: 14px 14px; }
+  .tone-editorial .kpi-band .kpi:first-child { border-left: none; padding-left: 0; }
+  .tone-editorial .kpi .v { font-size: 24px; font-weight: 700; }
+  .tone-editorial .summary-chart, .tone-editorial .summary-side { border: none; border-top: 1px solid var(--line-3); padding-top: 14px; }
+  .tone-editorial .summary-side .ttl { border-bottom-color: var(--line-2); padding-left: 0; padding-right: 0; }
+  .tone-editorial .projects-page .page-head h2 { font-weight: 300; font-size: 26px; text-transform: none; letter-spacing: -0.02em; }
+  .tone-editorial .projects-page .page-head h2 em { color: var(--accent); font-style: normal; font-weight: 700; text-transform: uppercase; }
+  .tone-editorial .pcard .ph-head .pname { font-weight: 700; font-size: 18px; text-transform: uppercase; letter-spacing: -0.005em; }
+  .tone-editorial .pcard .ph-head { border-bottom-color: var(--line-2); }
+  .tone-editorial .stat .v { font-size: 17px; font-weight: 700; }
+
+  @page { size: 11in 8.5in; margin: 0; }
+</style>
+</head>
+<body class="{{ tone_class }}">
+
+{% set ember_mark_color = '#F57346' if tone == 'editorial' else '#F25929' %}
+
+{# ---------- macros ---------- #}
+
+{% macro page_footer(page_num) %}
+  <div class="page-foot">
+    <div class="l">
+      <span class="conf">Confidential</span><span class="dot"></span><span>{{ period_short }}</span>
+    </div>
+    <div class="c">Prepared by Ember Finance &amp; Analytics</div>
+    <div class="r"><span class="num mono">{{ "%02d"|format(page_num) }} / {{ "%02d"|format(total_pages) }}</span></div>
+  </div>
+{% endmacro %}
+
+{% macro ember_mark() %}
+<svg width="38" height="38" viewBox="0 0 36 36" fill="none">
+  <g fill="{{ ember_mark_color }}">
+    <rect x="2"  y="20" width="3.5" height="14" rx="0.5"/>
+    <rect x="8"  y="14" width="3.5" height="20" rx="0.5"/>
+    <rect x="14" y="6"  width="3.5" height="28" rx="0.5"/>
+    <rect x="20" y="12" width="3.5" height="22" rx="0.5"/>
+    <rect x="26" y="2"  width="3.5" height="32" rx="0.5"/>
+  </g>
+</svg>
+{% endmacro %}
+
+{# ---------- Page 1 — Cover ---------- #}
+<div class="page cover">
+  <div class="page-pad">
+    <div class="top">
+      {{ ember_mark() }}
+      <div class="conf-stamp">Confidential · For Executive Review</div>
+    </div>
+    <div class="mid">
+      <div class="eyebrow" style="margin-bottom: 18px;{% if tone == 'editorial' %} color: #F57346;{% endif %}">
+        {{ period_label }} · Project Returns Report
+      </div>
+      <h1>Consolidated <em>Project Returns.</em></h1>
+      <p class="lede">{{ cover_lede }}</p>
+      <div class="bot">
+        <div class="col">
+          <div class="label">Period</div>
+          <div class="val">{{ period_label }}</div>
+        </div>
+        <div class="col">
+          <div class="label">Prepared by</div>
+          <div class="val">Ember Finance &amp; Analytics</div>
+        </div>
+        <div class="col">
+          <div class="label">Issued</div>
+          <div class="val mono">{{ period_short }}</div>
+        </div>
+      </div>
+      <div class="footnote">
+        Forward-looking statements. Returns presented in this document are forecasts based on current underwriting assumptions and are subject to change as project conditions, market conditions, and capital structures evolve. Past performance is not indicative of future results. Not an offer to sell or a solicitation to buy any security.
+      </div>
+    </div>
+  </div>
+  {{ page_footer(1) }}
+</div>
+
+{# ---------- Page 2 — Performance Summary ---------- #}
+<div class="page summary">
+  <div class="page-pad">
+    <div class="head">
+      <div>
+        <div class="eyebrow">Portfolio Summary</div>
+        <h2 style="margin-top: 8px;">
+          {% if tone == 'editorial' %}<em>Portfolio</em> Performance Summary.{% else %}Portfolio Performance Summary.{% endif %}
+        </h2>
+      </div>
+      <div class="head-meta">$ in 000s unless noted<br/>Modeled through {{ horizon_year }}</div>
+    </div>
+
+    <div class="kpi-band">
+      <div class="kpi accent">
+        <div class="label">Total LP Profit</div>
+        <div class="v">{{ fmt_money_M(kpis.total_profit) }}</div>
+        <div class="s">across {{ n_projects }} projects</div>
+      </div>
+      <div class="kpi">
+        <div class="label">Weighted IRR</div>
+        <div class="v">{{ fmt_pct(kpis.weighted_irr) }}</div>
+        <div class="s">equity-weighted</div>
+      </div>
+      <div class="kpi">
+        <div class="label">Weighted EM</div>
+        <div class="v">{{ fmt_em(kpis.weighted_em) }}</div>
+        <div class="s">equity-weighted</div>
+      </div>
+      <div class="kpi">
+        <div class="label">LP Equity</div>
+        <div class="v">{{ fmt_money_M(kpis.total_equity) }}</div>
+        <div class="s">deployed</div>
+      </div>
+      <div class="kpi">
+        <div class="label">Distributions</div>
+        <div class="v">{{ fmt_money_M(kpis.total_distributions) }}</div>
+        <div class="s">modeled lifetime</div>
+      </div>
+      <div class="kpi">
+        <div class="label">Active</div>
+        <div class="v">{{ n_projects }}</div>
+        <div class="s">projects</div>
+      </div>
+    </div>
+
+    <div class="summary-body">
+      <div class="summary-charts">
+        <div class="summary-chart">
+          <div class="ttl">
+            <div>
+              <div class="h">Portfolio Cumulative Net Cashflow</div>
+              <div class="s" style="font-size:9.5px;color:var(--muted);margin-top:2px;font-family:var(--font-sans);letter-spacing:normal;">
+                All projects, modeled through {{ horizon_year }} · $ in 000s
+              </div>
+            </div>
+            <div class="s">{{ start_year }} — {{ horizon_year }}</div>
+          </div>
+          <div class="chart-area">{{ portfolio_net_chart_svg|safe }}</div>
+          <div class="chart-xaxis">
+            {% for y in year_labels_xaxis %}<span>{{ y }}</span>{% endfor %}
+          </div>
+        </div>
+        <div class="summary-chart">
+          <div class="ttl">
+            <div>
+              <div class="h">Portfolio Cumulative Promote</div>
+              <div class="s" style="font-size:9.5px;color:var(--muted);margin-top:2px;font-family:var(--font-sans);letter-spacing:normal;">
+                GP carry, accrued through {{ horizon_year }} · $ in 000s
+              </div>
+            </div>
+            <div class="s">{{ start_year }} — {{ horizon_year }}</div>
+          </div>
+          <div class="chart-area">{{ portfolio_promote_chart_svg|safe }}</div>
+          <div class="chart-xaxis">
+            {% for y in year_labels_xaxis %}<span>{{ y }}</span>{% endfor %}
+          </div>
+        </div>
+      </div>
+      <div class="summary-side">
+        <div class="ttl">
+          <div class="h">By Project</div>
+          <div class="s">IRR · EM · Profit</div>
+        </div>
+        <div class="proj-list">
+          {% for p in projects_ranked %}
+          <div class="proj-row">
+            <div>
+              <div class="pname">{{ p.name }}</div>
+              <div class="pmeta">VINTAGE {{ p.vintage }}</div>
+            </div>
+            <div class="num-cell">{{ fmt_pct(p.irr) }}</div>
+            <div class="num-cell">{{ fmt_em(p.em) }}</div>
+            <div class="num-cell accent">${{ '%.1f'|format(p.profit / 1000) }}M</div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {{ page_footer(2) }}
+</div>
+
+{# ---------- Pages 3..N — Project Pages (2 per page) ---------- #}
+{% for page_projects in project_pages %}
+{% set page_idx = loop.index + 2 %}
+<div class="page projects-page">
+  <div class="page-pad">
+    <div class="page-head">
+      <div>
+        <div class="eyebrow">Performance</div>
+        <h2 style="margin-top:6px;">
+          Modeled returns
+          {% if tone == 'editorial' %}<em>by project.</em>{% else %}by project.{% endif %}
+        </h2>
+      </div>
+      <div class="meta">
+        {{ page_projects | map(attribute='name') | join(' &nbsp;·&nbsp; ') | safe }}<br/>
+        $ in 000s · {{ start_year }} — {{ horizon_year }}
+      </div>
+    </div>
+    <div class="projects-body">
+      {% for p in page_projects %}
+      <div class="pcard">
+        <div class="left">
+          <div class="ph-head">
+            <div>
+              <div class="pname">{{ p.name }}</div>
+              <div style="font-size:9.5px;color:var(--muted);margin-top:3px;">{{ p.location }} · {{ p.role }}</div>
+            </div>
+            <div class="pmeta">VINTAGE {{ p.vintage }}</div>
+          </div>
+          <div class="stat-row">
+            <div class="stat"><div class="l">LP IRR</div><div class="v">{{ fmt_pct(p.irr) }}</div></div>
+            <div class="stat"><div class="l">Eq. Mult.</div><div class="v">{{ fmt_em(p.em) }}</div></div>
+            <div class="stat accent"><div class="l">Profit</div><div class="v">{{ fmt_money_M(p.profit) }}</div></div>
+            <div class="stat"><div class="l">Promote</div><div class="v">{% if p.promote == 0 %}—{% else %}{{ fmt_money_M(p.promote) }}{% endif %}</div></div>
+            <div class="stat"><div class="l">LP Equity</div><div class="v">{{ fmt_money_M(p.lp_equity) }}</div></div>
+          </div>
+          <table class="pcf">
+            <thead>
+              <tr>
+                <th>Metric</th>
+                <th>Total</th>
+                {% for y in year_labels_short %}<th>{{ y }}</th>{% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% set rows_def = [
+                ('Preferred Return', p.rows.preferred_return, ''),
+                ('Return of Capital', p.rows.return_of_capital, ''),
+                ('Excess Cashflow', p.rows.excess_cashflow, ''),
+                ('Total Distributions', p.rows.lp_distributions, ''),
+                ('Total Contributions', p.rows.lp_contributions, ''),
+              ] %}
+              {% for label, vals, cls in rows_def %}
+              <tr class="{{ cls }}">
+                <td>{{ label }}</td>
+                <td>{{ fmt_int(vals|sum) }}</td>
+                {% for v in vals %}<td>{{ fmt_int(v) }}</td>{% endfor %}
+              </tr>
+              {% endfor %}
+
+              {# Net Cashflow — hero row, color by sign #}
+              {% set net = p.rows.net_cashflow %}
+              {% set net_total = net|sum %}
+              <tr class="hero">
+                <td>Net Cashflow</td>
+                <td class="{{ 'neg' if net_total < 0 else 'pos' }}">{{ fmt_int(net_total) }}</td>
+                {% for v in net %}<td class="{{ 'neg' if v < 0 else 'pos' if v > 0 else '' }}">{{ fmt_int(v) }}</td>{% endfor %}
+              </tr>
+
+              {# Cumulative Net CF — hero/cum, last value highlighted #}
+              {% set cum = p.rows.cumulative_net_cf %}
+              {% set cum_final = cum[-1] %}
+              <tr class="cum">
+                <td>Cumulative Net CF</td>
+                <td class="{{ 'neg' if cum_final < 0 else '' }}">{{ fmt_int(cum_final) }}</td>
+                {% for v in cum %}<td class="{{ 'neg' if v < 0 else '' }}">{{ fmt_int(v) }}</td>{% endfor %}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="right">
+          <div class="photo">
+            {% if p.hero_image_url %}
+              <img src="{{ p.hero_image_url }}" alt="{{ p.name }}"/>
+            {% else %}
+              <div class="ph-placeholder">Project Image · {{ p.name }}</div>
+            {% endif %}
+            <div class="ph-tag">{{ p.location }}</div>
+          </div>
+          <div class="chartbox">
+            <div class="ttl">
+              <div class="h">Cumulative Net Cashflow</div>
+              <div class="s">{{ start_year }} — {{ horizon_year }}</div>
+            </div>
+            {{ p.cum_chart_svg|safe }}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {{ page_footer(page_idx) }}
+</div>
+{% endfor %}
+
+{# ---------- Last page — Appendix ---------- #}
+<div class="page appx">
+  <div class="page-pad">
+    <div class="eyebrow">Appendix</div>
+    <h2 style="margin-top:8px;">Definitions &amp; methodology.</h2>
+    <div class="sub">For internal review by ownership and the executive team. Definitions follow Ember's standard underwriting framework.</div>
+    <dl class="glossary">
+      <dt>LP IRR</dt>
+      <dd>The internal rate of return earned by Limited Partner equity, calculated on modeled cashflows from initial contribution through final distribution.</dd>
+      <dt>Equity Multiple (EM)</dt>
+      <dd>Total LP distributions divided by total LP contributions over the life of the project. A 2.0x EM means $2 returned for every $1 invested.</dd>
+      <dt>Preferred Return</dt>
+      <dd>Cumulative annual return paid to LP capital before any promote distribution to the General Partner, typically modeled at 8% per annum on unreturned equity.</dd>
+      <dt>Return of Capital</dt>
+      <dd>Distributions that repay the original LP contribution before any profit-sharing waterfall begins.</dd>
+      <dt>Excess Cashflow</dt>
+      <dd>Distributions remaining after the Preferred Return and Return of Capital are satisfied. Allocated per the operating agreement's promote tiers.</dd>
+      <dt>Promote</dt>
+      <dd>The General Partner's share of profits above the LP Preferred Return. Reflects the GP's incentive participation; not a fee.</dd>
+      <dt>Net Cashflow</dt>
+      <dd>LP-level cashflow per period (distributions less contributions). The basis for IRR calculation.</dd>
+      <dt>Cumulative Net Cashflow</dt>
+      <dd>Running sum of Net Cashflow. Inflection from negative to positive marks the project's modeled break-even.</dd>
+      <dt>Vintage</dt>
+      <dd>Year of LP capital first contribution.</dd>
+    </dl>
+    <div class="disclaimer">
+      <div class="h">Disclaimer</div>
+      This document contains forward-looking statements based on current underwriting assumptions, market conditions, and capital structures, all of which are subject to change. Returns shown are modeled and not guaranteed. Past performance is not indicative of future results. This document is confidential and intended only for the named recipient(s); it is not an offer to sell or a solicitation to buy any security. Distribution outside Ember Residential, its affiliates, and authorized partners is prohibited.
+    </div>
+  </div>
+  {{ page_footer(total_pages) }}
+</div>
+
+</body>
+</html>

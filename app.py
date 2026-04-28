@@ -6,7 +6,7 @@ import os, json, datetime, io, base64, requests, threading, concurrent.futures
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail, Attachment, FileContent, FileName, FileType, Disposition, Content
 from functools import wraps
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_file
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_file, Response
 import psycopg2
 import psycopg2.extras
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -1283,12 +1283,153 @@ def _send_exec_report_pdf(report_type):
     )
 
 
+def _load_project_metadata():
+    """Load the optional project metadata blob (image filename, location,
+    role per project name) from the `reports` table. The blob is uploaded
+    via the admin "Project Images" panel (see issue #project-images) and
+    stored as a row with `report_type='project_metadata'`. Returns an
+    empty dict if the row hasn't been created yet, so the PDF renders
+    without images cleanly.
+
+    Expected shape:
+        {"projects": {
+            "Grand Prairie East (CCC)": {
+                "image_filename": "grand-prairie-east.jpg",   # under /static/img/projects/
+                "location": "Grand Prairie, TX",
+                "role": "Land · Common Equity"
+            },
+            ...
+        }}
+    """
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute(
+            "SELECT data FROM reports WHERE report_type='project_metadata' "
+            "ORDER BY uploaded_at DESC LIMIT 1"
+        )
+        row = cur.fetchone()
+        cur.close(); conn.close()
+    except Exception:
+        return {}
+    if not row or not row.get("data"):
+        return {}
+    blob = row["data"] or {}
+    raw = blob.get("projects") or {}
+    out = {}
+    for name, meta in raw.items():
+        if not isinstance(meta, dict):
+            continue
+        entry = {
+            "location": meta.get("location"),
+            "role":     meta.get("role"),
+        }
+        img_filename = meta.get("image_filename")
+        if img_filename:
+            entry["hero_image_url"] = f"/static/img/projects/{img_filename}"
+        elif meta.get("hero_image_url"):
+            entry["hero_image_url"] = meta["hero_image_url"]
+        out[name] = entry
+    return out
+
+
+def _render_returns_report_pdf(raw_data, uploaded_at, tone="institutional",
+                               *, preview_html=False):
+    """Build the new design-handoff Project Returns PDF (or HTML preview).
+
+    Pipeline:
+        raw `reports.data`
+          -> report.normalize()  (canonical shape, layered with project_metadata)
+          -> report.build_context()  (KPIs, charts, formatters)
+          -> Jinja render templates/returns_report.html
+          -> WeasyPrint -> PDF bytes
+    """
+    from report import normalize, build_context
+
+    if isinstance(uploaded_at, str):
+        try:
+            uploaded_at = datetime.datetime.fromisoformat(
+                uploaded_at.replace("Z", "+00:00")
+            )
+        except ValueError:
+            uploaded_at = datetime.datetime.now()
+    if uploaded_at is None:
+        uploaded_at = datetime.datetime.now()
+
+    project_meta = _load_project_metadata()
+    data = normalize(raw_data, project_meta=project_meta)
+    ctx = build_context(data, run_date=uploaded_at, tone=tone)
+
+    html = render_template("returns_report.html", **ctx)
+    if preview_html:
+        return html
+
+    from weasyprint import HTML  # imported lazily so a missing system lib
+                                  # only breaks PDF rendering, not the app
+    return HTML(string=html, base_url=request.host_url).write_pdf()
+
+
 @app.route("/api/returns/pdf", methods=["GET"])
+@app.route("/returns/pdf", methods=["GET"])
 @login_required
 def returns_pdf():
-    """Branded executive PDF for Active Project Returns.
-    Inline by default; ?download=1 forces attachment."""
-    return _send_exec_report_pdf("returns")
+    """Server-rendered Project Returns PDF.
+
+    Visual ground truth: design_handoff_returns_pdf/_design_reference/
+    Returns Report.html (Tone 1 = institutional, Tone 2 = editorial).
+
+    Query params:
+        download=1   -> Content-Disposition: attachment (otherwise inline)
+        tone=editorial   -> dark cover + italic display variants
+        preview=1   -> return raw HTML instead of PDF (debug)
+    """
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("returns", True):
+        return jsonify({"error": "Access denied"}), 403
+
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "SELECT data, uploaded_at FROM reports WHERE report_type = 'returns' "
+        "ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    if not row or not row.get("data"):
+        return jsonify({"error": "No returns data has been uploaded yet."}), 404
+
+    tone = request.args.get("tone", "institutional")
+    if tone not in ("institutional", "editorial"):
+        tone = "institutional"
+    preview = request.args.get("preview") == "1"
+
+    try:
+        result = _render_returns_report_pdf(
+            row["data"], row["uploaded_at"], tone=tone, preview_html=preview
+        )
+    except ImportError as e:
+        # WeasyPrint or its system libs missing — fall back to the existing
+        # fpdf2 executive PDF so the button never fully breaks while we wait
+        # for the Aptfile to roll out.
+        app.logger.warning("WeasyPrint unavailable, falling back: %s", e)
+        return _send_exec_report_pdf("returns")
+    except Exception as e:
+        app.logger.exception("Returns PDF render failed: %s", e)
+        return jsonify({"error": f"PDF render failed: {e}"}), 500
+
+    if preview:
+        return result  # raw HTML
+
+    as_attachment = request.args.get("download") in ("1", "true", "yes")
+    stamp = (row["uploaded_at"] or datetime.datetime.now()).strftime("%Y-%m-%d")
+    fname = f"EmberAcquisitions_Returns_{stamp}.pdf"
+    disp = "attachment" if as_attachment else "inline"
+    return Response(
+        result,
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": f'{disp}; filename="{fname}"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @app.route("/api/loans/pdf", methods=["GET"])
