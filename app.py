@@ -1406,6 +1406,78 @@ def _active_project_names() -> list[str]:
     ]
 
 
+@app.route("/api/diagnostics/pdf", methods=["GET"])
+@login_required
+def diagnostics_pdf():
+    """Quick read-out of which PDF backends are working on the live host.
+    Admin-only. Hit this to figure out why /api/returns/pdf is falling
+    back to the old fpdf2 PDF (or 500-ing).
+    """
+    if not session.get("is_admin"):
+        return jsonify({"error": "Access denied"}), 403
+
+    out: dict = {"git_commit": os.environ.get("RAILWAY_GIT_COMMIT_SHA")
+                                or os.environ.get("RENDER_GIT_COMMIT")
+                                or os.environ.get("HEROKU_SLUG_COMMIT")
+                                or "unknown"}
+
+    # WeasyPrint availability
+    try:
+        import weasyprint as _wp
+        out["weasyprint_importable"] = True
+        out["weasyprint_version"] = getattr(_wp, "__version__", "?")
+        # Trivial render — this is where Pango/Cairo .so files actually load
+        try:
+            _wp.HTML(string="<p>ping</p>").write_pdf()
+            out["weasyprint_render_ok"] = True
+        except Exception as e:
+            out["weasyprint_render_ok"] = False
+            out["weasyprint_render_error"] = f"{type(e).__name__}: {e}"
+    except ImportError as e:
+        out["weasyprint_importable"] = False
+        out["weasyprint_import_error"] = f"{type(e).__name__}: {e}"
+
+    # Pillow availability (used by the Project Library uploader)
+    try:
+        from PIL import Image as _Im
+        out["pillow_importable"] = True
+        out["pillow_version"] = getattr(_Im, "__version__", "?")
+    except ImportError as e:
+        out["pillow_importable"] = False
+        out["pillow_import_error"] = f"{type(e).__name__}: {e}"
+
+    # New design template visible to Jinja?
+    try:
+        from flask import current_app
+        current_app.jinja_env.get_template("returns_report.html")
+        out["template_returns_report"] = "found"
+    except Exception as e:
+        out["template_returns_report"] = f"missing ({e})"
+
+    # Latest data uploads
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute(
+            "SELECT report_type, uploaded_at FROM reports "
+            "WHERE report_type IN ('returns','project_metadata') "
+            "ORDER BY uploaded_at DESC"
+        )
+        rows = cur.fetchall(); cur.close(); conn.close()
+        seen: set[str] = set()
+        latest: dict = {}
+        for r in rows:
+            t = r["report_type"] if isinstance(r, dict) else r[0]
+            ts = r["uploaded_at"] if isinstance(r, dict) else r[1]
+            if t not in seen:
+                seen.add(t)
+                latest[t] = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
+        out["latest_uploads"] = latest
+    except Exception as e:
+        out["latest_uploads_error"] = f"{type(e).__name__}: {e}"
+
+    return jsonify(out)
+
+
 @app.route("/api/admin/project-meta", methods=["GET"])
 @login_required
 def admin_project_meta_list():
