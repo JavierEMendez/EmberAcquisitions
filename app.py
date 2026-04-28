@@ -1606,19 +1606,40 @@ def returns_pdf():
         tone = "institutional"
     preview = request.args.get("preview") == "1"
 
+    # WeasyPrint can fail two ways:
+    #   1) ImportError      — pip didn't install (or its native deps for cffi)
+    #   2) OSError / others — installed but Pango/Cairo .so files missing at
+    #                          runtime (Railway Nixpacks needs nixpacks.toml,
+    #                          not Aptfile). The error from cffi is usually
+    #                          OSError("cannot load library 'libpango-1.0-0'").
+    # Either way: fall back to the existing fpdf2 executive PDF so the
+    # button always returns *something* readable. Diagnostic logged.
     try:
         result = _render_returns_report_pdf(
             row["data"], row["uploaded_at"], tone=tone, preview_html=preview
         )
-    except ImportError as e:
-        # WeasyPrint or its system libs missing — fall back to the existing
-        # fpdf2 executive PDF so the button never fully breaks while we wait
-        # for the Aptfile to roll out.
-        app.logger.warning("WeasyPrint unavailable, falling back: %s", e)
+    except (ImportError, OSError) as e:
+        app.logger.warning("WeasyPrint unavailable (%s: %s), falling back to fpdf2",
+                           type(e).__name__, e)
+        if preview:
+            # In preview mode we still want HTML — no PDF library needed for that.
+            try:
+                return _render_returns_report_pdf(
+                    row["data"], row["uploaded_at"], tone=tone, preview_html=True
+                )
+            except Exception as ee:
+                return f"<pre>HTML render failed: {ee}</pre>", 500
         return _send_exec_report_pdf("returns")
     except Exception as e:
+        # Genuinely unexpected — log full trace, but still try the fpdf2
+        # fallback so the user gets a working PDF rather than a 500.
         app.logger.exception("Returns PDF render failed: %s", e)
-        return jsonify({"error": f"PDF render failed: {e}"}), 500
+        if preview:
+            return f"<pre>Render error: {e}</pre>", 500
+        try:
+            return _send_exec_report_pdf("returns")
+        except Exception:
+            return jsonify({"error": f"PDF render failed: {e}"}), 500
 
     if preview:
         return result  # raw HTML

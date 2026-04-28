@@ -1,0 +1,21 @@
+# Nixpacks build plan — Railway uses Nixpacks by default, which does NOT
+# read Aptfile. System libraries that python wheels load via ctypes (e.g.
+# WeasyPrint -> Pango/Cairo) have to be declared here.
+#
+# `aptPkgs` is a Nixpacks-supported Debian package list. It's installed in
+# the build phase before pip runs and persists into the runtime image.
+#
+# References:
+#   https://nixpacks.com/docs/configuration/file
+#   https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#linux
+
+[phases.setup]
+aptPkgs = [
+  "libpango-1.0-0",
+  "libpangoft2-1.0-0",
+  "libcairo2",
+  "libgdk-pixbuf-2.0-0",
+  "libffi-dev",
+  "shared-mime-info",
+  "fonts-liberation",
+]
