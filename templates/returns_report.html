@@ -116,9 +116,12 @@
   .kpi.accent .v { color: var(--accent); }
   .kpi .s { font-size: 9px; color: var(--muted); margin-top: 2px; font-family: var(--font-sans); }
 
-  .summary-body { display: grid; grid-template-columns: 1.55fr 1fr; gap: 18px; flex: 1; min-height: 0; }
-  .summary-charts { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
-  .summary-chart { border: 1px solid var(--line); padding: 12px 14px 10px; display: flex; flex-direction: column; min-height: 0; flex: 1; }
+  /* Explicit height on summary-body. WeasyPrint's flex chain wasn't
+     resolving when the parent's height was implicit, causing the two
+     stacked charts to render on top of each other. */
+  .summary-body { display: grid; grid-template-columns: 1.55fr 1fr; gap: 18px; height: 5.55in; }
+  .summary-charts { display: grid; grid-template-rows: 1fr 1fr; gap: 14px; min-height: 0; }
+  .summary-chart { border: 1px solid var(--line); padding: 12px 14px 10px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
   .summary-chart .ttl { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
   .summary-chart .ttl .h { font-family: var(--font-display); font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.02em; }
   .summary-chart .ttl .s { font-size: 10px; color: var(--subtle); font-family: var(--font-mono); letter-spacing: 0.04em; }
@@ -126,12 +129,15 @@
   .summary-chart .chart-area svg { width: 100%; height: 100%; display: block; }
   .summary-chart .chart-xaxis { display: flex; justify-content: space-between; margin-top: 4px; font-family: var(--font-mono); font-size: 8.5px; color: var(--subtle); letter-spacing: 0.08em; padding-left: 56px; }
 
-  .summary-side { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--line); padding: 0; min-height: 0; overflow: hidden; }
+  .summary-side { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--line); padding: 0; height: 5.55in; overflow: hidden; }
   .summary-side .ttl { padding: 10px 14px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
   .summary-side .ttl .h { font-family: var(--font-display); font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.02em; }
   .summary-side .ttl .s { font-size: 9px; color: var(--subtle); font-family: var(--font-mono); margin-top: 2px; }
-  .proj-list { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-  .proj-row { display: grid; grid-template-columns: 1fr 46px 46px 60px; gap: 8px; padding: 6px 14px; border-bottom: 1px solid var(--line); align-items: baseline; font-size: 10.5px; flex: 1; }
+  .proj-list { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  /* Drop `flex: 1` from rows. With 9 projects and explicit container
+     height, natural row sizing lets all rows fit without each one
+     ballooning to fill the side. */
+  .proj-row { display: grid; grid-template-columns: 1fr 44px 44px 58px; gap: 8px; padding: 5px 14px; border-bottom: 1px solid var(--line); align-items: baseline; font-size: 10px; }
   .proj-row:last-child { border-bottom: none; }
   .proj-row .pname { color: var(--ink); font-weight: 500; line-height: 1.15; }
   .proj-row .pmeta { font-family: var(--font-mono); font-size: 8.5px; color: var(--subtle); margin-top: 1px; letter-spacing: 0.04em; }
@@ -144,8 +150,12 @@
   .projects-page .page-head h2 { font-family: var(--font-display); font-weight: 700; font-size: 22px; letter-spacing: -0.015em; text-transform: uppercase; }
   .projects-page .page-head h2 em { font-style: normal; font-weight: 300; color: var(--accent); text-transform: none; letter-spacing: -0.02em; }
   .projects-page .page-head .meta { font-family: var(--font-mono); font-size: 9.5px; color: var(--subtle); letter-spacing: 0.06em; }
-  .projects-body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-  .pcard { flex: 0 0 50%; display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; padding: 14px 0; border-bottom: 1px solid var(--line); min-height: 0; overflow: hidden; }
+  .projects-body { display: block; }
+  /* Explicit height so each card claims a known half of the page.
+     The flex:0 0 50% / flex:1 chain that the handoff used was
+     collapsing in WeasyPrint, leaving cards stuck at content height
+     and clipping every row beyond the project name. */
+  .pcard { height: 3.15in; display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; padding: 14px 0; border-bottom: 1px solid var(--line); overflow: hidden; }
   .pcard:last-child { border-bottom: none; }
   .pcard .left, .pcard .right { display: flex; flex-direction: column; min-height: 0; }
   .pcard .ph-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
@@ -158,19 +168,25 @@
   .stat .v { font-family: var(--font-display); font-weight: 700; font-size: 15px; letter-spacing: -0.005em; margin-top: 3px; font-variant-numeric: tabular-nums; }
   .stat.accent .v { color: var(--accent); }
 
-  table.pcf { width: 100%; border-collapse: collapse; font-size: 8.5px; font-variant-numeric: tabular-nums; flex: 1; }
-  table.pcf th { padding: 4px 4px; font-weight: 600; font-size: 7.5px; letter-spacing: 0.10em; text-transform: uppercase; color: var(--subtle); border-bottom: 1px solid var(--line-2); text-align: right; white-space: nowrap; }
+  /* Tightened density: the original 8.5px font + 4px padding overran
+     the left-column width once the year range hit 22 cols. 7px font
+     + 2px padding fits the same 24 columns inside ~5.5in. */
+  table.pcf { width: 100%; border-collapse: collapse; font-size: 7px; font-variant-numeric: tabular-nums; table-layout: fixed; }
+  table.pcf th { padding: 3px 2px; font-weight: 600; font-size: 6.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--subtle); border-bottom: 1px solid var(--line-2); text-align: right; white-space: nowrap; overflow: hidden; }
   table.pcf th:first-child { text-align: left; padding-left: 0; }
-  table.pcf td { padding: 4px 4px; text-align: right; color: var(--muted); border-bottom: 1px solid var(--line); white-space: nowrap; font-feature-settings: 'tnum'; }
+  table.pcf td { padding: 2px 2px; text-align: right; color: var(--muted); border-bottom: 1px solid var(--line); white-space: nowrap; font-feature-settings: 'tnum'; overflow: hidden; }
   table.pcf td:first-child { text-align: left; padding-left: 0; color: var(--ink); font-weight: 500; }
-  table.pcf tr.hero td { color: var(--ink); font-weight: 600; border-top: 1px solid var(--line-2); padding-top: 6px; padding-bottom: 6px; }
+  table.pcf tr.hero td { color: var(--ink); font-weight: 600; border-top: 1px solid var(--line-2); padding-top: 4px; padding-bottom: 4px; }
   table.pcf tr.hero td:first-child { color: var(--accent); }
   table.pcf tr.hero td.neg { color: var(--bad); }
   table.pcf tr.hero td.pos { color: var(--accent); }
   table.pcf tr.cum td { color: var(--ink); font-weight: 600; }
   table.pcf tr.cum td.neg { color: var(--muted); }
 
-  .pcard .right .photo { width: 100%; aspect-ratio: 16 / 7; background: linear-gradient(135deg, #d8d2c5, #b6ad9c); position: relative; overflow: hidden; margin-bottom: 8px; flex-shrink: 0; }
+  /* Explicit height in addition to aspect-ratio: WeasyPrint <65 doesn't
+     honor aspect-ratio on block elements, leading to a 0-height photo
+     box. Right column is ~3.4in wide so 16:7 -> 1.5in tall. */
+  .pcard .right .photo { width: 100%; height: 1.5in; aspect-ratio: 16 / 7; background: linear-gradient(135deg, #d8d2c5, #b6ad9c); position: relative; overflow: hidden; margin-bottom: 8px; flex-shrink: 0; }
   .pcard .right .photo .ph-tag { position: absolute; left: 10px; bottom: 10px; background: rgba(8,35,59,0.85); color: #fff; padding: 4px 10px; border-radius: 999px; font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.08em; }
   .pcard .right .photo .ph-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: rgba(8,35,59,0.35); font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; }
   .pcard .right .photo img { width: 100%; height: 100%; object-fit: cover; }

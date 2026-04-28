@@ -1323,11 +1323,24 @@ def _load_project_metadata():
             "location": meta.get("location"),
             "role":     meta.get("role"),
         }
-        img_filename = meta.get("image_filename")
-        if img_filename:
-            entry["hero_image_url"] = f"/static/img/projects/{img_filename}"
-        elif meta.get("hero_image_url"):
-            entry["hero_image_url"] = meta["hero_image_url"]
+        # New (persistent) path: image bytes are stored as base64 in the
+        # JSON blob under image_data + image_mime. Survives Railway
+        # redeploys because Railway's filesystem is ephemeral and any
+        # files written under /static/img/projects/ get wiped when the
+        # container restarts.
+        img_data = meta.get("image_data")
+        img_mime = meta.get("image_mime") or "image/jpeg"
+        if img_data:
+            entry["hero_image_url"] = f"data:{img_mime};base64,{img_data}"
+        else:
+            # Legacy path (kept for back-compat with older uploads): a
+            # filename pointing at /static/img/projects/. WeasyPrint's
+            # _weasyprint_local_fetcher serves this from disk if present.
+            img_filename = meta.get("image_filename")
+            if img_filename:
+                entry["hero_image_url"] = f"/static/img/projects/{img_filename}"
+            elif meta.get("hero_image_url"):
+                entry["hero_image_url"] = meta["hero_image_url"]
         out[name] = entry
     return out
 
@@ -1509,37 +1522,36 @@ def admin_project_meta_list():
     saved metadata (image / location / role). Admin-only."""
     if not session.get("is_admin"):
         return jsonify({"error": "Access denied"}), 403
+    def _entry_to_dict(name, meta, *, orphaned=False):
+        meta = meta or {}
+        img_data = meta.get("image_data")
+        img_mime = meta.get("image_mime") or "image/jpeg"
+        if img_data:
+            url = f"data:{img_mime};base64,{img_data}"
+        elif meta.get("image_filename"):
+            url = f"/static/img/projects/{meta['image_filename']}"
+        else:
+            url = None
+        d = {
+            "name": name,
+            "location": meta.get("location") or "",
+            "role": meta.get("role") or "",
+            "image_url": url,
+        }
+        if orphaned:
+            d["orphaned"] = True
+        return d
+
     names = _active_project_names()
     blob = _read_project_metadata_blob()
     raw = blob.get("projects") or {}
-    projects = []
-    for n in names:
-        meta = raw.get(n) or raw.get(n.strip()) or {}
-        img_filename = meta.get("image_filename")
-        projects.append({
-            "name": n,
-            "location": meta.get("location") or "",
-            "role": meta.get("role") or "",
-            "image_filename": img_filename,
-            "image_url": (f"/static/img/projects/{img_filename}"
-                          if img_filename else None),
-        })
-    # Also surface any saved entries whose project no longer appears in
-    # the returns upload — admin can still see + delete them.
+    projects = [_entry_to_dict(n, raw.get(n) or raw.get(n.strip())) for n in names]
+    # Surface saved entries that no longer appear in the latest returns
+    # upload (admin can still see + remove them).
     seen = {p["name"] for p in projects}
     for n, meta in raw.items():
-        if n in seen:
-            continue
-        img_filename = (meta or {}).get("image_filename")
-        projects.append({
-            "name": n,
-            "location": (meta or {}).get("location") or "",
-            "role": (meta or {}).get("role") or "",
-            "image_filename": img_filename,
-            "image_url": (f"/static/img/projects/{img_filename}"
-                          if img_filename else None),
-            "orphaned": True,
-        })
+        if n not in seen:
+            projects.append(_entry_to_dict(n, meta, orphaned=True))
     return jsonify({"projects": projects})
 
 
@@ -1565,7 +1577,11 @@ def admin_project_meta_save(name):
     entry["location"] = location
     entry["role"] = role
 
-    # Handle optional image
+    # Handle optional image — resize and base64-encode into the JSON
+    # blob. We do NOT write to /static/img/projects/ because Railway's
+    # container filesystem is ephemeral; any file written there is
+    # wiped on the next deploy. Storing the bytes in Postgres survives
+    # restarts and ships with the metadata as a single atomic record.
     file = request.files.get("image")
     if file and file.filename:
         ext = os.path.splitext(file.filename)[1].lower()
@@ -1594,26 +1610,37 @@ def admin_project_meta_save(name):
             new_h = max(1, int(img.height * ratio))
             img = img.resize((max_w, new_h), Image.LANCZOS)
 
-        os.makedirs(_PROJECTS_IMG_DIR, exist_ok=True)
-        slug = _slugify_project(name)
-        out_filename = f"{slug}.jpg"
-        out_path = os.path.join(_PROJECTS_IMG_DIR, out_filename)
-        img.save(out_path, "JPEG", quality=85, optimize=True, progressive=True)
-        entry["image_filename"] = out_filename
+        # Encode to JPEG bytes, then base64 for storage.
+        import io as _io, base64 as _base64
+        buf = _io.BytesIO()
+        img.save(buf, "JPEG", quality=85, optimize=True, progressive=True)
+        b64 = _base64.b64encode(buf.getvalue()).decode("ascii")
+        entry["image_data"] = b64
+        entry["image_mime"] = "image/jpeg"
+        # Drop any legacy on-disk filename so the data: URI takes precedence.
+        entry.pop("image_filename", None)
+
+        # Best-effort cache to disk too — if the volume sticks around it
+        # speeds up subsequent reads via the url_fetcher. Not required.
+        try:
+            os.makedirs(_PROJECTS_IMG_DIR, exist_ok=True)
+            slug = _slugify_project(name)
+            with open(os.path.join(_PROJECTS_IMG_DIR, f"{slug}.jpg"), "wb") as fh:
+                fh.write(buf.getvalue())
+        except Exception:
+            pass
 
     projects[name] = entry
     _save_project_metadata_blob(blob)
 
-    img_filename = entry.get("image_filename")
+    img_mime = entry.get("image_mime")
+    img_data = entry.get("image_data")
     return jsonify({
         "ok": True,
         "name": name,
         "location": entry.get("location") or "",
         "role": entry.get("role") or "",
-        "image_filename": img_filename,
-        "image_url": (f"/static/img/projects/{img_filename}?ts="
-                      + str(int(datetime.datetime.now().timestamp()))
-                      if img_filename else None),
+        "image_url": (f"data:{img_mime};base64,{img_data}" if img_data else None),
     })
 
 
