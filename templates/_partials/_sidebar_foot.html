@@ -1,0 +1,23 @@
+{# ============================================================
+   Sidebar foot — Account + Home buttons. Drop in at the bottom
+   of <nav id="sidebar"> AFTER the <div style="flex:1"></div>
+   spacer that pushes them to the bottom:
+
+       <div style="flex:1"></div>
+       {% include "_partials/_sidebar_foot.html" %}
+
+   Pairs with the openAcct() handler each page already defines.
+   CSS lives in static/theme.css under the .sb-foot* class group.
+   ============================================================ #}
+<div class="sb-foot">
+  <button class="sb-foot-btn" onclick="openAcct()" type="button">
+    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" stroke-width="1.6"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke-width="1.6" stroke-linecap="round"/></svg>
+    Account
+  </button>
+</div>
+<div class="sb-foot last">
+  <a class="sb-foot-btn" href="/home">
+    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 12l9-9 9 9 M5 10v10h14V10" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Home
+  </a>
+</div>

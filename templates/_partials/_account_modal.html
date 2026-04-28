@@ -1,0 +1,65 @@
+{# ============================================================
+   Account Settings modal — shared across every dashboard page.
+   Drop in once near the bottom of <body>:
+       {% include "_partials/_account_modal.html" %}
+   Pairs with the JS handlers (openAcct, closeAcct, applyTheme,
+   saveAcctPw, saveReportSettings) which each page already defines
+   in its own <script> block. CSS lives in static/theme.css under
+   the .acct-* class group.
+   ============================================================ #}
+<div id="acct-modal" class="acct-modal">
+  <div class="acct-box">
+    <div class="acct-modal-header">
+      <h3>Account Settings</h3>
+      <button class="acct-modal-close" onclick="closeAcct()" aria-label="Close">&times;</button>
+    </div>
+
+    <div class="acct-meta">Logged in as <strong>{{ username or '' }}</strong></div>
+
+    <div class="acct-divider">
+      <div class="acct-lbl" style="margin-bottom:10px">Appearance</div>
+      <div class="acct-theme-row">
+        <span class="lbl-text">Color Theme</span>
+        <div class="acct-theme-pillgroup">
+          <button class="acct-theme-pill" id="theme-btn-light" onclick="applyTheme('light')">Paper</button>
+          <button class="acct-theme-pill" id="theme-btn-dark" onclick="applyTheme('dark')">Navy</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="acct-lbl">Email</div>
+    <div id="acct-email" class="acct-input readonly" style="margin-bottom:16px">&mdash;</div>
+
+    <div class="acct-lbl">Change Password</div>
+    <input id="acct-cur-pw" class="acct-input" type="password" placeholder="Current password" style="margin-bottom:8px">
+    <input id="acct-new-pw" class="acct-input" type="password" placeholder="New password" style="margin-bottom:8px">
+    <input id="acct-conf-pw" class="acct-input" type="password" placeholder="Confirm new password" style="margin-bottom:14px">
+    <div id="acct-msg" class="acct-msg"></div>
+    <button class="acct-save" onclick="saveAcctPw()" style="margin-bottom:20px">Save Password</button>
+
+    <div class="acct-section">
+      <div class="acct-lbl" style="margin-bottom:12px">Monthly Report Emails</div>
+      <label class="acct-report-toggle">
+        <input type="checkbox" id="acct-report-optin" class="acct-checkbox">
+        <div>
+          <div class="label-strong">Receive monthly reports</div>
+          <div class="label-sub">Sent on the 1st of each month to your email</div>
+        </div>
+      </label>
+      <div id="acct-format-row" class="acct-format-row">
+        <div class="acct-lbl" style="margin-bottom:8px">Format</div>
+        <div class="acct-format-options">
+          <label class="acct-format-option">
+            <input type="radio" name="acct-report-fmt" value="pdf" id="acct-fmt-pdf" class="acct-radio"> PDF
+          </label>
+          <label class="acct-format-option">
+            <input type="radio" name="acct-report-fmt" value="excel" id="acct-fmt-excel" class="acct-radio"> Excel
+          </label>
+        </div>
+        <div class="acct-format-note">Includes: Active Project Returns, Loan Capacities &amp; Debt Schedules, Ember Operating Revenues, Ember Capital Executive Report</div>
+      </div>
+      <div id="acct-report-msg" class="acct-msg" style="margin-bottom:8px"></div>
+      <button class="acct-save ghost" onclick="saveReportSettings()">Save Report Preferences</button>
+    </div>
+  </div>
+</div>

@@ -514,61 +514,7 @@
    Account Settings modal — preserved markup, restyled to match
    the new token system. All JS handlers are unchanged.
    ============================================================ #}
-<div id="acct-modal" class="acct-modal">
-  <div class="acct-box">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-      <h3>Account Settings</h3>
-      <button onclick="closeAcct()" style="background:none;border:none;color:var(--eax-subtle);font-size:22px;cursor:pointer;line-height:1;">&times;</button>
-    </div>
-    <div class="meta-line">Logged in as <strong>{{ username }}</strong></div>
-
-    <div style="border-bottom:1px solid var(--eax-line);padding-bottom:16px;margin-bottom:16px;">
-      <div class="lbl">Appearance</div>
-      <div style="display:flex;align-items:center;justify-content:space-between;">
-        <span style="font-size:13px;color:var(--eax-muted);">Color Theme</span>
-        <div style="display:flex;background:var(--eax-bg);border:1px solid var(--eax-line);border-radius:8px;padding:3px;gap:2px;">
-          <button id="theme-btn-light" onclick="applyTheme('light')" style="padding:5px 14px;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit;transition:all .15s;">Paper</button>
-          <button id="theme-btn-dark"  onclick="applyTheme('dark')"  style="padding:5px 14px;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit;transition:all .15s;">Navy</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="lbl">Email</div>
-    <div id="acct-email" class="acct-input" style="color:var(--eax-subtle);min-height:36px;margin-bottom:16px;">—</div>
-
-    <div class="lbl">Change Password</div>
-    <input id="acct-cur-pw" class="acct-input" type="password" placeholder="Current password" style="margin-bottom:8px;">
-    <input id="acct-new-pw" class="acct-input" type="password" placeholder="New password" style="margin-bottom:8px;">
-    <input id="acct-conf-pw" class="acct-input" type="password" placeholder="Confirm new password" style="margin-bottom:14px;">
-    <div id="acct-msg" style="font-size:12px;margin-bottom:12px;display:none;"></div>
-    <button class="save-btn" onclick="saveAcctPw()" style="margin-bottom:20px;">Save Password</button>
-
-    <div style="border-top:1px solid var(--eax-line);padding-top:18px;">
-      <div class="lbl">Monthly Report Emails</div>
-      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:14px;">
-        <input type="checkbox" id="acct-report-optin" style="accent-color:var(--eax-accent);width:15px;height:15px;">
-        <div>
-          <div style="font-size:13px;color:var(--eax-ink);">Receive monthly reports</div>
-          <div style="font-size:11px;color:var(--eax-subtle);margin-top:2px;">Sent on the 1st of each month to your email</div>
-        </div>
-      </label>
-      <div id="acct-format-row" style="display:none;margin-bottom:14px;">
-        <div class="lbl" style="margin-bottom:8px;">Format</div>
-        <div style="display:flex;gap:16px;">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--eax-ink);">
-            <input type="radio" name="acct-report-fmt" value="pdf" id="acct-fmt-pdf" style="accent-color:var(--eax-accent);"> PDF
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--eax-ink);">
-            <input type="radio" name="acct-report-fmt" value="excel" id="acct-fmt-excel" style="accent-color:var(--eax-accent);"> Excel
-          </label>
-        </div>
-        <div style="font-size:11px;color:var(--eax-subtle);margin-top:8px;">Includes: Active Project Returns, Loan Capacities &amp; Debt Schedules, Ember Operating Revenues, Ember Capital Executive Report</div>
-      </div>
-      <div id="acct-report-msg" style="font-size:12px;margin-bottom:8px;display:none;"></div>
-      <button class="save-btn ghost" onclick="saveReportSettings()">Save Report Preferences</button>
-    </div>
-  </div>
-</div>
+{% include "_partials/_account_modal.html" %}
 
 {% if is_admin %}
 {# ============================================================
@@ -804,17 +750,12 @@ async function pollMacroStatus() {
 })();
 
 function _updateThemeButtons() {
-  const isDark = document.documentElement.dataset.theme === 'dark';
+  const isDark   = document.documentElement.dataset.theme === 'dark';
   const darkBtn  = document.getElementById('theme-btn-dark');
   const lightBtn = document.getElementById('theme-btn-light');
   if (!darkBtn || !lightBtn) return;
-  // 'Paper' (light) is the brand default — show as active when not dark.
-  lightBtn.style.background = isDark ? 'transparent' : 'var(--eax-accent)';
-  lightBtn.style.color      = isDark ? 'var(--eax-muted)' : 'var(--eax-accent-fg)';
-  lightBtn.style.fontWeight = isDark ? '500' : '700';
-  darkBtn.style.background  = isDark ? 'var(--eax-accent)' : 'transparent';
-  darkBtn.style.color       = isDark ? 'var(--eax-accent-fg)' : 'var(--eax-muted)';
-  darkBtn.style.fontWeight  = isDark ? '700' : '500';
+  lightBtn.classList.toggle('is-active', !isDark);
+  darkBtn.classList.toggle('is-active', isDark);
 }
 function applyTheme(theme) {
   // 'light' = Warm Paper (default) · 'dark' = Deep Navy

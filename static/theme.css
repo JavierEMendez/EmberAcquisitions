@@ -228,6 +228,170 @@ body {
 .ember-bars[data-eax-bars-animated] rect:nth-child(17) { animation-delay: 0.96s; }
 
 /* ============================================================
+   Sidebar foot buttons (Account / Home) — used at the bottom of
+   every dashboard sidebar. Drop in via _partials/_sidebar_foot.html.
+   ============================================================ */
+.sb-foot { padding: 8px 12px 4px; }
+.sb-foot.last { padding: 4px 12px 14px; }
+.sb-foot-btn {
+  width: 100%;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--eax-line-2);
+  background: transparent;
+  color: var(--eax-muted);
+  font-size: 11px;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  cursor: pointer;
+  text-decoration: none;
+  transition: border-color .15s, color .15s;
+}
+.sb-foot-btn:hover { border-color: var(--eax-accent); color: var(--eax-accent); text-decoration: none; }
+
+/* ============================================================
+   Account Settings modal — shared across every dashboard page.
+   Drop in via _partials/_account_modal.html.
+   ============================================================ */
+.acct-modal {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(8, 35, 59, 0.55);
+  z-index: 2000;
+  align-items: center; justify-content: center;
+}
+.acct-modal.open { display: flex; }
+.acct-box {
+  background: var(--eax-surface);
+  border: 1px solid var(--eax-line);
+  border-radius: 14px;
+  padding: 28px;
+  width: 380px;
+  max-width: 92vw;
+  max-height: 92vh;
+  overflow-y: auto;
+  box-shadow: var(--eax-shadow-card);
+}
+.acct-modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 18px;
+}
+.acct-modal-header h3 {
+  font-family: var(--font-display);
+  font-size: 15px; font-weight: 700;
+  color: var(--eax-ink-2);
+  margin: 0;
+}
+.acct-modal-close {
+  background: none; border: none;
+  color: var(--eax-subtle);
+  font-size: 22px; cursor: pointer; line-height: 1;
+}
+.acct-meta { font-size: 12px; color: var(--eax-subtle); margin-bottom: 16px; }
+.acct-meta strong { color: var(--eax-muted); }
+.acct-divider {
+  border-bottom: 1px solid var(--eax-line);
+  padding-bottom: 16px; margin-bottom: 16px;
+}
+.acct-section {
+  border-top: 1px solid var(--eax-line);
+  padding-top: 18px;
+}
+.acct-lbl {
+  font-size: 10px;
+  color: var(--eax-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.acct-input {
+  width: 100%;
+  background: var(--eax-bg);
+  border: 1px solid var(--eax-line-2);
+  color: var(--eax-ink);
+  border-radius: 8px;
+  padding: 9px 11px;
+  font-size: 13px;
+  font-family: var(--font-sans);
+  outline: none;
+}
+.acct-input:focus { border-color: var(--eax-accent); }
+.acct-input.readonly { color: var(--eax-subtle); min-height: 36px; }
+.acct-save {
+  width: 100%;
+  background: var(--eax-accent);
+  color: var(--eax-accent-fg);
+  border: none;
+  border-radius: 8px;
+  padding: 11px;
+  font-family: var(--font-sans);
+  font-size: 13px; font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(242, 89, 41, 0.22);
+  transition: transform .1s, box-shadow .15s;
+}
+.acct-save:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(242, 89, 41, 0.30);
+}
+.acct-save.ghost {
+  background: transparent;
+  color: var(--eax-muted);
+  border: 1px solid var(--eax-line-2);
+  box-shadow: none;
+}
+.acct-save.ghost:hover {
+  border-color: var(--eax-accent);
+  color: var(--eax-accent);
+  transform: none;
+  box-shadow: none;
+}
+.acct-theme-row {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.acct-theme-row .lbl-text { font-size: 13px; color: var(--eax-muted); }
+.acct-theme-pillgroup {
+  display: flex;
+  background: var(--eax-bg);
+  border: 1px solid var(--eax-line);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+}
+.acct-theme-pill {
+  padding: 5px 14px;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  background: transparent;
+  color: var(--eax-muted);
+  font-weight: 500;
+  transition: background .15s, color .15s, font-weight .15s;
+}
+.acct-theme-pill.is-active {
+  background: var(--eax-accent);
+  color: var(--eax-accent-fg);
+  font-weight: 700;
+}
+.acct-checkbox { accent-color: var(--eax-accent); width: 15px; height: 15px; }
+.acct-radio { accent-color: var(--eax-accent); }
+.acct-report-toggle { display: flex; align-items: center; gap: 10px; cursor: pointer; margin-bottom: 14px; }
+.acct-report-toggle .label-strong { font-size: 13px; color: var(--eax-ink); }
+.acct-report-toggle .label-sub { font-size: 11px; color: var(--eax-subtle); margin-top: 2px; }
+.acct-format-row { display: none; margin-bottom: 14px; }
+.acct-format-options { display: flex; gap: 16px; }
+.acct-format-option { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; color: var(--eax-ink); }
+.acct-format-note { font-size: 11px; color: var(--eax-subtle); margin-top: 8px; }
+.acct-msg { font-size: 12px; margin-bottom: 12px; display: none; }
+
+/* ============================================================
    Legacy loader bridge — keeps existing markup like
    <div class="loading"></div>  /  <div class="spinner"></div>
    working with the new brand motion. Each renders as a single
