@@ -1,0 +1,4 @@
+# Per-project hero images uploaded via the admin Project Library modal.
+# Filenames are slug-based: lowercase-hyphenated, e.g. `grand-prairie-east-ccc.jpg`.
+# The mapping name -> filename is stored in the `reports` table with
+# report_type='project_metadata'.

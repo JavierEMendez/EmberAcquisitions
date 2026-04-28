@@ -1332,6 +1332,211 @@ def _load_project_metadata():
     return out
 
 
+# ─── Project Library (admin-only image + metadata uploader) ──────────────────
+
+import re as _re
+
+_ALLOWED_IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+_PROJECTS_IMG_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "static", "img", "projects"
+)
+
+
+def _slugify_project(name: str) -> str:
+    """Lowercase, hyphenate, strip non-alphanumerics. Stable per project name
+    so re-uploads overwrite the same file in place."""
+    s = (name or "").lower()
+    s = _re.sub(r"[^\w\s-]", "", s, flags=_re.UNICODE)
+    s = _re.sub(r"[\s_]+", "-", s).strip("-")
+    s = _re.sub(r"-+", "-", s)
+    return s or "project"
+
+
+def _save_project_metadata_blob(blob: dict):
+    """Upsert the singleton project_metadata row in the `reports` table."""
+    import json as _json
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO reports (report_type, data, uploaded_at) VALUES "
+        "(%s, %s::jsonb, NOW())",
+        ("project_metadata", _json.dumps(blob)),
+    )
+    conn.commit()
+    cur.close(); conn.close()
+
+
+def _read_project_metadata_blob() -> dict:
+    """Latest project_metadata blob (raw, with image_filename keys)."""
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute(
+            "SELECT data FROM reports WHERE report_type='project_metadata' "
+            "ORDER BY uploaded_at DESC LIMIT 1"
+        )
+        row = cur.fetchone()
+        cur.close(); conn.close()
+    except Exception:
+        return {"projects": {}}
+    if not row or not row.get("data"):
+        return {"projects": {}}
+    blob = row["data"] or {}
+    if not isinstance(blob.get("projects"), dict):
+        blob = {"projects": {}}
+    return blob
+
+
+def _active_project_names() -> list[str]:
+    """Names of projects in the most recent returns upload, in order."""
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute(
+            "SELECT data FROM reports WHERE report_type='returns' "
+            "ORDER BY uploaded_at DESC LIMIT 1"
+        )
+        row = cur.fetchone()
+        cur.close(); conn.close()
+    except Exception:
+        return []
+    if not row or not row.get("data"):
+        return []
+    return [
+        (p.get("name") or "").strip()
+        for p in (row["data"].get("projects") or [])
+        if (p.get("name") or "").strip() and p.get("active") is not False
+    ]
+
+
+@app.route("/api/admin/project-meta", methods=["GET"])
+@login_required
+def admin_project_meta_list():
+    """Return the project list (from latest returns) joined with any
+    saved metadata (image / location / role). Admin-only."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Access denied"}), 403
+    names = _active_project_names()
+    blob = _read_project_metadata_blob()
+    raw = blob.get("projects") or {}
+    projects = []
+    for n in names:
+        meta = raw.get(n) or raw.get(n.strip()) or {}
+        img_filename = meta.get("image_filename")
+        projects.append({
+            "name": n,
+            "location": meta.get("location") or "",
+            "role": meta.get("role") or "",
+            "image_filename": img_filename,
+            "image_url": (f"/static/img/projects/{img_filename}"
+                          if img_filename else None),
+        })
+    # Also surface any saved entries whose project no longer appears in
+    # the returns upload — admin can still see + delete them.
+    seen = {p["name"] for p in projects}
+    for n, meta in raw.items():
+        if n in seen:
+            continue
+        img_filename = (meta or {}).get("image_filename")
+        projects.append({
+            "name": n,
+            "location": (meta or {}).get("location") or "",
+            "role": (meta or {}).get("role") or "",
+            "image_filename": img_filename,
+            "image_url": (f"/static/img/projects/{img_filename}"
+                          if img_filename else None),
+            "orphaned": True,
+        })
+    return jsonify({"projects": projects})
+
+
+@app.route("/api/admin/project-meta/<path:name>", methods=["POST"])
+@login_required
+def admin_project_meta_save(name):
+    """Save (multipart) location/role and optionally a new hero image for
+    the named project. Image, if provided, is resized to ≤1200px wide
+    and saved as JPEG under /static/img/projects/<slug>.jpg."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Access denied"}), 403
+
+    name = (name or "").strip()
+    if not name:
+        return jsonify({"error": "Missing project name"}), 400
+
+    location = (request.form.get("location") or "").strip()
+    role = (request.form.get("role") or "").strip()
+
+    blob = _read_project_metadata_blob()
+    projects = blob.setdefault("projects", {})
+    entry = projects.get(name) or {}
+    entry["location"] = location
+    entry["role"] = role
+
+    # Handle optional image
+    file = request.files.get("image")
+    if file and file.filename:
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in _ALLOWED_IMG_EXTS:
+            return jsonify({
+                "error": f"Unsupported image type {ext}. Allowed: "
+                         + ", ".join(sorted(_ALLOWED_IMG_EXTS))
+            }), 400
+        try:
+            from PIL import Image
+        except ImportError:
+            return jsonify({"error": "Server missing Pillow library"}), 500
+        try:
+            img = Image.open(file.stream)
+            img.load()
+        except Exception as e:
+            return jsonify({"error": f"Could not read image: {e}"}), 400
+        # Resize to max 1200px wide preserving aspect ratio. The PDF
+        # template uses object-fit: cover on a 16:7 box so the user
+        # doesn't have to crop themselves.
+        if img.mode in ("RGBA", "LA", "P"):
+            img = img.convert("RGB")
+        max_w = 1200
+        if img.width > max_w:
+            ratio = max_w / float(img.width)
+            new_h = max(1, int(img.height * ratio))
+            img = img.resize((max_w, new_h), Image.LANCZOS)
+
+        os.makedirs(_PROJECTS_IMG_DIR, exist_ok=True)
+        slug = _slugify_project(name)
+        out_filename = f"{slug}.jpg"
+        out_path = os.path.join(_PROJECTS_IMG_DIR, out_filename)
+        img.save(out_path, "JPEG", quality=85, optimize=True, progressive=True)
+        entry["image_filename"] = out_filename
+
+    projects[name] = entry
+    _save_project_metadata_blob(blob)
+
+    img_filename = entry.get("image_filename")
+    return jsonify({
+        "ok": True,
+        "name": name,
+        "location": entry.get("location") or "",
+        "role": entry.get("role") or "",
+        "image_filename": img_filename,
+        "image_url": (f"/static/img/projects/{img_filename}?ts="
+                      + str(int(datetime.datetime.now().timestamp()))
+                      if img_filename else None),
+    })
+
+
+@app.route("/api/admin/project-meta/<path:name>", methods=["DELETE"])
+@login_required
+def admin_project_meta_delete(name):
+    """Remove a project's metadata entry. The image file on disk is kept
+    (cheap to leave; expensive to recover after a mis-click)."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Access denied"}), 403
+    name = (name or "").strip()
+    blob = _read_project_metadata_blob()
+    projects = blob.setdefault("projects", {})
+    if name in projects:
+        del projects[name]
+        _save_project_metadata_blob(blob)
+    return jsonify({"ok": True})
+
+
 def _render_returns_report_pdf(raw_data, uploaded_at, tone="institutional",
                                *, preview_html=False):
     """Build the new design-handoff Project Returns PDF (or HTML preview).
