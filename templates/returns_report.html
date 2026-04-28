@@ -10,15 +10,26 @@
 <meta charset="utf-8"/>
 <title>Ember · Project Returns Report — {{ period_label }}</title>
 <style>
-  /* Brand fonts — read by app.py's _weasyprint_local_fetcher() directly
-     from disk, NOT via HTTP. Drop the .ttf/.otf files into static/fonts/
-     and they're picked up on the next PDF render. If a file isn't
-     present, the CSS font-family fallback chain (Plus Jakarta Sans ->
-     system-ui -> sans-serif) takes over silently. */
+  /* Brand fonts — read from disk by app.py's _weasyprint_local_fetcher().
+
+     HelveticaNeue Brand + Gotham are the handoff template's spec but
+     they're commercial (Linotype / Hoefler) so we don't ship them. If
+     license-purchased copies are dropped into /static/fonts/ later,
+     these @font-face declarations pick them up automatically and they
+     take precedence over Plus Jakarta Sans in the family chain. */
   @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-Bold.ttf") format("truetype"); font-weight: 700; }
   @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-CondensedBold.ttf") format("truetype"); font-weight: 800; }
   @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-Light.ttf") format("truetype"); font-weight: 300; }
   @font-face { font-family: "Gotham"; src: url("/static/fonts/Gotham-Medium.otf") format("opentype"); font-weight: 500; }
+
+  /* Plus Jakarta Sans — the brand's free, open-licensed alternative
+     used everywhere else on the site. Bundled in /static/fonts/ so the
+     PDF always has real branded type even when HelveticaNeue/Gotham
+     are missing. Same weights the template uses (300/500/700/800). */
+  @font-face { font-family: "Plus Jakarta Sans"; src: url("/static/fonts/PlusJakartaSans-Light.ttf")     format("truetype"); font-weight: 300; }
+  @font-face { font-family: "Plus Jakarta Sans"; src: url("/static/fonts/PlusJakartaSans-Medium.ttf")    format("truetype"); font-weight: 500; }
+  @font-face { font-family: "Plus Jakarta Sans"; src: url("/static/fonts/PlusJakartaSans-Bold.ttf")      format("truetype"); font-weight: 700; }
+  @font-face { font-family: "Plus Jakarta Sans"; src: url("/static/fonts/PlusJakartaSans-ExtraBold.ttf") format("truetype"); font-weight: 800; }
 
   :root {
     --paper: #FFFFFF;
