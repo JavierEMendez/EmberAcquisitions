@@ -1,0 +1,26 @@
+# Keep the image small + reproducible.
+.git
+.gitignore
+.github
+.claude
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache
+.coverage
+.DS_Store
+
+# Local-only docs / tooling
+*.md
+README*
+DEPLOY*
+
+# IDE / editor noise
+.vscode
+.idea
+*.swp
+*.swo

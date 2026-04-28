@@ -1,2 +1,10 @@
+[build]
+# Use the Dockerfile, not Nixpacks. Nixpacks installs apt packages but
+# the Nix-built Python runtime doesn't see them via ctypes (the failure
+# mode for WeasyPrint -> libpango/libgobject). The Dockerfile uses a
+# plain Debian base so apt-installed .so files are on the default
+# library search path.
+builder = "DOCKERFILE"
+
 [deploy]
 restartPolicyType = "on_failure"
