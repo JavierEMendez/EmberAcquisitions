@@ -1633,6 +1633,63 @@ def admin_project_meta_delete(name):
     return jsonify({"ok": True})
 
 
+_STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+
+
+def _weasyprint_local_fetcher(url, timeout=10, ssl_context=None):
+    """Custom WeasyPrint URL fetcher.
+
+    /static/... URLs (font files, project hero images, the Ember logo)
+    are read directly from disk instead of going back through HTTP. This
+    avoids the deadlock case: WeasyPrint is rendering inside a gunicorn
+    worker, makes an HTTP request to /static/foo.ttf, the request lands
+    on the same worker pool, and either deadlocks with workers=1 or
+    waits for a slow recursive request. Reading from disk is also ~100x
+    faster than the round-trip.
+
+    Anything else (data:, file://, or external https://) falls through
+    to WeasyPrint's default fetcher.
+    """
+    import urllib.parse
+    import mimetypes
+
+    try:
+        parsed = urllib.parse.urlparse(url)
+        path = parsed.path or ""
+        if path.startswith("/static/"):
+            rel = path[len("/static/"):]
+            disk_path = os.path.normpath(os.path.join(_STATIC_DIR, rel))
+            # Refuse to escape the static directory.
+            if not disk_path.startswith(_STATIC_DIR):
+                raise FileNotFoundError(f"refused: {url}")
+            if os.path.isfile(disk_path):
+                with open(disk_path, "rb") as f:
+                    data = f.read()
+                mime, _ = mimetypes.guess_type(disk_path)
+                return {
+                    "string": data,
+                    "mime_type": mime or "application/octet-stream",
+                    "redirected_url": url,
+                    "filename": os.path.basename(disk_path),
+                }
+            # File missing — raise so WeasyPrint logs a warning and falls
+            # back to the next font in the CSS font-family chain. We do
+            # NOT fall through to default_url_fetcher for /static/ URLs
+            # because that would HTTP-fetch ourselves (the deadlock).
+            raise FileNotFoundError(disk_path)
+    except FileNotFoundError:
+        raise
+    except Exception:
+        # Don't let a fetcher bug crash the whole render.
+        pass
+
+    # Non-/static URL: defer to WeasyPrint's default. Import lazily so
+    # the fetcher itself never triggers a WeasyPrint import error on
+    # Windows / dev machines where it isn't installed.
+    from weasyprint.urls import default_url_fetcher
+    return default_url_fetcher(url, timeout=timeout, ssl_context=ssl_context)
+
+
 def _render_returns_report_pdf(raw_data, uploaded_at, tone="institutional",
                                *, preview_html=False):
     """Build the new design-handoff Project Returns PDF (or HTML preview).
@@ -1642,7 +1699,8 @@ def _render_returns_report_pdf(raw_data, uploaded_at, tone="institutional",
           -> report.normalize()  (canonical shape, layered with project_metadata)
           -> report.build_context()  (KPIs, charts, formatters)
           -> Jinja render templates/returns_report.html
-          -> WeasyPrint -> PDF bytes
+          -> WeasyPrint -> PDF bytes (with a local url_fetcher so /static/...
+             URLs read from disk, never HTTP-fetch ourselves)
     """
     from report import normalize, build_context
 
@@ -1666,7 +1724,11 @@ def _render_returns_report_pdf(raw_data, uploaded_at, tone="institutional",
 
     from weasyprint import HTML  # imported lazily so a missing system lib
                                   # only breaks PDF rendering, not the app
-    return HTML(string=html, base_url=request.host_url).write_pdf()
+    return HTML(
+        string=html,
+        base_url=request.host_url,
+        url_fetcher=_weasyprint_local_fetcher,
+    ).write_pdf()
 
 
 @app.route("/api/returns/pdf", methods=["GET"])
