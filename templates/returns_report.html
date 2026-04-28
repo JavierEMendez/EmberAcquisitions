@@ -116,12 +116,14 @@
   .kpi.accent .v { color: var(--accent); }
   .kpi .s { font-size: 9px; color: var(--muted); margin-top: 2px; font-family: var(--font-sans); }
 
-  /* Explicit height on summary-body. WeasyPrint's flex chain wasn't
-     resolving when the parent's height was implicit, causing the two
-     stacked charts to render on top of each other. */
-  .summary-body { display: grid; grid-template-columns: 1.55fr 1fr; gap: 18px; height: 5.55in; }
-  .summary-charts { display: grid; grid-template-rows: 1fr 1fr; gap: 14px; min-height: 0; }
-  .summary-chart { border: 1px solid var(--line); padding: 12px 14px 10px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  /* Layout note: every container in the summary body has an explicit
+     height. WeasyPrint's CSS Grid implementation isn't reliable enough
+     to stretch grid items to fill an explicit-height container, so we
+     use plain flex everywhere with hard-coded inch values that add up
+     to 5.55in. Two charts at ~2.65in each + 14px gap fits cleanly. */
+  .summary-body { display: flex; flex-direction: row; gap: 18px; height: 5.55in; }
+  .summary-charts { flex: 1.55 1.55 0; display: flex; flex-direction: column; gap: 14px; min-width: 0; height: 5.55in; }
+  .summary-chart { border: 1px solid var(--line); padding: 12px 14px 10px; display: flex; flex-direction: column; height: 2.65in; overflow: hidden; }
   .summary-chart .ttl { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
   .summary-chart .ttl .h { font-family: var(--font-display); font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.02em; }
   .summary-chart .ttl .s { font-size: 10px; color: var(--subtle); font-family: var(--font-mono); letter-spacing: 0.04em; }
@@ -129,7 +131,7 @@
   .summary-chart .chart-area svg { width: 100%; height: 100%; display: block; }
   .summary-chart .chart-xaxis { display: flex; justify-content: space-between; margin-top: 4px; font-family: var(--font-mono); font-size: 8.5px; color: var(--subtle); letter-spacing: 0.08em; padding-left: 56px; }
 
-  .summary-side { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--line); padding: 0; height: 5.55in; overflow: hidden; }
+  .summary-side { flex: 1 1 0; display: flex; flex-direction: column; gap: 0; border: 1px solid var(--line); padding: 0; height: 5.55in; overflow: hidden; min-width: 0; }
   .summary-side .ttl { padding: 10px 14px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
   .summary-side .ttl .h { font-family: var(--font-display); font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.02em; }
   .summary-side .ttl .s { font-size: 9px; color: var(--subtle); font-family: var(--font-mono); margin-top: 2px; }
@@ -151,11 +153,14 @@
   .projects-page .page-head h2 em { font-style: normal; font-weight: 300; color: var(--accent); text-transform: none; letter-spacing: -0.02em; }
   .projects-page .page-head .meta { font-family: var(--font-mono); font-size: 9.5px; color: var(--subtle); letter-spacing: 0.06em; }
   .projects-body { display: block; }
-  /* Explicit height so each card claims a known half of the page.
-     The flex:0 0 50% / flex:1 chain that the handoff used was
-     collapsing in WeasyPrint, leaving cards stuck at content height
-     and clipping every row beyond the project name. */
-  .pcard { height: 3.15in; display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; padding: 14px 0; border-bottom: 1px solid var(--line); overflow: hidden; }
+  /* Cards use plain flex (rows) with explicit height. Earlier attempts
+     used CSS Grid (grid-template-columns: 1.4fr 1fr) but WeasyPrint
+     wasn't stretching grid rows to fill an explicit-height container,
+     so cards collapsed to ~30px and clipped everything past the
+     project name. Flex sizes cleanly with `flex: <ratio> <ratio> 0`. */
+  .pcard { height: 3.15in; display: flex; flex-direction: row; gap: 18px; padding: 14px 0; border-bottom: 1px solid var(--line); overflow: hidden; }
+  .pcard .left  { flex: 1.4 1.4 0; min-width: 0; }
+  .pcard .right { flex: 1 1 0;     min-width: 0; }
   .pcard:last-child { border-bottom: none; }
   .pcard .left, .pcard .right { display: flex; flex-direction: column; min-height: 0; }
   .pcard .ph-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
