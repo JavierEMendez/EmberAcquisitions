@@ -548,45 +548,161 @@ function sparkSVG(values, w, h) {
   </svg>`;
 }
 
-// ── Cumulative area chart
-function cumulativeAreaSVG(values, w, h) {
+// ── Axis helpers shared by both detail charts
+// "Nice" tick generator — picks a step that's 1/2/5 × 10^k so the resulting
+// labels round to readable numbers ("5,000" not "4,873"). Returns 3-5 ticks
+// covering the full data range, padded out to the nearest nice boundary.
+function niceTicks(min, max, target = 4) {
+  if (!isFinite(min) || !isFinite(max) || min === max) {
+    return { ticks: [min || 0], niceMin: min || 0, niceMax: (max || 0) + 1 };
+  }
+  const range = max - min;
+  const rawStep = range / target;
+  const mag = Math.pow(10, Math.floor(Math.log10(Math.abs(rawStep) || 1)));
+  const norm = rawStep / mag;
+  let step;
+  if (norm < 1.5)      step = 1 * mag;
+  else if (norm < 3)   step = 2 * mag;
+  else if (norm < 7)   step = 5 * mag;
+  else                 step = 10 * mag;
+  const niceMin = Math.floor(min / step) * step;
+  const niceMax = Math.ceil(max / step) * step;
+  const ticks = [];
+  for (let v = niceMin; v <= niceMax + step * 0.0001; v += step) {
+    ticks.push(Math.round(v * 1e6) / 1e6);   // tame fp noise
+  }
+  return { ticks, niceMin, niceMax };
+}
+
+// Axis tick formatter. Values arrive in $K (matching the table convention),
+// so we just thousand-separate. Magnitudes ≥ 1,000 in $K (= ≥ $1M) compact
+// to "1.2M". Negatives use accountancy parens.
+function fmtAxisK(v) {
+  const n = +v || 0;
+  if (Math.abs(n) < 0.5) return '0';
+  const abs = Math.abs(n);
+  let s;
+  if (abs >= 10000) s = (abs / 1000).toFixed(1).replace(/\.0$/, '') + 'M';
+  else              s = Math.round(abs).toLocaleString();
+  return n < 0 ? '(' + s + ')' : s;
+}
+
+// X-axis tick step picker — aim for ~5–7 labels, always including endpoints.
+function pickXStep(n) {
+  if (n <= 7)  return 1;
+  if (n <= 12) return 2;
+  if (n <= 18) return 3;
+  if (n <= 25) return 4;
+  return Math.ceil(n / 6);
+}
+
+// Build x-axis tick indices: always include first + last, then every Nth in
+// between. Drops the second-to-last if it's too close to the last so labels
+// don't collide.
+function xTickIndices(n) {
+  if (n <= 1) return [0];
+  const step = pickXStep(n);
+  const out = [];
+  for (let i = 0; i < n; i += step) out.push(i);
+  if (out[out.length - 1] !== n - 1) {
+    if ((n - 1) - out[out.length - 1] < step / 2) out.pop();
+    out.push(n - 1);
+  }
+  return out;
+}
+
+// Chart frame constants — both charts share the same plot rectangle so the
+// detail pane reads as a single visual unit.
+const CHART_W = 640, CHART_H = 150;
+const CHART_ML = 44, CHART_MR = 10, CHART_MT = 10, CHART_MB = 26;
+const PLOT_W = CHART_W - CHART_ML - CHART_MR;     // 586
+const PLOT_H = CHART_H - CHART_MT - CHART_MB;     // 114
+
+// Render the axis chrome (gridlines, tick labels) shared between the two
+// charts. Returns an SVG fragment — caller composes it with the data layer.
+function axisChromeSVG(yTicks, yMin, yMax, years, idxs) {
+  const yRange = (yMax - yMin) || 1;
+  const yFor = v => CHART_MT + PLOT_H - ((v - yMin) / yRange) * PLOT_H;
+  const xStep = years.length > 1 ? PLOT_W / (years.length - 1) : 0;
+  const xFor = i => CHART_ML + i * xStep;
+
+  const yLines = yTicks.map(t => {
+    const y = yFor(t).toFixed(1);
+    const isZero = Math.abs(t) < 0.0001;
+    return `<line x1="${CHART_ML}" x2="${CHART_ML + PLOT_W}" y1="${y}" y2="${y}" stroke="var(--eax-line)" stroke-width="1"${isZero ? ' stroke-dasharray="3 3" opacity="0.7"' : ' opacity="0.55"'}/>`;
+  }).join('');
+
+  const yLabels = yTicks.map(t => {
+    const y = yFor(t);
+    return `<text x="${CHART_ML - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end" font-family="var(--font-mono)" font-size="9" fill="var(--eax-subtle)" font-variant-numeric="tabular-nums">${fmtAxisK(t)}</text>`;
+  }).join('');
+
+  const xLabels = idxs.map(i => {
+    const yr = years[i];
+    if (yr == null) return '';
+    return `<text x="${xFor(i).toFixed(1)}" y="${(CHART_MT + PLOT_H + 14).toFixed(1)}" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="var(--eax-subtle)" font-variant-numeric="tabular-nums">${yr}</text>`;
+  }).join('');
+
+  return yLines + yLabels + xLabels;
+}
+
+// ── Cumulative net cashflow — area + line with y-tick + year axes
+function cumulativeAreaSVG(values, years) {
   if (!values || values.length < 2) return '';
-  const min = Math.min(0, ...values);
-  const max = Math.max(0, ...values);
-  const range = (max - min) || 1;
-  const xStep = w / (values.length - 1);
-  const yFor = v => h - ((v - min) / range) * (h - 6) - 3;
-  const path = values.map((v, i) => `${i === 0 ? 'M' : 'L'} ${(i * xStep).toFixed(1)} ${yFor(+v || 0).toFixed(1)}`).join(' ');
-  const area = `${path} L ${((values.length - 1) * xStep).toFixed(1)} ${h} L 0 ${h} Z`;
-  const zeroY = yFor(0).toFixed(1);
-  const gid = 'rd-grad-' + Math.random().toString(36).slice(2, 8);
-  return `<svg width="100%" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;color:var(--eax-accent)">
+  const dataMin = Math.min(0, ...values);
+  const dataMax = Math.max(0, ...values);
+  const { ticks, niceMin: yMin, niceMax: yMax } = niceTicks(dataMin, dataMax, 4);
+  const yRange = (yMax - yMin) || 1;
+  const xStep  = PLOT_W / (values.length - 1);
+  const xFor   = i => CHART_ML + i * xStep;
+  const yFor   = v => CHART_MT + PLOT_H - ((v - yMin) / yRange) * PLOT_H;
+
+  const path  = values.map((v, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i).toFixed(1)} ${yFor(+v || 0).toFixed(1)}`).join(' ');
+  const baseY = yFor(yMin).toFixed(1);
+  const area  = `${path} L ${xFor(values.length - 1).toFixed(1)} ${baseY} L ${xFor(0).toFixed(1)} ${baseY} Z`;
+  const gid   = 'rd-grad-' + Math.random().toString(36).slice(2, 8);
+  const idxs  = xTickIndices(years.length || values.length);
+  const yrs   = years && years.length ? years : values.map((_, i) => '');
+
+  return `<svg width="100%" height="auto" viewBox="0 0 ${CHART_W} ${CHART_H}" preserveAspectRatio="xMidYMid meet" style="display:block;color:var(--eax-accent)">
     <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="currentColor" stop-opacity="0.32"/>
       <stop offset="100%" stop-color="currentColor" stop-opacity="0"/>
     </linearGradient></defs>
-    <line x1="0" x2="${w}" y1="${zeroY}" y2="${zeroY}" stroke="currentColor" stroke-width="1" stroke-dasharray="3 3" opacity="0.25"/>
+    ${axisChromeSVG(ticks, yMin, yMax, yrs, idxs)}
     <path d="${area}" fill="url(#${gid})"/>
     <path d="${path}" fill="none" stroke="currentColor" stroke-width="2"/>
   </svg>`;
 }
 
-// ── Annual net cashflow bar chart (signed)
-function annualBarsSVG(values, w, h) {
+// ── Annual net cashflow — signed bars with y-tick + year axes
+function annualBarsSVG(values, years) {
   if (!values || !values.length) return '';
-  const maxAbs = Math.max(...values.map(v => Math.abs(+v || 0))) || 1;
-  const bw = Math.max(2, (w - (values.length - 1) * 4) / values.length);
-  const mid = h / 2;
+  const dataMin = Math.min(0, ...values);
+  const dataMax = Math.max(0, ...values);
+  const { ticks, niceMin: yMin, niceMax: yMax } = niceTicks(dataMin, dataMax, 4);
+  const yRange = (yMax - yMin) || 1;
+  const yFor = v => CHART_MT + PLOT_H - ((v - yMin) / yRange) * PLOT_H;
+  const slot = PLOT_W / values.length;
+  const bw   = Math.max(2, slot * 0.7);
+  const gap  = slot - bw;
+
   const bars = values.map((v, i) => {
-    const num = +v || 0;
-    const bh = Math.max(1, (Math.abs(num) / maxAbs) * (h * 0.42));
-    const y = num >= 0 ? mid - bh : mid;
+    const num  = +v || 0;
+    const yTop = num >= 0 ? yFor(num) : yFor(0);
+    const yBot = num >= 0 ? yFor(0)   : yFor(num);
+    const h    = Math.max(1, yBot - yTop);
+    const x    = CHART_ML + i * slot + gap / 2;
     const fill = num >= 0 ? 'var(--eax-accent)' : 'var(--eax-bad)';
-    const op = Math.abs(num) < 0.0001 ? 0.12 : 0.95;
-    return `<rect x="${(i * (bw + 4)).toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="3" fill="${fill}" opacity="${op}"/>`;
+    const op   = Math.abs(num) < 0.0001 ? 0.12 : 0.95;
+    return `<rect x="${x.toFixed(1)}" y="${yTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${fill}" opacity="${op}"/>`;
   }).join('');
-  return `<svg width="100%" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block">
-    <line x1="0" x2="${w}" y1="${mid}" y2="${mid}" stroke="currentColor" stroke-width="1" stroke-dasharray="3 3" opacity="0.25"/>
+
+  const idxs = xTickIndices(years.length || values.length);
+  const yrs  = years && years.length ? years : values.map((_, i) => '');
+
+  return `<svg width="100%" height="auto" viewBox="0 0 ${CHART_W} ${CHART_H}" preserveAspectRatio="xMidYMid meet" style="display:block">
+    ${axisChromeSVG(ticks, yMin, yMax, yrs, idxs)}
     ${bars}
   </svg>`;
 }
@@ -696,7 +812,7 @@ function renderDetail(idx) {
           </div>
           <span class="rw-chart-meta">${YEARS.length}Y</span>
         </div>
-        ${cumulativeAreaSVG(p.cumulative_yearly, 600, 110)}
+        ${cumulativeAreaSVG(p.cumulative_yearly, YEARS)}
       </div>
       <div class="rw-chart">
         <div class="rw-chart-head">
@@ -706,7 +822,7 @@ function renderDetail(idx) {
           </div>
           <span class="rw-chart-meta">${YEARS.length}Y</span>
         </div>
-        ${annualBarsSVG(p.net_yearly, 600, 110)}
+        ${annualBarsSVG(p.net_yearly, YEARS)}
       </div>
     </div>
 
