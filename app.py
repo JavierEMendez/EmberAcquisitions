@@ -1705,6 +1705,139 @@ def export_returns_excel():
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
+def _enrich_returns_payload(raw):
+    """Augment the raw returns report with per-project + portfolio aggregates
+    needed for the redesigned two-pane workspace.
+
+    Returns a dict shaped for the new returns template:
+      {
+        years: [...],
+        portfolio: {
+          active_count, total_lp_profit_k, weighted_irr, weighted_em,
+          total_distributions_k, total_contributions_k,
+        },
+        projects: [
+          {
+            name, vintage, irr, em, profit, distributions, contributions,
+            net_yearly, cumulative_yearly, metrics: [...]   # raw, for the table
+          }, ...
+        ],
+        summary: [...]   # untouched portfolio summary (for fallback)
+      }
+    Values that come from the report stay in $K (matching the rest of the
+    platform and the 'Cashflow detail · $ in 000s' caption).
+    """
+    if not raw:
+        return None
+    years = raw.get("years") or []
+    raw_projects = raw.get("projects") or []
+
+    def _f(by_label, label):
+        v = (by_label.get(label) or {}).get("total")
+        try: return float(v) if v is not None else 0.0
+        except (TypeError, ValueError): return 0.0
+
+    def _yearly(by_label, label, n):
+        m = by_label.get(label) or {}
+        y = list(m.get("yearly") or [])
+        # pad/truncate so all series have the same length as years
+        if len(y) < n: y = y + [0.0] * (n - len(y))
+        try:
+            y = [float(v) if v is not None else 0.0 for v in y]
+        except (TypeError, ValueError):
+            y = [0.0] * n
+        return y[:n]
+
+    enriched_projects = []
+    for p in raw_projects:
+        by_label = {m.get("label"): m for m in (p.get("metrics") or [])}
+        nyrs = len(years) or len((p.get("metrics") or [{}])[0].get("yearly") or [])
+        contrib_total = abs(_f(by_label, "Total LP Contributions"))
+        distrib_total = _f(by_label, "Total LP Distributions")
+        irr = _f(by_label, "LP IRR")
+        em  = _f(by_label, "LP Equity Multiple")
+        profit = _f(by_label, "Total LP Profit")
+
+        # Vintage = first year with a non-zero LP contribution. Fall back to
+        # the first year with any non-zero metric.
+        vintage = None
+        contrib_yearly = _yearly(by_label, "Total LP Contributions", nyrs)
+        for i, v in enumerate(contrib_yearly):
+            if v and abs(v) > 0:
+                vintage = years[i] if i < len(years) else None
+                break
+        if vintage is None:
+            for i in range(nyrs):
+                hit = False
+                for m in (p.get("metrics") or []):
+                    yr = m.get("yearly") or []
+                    if i < len(yr):
+                        try:
+                            if yr[i] and abs(float(yr[i])) > 0:
+                                hit = True; break
+                        except (TypeError, ValueError):
+                            pass
+                if hit:
+                    vintage = years[i] if i < len(years) else None
+                    break
+
+        # Net cashflow series: prefer the Net Cashflow row if present;
+        # otherwise compute as Distributions + Contributions (negative).
+        net_y = _yearly(by_label, "Net Cashflow", nyrs)
+        if not any(abs(v) > 0 for v in net_y):
+            d = _yearly(by_label, "Total LP Distributions", nyrs)
+            c = _yearly(by_label, "Total LP Contributions", nyrs)
+            net_y = [d[i] + c[i] for i in range(nyrs)]
+
+        # Cumulative series: prefer the report's row, else running sum of net.
+        cum_y = _yearly(by_label, "Cumulative Net Cashflow", nyrs)
+        if not any(abs(v) > 0 for v in cum_y):
+            running = 0.0
+            cum_y = []
+            for v in net_y:
+                running += v
+                cum_y.append(running)
+
+        enriched_projects.append({
+            "name":          p.get("name", ""),
+            "vintage":       vintage,
+            "irr":           irr,
+            "em":            em,
+            "profit":        profit,
+            "distributions": distrib_total,
+            "contributions": contrib_total,
+            "net_yearly":    net_y,
+            "cumulative_yearly": cum_y,
+            "metrics":       p.get("metrics") or [],
+        })
+
+    # Portfolio aggregates. Weight IRR & EM by abs(LP contributions): bigger
+    # checks pull the average. Fall back to a simple average if nothing has
+    # any contribution data.
+    total_profit_k = sum(p["profit"] for p in enriched_projects)
+    total_dist_k   = sum(p["distributions"] for p in enriched_projects)
+    total_contr_k  = sum(p["contributions"] for p in enriched_projects)
+    irr_w = sum(p["irr"] * p["contributions"] for p in enriched_projects if p["contributions"] > 0)
+    em_w  = sum(p["em"]  * p["contributions"] for p in enriched_projects if p["contributions"] > 0)
+    weight = sum(p["contributions"] for p in enriched_projects if p["contributions"] > 0)
+    weighted_irr = (irr_w / weight) if weight > 0 else 0.0
+    weighted_em  = (em_w  / weight) if weight > 0 else 0.0
+
+    return {
+        "years": years,
+        "portfolio": {
+            "active_count":            len(enriched_projects),
+            "total_lp_profit_k":       total_profit_k,
+            "weighted_irr":            weighted_irr,
+            "weighted_em":             weighted_em,
+            "total_distributions_k":   total_dist_k,
+            "total_contributions_k":   total_contr_k,
+        },
+        "projects": enriched_projects,
+        "summary":  raw.get("summary") or [],
+    }
+
+
 @app.route("/returns")
 @login_required
 def returns_report():
@@ -1718,10 +1851,14 @@ def returns_report():
     cur.close(); conn.close()
     data = row["data"] if row else None
     uploaded_at = row["uploaded_at"].strftime("%B %d, %Y") if row else None
+    enriched = _enrich_returns_payload(data)
     pa = session.get("page_access") or {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
     if session.get("is_admin"):
         pa = {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
-    return render_template("returns.html", data=data, uploaded_at=uploaded_at, is_admin=session.get("is_admin"), page_access=pa)
+    return render_template("returns.html",
+        data=data, enriched=enriched, uploaded_at=uploaded_at,
+        username=session.get("username"),
+        is_admin=session.get("is_admin"), page_access=pa)
 
 @app.route("/loans")
 @login_required

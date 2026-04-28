@@ -8,6 +8,17 @@
    so existing var(--bg) calls in templates flip cleanly.
    ============================================================ */
 
+/* ---------- Type stack tokens (theme-agnostic) ----------
+   Display / sans / mono / eyebrow font families used across pages.
+   We don't ship the brand-spec'd Nizzoli or HelveticaNeue Brand fonts,
+   so display falls back to Plus Jakarta Sans (the brand-approved sans). */
+:root {
+  --font-display: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-sans:    'DM Sans', 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-eyebrow: 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+
 /* ---------- Light · Warm Paper (default) ---------- */
 :root,
 [data-theme="light"] {

@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Active Project Returns — Ember</title>
+<title>Active Project Returns &mdash; Ember</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   :root{
@@ -13,239 +13,250 @@
     --accent:#c8a96e;--text:#e8eaf0;--text-muted:#8b95a8;--text-dim:#4a5568;
     --teal:#5e9e8c;--green:#4ade80;--red:#f87171;
   }
-  [data-theme="light"]{
-    --bg:#f0f2f5;--surface:#ffffff;--card:#ffffff;--border:#e2e8f0;--border-light:#cbd5e0;
-    --accent:#003552;--text:#1a2a3a;--text-muted:#4a5568;--text-dim:#718096;--teal:#38a169;
-  }
-  [data-theme="light"] #sidebar{background:var(--bg);}
-  [data-theme="light"] .dash-card:hover{background:var(--border);}
-  [data-theme="light"] .card-header{background:var(--border);}
-  [data-theme="light"] .card-header:hover{background:var(--border-light);}
-  [data-theme="light"] th{background:var(--card);color:var(--text-muted);}
-  [data-theme="light"] th.sticky-col{background:var(--card);}
-  [data-theme="light"] button[onclick="saveAcctPw()"]{color:#fff!important;}
-  img.logo-light{display:none;}
-  [data-theme="light"] img.logo-dark{display:none;}
-  [data-theme="light"] img.logo-light{display:block;margin:0 auto;}
-  body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;height:100vh;overflow:hidden;padding:0;}
+  body{background:var(--eax-bg);color:var(--eax-ink);font-family:var(--font-sans);font-feature-settings:"ss01","tnum";-webkit-font-smoothing:antialiased;height:100vh;overflow:hidden}
   #app{display:flex;height:100vh;overflow:hidden}
-  #sidebar{width:240px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
-  #main-content{flex:1;overflow-y:auto;padding:24px 32px}
-  .sidebar-logo{padding:16px 18px 14px;border-bottom:1px solid var(--border)}
+
+  /* ---------- Existing global sidebar (workspace nav) ---------- */
+  #sidebar{width:240px;background:var(--eax-bg-2);border-right:1px solid var(--eax-line);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
+  .sidebar-logo{padding:16px 18px 14px;border-bottom:1px solid var(--eax-line)}
   .logo-img{width:100%;max-width:160px;height:auto;display:block;margin:0 auto}
-  .logo-sub{font-size:10px;color:var(--text-dim);letter-spacing:0.12em;text-transform:uppercase;margin-top:8px;text-align:center}
-  .sidebar-section{padding:8px 10px 4px;font-size:10px;color:var(--text-dim);letter-spacing:0.1em;text-transform:uppercase;margin-top:8px}
-  .sidebar-item{display:flex;align-items:center;gap:10px;padding:8px 14px;cursor:pointer;border-radius:6px;margin:1px 6px;transition:all .15s;color:var(--text-muted);font-size:13px;text-decoration:none}
-  .sidebar-item:hover{background:rgba(242,89,41,.06);color:var(--text);text-decoration:none}
-  .sidebar-item.active{background:rgba(242,89,41,.12);color:var(--accent)}
+  .logo-sub{font-size:10px;color:var(--eax-subtle);letter-spacing:0.2em;text-transform:uppercase;margin-top:8px;text-align:center;font-weight:700}
+  img.logo-light{display:none}
+  [data-theme="light"] img.logo-dark{display:none}
+  [data-theme="light"] img.logo-light{display:block;margin:0 auto}
+  .sidebar-section{padding:8px 16px 4px;font-size:9px;color:var(--eax-subtle);letter-spacing:0.22em;text-transform:uppercase;margin-top:8px;font-weight:700}
+  .sidebar-item{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;border-radius:8px;margin:1px 8px;transition:all .15s;color:var(--eax-muted);font-size:13px;text-decoration:none;font-weight:500}
+  .sidebar-item:hover{background:var(--eax-accent-soft);color:var(--eax-ink)}
+  .sidebar-item.active{background:var(--eax-surface);color:var(--eax-ink);font-weight:600;border:1px solid var(--eax-line);position:relative}
+  .sidebar-item.active::before{content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:2px;background:var(--eax-accent);border-radius:2px}
+  .sidebar-item.active .icon{opacity:1;color:var(--eax-accent)}
   .sidebar-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0}
-  .sidebar-item.active .icon{opacity:1}
-  .nav-link{display:flex;align-items:center;gap:10px;padding:7px 14px;cursor:pointer;border-radius:6px;margin:1px 6px;transition:all .15s;color:var(--text-muted);font-size:12px;text-decoration:none}
-  .nav-link:hover{background:rgba(242,89,41,.04);color:var(--text);text-decoration:none}
-  a{color:var(--accent);text-decoration:none;}
-  a:hover{text-decoration:underline;}
-  .top-bar{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:8px;}
-  .top-bar h1{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:24px;color:var(--text);}
-  .top-right{text-align:right;}
-  .top-right .meta{font-size:12px;color:var(--text-muted);margin-bottom:6px;}
-  .subtitle{font-size:12px;color:var(--text-muted);margin-bottom:24px;}
 
-  /* Download PDF button */
-  .pdf-btn{
-    display:inline-flex;align-items:center;gap:6px;
-    background:rgba(242,89,41,0.1);border:1px solid rgba(242,89,41,0.3);
-    color:var(--accent);padding:6px 14px;border-radius:6px;font-size:12px;
-    font-family:'DM Sans',sans-serif;font-weight:600;cursor:pointer;transition:all .15s;
+  /* ---------- Main content shell ---------- */
+  #main-content{flex:1;display:flex;overflow:hidden;background:var(--eax-bg)}
+
+  /* ---------- LEFT pane · Portfolio + Project navigator ---------- */
+  .rw-nav{
+    width:360px;flex-shrink:0;border-right:1px solid var(--eax-line);
+    overflow-y:auto;padding:28px 26px;background:var(--eax-bg-2);
   }
-  .pdf-btn:hover{background:rgba(242,89,41,0.2);border-color:var(--accent);}
-  .pdf-btn:disabled{opacity:.5;cursor:wait;}
-
-  /* ── Dashboard Grid ── */
-  .dashboard-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:28px;}
-  .dash-card{
-    background:var(--card);border:1px solid var(--border);border-radius:8px;
-    padding:14px 16px;cursor:pointer;transition:all .2s;border-left:3px solid var(--accent);
+  .rw-eyebrow{
+    font-family:var(--font-eyebrow);
+    font-size:10px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;
+    color:var(--eax-accent);
+    margin-bottom:8px;
   }
-  .dash-card:hover{background:var(--surface);transform:translateY(-1px);}
-  .dash-name{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:14px;color:var(--text);margin-bottom:8px;}
-  .dash-metric{display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;}
-  .dash-label{color:var(--text-muted);}
-  .dash-value{color:var(--accent);font-weight:600;}
-
-  /* ── Project Cards ── */
-  .project-card{background:var(--card);border:1px solid var(--border);border-radius:8px;margin-bottom:16px;overflow:hidden;}
-  .card-header{
-    display:flex;align-items:center;justify-content:space-between;
-    padding:12px 16px;cursor:pointer;background:var(--surface);
-    border-bottom:2px solid var(--accent);user-select:none;gap:12px;
+  .rw-eyebrow.muted{color:var(--eax-subtle);}
+  .rw-title{
+    font-family:var(--font-display);
+    font-weight:700;font-size:26px;
+    letter-spacing:-0.025em;line-height:1.1;
+    color:var(--eax-ink);
   }
-  .card-header:hover{background:var(--border);}
-  .card-left{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
-  .card-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;font-size:15px;color:var(--accent);}
-  .kpi-pill{
-    display:inline-block;background:rgba(242,89,41,0.1);border:1px solid rgba(242,89,41,0.3);
-    border-radius:4px;padding:2px 10px;font-size:12px;color:var(--accent);
+  .rw-sub{font-size:12px;color:var(--eax-muted);margin-top:6px;}
+
+  .rw-facts{
+    margin-top:24px;margin-bottom:28px;padding:8px 0;
+    border-top:1px solid var(--eax-line-2);border-bottom:1px solid var(--eax-line-2);
   }
-  .kpi-pill strong{font-weight:700;}
-  .card-chevron{color:var(--text-muted);font-size:12px;transition:transform .2s;flex-shrink:0;}
-  .card-chevron.collapsed{transform:rotate(-90deg);}
-  .card-body{overflow-x:auto;transition:max-height .3s ease;}
-  .card-body.collapsed{display:none;}
-
-  /* ── Tables ── */
-  table{border-collapse:collapse;width:100%;min-width:500px;font-size:12px;}
-  th,td{padding:5px 8px;border:1px solid var(--border);white-space:nowrap;}
-  th{background:var(--surface);color:var(--text-muted);font-weight:600;text-align:center;}
-  td{text-align:right;}
-  td.label{text-align:left;color:var(--text);font-weight:500;min-width:180px;}
-
-  /* Sticky first column */
-  td.label, th.sticky-col{
-    position:sticky;left:0;z-index:1;background:var(--card);
-  }
-  th.sticky-col{background:var(--surface);z-index:3;}
-
-  /* Highlighted metrics */
-  .metric-irr td,.metric-em td{font-weight:600;color:var(--accent);}
-  .metric-irr td.label,.metric-em td.label{color:var(--accent);}
-
-  /* Summary section */
-  .summary-card{background:var(--card);border:1px solid var(--border);border-radius:8px;margin-top:28px;overflow:hidden;}
-  .summary-card .card-header{border-bottom-color:var(--teal);}
-  .summary-card .card-title{color:var(--teal);}
-  .summary-section td{background:var(--card);}
-  .total-row td{font-weight:700;border-top:2px solid var(--teal);}
-  .flow-in td{color:var(--green);}
-  .flow-in td.label{color:var(--green);}
-  .flow-out td{color:var(--red);}
-  .flow-out td.label{color:var(--red);}
-  .flow-net td{color:var(--accent);font-weight:600;}
-  .flow-net td.label{color:var(--accent);}
-
-  .empty-state{text-align:center;padding:80px 20px;color:var(--text-muted);}
-  .empty-state h2{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:22px;color:var(--text);margin-bottom:8px;}
-
-  /* ── PDF Light-Mode Container (built by JS, rendered on-screen then removed) ── */
-  #pdf-render{
-    position:fixed;left:0;top:0;z-index:99999;
-    width:1056px; /* 11in * 96dpi */
-    font-family:'DM Sans',sans-serif;font-size:9px;
-    background:#fff;color:#1a1a1a;padding:0;
-    overflow:auto;
-  }
-  #pdf-render *{color:#1a1a1a;background-color:transparent;}
-  #pdf-render{background:#fff!important;}
-  #pdf-render .pdf-page{background:#fff!important;}
-  #pdf-render .pdf-page{
-    width:1056px;min-height:816px; /* 8.5in * 96dpi */
-    padding:28px 32px;box-sizing:border-box;
-    page-break-after:always;
-  }
-  #pdf-render .pdf-page:last-child{page-break-after:auto;}
-  #pdf-render .pdf-header{
+  .rw-fact-row{
     display:flex;align-items:baseline;justify-content:space-between;
-    margin-bottom:4px;
+    padding:12px 0;border-top:1px solid var(--eax-line);
   }
-  #pdf-render .pdf-header h1{
-    font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;font-size:16px;color:#1a1a1a;
+  .rw-fact-row:first-child{border-top:none;}
+  .rw-fact-row .lbl{
+    font-family:var(--font-eyebrow);
+    font-size:9px;font-weight:600;letter-spacing:0.18em;text-transform:uppercase;
+    color:var(--eax-muted);
   }
-  #pdf-render .pdf-header .pdf-meta{font-size:9px;color:#666;}
-  #pdf-render .pdf-subtitle{font-size:9px;color:#666;margin-bottom:12px;}
+  .rw-fact-row .val{
+    font-family:var(--font-display);
+    font-size:18px;font-weight:700;letter-spacing:-0.015em;
+    color:var(--eax-ink);
+    font-variant-numeric:tabular-nums;
+  }
+  .rw-fact-row .val.accent{color:var(--eax-accent);}
 
-  /* KPI grid in PDF */
-  #pdf-render .pdf-kpi-grid{
-    display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:14px;
+  .rw-projects-label{
+    font-family:var(--font-eyebrow);
+    font-size:9px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;
+    color:var(--eax-muted);
+    margin-bottom:12px;
   }
-  #pdf-render .pdf-kpi-card{
-    border:1px solid #ddd;border-radius:4px;padding:6px 8px;
-    border-left:2px solid #8a7040;
+  .rw-proj{
+    display:block;padding:12px 14px;border-radius:8px;margin-bottom:4px;
+    cursor:pointer;background:transparent;
+    border:1px solid transparent;
+    transition:background .15s, border-color .15s;
+    text-decoration:none;color:inherit;
   }
-  #pdf-render .pdf-kpi-name{
-    font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:9px;color:#1a1a1a;
-    font-weight:600;margin-bottom:4px;
+  .rw-proj:hover{background:var(--eax-surface);border-color:var(--eax-line);}
+  .rw-proj.active{
+    background:var(--eax-surface);border-color:var(--eax-line);
+    box-shadow:var(--eax-shadow-card);
   }
-  #pdf-render .pdf-kpi-row{display:flex;justify-content:space-between;font-size:8px;margin-bottom:1px;}
-  #pdf-render .pdf-kpi-label{color:#666;}
-  #pdf-render .pdf-kpi-val{color:#8a7040;font-weight:700;}
+  .rw-proj-row1{display:flex;align-items:baseline;justify-content:space-between;gap:8px;}
+  .rw-proj-name{
+    font-family:var(--font-display);
+    font-size:13px;font-weight:600;color:var(--eax-ink);
+    line-height:1.25;letter-spacing:-0.005em;
+  }
+  .rw-proj-irr{
+    font-family:var(--font-display);
+    font-size:13px;font-weight:700;color:var(--eax-accent);
+    flex-shrink:0;font-variant-numeric:tabular-nums;
+  }
+  .rw-proj-row2{display:flex;align-items:center;justify-content:space-between;margin-top:8px;gap:8px;}
+  .rw-proj-meta{
+    font-family:var(--font-mono);
+    font-size:10px;color:var(--eax-subtle);font-variant-numeric:tabular-nums;
+  }
+  .rw-proj-spark{color:var(--eax-accent);flex-shrink:0;}
 
-  /* Project cards in PDF */
-  #pdf-render .pdf-project{margin-bottom:8px;border:1px solid #ddd;border-radius:4px;overflow:hidden;}
-  #pdf-render .pdf-project-header{
-    display:flex;align-items:center;gap:8px;
-    padding:5px 8px;background:#f7f6f3;border-bottom:1px solid #8a7040;
-  }
-  #pdf-render .pdf-project-title{
-    font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;font-size:10px;color:#8a7040;
-  }
-  #pdf-render .pdf-pill{
-    font-size:8px;color:#8a7040;background:#f0ead8;border:1px solid #d4c69a;
-    border-radius:3px;padding:1px 6px;font-weight:600;
-  }
-  #pdf-render table{border-collapse:collapse;width:100%;font-size:8px;}
-  #pdf-render th,#pdf-render td{
-    padding:2px 5px;border:1px solid #e0e0e0;white-space:nowrap;
-  }
-  #pdf-render th{
-    background:#f7f6f3!important;color:#555;font-weight:600;text-align:center;font-size:7.5px;
-  }
-  #pdf-render td{text-align:right;color:#1a1a1a;background:#fff!important;}
-  #pdf-render td.label{text-align:left;font-weight:500;min-width:140px;background:#fff!important;}
+  /* ---------- RIGHT pane · Project detail ---------- */
+  .rw-detail{flex:1;overflow-y:auto;padding:32px 40px 50px;}
 
-  /* Highlighted metrics in PDF */
-  #pdf-render .metric-irr td,#pdf-render .metric-em td{font-weight:600;color:#8a7040;}
-  #pdf-render .metric-irr td.label,#pdf-render .metric-em td.label{color:#8a7040;}
-
-  /* Summary in PDF */
-  #pdf-render .pdf-summary{margin-bottom:8px;border:1px solid #ddd;border-radius:4px;overflow:hidden;}
-  #pdf-render .pdf-summary .pdf-project-header{border-bottom-color:#3d7a6a;}
-  #pdf-render .pdf-summary .pdf-project-title{color:#3d7a6a;}
-  #pdf-render .flow-in td{color:#16a34a;background:#fff!important;}
-  #pdf-render .flow-in td.label{color:#16a34a;}
-  #pdf-render .flow-out td{color:#dc2626;background:#fff!important;}
-  #pdf-render .flow-out td.label{color:#dc2626;}
-  #pdf-render .flow-net td{color:#8a7040;font-weight:600;background:#fff!important;}
-  #pdf-render .flow-net td.label{color:#8a7040;}
-  #pdf-render .total-row td{font-weight:700;border-top:1.5px solid #3d7a6a;background:#fff!important;}
-  /* Override any dark-theme backgrounds that leak through cloned HTML */
-  #pdf-render .summary-section td{background:#fff!important;}
-  #pdf-render .card-header,#pdf-render .card-body{background:#fff!important;}
-  #pdf-render .metric-irr td,#pdf-render .metric-em td{background:#fff!important;}
-
-  /* ── Print ── */
-  @media print{
-    body{background:#fff;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-    body,#app,#main-content{display:block;height:auto;overflow:visible;padding:8px;}
-    @page{size:landscape letter;margin:0.4in;}
-    #sidebar,.dashboard-grid,.pdf-btn{display:none;}
-    .project-card,.summary-card{break-inside:avoid;border:1px solid #ccc;margin-bottom:8px;}
-    .card-body.collapsed{display:block!important;}
-    table{font-size:9px;min-width:unset;}
-    th{background:#eee!important;color:#333;}
-    td{color:#000;}
-    td.label,th.sticky-col{position:static;}
-    .card-header{background:#f5f5f5;border-bottom-color:#999;}
-    .card-title,.kpi-pill,.dash-value{color:#333;}
-    .metric-irr td,.metric-em td,.metric-irr td.label,.metric-em td.label{color:#6b5a2e;}
-    .flow-in td,.flow-in td.label{color:#16a34a;}
-    .flow-out td,.flow-out td.label{color:#dc2626;}
-    .flow-net td,.flow-net td.label{color:#6b5a2e;}
-    .summary-card .card-header{border-bottom-color:#3d7a6a;}
-    .summary-card .card-title{color:#3d7a6a;}
+  .rw-detail-head{
+    display:flex;align-items:flex-end;justify-content:space-between;
+    padding-bottom:22px;border-bottom:1px solid var(--eax-line-2);margin-bottom:28px;
+    gap:16px;flex-wrap:wrap;
   }
+  .rw-detail-title{
+    font-family:var(--font-display);
+    font-size:36px;font-weight:700;
+    letter-spacing:-0.025em;line-height:1.05;
+    color:var(--eax-ink);
+  }
+  .rw-detail-actions{display:flex;gap:8px;flex-wrap:wrap;}
+  .rw-btn{
+    display:inline-flex;align-items:center;gap:6px;
+    background:transparent;color:var(--eax-ink);
+    border:1px solid var(--eax-line-2);
+    border-radius:999px;
+    padding:8px 16px;font-size:12px;font-weight:600;font-family:var(--font-sans);
+    cursor:pointer;transition:all .15s;text-decoration:none;
+  }
+  .rw-btn:hover{border-color:var(--eax-accent);color:var(--eax-accent);}
+  .rw-btn.primary{
+    background:var(--eax-accent);color:var(--eax-accent-fg);
+    border-color:var(--eax-accent);
+    box-shadow:0 6px 18px rgba(242,89,41,0.22);
+  }
+  .rw-btn.primary:hover{
+    color:var(--eax-accent-fg);transform:translateY(-1px);
+    box-shadow:0 10px 24px rgba(242,89,41,0.30);
+  }
+
+  .rw-kpis{
+    display:grid;grid-template-columns:repeat(4, 1fr);gap:0;
+    border:1px solid var(--eax-line);border-radius:12px;
+    background:var(--eax-surface);margin-bottom:24px;overflow:hidden;
+  }
+  @media(max-width:1100px){.rw-kpis{grid-template-columns:repeat(2, 1fr);} }
+  .rw-kpi{padding:20px 24px;border-left:1px solid var(--eax-line);}
+  .rw-kpi:first-child{border-left:none;}
+  @media(max-width:1100px){.rw-kpi:nth-child(3){border-left:none;} .rw-kpi:nth-child(odd):not(:first-child){border-left:none;} }
+  .rw-kpi .lbl{
+    font-family:var(--font-eyebrow);
+    font-size:9px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;
+    color:var(--eax-muted);
+  }
+  .rw-kpi .val{
+    font-family:var(--font-display);
+    font-size:28px;font-weight:700;
+    letter-spacing:-0.025em;line-height:1.1;
+    color:var(--eax-ink);
+    margin-top:8px;
+    font-variant-numeric:tabular-nums;
+  }
+  .rw-kpi .val.accent{color:var(--eax-accent);}
+
+  .rw-charts{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;}
+  @media(max-width:980px){.rw-charts{grid-template-columns:1fr;} }
+  .rw-chart{
+    background:var(--eax-surface);border:1px solid var(--eax-line);
+    border-radius:10px;padding:18px 20px;
+  }
+  .rw-chart-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;}
+  .rw-chart-title{font-size:12px;font-weight:600;color:var(--eax-ink);}
+  .rw-chart-sub{font-size:11px;color:var(--eax-muted);margin-top:2px;}
+  .rw-chart-meta{
+    font-family:var(--font-mono);
+    font-size:10px;color:var(--eax-subtle);
+  }
+
+  /* ---------- Cashflow detail table ---------- */
+  .rw-table-card{
+    background:var(--eax-surface);border:1px solid var(--eax-line);
+    border-radius:12px;overflow:hidden;
+  }
+  .rw-table-head{
+    padding:14px 22px;border-bottom:1px solid var(--eax-line);
+    display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  }
+  .rw-table-head .lbl{
+    font-family:var(--font-eyebrow);
+    font-size:9px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;
+    color:var(--eax-muted);
+  }
+  .rw-table-head .meta{
+    font-family:var(--font-mono);
+    font-size:10px;color:var(--eax-subtle);
+  }
+  .rw-table-wrap{overflow-x:auto;}
+  table.rw-table{width:100%;border-collapse:collapse;font-size:12px;font-family:var(--font-sans);}
+  table.rw-table th{
+    text-align:right;padding:11px 14px;
+    font-weight:600;font-size:9px;letter-spacing:0.16em;text-transform:uppercase;
+    color:var(--eax-subtle);
+    background:var(--eax-bg-2);
+    border-bottom:1px solid var(--eax-line);
+    white-space:nowrap;
+  }
+  table.rw-table th:first-child{text-align:left;position:sticky;left:0;z-index:1;}
+  table.rw-table td{
+    padding:9px 14px;text-align:right;
+    color:var(--eax-muted);font-variant-numeric:tabular-nums;white-space:nowrap;
+    border-top:1px solid var(--eax-line);
+  }
+  table.rw-table td:first-child{
+    text-align:left;color:var(--eax-ink);font-weight:500;
+    position:sticky;left:0;z-index:1;background:var(--eax-surface);
+  }
+  table.rw-table tr.hero td{
+    padding:14px 14px;font-weight:700;color:var(--eax-accent);font-size:13px;
+    border-top:1px solid var(--eax-line-2);
+  }
+  table.rw-table tr.hero.cum td{background:var(--eax-bg-2);}
+  table.rw-table tr.hero td:first-child{background:var(--eax-bg-2);}
+  table.rw-table tr.hero td.neg{color:var(--eax-bad);}
+
+  /* ---------- Empty state ---------- */
+  .rw-empty{
+    flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:80px 20px;color:var(--eax-muted);text-align:center;
+  }
+  .rw-empty h2{font-family:var(--font-display);font-weight:700;font-size:22px;color:var(--eax-ink);margin-bottom:8px;}
+
+  /* ---------- Account modal (preserved) ---------- */
+  .acct-modal{display:none;position:fixed;inset:0;background:rgba(8,35,59,.55);z-index:2000;align-items:center;justify-content:center}
+  .acct-modal.open{display:flex}
+  .acct-box{background:var(--eax-surface);border:1px solid var(--eax-line);border-radius:14px;padding:28px;width:380px;max-width:92vw;max-height:92vh;overflow-y:auto;box-shadow:var(--eax-shadow-card)}
 </style>
 <link rel="stylesheet" href="/static/theme.css">
 <script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 </head>
 <body>
 <div id="app">
+  <!-- ─────────── Sidebar (workspace nav) ─────────── -->
   <nav id="sidebar">
     <div class="sidebar-logo">
       <img src="/static/img/ember_logo.png" alt="Ember" class="logo-img logo-dark">
       <img src="/static/img/ember_logo_light.png" alt="Ember" class="logo-img logo-light">
-      <div class="logo-sub">Project Returns</div>
+      <div class="logo-sub">Acquisitions Platform</div>
     </div>
 
-    <div class="sidebar-section">Ember Apps</div>
+    <div class="sidebar-section">Workspaces</div>
     {% if page_access.get('mpc_underwriting', true) %}
     <a href="/" class="sidebar-item">
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
@@ -254,398 +265,198 @@
     {% endif %}
     {% if page_access.get('returns', true) %}
     <a href="/returns" class="sidebar-item active">
-      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 21V10m7 11V4m7 17v-7" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Project Returns
     </a>
     {% endif %}
     {% if page_access.get('loans', true) %}
     <a href="/loans" class="sidebar-item">
-      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      Loans & Debt
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-width="1.5"/><path d="M9 12h6M12 9v6" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Loans &amp; Debt
     </a>
     {% endif %}
     {% if page_access.get('operations', true) %}
     <a href="/operations" class="sidebar-item">
-      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8M14 7h7v7" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Operating Revenues
     </a>
     {% endif %}
     {% if page_access.get('macro', true) %}
     <a href="/macro" class="sidebar-item">
-      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="1.5"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20" stroke-width="1.5" stroke-linecap="round"/></svg>
-      Macro Dashboard
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-width="1.5"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Macro Data
     </a>
     {% endif %}
     {% if page_access.get('portfolio', true) %}
     <a href="/ember-capital" class="sidebar-item">
-      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 3.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      Ember Capital
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4-9-4z M3 12l9 4 9-4 M3 17l9 4 9-4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Ember Portfolio
     </a>
     {% endif %}
     {% if page_access.get('sales', true) %}
     <a href="/sales" class="sidebar-item">
-      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l3-3 4 4 5-6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18 M7 14l3-3 4 4 5-7" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Community Sales
     </a>
     {% endif %}
 
-    {% if data %}
-    <div class="sidebar-section">Projects</div>
-    {% for project in data.projects %}
-    <a href="#project-{{ loop.index }}" class="nav-link" onclick="event.preventDefault();document.getElementById('project-{{ loop.index }}').scrollIntoView({behavior:'smooth',block:'start'})">
-      {{ project.name }}
-    </a>
-    {% endfor %}
-    <a href="#portfolio-summary" class="nav-link" onclick="event.preventDefault();document.getElementById('portfolio-summary').scrollIntoView({behavior:'smooth',block:'start'})">
-      Portfolio Summary
-    </a>
-    {% endif %}
-
     <div style="flex:1"></div>
-    <div style="padding:8px 10px 4px">
-      <button onclick="openAcct()" style="width:100%;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--text-dim);font-size:12px;cursor:pointer;transition:all .15s;justify-content:center;font-family:'DM Sans',sans-serif" onmouseover="this.style.borderColor='var(--border-light)';this.style.color='var(--text-muted)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-dim)'">
-        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" stroke-width="1.8"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke-width="1.8" stroke-linecap="round"/></svg>
-        Account Settings
+    <div style="padding:8px 12px 4px">
+      <button onclick="openAcct()" style="width:100%;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;border:1px solid var(--eax-line-2);background:transparent;color:var(--eax-muted);font-size:11px;cursor:pointer;transition:all .15s;justify-content:center;font-family:var(--font-sans);font-weight:600;letter-spacing:0.04em" onmouseover="this.style.borderColor='var(--eax-accent)';this.style.color='var(--eax-accent)'" onmouseout="this.style.borderColor='var(--eax-line-2)';this.style.color='var(--eax-muted)'">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" stroke-width="1.6"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke-width="1.6" stroke-linecap="round"/></svg>
+        Account
       </button>
     </div>
-    <div style="padding:4px 10px 14px">
-      <a href="/home" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:6px;border:1px solid var(--border);color:var(--text-dim);font-size:12px;text-decoration:none;transition:all .15s;justify-content:center" onmouseover="this.style.borderColor='var(--border-light)';this.style.color='var(--text-muted)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-dim)'">
-        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1m-2 0h2" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Back to Home
+    <div style="padding:4px 12px 14px">
+      <a href="/home" style="width:100%;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;border:1px solid var(--eax-line-2);color:var(--eax-muted);font-size:11px;text-decoration:none;transition:all .15s;justify-content:center;font-family:var(--font-sans);font-weight:600;letter-spacing:0.04em" onmouseover="this.style.borderColor='var(--eax-accent)';this.style.color='var(--eax-accent)'" onmouseout="this.style.borderColor='var(--eax-line-2)';this.style.color='var(--eax-muted)'">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 12l9-9 9 9 M5 10v10h14V10" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Home
       </a>
     </div>
   </nav>
 
+  <!-- ─────────── Main content ─────────── -->
   <div id="main-content">
-<div id="report-content">
-<div class="top-bar">
-  <h1>Consolidated Ember Project Returns</h1>
-  <div class="top-right">
-    <div class="meta">
-      {% if uploaded_at %}Last updated: {{ uploaded_at }}{% else %}No data uploaded yet{% endif %}
-    </div>
-    {% if data %}
-    <div style="display:flex;gap:8px;">
-    <button class="pdf-btn" onclick="openExecReport()" title="Open the branded executive PDF in a new tab">
-      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14L21 3M19 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      Executive Report
-    </button>
-    <button class="pdf-btn" onclick="downloadExecReport()" title="Download the branded executive PDF">
-      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m4-5l5 5 5-5m-5 5V3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      Download PDF
-    </button>
-    <a class="pdf-btn" href="/api/export-returns-excel" download>
-      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" stroke-width="1.8"/><path d="M8 12h8M8 8h5M8 16h6" stroke-width="1.8" stroke-linecap="round"/></svg>
-      Export Excel
-    </a>
+    {% if enriched and enriched.projects %}
+
+    <!-- LEFT pane · Portfolio + project navigator -->
+    <aside class="rw-nav">
+      <div class="rw-eyebrow">Portfolio</div>
+      <h1 class="rw-title">Project Returns</h1>
+      <div class="rw-sub">{{ enriched.portfolio.active_count }} active &middot; $ in 000s</div>
+
+      <div class="rw-facts">
+        <div class="rw-fact-row">
+          <span class="lbl">Total LP Profit</span>
+          <span class="val accent">${{ "{:,.0f}".format(enriched.portfolio.total_lp_profit_k) }}</span>
+        </div>
+        <div class="rw-fact-row">
+          <span class="lbl">Weighted IRR</span>
+          <span class="val">{{ "%.1f"|format(enriched.portfolio.weighted_irr * 100) }}%</span>
+        </div>
+        <div class="rw-fact-row">
+          <span class="lbl">Equity Multiple</span>
+          <span class="val">{{ "%.2f"|format(enriched.portfolio.weighted_em) }}x</span>
+        </div>
+      </div>
+
+      <div class="rw-projects-label">Projects</div>
+      <div id="rw-proj-list">
+        {% for p in enriched.projects %}
+        <a class="rw-proj{% if loop.first %} active{% endif %}" data-idx="{{ loop.index0 }}" href="#project-{{ loop.index0 }}">
+          <div class="rw-proj-row1">
+            <span class="rw-proj-name">{{ p.name }}</span>
+            <span class="rw-proj-irr">{{ "%.1f"|format(p.irr * 100) }}%</span>
+          </div>
+          <div class="rw-proj-row2">
+            <span class="rw-proj-meta">EM {{ "%.2f"|format(p.em) }}x &middot; {{ p.vintage or '—' }}</span>
+            <span class="rw-proj-spark" data-spark="{{ loop.index0 }}"></span>
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+    </aside>
+
+    <!-- RIGHT pane · Focused project -->
+    <main class="rw-detail" id="rw-detail">
+      <!-- Populated by JS from window._RETURNS -->
+    </main>
+
+    {% else %}
+    <div class="rw-empty">
+      <h2>No report data</h2>
+      <p>An admin needs to upload the Ember Dashboard Excel from the home page to populate this report.</p>
     </div>
     {% endif %}
   </div>
 </div>
-<div class="subtitle">($ in 000s)</div>
 
-{% if data %}
-
-{# ── Label remapping ── #}
-{% set LABEL_MAP = {
-  'LP IRR': 'Net Cashflow',
-  'LP Equity Multiple': 'Cumulative Net Cashflow'
-} %}
-
-{# ── Jinja2 macro for accounting-style number formatting ── #}
-{# Negative: (1,000)  Zero: blank  Positive: 1,000 #}
-{% macro fmt(v, force_show_zero=false) %}
-  {%- if v == 0 and not force_show_zero -%}
-  {%- elif v < 0 -%}({{ "{:,.0f}".format(v|abs) }})
-  {%- else -%}{{ "{:,.0f}".format(v) }}
-  {%- endif -%}
-{% endmacro %}
-
-{# Format total (always show even if zero) #}
-{% macro fmt_total(v) %}
-  {%- if v < 0 -%}({{ "{:,.0f}".format(v|abs) }})
-  {%- else -%}{{ "{:,.0f}".format(v) }}{%- endif -%}
-{% endmacro %}
-
-{# Format IRR as percentage for dashboard pills #}
-{% macro fmt_irr_pct(v) %}
-  {%- if v < 0 -%}({{ "%.1f"|format((v * 100)|abs) }}%)
-  {%- else -%}{{ "%.1f"|format(v * 100) }}%{%- endif -%}
-{% endmacro %}
-
-{# Format equity multiple for dashboard pills #}
-{% macro fmt_em_x(v) %}
-  {%- if v < 0 -%}({{ "%.2f"|format(v|abs) }}x)
-  {%- else -%}{{ "%.2f"|format(v) }}x{%- endif -%}
-{% endmacro %}
-
-{# ── Compute global active year columns for summary section ── #}
-{% set ns_global = namespace(active_cols=[]) %}
-{% for i in range(data.years|length) %}
-  {% set has_val = namespace(found=false) %}
-  {% for project in data.projects %}
-    {% for m in project.metrics %}
-      {% if m.yearly[i] != 0 %}{% set has_val.found = true %}{% endif %}
-    {% endfor %}
-  {% endfor %}
-  {% for s in data.summary %}
-    {% if s.yearly[i] != 0 %}{% set has_val.found = true %}{% endif %}
-  {% endfor %}
-  {% if has_val.found %}
-    {% set ns_global.active_cols = ns_global.active_cols + [i] %}
-  {% endif %}
-{% endfor %}
-
-{# ── Summary Dashboard ── #}
-<div class="dashboard-grid">
-  {% for project in data.projects %}
-  <div class="dash-card" onclick="scrollToProject({{ loop.index }})">
-    <div class="dash-name">{{ project.name }}</div>
-    {% for m in project.metrics %}
-      {% if m.label == 'LP IRR' %}
-      <div class="dash-metric"><span class="dash-label">IRR</span><span class="dash-value">{{ fmt_irr_pct(m.total) }}</span></div>
-      {% elif m.label == 'LP Equity Multiple' %}
-      <div class="dash-metric"><span class="dash-label">Equity Multiple</span><span class="dash-value">{{ fmt_em_x(m.total) }}</span></div>
-      {% elif m.label == 'Total LP Profit' %}
-      <div class="dash-metric"><span class="dash-label">Total Profit</span><span class="dash-value">{{ fmt_total(m.total) }}</span></div>
-      {% endif %}
-    {% endfor %}
-  </div>
-  {% endfor %}
-</div>
-
-{# ── Project Detail Cards ── #}
-{% for project in data.projects %}
-
-{# Find per-project first active year index #}
-{% set pfa = namespace(idx=data.years|length) %}
-{% for i in range(data.years|length) %}
-  {% for m in project.metrics %}
-    {% if m.yearly[i] != 0 and i < pfa.idx %}
-      {% set pfa.idx = i %}
-    {% endif %}
-  {% endfor %}
-{% endfor %}
-
-{# Extract KPI values for header pills #}
-{% set pill_irr = namespace(val='') %}
-{% set pill_em = namespace(val='') %}
-{% for m in project.metrics %}
-  {% if m.label == 'LP IRR' %}{% set pill_irr.val = fmt_irr_pct(m.total) %}{% endif %}
-  {% if m.label == 'LP Equity Multiple' %}{% set pill_em.val = fmt_em_x(m.total) %}{% endif %}
-{% endfor %}
-
-<div class="project-card" id="project-{{ loop.index }}">
-  <div class="card-header" onclick="toggleCard(this)">
-    <div class="card-left">
-      <span class="card-title">{{ project.name }}</span>
-      <span class="kpi-pill">IRR <strong>{{ pill_irr.val }}</strong></span>
-      <span class="kpi-pill">Equity <strong>{{ pill_em.val }}</strong></span>
-    </div>
-    <span class="card-chevron">&#9660;</span>
-  </div>
-  <div class="card-body">
-    <table>
-      <thead>
-        <tr>
-          <th class="sticky-col" style="min-width:180px">Metric</th>
-          <th>Total</th>
-          {% for i in ns_global.active_cols %}{% if i >= pfa.idx %}
-          <th>{{ data.years[i] }}</th>
-          {% endif %}{% endfor %}
-        </tr>
-      </thead>
-      <tbody>
-        {% for m in project.metrics %}
-        {% set display_label = LABEL_MAP.get(m.label, m.label) %}
-        {# Compute correct total for renamed rows #}
-        {% if m.label == 'LP IRR' %}
-          {# Net Cashflow: total = sum of all yearly values #}
-          {% set row_total = namespace(v=0) %}
-          {% for val in m.yearly %}{% set row_total.v = row_total.v + val %}{% endfor %}
-        {% elif m.label == 'LP Equity Multiple' %}
-          {# Cumulative Net Cashflow: total = last non-zero value #}
-          {% set row_total = namespace(v=0) %}
-          {% for val in m.yearly %}{% if val != 0 %}{% set row_total.v = val %}{% endif %}{% endfor %}
-        {% else %}
-          {% set row_total = namespace(v=m.total) %}
-        {% endif %}
-        <tr class="{% if m.label == 'LP IRR' %}metric-irr{% elif m.label == 'LP Equity Multiple' %}metric-em{% endif %}">
-          <td class="label">{{ display_label }}</td>
-          <td style="font-weight:600">{{ fmt_total(row_total.v) }}</td>
-          {% for i in ns_global.active_cols %}{% if i >= pfa.idx %}
-          <td>{{ fmt(m.yearly[i]) }}</td>
-          {% endif %}{% endfor %}
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-{% endfor %}
-
-{# ── Summary Section ── #}
-{% if data.summary %}
-<div class="summary-card" id="portfolio-summary">
-  <div class="card-header" onclick="toggleCard(this)">
-    <div class="card-left">
-      <span class="card-title">Portfolio Summary</span>
-    </div>
-    <span class="card-chevron">&#9660;</span>
-  </div>
-  <div class="card-body">
-    <table>
-      <thead>
-        <tr>
-          <th class="sticky-col" style="min-width:180px">Metric</th>
-          <th>Total</th>
-          {% for i in ns_global.active_cols %}
-          <th>{{ data.years[i] }}</th>
-          {% endfor %}
-        </tr>
-      </thead>
-      <tbody>
-        {% for s in data.summary %}
-        {% set flow_class = '' %}
-        {% if 'Distribution' in s.label %}{% set flow_class = 'flow-in' %}
-        {% elif 'Contribution' in s.label %}{% set flow_class = 'flow-out' %}
-        {% elif 'Net Cashflow' in s.label or 'Profit' in s.label %}{% set flow_class = 'flow-net' %}
-        {% endif %}
-        <tr class="summary-section {{ flow_class }} {% if loop.last %}total-row{% endif %}">
-          <td class="label">{{ s.label }}</td>
-          <td style="font-weight:600">
-            {%- if s.total < 0 -%}({{ "{:,.0f}".format(s.total|abs) }})
-            {%- else -%}{{ "{:,.0f}".format(s.total) }}{%- endif -%}
-          </td>
-          {% for i in ns_global.active_cols %}
-          <td>{{ fmt(s.yearly[i]) }}</td>
-          {% endfor %}
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-{% endif %}
-
-{% else %}
-<div class="empty-state">
-  <h2>No Report Data</h2>
-  <p>An admin needs to upload the Ember Dashboard Excel file from the home page to populate this report.</p>
-</div>
-{% endif %}
-</div>{# end report-content #}
-
-<script>
-function toggleCard(header){
-  const body=header.nextElementSibling;
-  const chev=header.querySelector('.card-chevron');
-  body.classList.toggle('collapsed');
-  chev.classList.toggle('collapsed');
-}
-function scrollToProject(idx){
-  const card=document.getElementById('project-'+idx);
-  if(!card)return;
-  const body=card.querySelector('.card-body');
-  const chev=card.querySelector('.card-chevron');
-  if(body.classList.contains('collapsed')){
-    body.classList.remove('collapsed');
-    chev.classList.remove('collapsed');
-  }
-  card.scrollIntoView({behavior:'smooth',block:'start'});
-}
-
-/* Open the server-rendered branded executive PDF in a new tab. */
-function openExecReport(){
-  window.open('/api/returns/pdf?ts=' + Date.now(), '_blank');
-}
-/* Download the branded executive PDF. */
-function downloadExecReport(){
-  window.location.href = '/api/returns/pdf?download=1&ts=' + Date.now();
-}
-</script>
-</div>{# end main-content #}
-</div>{# end app #}
-
-<!-- ACCOUNT SETTINGS MODAL -->
-<div id="acct-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;align-items:center;justify-content:center">
-  <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:28px;width:360px;max-width:90vw;max-height:90vh;overflow-y:auto">
+{# ============ Account Settings modal — preserved ============ #}
+<div id="acct-modal" class="acct-modal">
+  <div class="acct-box">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
-      <h3 style="margin:0;font-size:15px;font-weight:600">Account Settings</h3>
-      <button onclick="closeAcct()" style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer;line-height:1">&times;</button>
+      <h3 style="margin:0;font-size:15px;font-weight:700;color:var(--eax-ink-2);font-family:var(--font-display)">Account Settings</h3>
+      <button onclick="closeAcct()" style="background:none;border:none;color:var(--eax-subtle);font-size:20px;cursor:pointer;line-height:1">&times;</button>
     </div>
-    <div style="font-size:12px;color:var(--text-dim);margin-bottom:16px">Logged in as <strong style="color:var(--text-muted)">{{ username }}</strong></div>
-    <div style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:16px">
-      <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Appearance</div>
+    <div style="font-size:12px;color:var(--eax-subtle);margin-bottom:16px">Logged in as <strong style="color:var(--eax-muted)">{{ username or '' }}</strong></div>
+    <div style="border-bottom:1px solid var(--eax-line);padding-bottom:16px;margin-bottom:16px">
+      <div style="font-size:10px;color:var(--eax-subtle);text-transform:uppercase;letter-spacing:0.18em;margin-bottom:10px;font-weight:700">Appearance</div>
       <div style="display:flex;align-items:center;justify-content:space-between">
-        <span style="font-size:13px;color:var(--text-muted)">Color Theme</span>
-        <div style="display:flex;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:3px;gap:2px">
-          <button id="theme-btn-light" onclick="applyTheme('light')" style="padding:5px 14px;border:none;border-radius:4px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s">Paper</button>
-          <button id="theme-btn-dark" onclick="applyTheme('dark')" style="padding:5px 14px;border:none;border-radius:4px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s">Navy</button>
+        <span style="font-size:13px;color:var(--eax-muted)">Color Theme</span>
+        <div style="display:flex;background:var(--eax-bg);border:1px solid var(--eax-line);border-radius:8px;padding:3px;gap:2px">
+          <button id="theme-btn-light" onclick="applyTheme('light')" style="padding:5px 14px;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-family:var(--font-sans);transition:all .15s">Paper</button>
+          <button id="theme-btn-dark" onclick="applyTheme('dark')" style="padding:5px 14px;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-family:var(--font-sans);transition:all .15s">Navy</button>
         </div>
       </div>
     </div>
-    <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Email</div>
-    <div id="acct-email" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:16px;min-height:36px">—</div>
-    <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Change Password</div>
-    <input id="acct-cur-pw" type="password" placeholder="Current password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:8px;outline:none">
-    <input id="acct-new-pw" type="password" placeholder="New password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:8px;outline:none">
-    <input id="acct-conf-pw" type="password" placeholder="Confirm new password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:14px;outline:none">
+    <div style="font-size:10px;color:var(--eax-subtle);text-transform:uppercase;letter-spacing:0.18em;margin-bottom:6px;font-weight:700">Email</div>
+    <div id="acct-email" style="width:100%;background:var(--eax-bg);border:1px solid var(--eax-line);color:var(--eax-subtle);border-radius:8px;padding:9px 11px;font-size:13px;font-family:var(--font-sans);margin-bottom:16px;min-height:36px">—</div>
+    <div style="font-size:10px;color:var(--eax-subtle);text-transform:uppercase;letter-spacing:0.18em;margin-bottom:10px;font-weight:700">Change Password</div>
+    <input id="acct-cur-pw" type="password" placeholder="Current password" style="width:100%;background:var(--eax-bg);border:1px solid var(--eax-line-2);color:var(--eax-ink);border-radius:8px;padding:9px 11px;font-size:13px;font-family:var(--font-sans);margin-bottom:8px;outline:none">
+    <input id="acct-new-pw" type="password" placeholder="New password" style="width:100%;background:var(--eax-bg);border:1px solid var(--eax-line-2);color:var(--eax-ink);border-radius:8px;padding:9px 11px;font-size:13px;font-family:var(--font-sans);margin-bottom:8px;outline:none">
+    <input id="acct-conf-pw" type="password" placeholder="Confirm new password" style="width:100%;background:var(--eax-bg);border:1px solid var(--eax-line-2);color:var(--eax-ink);border-radius:8px;padding:9px 11px;font-size:13px;font-family:var(--font-sans);margin-bottom:14px;outline:none">
     <div id="acct-msg" style="font-size:12px;margin-bottom:12px;display:none"></div>
-    <button onclick="saveAcctPw()" style="width:100%;background:var(--accent);border:none;color:var(--accent-fg);padding:10px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:20px">Save Password</button>
-    <div style="border-top:1px solid var(--border);padding-top:18px">
-      <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">Monthly Report Emails</div>
+    <button onclick="saveAcctPw()" style="width:100%;background:var(--eax-accent);border:none;color:var(--eax-accent-fg);padding:11px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-sans);margin-bottom:20px;letter-spacing:0.04em">Save Password</button>
+    <div style="border-top:1px solid var(--eax-line);padding-top:18px">
+      <div style="font-size:10px;color:var(--eax-subtle);text-transform:uppercase;letter-spacing:0.18em;margin-bottom:12px;font-weight:700">Monthly Report Emails</div>
       <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:14px">
-        <input type="checkbox" id="acct-report-optin" style="accent-color:#5e9e8c;width:15px;height:15px">
+        <input type="checkbox" id="acct-report-optin" style="accent-color:var(--eax-accent);width:15px;height:15px">
         <div>
-          <div style="font-size:13px;color:var(--text)">Receive monthly reports</div>
-          <div style="font-size:11px;color:var(--text-dim);margin-top:2px">Sent on the 1st of each month to your email</div>
+          <div style="font-size:13px;color:var(--eax-ink)">Receive monthly reports</div>
+          <div style="font-size:11px;color:var(--eax-subtle);margin-top:2px">Sent on the 1st of each month to your email</div>
         </div>
       </label>
       <div id="acct-format-row" style="display:none;margin-bottom:14px">
-        <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Format</div>
+        <div style="font-size:10px;color:var(--eax-subtle);text-transform:uppercase;letter-spacing:0.18em;margin-bottom:8px;font-weight:700">Format</div>
         <div style="display:flex;gap:16px">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text)">
-            <input type="radio" name="acct-report-fmt" value="pdf" id="acct-fmt-pdf" style="accent-color:#5e9e8c"> PDF
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--eax-ink)">
+            <input type="radio" name="acct-report-fmt" value="pdf" id="acct-fmt-pdf" style="accent-color:var(--eax-accent)"> PDF
           </label>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text)">
-            <input type="radio" name="acct-report-fmt" value="excel" id="acct-fmt-excel" style="accent-color:#5e9e8c"> Excel
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--eax-ink)">
+            <input type="radio" name="acct-report-fmt" value="excel" id="acct-fmt-excel" style="accent-color:var(--eax-accent)"> Excel
           </label>
         </div>
-        <div style="font-size:11px;color:var(--text-dim);margin-top:8px">Includes: Active Project Returns, Loan Capacities & Debt Schedules, Ember Operating Revenues, Ember Capital Executive Report</div>
+        <div style="font-size:11px;color:var(--eax-subtle);margin-top:8px">Includes: Active Project Returns, Loan Capacities &amp; Debt Schedules, Ember Operating Revenues, Ember Capital Executive Report</div>
       </div>
       <div id="acct-report-msg" style="font-size:12px;margin-bottom:8px;display:none"></div>
-      <button onclick="saveReportSettings()" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:9px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s" onmouseover="this.style.borderColor='#5e9e8c';this.style.color='#5e9e8c'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">Save Report Preferences</button>
+      <button onclick="saveReportSettings()" style="width:100%;background:transparent;border:1px solid var(--eax-line-2);color:var(--eax-muted);padding:9px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--font-sans);transition:all .15s" onmouseover="this.style.borderColor='var(--eax-accent)';this.style.color='var(--eax-accent)'" onmouseout="this.style.borderColor='var(--eax-line-2)';this.style.color='var(--eax-muted)'">Save Report Preferences</button>
     </div>
   </div>
 </div>
+
+{# ============ Data + JS ============ #}
+{% if enriched and enriched.projects %}
 <script>
+  // Server-emitted enriched payload. Treated as read-only by the client.
+  window._RETURNS = {{ enriched | tojson }};
+</script>
+{% endif %}
+
+<script>
+/* ─────────── Theme + account modal (shared boilerplate) ─────────── */
 function _updateThemeButtons() {
   const isLight = document.documentElement.dataset.theme === 'light';
   const darkBtn  = document.getElementById('theme-btn-dark');
   const lightBtn = document.getElementById('theme-btn-light');
   if (!darkBtn || !lightBtn) return;
-  darkBtn.style.background  = isLight ? 'transparent' : 'var(--accent)';
-  darkBtn.style.color       = isLight ? 'var(--text-muted)' : '#000';
-  darkBtn.style.fontWeight  = isLight ? '400' : '600';
-  lightBtn.style.background = isLight ? 'var(--accent)' : 'transparent';
-  lightBtn.style.color      = isLight ? '#fff' : 'var(--text-muted)';
-  lightBtn.style.fontWeight = isLight ? '600' : '400';
+  lightBtn.style.background = isLight ? 'var(--eax-accent)' : 'transparent';
+  lightBtn.style.color      = isLight ? 'var(--eax-accent-fg)' : 'var(--eax-muted)';
+  lightBtn.style.fontWeight = isLight ? '700' : '500';
+  darkBtn.style.background  = isLight ? 'transparent' : 'var(--eax-accent)';
+  darkBtn.style.color       = isLight ? 'var(--eax-muted)' : 'var(--eax-accent-fg)';
+  darkBtn.style.fontWeight  = isLight ? '500' : '700';
 }
 function applyTheme(theme) {
-  // 'light' = Warm Paper (default) · 'dark' = Deep Navy
   document.documentElement.dataset.theme = (theme === 'dark') ? 'dark' : 'light';
   localStorage.setItem('ember-theme', theme === 'dark' ? 'dark' : 'light');
   _updateThemeButtons();
 }
 (function(){ var t = localStorage.getItem('ember-theme'); document.documentElement.dataset.theme = (t === 'dark') ? 'dark' : 'light'; })();
+
 async function openAcct() {
-  const m = document.getElementById('acct-modal');
-  m.style.display = 'flex';
+  document.getElementById('acct-modal').classList.add('open');
   _updateThemeButtons();
-  document.getElementById('acct-cur-pw').value = '';
-  document.getElementById('acct-new-pw').value = '';
-  document.getElementById('acct-conf-pw').value = '';
+  ['acct-cur-pw','acct-new-pw','acct-conf-pw'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('acct-msg').style.display = 'none';
   document.getElementById('acct-report-msg').style.display = 'none';
   try {
@@ -655,9 +466,9 @@ async function openAcct() {
     document.getElementById('acct-report-optin').checked = d.report_opt_in || false;
     document.getElementById(d.report_format === 'excel' ? 'acct-fmt-excel' : 'acct-fmt-pdf').checked = true;
     document.getElementById('acct-format-row').style.display = d.report_opt_in ? 'block' : 'none';
-  } catch(e) {}
+  } catch (e) {}
 }
-function closeAcct() { document.getElementById('acct-modal').style.display = 'none'; }
+function closeAcct() { document.getElementById('acct-modal').classList.remove('open'); }
 document.getElementById('acct-modal').addEventListener('click', function(e) { if (e.target === this) closeAcct(); });
 document.getElementById('acct-report-optin').addEventListener('change', function() {
   document.getElementById('acct-format-row').style.display = this.checked ? 'block' : 'none';
@@ -667,7 +478,7 @@ async function saveAcctPw() {
   const nw  = document.getElementById('acct-new-pw').value;
   const conf= document.getElementById('acct-conf-pw').value;
   const msg = document.getElementById('acct-msg');
-  function showMsg(txt, ok) { msg.textContent=txt; msg.style.color=ok?'#5e9e8c':'#e07a3e'; msg.style.display='block'; }
+  function showMsg(txt, ok) { msg.textContent=txt; msg.style.color=ok?'var(--eax-good)':'var(--eax-bad)'; msg.style.display='block'; }
   if (!cur||!nw||!conf) { showMsg('All fields are required.',false); return; }
   if (nw!==conf)        { showMsg('New passwords do not match.',false); return; }
   const res = await fetch('/api/account/password',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({current_password:cur,new_password:nw})});
@@ -682,9 +493,268 @@ async function saveReportSettings() {
   const res = await fetch('/api/account/report-settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({report_opt_in:opt_in,report_format:fmt})});
   const d = await res.json();
   msg.style.display='block';
-  if (d.ok) { msg.textContent='Preferences saved.'; msg.style.color='#5e9e8c'; }
-  else      { msg.textContent=d.error||'Failed to save.'; msg.style.color='#e07a3e'; }
+  if (d.ok) { msg.textContent='Preferences saved.'; msg.style.color='var(--eax-good)'; }
+  else      { msg.textContent=d.error||'Failed to save.'; msg.style.color='var(--eax-bad)'; }
 }
+
+/* ─────────── PDF/Excel exports (preserved) ─────────── */
+function openExecReport(){ window.open('/api/returns/pdf?ts=' + Date.now(), '_blank'); }
+function downloadExecReport(){ window.location.href = '/api/returns/pdf?download=1&ts=' + Date.now(); }
 </script>
+
+{% if enriched and enriched.projects %}
+<script>
+/* ============================================================
+   Returns workspace · interactive detail-pane renderer
+   ============================================================ */
+const RD = window._RETURNS;
+const YEARS = RD.years || [];
+
+// ── Number formatters
+function fmtMoney(v) {
+  if (v == null || isNaN(v)) return '—';
+  const n = Math.round(+v);
+  if (n === 0) return '—';
+  if (n < 0) return '(' + Math.abs(n).toLocaleString() + ')';
+  return n.toLocaleString();
+}
+function fmtPct(v)  { return (v == null || isNaN(v)) ? '—' : (v * 100).toFixed(1) + '%'; }
+function fmtMx(v)   { return (v == null || isNaN(v)) ? '—' : (+v).toFixed(2) + 'x'; }
+function fmtTotal(v){
+  if (v == null || isNaN(v)) return '—';
+  const n = Math.round(+v);
+  if (n < 0) return '(' + Math.abs(n).toLocaleString() + ')';
+  return n.toLocaleString();
+}
+function escapeHTML(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ── Sparkline (negative-aware bar series)
+function sparkSVG(values, w, h) {
+  if (!values || !values.length) return '';
+  const maxAbs = Math.max(...values.map(v => Math.abs(+v || 0))) || 1;
+  const bw = Math.max(0.8, (w - (values.length - 1) * 1.2) / values.length);
+  const mid = h / 2;
+  const bars = values.map((v, i) => {
+    const num = +v || 0;
+    const bh = Math.max(1, (Math.abs(num) / maxAbs) * (h * 0.45));
+    const y = num >= 0 ? mid - bh : mid;
+    const fill = num >= 0 ? 'currentColor' : 'var(--eax-bad)';
+    const op = Math.abs(num) < 0.0001 ? 0.15 : 1;
+    return `<rect x="${(i * (bw + 1.2)).toFixed(2)}" y="${y.toFixed(2)}" width="${bw.toFixed(2)}" height="${bh.toFixed(2)}" rx="${Math.min(bw/2.4, 1.5).toFixed(2)}" fill="${fill}" opacity="${op}"/>`;
+  }).join('');
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block">
+    <line x1="0" x2="${w}" y1="${mid}" y2="${mid}" stroke="currentColor" stroke-width="0.5" opacity="0.2"/>
+    ${bars}
+  </svg>`;
+}
+
+// ── Cumulative area chart
+function cumulativeAreaSVG(values, w, h) {
+  if (!values || values.length < 2) return '';
+  const min = Math.min(0, ...values);
+  const max = Math.max(0, ...values);
+  const range = (max - min) || 1;
+  const xStep = w / (values.length - 1);
+  const yFor = v => h - ((v - min) / range) * (h - 6) - 3;
+  const path = values.map((v, i) => `${i === 0 ? 'M' : 'L'} ${(i * xStep).toFixed(1)} ${yFor(+v || 0).toFixed(1)}`).join(' ');
+  const area = `${path} L ${((values.length - 1) * xStep).toFixed(1)} ${h} L 0 ${h} Z`;
+  const zeroY = yFor(0).toFixed(1);
+  const gid = 'rd-grad-' + Math.random().toString(36).slice(2, 8);
+  return `<svg width="100%" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;color:var(--eax-accent)">
+    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="currentColor" stop-opacity="0.32"/>
+      <stop offset="100%" stop-color="currentColor" stop-opacity="0"/>
+    </linearGradient></defs>
+    <line x1="0" x2="${w}" y1="${zeroY}" y2="${zeroY}" stroke="currentColor" stroke-width="1" stroke-dasharray="3 3" opacity="0.25"/>
+    <path d="${area}" fill="url(#${gid})"/>
+    <path d="${path}" fill="none" stroke="currentColor" stroke-width="2"/>
+  </svg>`;
+}
+
+// ── Annual net cashflow bar chart (signed)
+function annualBarsSVG(values, w, h) {
+  if (!values || !values.length) return '';
+  const maxAbs = Math.max(...values.map(v => Math.abs(+v || 0))) || 1;
+  const bw = Math.max(2, (w - (values.length - 1) * 4) / values.length);
+  const mid = h / 2;
+  const bars = values.map((v, i) => {
+    const num = +v || 0;
+    const bh = Math.max(1, (Math.abs(num) / maxAbs) * (h * 0.42));
+    const y = num >= 0 ? mid - bh : mid;
+    const fill = num >= 0 ? 'var(--eax-accent)' : 'var(--eax-bad)';
+    const op = Math.abs(num) < 0.0001 ? 0.12 : 0.95;
+    return `<rect x="${(i * (bw + 4)).toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="3" fill="${fill}" opacity="${op}"/>`;
+  }).join('');
+  return `<svg width="100%" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block">
+    <line x1="0" x2="${w}" y1="${mid}" y2="${mid}" stroke="currentColor" stroke-width="1" stroke-dasharray="3 3" opacity="0.25"/>
+    ${bars}
+  </svg>`;
+}
+
+// ── First active year index for a project (per-project trim of the table)
+function firstActiveIdx(p) {
+  for (let i = 0; i < YEARS.length; i++) {
+    for (const m of (p.metrics || [])) {
+      const yr = m.yearly || [];
+      if (yr[i] && Math.abs(+yr[i]) > 0.0001) return i;
+    }
+  }
+  return 0;
+}
+
+// ── Table HTML for the cashflow detail
+const LABEL_MAP = {
+  'LP IRR': 'Net Cashflow',
+  'LP Equity Multiple': 'Cumulative Net Cashflow',
+};
+
+function renderTable(p) {
+  const startIdx = firstActiveIdx(p);
+  const visible = YEARS.slice(startIdx);
+  const headerCells = ['<th>Metric</th>', '<th>Total</th>', ...visible.map(y => `<th>${y}</th>`)].join('');
+
+  const rows = (p.metrics || []).map(m => {
+    const display = LABEL_MAP[m.label] || m.label;
+    let total;
+    if (m.label === 'LP IRR') {
+      // "Net Cashflow" total = sum of yearly
+      total = (m.yearly || []).reduce((s, v) => s + (+v || 0), 0);
+    } else if (m.label === 'LP Equity Multiple') {
+      // "Cumulative Net Cashflow" total = last non-zero value
+      total = 0;
+      for (const v of (m.yearly || [])) if (v && Math.abs(+v) > 0.0001) total = +v;
+    } else {
+      total = +m.total || 0;
+    }
+    const cls = m.label === 'LP IRR' ? 'hero net' : (m.label === 'LP Equity Multiple' ? 'hero cum' : '');
+    const tCell = `<td>${fmtTotal(total)}</td>`;
+    const yCells = visible.map((_, vi) => {
+      const i = startIdx + vi;
+      const v = (m.yearly || [])[i] || 0;
+      const negCls = (cls && (+v) < 0) ? ' class="neg"' : '';
+      return `<td${negCls}>${fmtMoney(v)}</td>`;
+    }).join('');
+    return `<tr${cls ? ` class="${cls}"` : ''}><td>${escapeHTML(display)}</td>${tCell}${yCells}</tr>`;
+  }).join('');
+
+  return `<div class="rw-table-card">
+    <div class="rw-table-head">
+      <span class="lbl">Cashflow detail</span>
+      <span class="meta">$ in 000s</span>
+      <span style="flex:1"></span>
+      <span class="meta">${visible.length} years &middot; ${visible[0] ?? '—'}–${visible[visible.length-1] ?? '—'}</span>
+    </div>
+    <div class="rw-table-wrap">
+      <table class="rw-table">
+        <thead><tr>${headerCells}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+// ── KPI grid + charts + table for the focused project
+function renderDetail(idx) {
+  const p = RD.projects[idx];
+  if (!p) return;
+  const detail = document.getElementById('rw-detail');
+  detail.innerHTML = `
+    <div class="rw-detail-head">
+      <div>
+        <div class="rw-eyebrow muted" style="margin-bottom:8px">Project &middot; Vintage ${p.vintage ?? '—'}</div>
+        <h2 class="rw-detail-title">${escapeHTML(p.name)}</h2>
+      </div>
+      <div class="rw-detail-actions">
+        <a class="rw-btn" href="/api/export-returns-excel" download>
+          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" stroke-width="1.6"/><path d="M8 12h8M8 8h5M8 16h6" stroke-width="1.6" stroke-linecap="round"/></svg>
+          Excel
+        </a>
+        <button class="rw-btn" onclick="openExecReport()">
+          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 3h6v6 M10 14L21 3 M19 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h6" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Open
+        </button>
+        <button class="rw-btn primary" onclick="downloadExecReport()">
+          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4 m4-5l5 5 5-5 m-5 5V3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          PDF
+        </button>
+      </div>
+    </div>
+
+    <div class="rw-kpis">
+      <div class="rw-kpi"><div class="lbl">LP IRR</div><div class="val">${fmtPct(p.irr)}</div></div>
+      <div class="rw-kpi"><div class="lbl">Equity Multiple</div><div class="val">${fmtMx(p.em)}</div></div>
+      <div class="rw-kpi"><div class="lbl">Total Profit</div><div class="val accent">${fmtTotal(p.profit)}</div></div>
+      <div class="rw-kpi"><div class="lbl">Distributions</div><div class="val">${fmtTotal(p.distributions)}</div></div>
+    </div>
+
+    <div class="rw-charts">
+      <div class="rw-chart">
+        <div class="rw-chart-head">
+          <div>
+            <div class="rw-chart-title">Cumulative Net Cashflow</div>
+            <div class="rw-chart-sub">$ in 000s</div>
+          </div>
+          <span class="rw-chart-meta">${YEARS.length}Y</span>
+        </div>
+        ${cumulativeAreaSVG(p.cumulative_yearly, 600, 110)}
+      </div>
+      <div class="rw-chart">
+        <div class="rw-chart-head">
+          <div>
+            <div class="rw-chart-title">Annual Net Cashflow</div>
+            <div class="rw-chart-sub">$ in 000s</div>
+          </div>
+          <span class="rw-chart-meta">${YEARS.length}Y</span>
+        </div>
+        ${annualBarsSVG(p.net_yearly, 600, 110)}
+      </div>
+    </div>
+
+    ${renderTable(p)}
+  `;
+}
+
+// ── Hydrate sparklines on the project list (uses project.net_yearly).
+function hydrateSparks() {
+  document.querySelectorAll('[data-spark]').forEach(el => {
+    const i = +el.dataset.spark;
+    const p = RD.projects[i];
+    if (!p) return;
+    el.innerHTML = sparkSVG(p.net_yearly, 70, 16);
+  });
+}
+
+// ── Click-to-focus + active-state management
+function focusProject(idx) {
+  if (idx < 0 || idx >= RD.projects.length) return;
+  document.querySelectorAll('.rw-proj').forEach(el => {
+    el.classList.toggle('active', +el.dataset.idx === idx);
+  });
+  renderDetail(idx);
+  // Update hash (no scroll jump)
+  history.replaceState(null, '', '#project-' + idx);
+}
+
+document.querySelectorAll('.rw-proj').forEach(el => {
+  el.addEventListener('click', e => {
+    e.preventDefault();
+    focusProject(+el.dataset.idx);
+    document.getElementById('rw-detail').scrollTo({top:0, behavior:'smooth'});
+  });
+});
+
+// ── Initial paint: respect #project-N if present, else first project
+(function init() {
+  hydrateSparks();
+  let idx = 0;
+  const m = (location.hash || '').match(/^#project-(\d+)$/);
+  if (m) {
+    const n = +m[1];
+    if (n >= 0 && n < RD.projects.length) idx = n;
+  }
+  focusProject(idx);
+})();
+</script>
+{% endif %}
 </body>
 </html>
