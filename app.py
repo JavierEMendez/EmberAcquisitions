@@ -1164,7 +1164,19 @@ def ember_capital_save_settings():
 @app.route("/api/ember-capital/commitments", methods=["GET", "POST"])
 @login_required
 def ember_capital_commitments():
-    """GET or replace the commitments object {groups: [{name, mpc, vertical}]}."""
+    """GET or replace the commitments object.
+
+    Group shape:
+        {name, mpc, vertical, mpc_allocated, vertical_allocated}
+
+        - `mpc` / `vertical` = total dollars committed by the group to
+          each asset class.
+        - `mpc_allocated` / `vertical_allocated` = dollars Ember has
+          already drawn against those commitments. Difference is what
+          remains available for new deals.
+
+    Older saved rows without the *_allocated keys read back as 0.
+    """
     if request.method == "GET":
         conn = get_db(); cur = conn.cursor()
         cur.execute(
@@ -1185,6 +1197,11 @@ def ember_capital_commitments():
         return jsonify({"error": "Access denied"}), 403
     body = request.get_json(silent=True) or {}
     groups_in = body.get("groups") or []
+
+    def _f(v):
+        try: return float(v or 0)
+        except (TypeError, ValueError): return 0.0
+
     clean_groups = []
     for g in groups_in:
         if not isinstance(g, dict):
@@ -1192,15 +1209,13 @@ def ember_capital_commitments():
         name = str(g.get("name", "")).strip()
         if not name:
             continue
-        try:
-            mpc = float(g.get("mpc", 0) or 0)
-        except (TypeError, ValueError):
-            mpc = 0
-        try:
-            vert = float(g.get("vertical", 0) or 0)
-        except (TypeError, ValueError):
-            vert = 0
-        clean_groups.append({"name": name, "mpc": mpc, "vertical": vert})
+        clean_groups.append({
+            "name":               name,
+            "mpc":                _f(g.get("mpc")),
+            "vertical":           _f(g.get("vertical")),
+            "mpc_allocated":      _f(g.get("mpc_allocated")),
+            "vertical_allocated": _f(g.get("vertical_allocated")),
+        })
 
     conn = get_db(); cur = conn.cursor()
     cur.execute("DELETE FROM reports WHERE report_type = 'ember_capital_commitments'")
@@ -2830,8 +2845,12 @@ def _gen_excel_ember_capital(data):
 
     # Commitments totals
     groups = (data.get("commitments") or {}).get("groups") or []
-    mpc_tot  = sum((g.get("mpc")      or 0) for g in groups)
-    vert_tot = sum((g.get("vertical") or 0) for g in groups)
+    mpc_tot       = sum((g.get("mpc")                or 0) for g in groups)
+    vert_tot      = sum((g.get("vertical")           or 0) for g in groups)
+    mpc_alloc_tot = sum((g.get("mpc_allocated")      or 0) for g in groups)
+    vert_alloc_tot= sum((g.get("vertical_allocated") or 0) for g in groups)
+    alloc_tot     = mpc_alloc_tot + vert_alloc_tot
+    avail_tot     = (mpc_tot + vert_tot) - alloc_tot
 
     kpis = [
         ("Active Projects",        len(projects),       "count"),
@@ -2841,6 +2860,8 @@ def _gen_excel_ember_capital(data):
         ("MPC Committed",          mpc_tot,             "money"),
         ("Vertical Committed",     vert_tot,            "money"),
         ("Total Committed Capital",mpc_tot + vert_tot,  "money"),
+        ("Capital Allocated",      alloc_tot,           "money"),
+        ("Available to Deploy",    avail_tot,           "money"),
     ]
     for label, val, kind in kpis:
         ws.cell(row=r, column=1, value=label).font = _f()
@@ -2955,22 +2976,31 @@ def _gen_excel_ember_capital(data):
     # --- Commitments ------------------------------------------------------
     if groups:
         ws.cell(row=r, column=1, value="Capital Commitments").font = _f(bold=True, color=GOLD, size=12); r += 1
-        c_hdrs = ["Group", "MPC Commitment", "Vertical Commitment", "Total"]
+        c_hdrs = ["Group", "MPC Commitment", "MPC Allocated",
+                  "Vertical Commitment", "Vertical Allocated",
+                  "Total Committed", "Total Allocated", "Remaining"]
         for ci, h in enumerate(c_hdrs, 1):
             c = ws.cell(row=r, column=ci, value=h); c.font = _f(bold=True, color="555555", size=9)
             c.fill = HDR_FILL; c.border = cell_border
             c.alignment = Alignment(horizontal="left" if ci == 1 else "right")
         r += 1
         for g in groups:
-            vals = [g.get("name",""), g.get("mpc") or 0, g.get("vertical") or 0,
-                    (g.get("mpc") or 0) + (g.get("vertical") or 0)]
+            mpc_v   = g.get("mpc") or 0
+            vrt_v   = g.get("vertical") or 0
+            mpc_a   = g.get("mpc_allocated") or 0
+            vrt_a   = g.get("vertical_allocated") or 0
+            tot_c   = mpc_v + vrt_v
+            tot_a   = mpc_a + vrt_a
+            vals = [g.get("name",""), mpc_v, mpc_a, vrt_v, vrt_a,
+                    tot_c, tot_a, tot_c - tot_a]
             for ci, v in enumerate(vals, 1):
                 c = ws.cell(row=r, column=ci); c.border = cell_border; c.font = _f(size=9)
                 c.alignment = Alignment(horizontal="left" if ci == 1 else "right")
                 if ci == 1: c.value = v
                 else: _money(c, v)
             r += 1
-        row_tot = ["Total", mpc_tot, vert_tot, mpc_tot + vert_tot]
+        row_tot = ["Total", mpc_tot, mpc_alloc_tot, vert_tot, vert_alloc_tot,
+                   mpc_tot + vert_tot, alloc_tot, avail_tot]
         for ci, v in enumerate(row_tot, 1):
             c = ws.cell(row=r, column=ci); c.border = cell_border; c.fill = TOT_FILL
             c.font = _f(bold=True, color="7A5C1E", size=9)
@@ -3042,8 +3072,12 @@ def _gen_pdf_ember_capital(data):
         if w and p.get("lp_irr") is not None:
             eq_w += w; irr_w += (p.get("lp_irr") or 0) * w
     w_irr = (irr_w / eq_w) if eq_w else 0.0
-    mpc_tot  = sum((g.get("mpc")      or 0) for g in groups)
-    vert_tot = sum((g.get("vertical") or 0) for g in groups)
+    mpc_tot       = sum((g.get("mpc")                or 0) for g in groups)
+    vert_tot      = sum((g.get("vertical")           or 0) for g in groups)
+    mpc_alloc_tot = sum((g.get("mpc_allocated")      or 0) for g in groups)
+    vert_alloc_tot= sum((g.get("vertical_allocated") or 0) for g in groups)
+    alloc_tot     = mpc_alloc_tot + vert_alloc_tot
+    avail_tot     = (mpc_tot + vert_tot) - alloc_tot
 
     # Aggregate annual recycling data across all projects
     n_yr = len(years)
@@ -3342,11 +3376,13 @@ def _gen_pdf_ember_capital(data):
 
     # --- KPI row 2: commitments ---
     y2 = 88
-    cw2 = (277 - 2*4) / 3
+    cw2 = (277 - 4*4) / 5  # five tiles now (added Allocated + Available)
     kpis2 = [
-        ("MPC Committed",          fmt_money_raw(mpc_tot),           "Master-planned",    BLUE),
-        ("Vertical Committed",     fmt_money_raw(vert_tot),          "Vertical product",  BLUE),
-        ("Total Committed Capital",fmt_money_raw(mpc_tot+vert_tot),  "Across asset classes", ORANGE),
+        ("MPC Committed",          fmt_money_raw(mpc_tot),               "Master-planned",       BLUE),
+        ("Vertical Committed",     fmt_money_raw(vert_tot),              "Vertical product",     BLUE),
+        ("Total Committed Capital",fmt_money_raw(mpc_tot+vert_tot),      "Across asset classes", ORANGE),
+        ("Capital Allocated",      fmt_money_raw(alloc_tot),             "Drawn against commits", BLUE),
+        ("Available to Deploy",    fmt_money_raw(avail_tot),             "Unallocated remaining", ORANGE),
     ]
     for i, (lbl, val, cap, acc) in enumerate(kpis2):
         x = 10 + i*(cw2+4)
@@ -3361,23 +3397,25 @@ def _gen_pdf_ember_capital(data):
     if groups:
         pdf.cell(0, 4,
                  f"{len(groups)} investor group(s) committed {fmt_money_raw(mpc_tot+vert_tot)} "
-                 f"({fmt_money_raw(mpc_tot)} MPC + {fmt_money_raw(vert_tot)} Vertical).",
+                 f"({fmt_money_raw(mpc_tot)} MPC + {fmt_money_raw(vert_tot)} Vertical) - "
+                 f"{fmt_money_raw(alloc_tot)} allocated, {fmt_money_raw(avail_tot)} remaining.",
                  ln=False)
     else:
         pdf.cell(0, 4, "No investor commitments recorded yet.", ln=False)
 
-    # Commitments table
+    # Commitments table — wider with allocated columns. 8 cols summing to 277.
     y = 146
-    col_w = [100, 55, 55, 55]
+    col_w = [54, 30, 30, 30, 30, 33, 35, 35]  # Group / MPC C / MPC A / V C / V A / Tot C / Tot A / Rem
     x0 = 10
     # Header
     pdf.set_xy(x0, y)
     pdf.set_fill_color(*BLUE)
     pdf.set_text_color(*WHITE)
-    pdf.set_font("Helvetica", "B", 7.5)
-    hdrs = ["GROUP", "MPC COMMITMENT", "VERTICAL COMMITMENT", "TOTAL"]
+    pdf.set_font("Helvetica", "B", 7)
+    hdrs = ["GROUP", "MPC COMMIT", "MPC ALLOC", "VERT COMMIT", "VERT ALLOC",
+            "TOT COMMIT", "TOT ALLOC", "REMAINING"]
     for i, h in enumerate(hdrs):
-        try: pdf.set_char_spacing(0.8)
+        try: pdf.set_char_spacing(0.6)
         except Exception: pass
         pdf.cell(col_w[i], 7, h, border=0, fill=True,
                  align="L" if i == 0 else "R")
@@ -3386,15 +3424,22 @@ def _gen_pdf_ember_capital(data):
     pdf.ln()
     y += 7
     # Body
-    pdf.set_font("Helvetica", "", 9)
+    pdf.set_font("Helvetica", "", 8.5)
     shown_groups = groups[:10]  # keep page tight
     for i, g in enumerate(shown_groups):
-        mpc = g.get("mpc") or 0; vrt = g.get("vertical") or 0
+        mpc_v = g.get("mpc") or 0; vrt_v = g.get("vertical") or 0
+        mpc_a = g.get("mpc_allocated") or 0; vrt_a = g.get("vertical_allocated") or 0
+        tot_c = mpc_v + vrt_v
+        tot_a = mpc_a + vrt_a
+        rem   = tot_c - tot_a
         pdf.set_xy(x0, y)
         pdf.set_fill_color(*(PAPER if i % 2 == 0 else WHITE))
         pdf.set_text_color(*BLUE_XDK)
-        vals = [safe(g.get("name","")), fmt_money_raw(mpc), fmt_money_raw(vrt),
-                fmt_money_raw(mpc + vrt)]
+        vals = [safe(g.get("name","")),
+                fmt_money_raw(mpc_v), fmt_money_raw(mpc_a),
+                fmt_money_raw(vrt_v), fmt_money_raw(vrt_a),
+                fmt_money_raw(tot_c), fmt_money_raw(tot_a),
+                fmt_money_raw(rem)]
         for j, v in enumerate(vals):
             pdf.cell(col_w[j], 6, v, border=0, fill=True,
                      align="L" if j == 0 else "R")
@@ -3414,9 +3459,13 @@ def _gen_pdf_ember_capital(data):
         pdf.set_xy(x0, y)
         pdf.set_fill_color(*BLUE)
         pdf.set_text_color(*WHITE)
-        pdf.set_font("Helvetica", "B", 9)
-        vals = ["TOTAL", fmt_money_raw(mpc_tot), fmt_money_raw(vert_tot),
-                fmt_money_raw(mpc_tot + vert_tot)]
+        pdf.set_font("Helvetica", "B", 8.5)
+        vals = ["TOTAL",
+                fmt_money_raw(mpc_tot), fmt_money_raw(mpc_alloc_tot),
+                fmt_money_raw(vert_tot), fmt_money_raw(vert_alloc_tot),
+                fmt_money_raw(mpc_tot + vert_tot),
+                fmt_money_raw(alloc_tot),
+                fmt_money_raw(avail_tot)]
         for j, v in enumerate(vals):
             pdf.cell(col_w[j], 7.5, v, border=0, fill=True,
                      align="L" if j == 0 else "R")

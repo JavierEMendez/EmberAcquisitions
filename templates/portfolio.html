@@ -110,7 +110,11 @@
   .top-actions .ctrl-btn:hover{opacity:.92;color:var(--accent-fg)}
 
   /* Commitments */
-  .commit-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 46px;gap:10px;align-items:center}
+  /* 7-column layout: Group | MPC Commit | MPC Alloc | Vert Commit | Vert Alloc | Remaining | (delete)
+     - Commit + Allocated pair per asset class so we track both how much
+       a group has pledged AND how much we've already drawn against it.
+     - Remaining = (mpc + vertical) - (mpc_alloc + vertical_alloc). */
+  .commit-grid{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr 1fr 0.9fr 46px;gap:10px;align-items:center}
   .commit-hdr{font-size:10px;color:var(--text-dim);letter-spacing:.08em;text-transform:uppercase;padding:4px 0}
   .commit-hdr.r{text-align:right}
   .commit-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px 18px;margin-bottom:10px}
@@ -122,7 +126,7 @@
   .commit-row .del-btn{background:none;border:1px solid var(--border);color:var(--text-dim);border-radius:5px;width:34px;height:30px;cursor:pointer;font-size:16px;line-height:1;transition:all .12s}
   .commit-row .del-btn:hover{border-color:var(--leave);color:var(--leave)}
   .commit-row .total-chip{text-align:right;font-weight:600;color:var(--accent);font-variant-numeric:tabular-nums}
-  .commit-totals{margin-top:10px;padding-top:10px;border-top:2px solid var(--border-light);display:grid;grid-template-columns:2fr 1fr 1fr 1fr 46px;gap:10px;font-weight:700;font-size:13px}
+  .commit-totals{margin-top:10px;padding-top:10px;border-top:2px solid var(--border-light);display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr 1fr 0.9fr 46px;gap:10px;font-weight:700;font-size:13px}
   .commit-totals > div.r{text-align:right;color:var(--accent);font-variant-numeric:tabular-nums}
   .commit-save-row{display:flex;align-items:center;gap:10px;margin-top:12px}
   .commit-save-row .ctrl-btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600}
@@ -244,9 +248,12 @@
         <div class="kpi lp"><div class="lbl">Weighted LP IRR</div><div class="val" id="k-wirr">—</div><div class="sub">LP-equity-weighted</div></div>
         <div class="kpi"><div class="lbl">Recyclable Capital</div><div class="val" id="k-recyc">—</div><div class="sub">LP + Promote combined</div></div>
         <div class="kpi leave"><div class="lbl">Capital Leaving</div><div class="val" id="k-leave">—</div><div class="sub">LP + Promote combined</div></div>
+        <div class="kpi"><div class="lbl">Recycled (Next 18 Mo.)</div><div class="val" id="k-rec-18">—</div><div class="sub" title="Distributions are stored yearly; this pro-rates from today by months elapsed.">pro-rated from today</div></div>
         <div class="kpi"><div class="lbl">MPC Committed</div><div class="val" id="k-mpc">—</div><div class="sub" id="k-mpc-sub">0 groups</div></div>
         <div class="kpi promote"><div class="lbl">Vertical Committed</div><div class="val" id="k-vert">—</div><div class="sub" id="k-vert-sub">0 groups</div></div>
         <div class="kpi"><div class="lbl">Total Committed Capital</div><div class="val" id="k-tcc">—</div><div class="sub">MPC + Vertical</div></div>
+        <div class="kpi"><div class="lbl">Capital Allocated</div><div class="val" id="k-alloc">—</div><div class="sub">drawn against commitments</div></div>
+        <div class="kpi"><div class="lbl">Available to Deploy</div><div class="val" id="k-avail">—</div><div class="sub">unallocated remaining</div></div>
       </div>
 
       <!-- Global recycle controls -->
@@ -257,15 +264,15 @@
         <div class="ctrl-row lp">
           <span style="width:10px;height:10px;background:var(--lp);border-radius:2px"></span>
           <label>LP Recycle</label>
-          <input type="range" id="g-lp" min="0" max="100" step="5" value="0">
-          <span class="val-chip" id="g-lp-v">0%</span>
+          <input type="range" id="g-lp" min="0" max="100" step="5" value="100">
+          <span class="val-chip" id="g-lp-v">100%</span>
         </div>
         <div class="ctrl-sep"></div>
         <div class="ctrl-row promote">
           <span style="width:10px;height:10px;background:var(--promote);border-radius:2px"></span>
           <label>Promote Recycle</label>
-          <input type="range" id="g-prom" min="0" max="100" step="5" value="0">
-          <span class="val-chip" id="g-prom-v">0%</span>
+          <input type="range" id="g-prom" min="0" max="100" step="5" value="100">
+          <span class="val-chip" id="g-prom-v">100%</span>
         </div>
         <div class="ctrl-sep"></div>
         <button class="ctrl-btn" onclick="applyGlobal()">Apply to all projects</button>
@@ -281,7 +288,7 @@
           <thead>
             <tr>
               <th rowspan="2" style="vertical-align:middle">Project</th>
-              <th colspan="5" class="grp-lp" style="text-align:center">LP</th>
+              <th colspan="6" class="grp-lp" style="text-align:center">LP</th>
               <th colspan="2" class="grp-prom" style="text-align:center">Promote</th>
               <th colspan="2" style="text-align:center">Recycled Capital</th>
               <th colspan="2" style="text-align:center">Leaving Capital</th>
@@ -291,6 +298,7 @@
               <th class="grp-lp">EM</th>
               <th class="grp-lp">Equity</th>
               <th class="grp-lp">Distributions</th>
+              <th class="grp-lp" title="Distributions modeled YTD — current year pro-rated by months elapsed (data is yearly).">Distributed YTD</th>
               <th class="grp-lp">Recycle %</th>
               <th class="grp-prom">Total</th>
               <th class="grp-prom">Recycle %</th>
@@ -322,22 +330,26 @@
 
       <!-- Commitments -->
       <div class="section-h">Capital Commitments</div>
-      <div class="section-sub">Investor-group commitments by asset class. Feeds the monthly executive report and the Total Committed Capital KPI.</div>
+      <div class="section-sub">Investor-group commitments by asset class, plus how much of each commitment Ember has already drawn against. Feeds the monthly executive report and the Committed / Allocated / Available KPIs.</div>
 
       <div class="commit-card">
         <div class="commit-grid commit-hdr">
           <div>Group</div>
-          <div class="r">MPC Commitment ($)</div>
-          <div class="r">Vertical Commitment ($)</div>
-          <div class="r">Total</div>
+          <div class="r">MPC Commit ($)</div>
+          <div class="r">MPC Allocated ($)</div>
+          <div class="r">Vert. Commit ($)</div>
+          <div class="r">Vert. Allocated ($)</div>
+          <div class="r">Remaining</div>
           <div></div>
         </div>
         <div id="commit-rows"></div>
         <div class="commit-totals">
           <div>Total</div>
           <div class="r" id="commit-tot-mpc">—</div>
+          <div class="r" id="commit-tot-mpc-alloc">—</div>
           <div class="r" id="commit-tot-vert">—</div>
-          <div class="r" id="commit-tot-all">—</div>
+          <div class="r" id="commit-tot-vert-alloc">—</div>
+          <div class="r" id="commit-tot-remaining">—</div>
           <div></div>
         </div>
         <div class="commit-save-row no-print">
@@ -401,6 +413,29 @@ function fmtPct(v) { return v == null || isNaN(v) ? '—' : (v*100).toFixed(1) +
 function fmtEM(v)  { return v == null || isNaN(v) ? '—' : v.toFixed(2) + 'x'; }
 function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
 
+/* ---------- Date helpers ----------
+ * Distributions are stored YEARLY (one column per calendar year), so any
+ * "YTD" or "next N months" figure has to pro-rate from the yearly bucket.
+ *
+ *   monthsElapsed(today) ≈ (month + day/30), so April 28 ≈ 3.93
+ *   ytdFraction          = monthsElapsed / 12, so April 28 ≈ 0.327
+ *
+ * That fraction times the current-year yearly figure = a reasonable YTD
+ * estimate. Same idea for "next 18 months": consume remaining-months-of-
+ * current-year first, then full years until the 18-month budget is gone.
+ */
+const _NOW = new Date();
+const _MONTHS_ELAPSED = _NOW.getMonth() + (_NOW.getDate() / 30);
+const _YTD_FRACTION   = _MONTHS_ELAPSED / 12;
+const _MONTHS_LEFT_THIS_YEAR = 12 - _MONTHS_ELAPSED;
+const _CURRENT_YEAR  = _NOW.getFullYear();
+
+function _yearIdx(yr) {
+  const ys = (_data && _data.years) || [];
+  for (let i = 0; i < ys.length; i++) if (+ys[i] === +yr) return i;
+  return -1;
+}
+
 /* Open the server-generated branded 2-page executive PDF in a new tab.
  * This matches the PDF that gets emailed out monthly — same template. */
 function openExecReport() {
@@ -454,18 +489,25 @@ async function load() {
   document.getElementById('empty-msg').style.display = 'none';
   document.getElementById('main-body').style.display = 'block';
 
-  // Seed recycle % state from server
+  // Seed recycle % state from server. Default for a project we haven't
+  // saved yet is 100% LP / 100% Promote — the assumption is that all
+  // distributions stay in the portfolio unless we explicitly say
+  // otherwise. Existing saved values (including saved zeros) are
+  // preserved.
   const saved = (_data.settings && _data.settings.recycle) || {};
   _recycle = {};
   _data.projects.forEach(p => {
-    _recycle[p.name] = saved[p.name] || {lp: 0, prom: 0};
+    _recycle[p.name] = saved[p.name] || {lp: 100, prom: 100};
   });
 
-  // Seed commitments from server
+  // Seed commitments from server. Older rows may not have *_allocated
+  // yet — default those to 0 on read.
   _commitGroups = ((_data.commitments && _data.commitments.groups) || []).map(g => ({
     name: g.name || '',
     mpc: +g.mpc || 0,
     vertical: +g.vertical || 0,
+    mpc_allocated: +g.mpc_allocated || 0,
+    vertical_allocated: +g.vertical_allocated || 0,
   }));
 
   renderAll();
@@ -487,11 +529,13 @@ function applyGlobal() {
   renderAll();
 }
 function resetRecycle() {
-  _data.projects.forEach(p => { _recycle[p.name] = {lp: 0, prom: 0}; });
-  document.getElementById('g-lp').value = 0;
-  document.getElementById('g-prom').value = 0;
-  document.getElementById('g-lp-v').textContent = '0%';
-  document.getElementById('g-prom-v').textContent = '0%';
+  // "Reset" returns to the 100/100 default — same baseline as a fresh
+  // project that has never been touched.
+  _data.projects.forEach(p => { _recycle[p.name] = {lp: 100, prom: 100}; });
+  document.getElementById('g-lp').value = 100;
+  document.getElementById('g-prom').value = 100;
+  document.getElementById('g-lp-v').textContent = '100%';
+  document.getElementById('g-prom-v').textContent = '100%';
   saveRecycleDebounced();
   renderAll();
 }
@@ -509,11 +553,14 @@ function renderTable() {
   const tfoot = document.getElementById('proj-tfoot');
   let html = '';
   let totals = {
-    dist: 0, prom: 0, lpRec: 0, promRec: 0, lpLeave: 0, promLeave: 0
+    dist: 0, ytd: 0, prom: 0, lpRec: 0, promRec: 0, lpLeave: 0, promLeave: 0
   };
   let totalEq = 0;
+  // Year index for the current calendar year — used to pro-rate YTD
+  // distributions from the yearly bucket. -1 if outside the data range.
+  const idxCur = _yearIdx(_CURRENT_YEAR);
   _data.projects.forEach(p => {
-    const rec = _recycle[p.name] || {lp: 0, prom: 0};
+    const rec = _recycle[p.name] || {lp: 100, prom: 100};
     const dist = p.lp_distributions_total || 0;
     const prom = p.promote_total || 0;
     const equity = Math.abs(p.lp_contributions_total || 0);
@@ -521,9 +568,15 @@ function renderTable() {
     const lpLeave  = dist - lpRec;
     const promRec  = prom * rec.prom / 100;
     const promLeave= prom - promRec;
+    // YTD: pro-rate the current calendar year's modeled LP distribution
+    // by months elapsed. If the data doesn't cover this year, show 0.
+    const lpY = p.lp_distributions_yearly || [];
+    const curYearDist = idxCur >= 0 ? (+lpY[idxCur] || 0) : 0;
+    const ytd = curYearDist * _YTD_FRACTION;
 
     totalEq         += equity;
     totals.dist     += dist;
+    totals.ytd      += ytd;
     totals.prom     += prom;
     totals.lpRec    += lpRec;
     totals.promRec  += promRec;
@@ -537,6 +590,7 @@ function renderTable() {
       <td>${fmtEM(p.lp_em)}</td>
       <td>${fmtK(equity)}</td>
       <td>${fmtK(dist)}</td>
+      <td>${fmtK(ytd)}</td>
       <td><input type="number" min="0" max="100" step="5" value="${rec.lp}" class="recycle-input lp"  oninput="setRecycle('${key}','lp',this.value)"><span class="recycle-ro">${rec.lp}%</span></td>
       <td>${fmtK(prom)}</td>
       <td><input type="number" min="0" max="100" step="5" value="${rec.prom}" class="recycle-input prom" oninput="setRecycle('${key}','prom',this.value)"><span class="recycle-ro">${rec.prom}%</span></td>
@@ -551,7 +605,8 @@ function renderTable() {
     <td>Totals (${_data.projects.length})</td>
     <td></td><td></td>
     <td>${fmtK(totalEq)}</td>
-    <td>${fmtK(totals.dist)}</td><td></td>
+    <td>${fmtK(totals.dist)}</td>
+    <td>${fmtK(totals.ytd)}</td><td></td>
     <td>${fmtK(totals.prom)}</td><td></td>
     <td>${fmtK(totals.lpRec)}</td>
     <td>${fmtK(totals.promRec)}</td>
@@ -563,7 +618,7 @@ function renderTable() {
 function setRecycle(keyEnc, which, val) {
   const name = decodeURIComponent(keyEnc);
   const n = Math.max(0, Math.min(100, +val || 0));
-  if (!_recycle[name]) _recycle[name] = {lp: 0, prom: 0};
+  if (!_recycle[name]) _recycle[name] = {lp: 100, prom: 100};
   _recycle[name][which] = n;
   saveRecycleDebounced();
   // Light re-render (table totals + year table + charts + KPIs)
@@ -587,7 +642,7 @@ function portfolioYearly() {
     promLeave:new Array(nY).fill(0),
   };
   _data.projects.forEach(p => {
-    const rec = _recycle[p.name] || {lp: 0, prom: 0};
+    const rec = _recycle[p.name] || {lp: 100, prom: 100};
     const rLp = rec.lp / 100, rPr = rec.prom / 100;
     const lpY = p.lp_distributions_yearly || [];
     const prY = p.promote_yearly || [];
@@ -603,6 +658,32 @@ function portfolioYearly() {
     }
   });
   return out;
+}
+
+/* Total LP+Promote recycled in the next N months, pro-rated from today.
+ * Distributions are stored yearly, so the math walks year-by-year:
+ *   - first bucket = remaining months in the current year
+ *   - then full years until the N-month budget is exhausted
+ *   - if N exceeds the modeled horizon, returns whatever is in range
+ */
+function recycledNextMonths(months) {
+  const y = portfolioYearly();
+  if (!y.years.length) return 0;
+  let total = 0;
+  let remaining = months;
+  let yr = _CURRENT_YEAR;
+  let monthsThisStep = _MONTHS_LEFT_THIS_YEAR;
+  while (remaining > 0.001) {
+    const idx = _yearIdx(yr);
+    if (idx < 0) break; // beyond modeled range
+    const yearTotal = (y.lpRec[idx] || 0) + (y.promRec[idx] || 0);
+    const useMonths = Math.min(remaining, monthsThisStep);
+    total += yearTotal * (useMonths / 12);
+    remaining     -= useMonths;
+    yr            += 1;
+    monthsThisStep = 12;
+  }
+  return total;
 }
 
 function renderYearTable() {
@@ -678,12 +759,24 @@ function renderKPIs() {
   document.getElementById('k-recyc').textContent     = fmtKMillions(totLpRec + totPromRec);
   document.getElementById('k-leave').textContent     = fmtKMillions(totLpLeave + totPrLeave);
 
+  // 18-month forward-looking recycled capital (LP + Promote, pro-rated)
+  document.getElementById('k-rec-18').textContent    = fmtKMillions(recycledNextMonths(18));
+
   // Commitments KPIs — values stored in raw $ (not $K) for clarity
-  let mpc = 0, vert = 0;
-  _commitGroups.forEach(g => { mpc += +g.mpc || 0; vert += +g.vertical || 0; });
+  let mpc = 0, vert = 0, mpcA = 0, vertA = 0;
+  _commitGroups.forEach(g => {
+    mpc   += +g.mpc || 0;
+    vert  += +g.vertical || 0;
+    mpcA  += +g.mpc_allocated || 0;
+    vertA += +g.vertical_allocated || 0;
+  });
+  const totalCommit = mpc + vert;
+  const totalAlloc  = mpcA + vertA;
   document.getElementById('k-mpc').textContent      = fmtDollars(mpc);
   document.getElementById('k-vert').textContent     = fmtDollars(vert);
-  document.getElementById('k-tcc').textContent      = fmtDollars(mpc + vert);
+  document.getElementById('k-tcc').textContent      = fmtDollars(totalCommit);
+  document.getElementById('k-alloc').textContent    = fmtDollars(totalAlloc);
+  document.getElementById('k-avail').textContent    = fmtDollars(totalCommit - totalAlloc);
   const nGroups = _commitGroups.length;
   document.getElementById('k-mpc-sub').textContent  = nGroups + (nGroups === 1 ? ' group' : ' groups');
   document.getElementById('k-vert-sub').textContent = nGroups + (nGroups === 1 ? ' group' : ' groups');
@@ -701,16 +794,22 @@ function fmtDollars(v) {
 function renderCommitments() {
   const wrap = document.getElementById('commit-rows');
   let html = '';
-  let tMpc = 0, tVert = 0;
+  let tMpc = 0, tVert = 0, tMpcA = 0, tVertA = 0;
   _commitGroups.forEach((g, i) => {
-    tMpc  += +g.mpc || 0;
-    tVert += +g.vertical || 0;
-    const tot = (+g.mpc || 0) + (+g.vertical || 0);
+    const mpc = +g.mpc || 0;
+    const vrt = +g.vertical || 0;
+    const mpcA = +g.mpc_allocated || 0;
+    const vrtA = +g.vertical_allocated || 0;
+    tMpc  += mpc;  tVert  += vrt;
+    tMpcA += mpcA; tVertA += vrtA;
+    const remaining = (mpc + vrt) - (mpcA + vrtA);
     html += `<div class="commit-row commit-grid">
       <input type="text" value="${g.name.replace(/"/g,'&quot;')}" placeholder="Investor / Group name" oninput="editCommit(${i},'name',this.value)">
-      <input type="number" min="0" step="1000" value="${g.mpc || ''}" placeholder="0" oninput="editCommit(${i},'mpc',this.value)">
-      <input type="number" min="0" step="1000" value="${g.vertical || ''}" placeholder="0" oninput="editCommit(${i},'vertical',this.value)">
-      <div class="total-chip">${tot ? fmtDollars(tot) : '—'}</div>
+      <input type="number" min="0" step="1000" value="${mpc || ''}"  placeholder="0" oninput="editCommit(${i},'mpc',this.value)">
+      <input type="number" min="0" step="1000" value="${mpcA || ''}" placeholder="0" oninput="editCommit(${i},'mpc_allocated',this.value)">
+      <input type="number" min="0" step="1000" value="${vrt || ''}"  placeholder="0" oninput="editCommit(${i},'vertical',this.value)">
+      <input type="number" min="0" step="1000" value="${vrtA || ''}" placeholder="0" oninput="editCommit(${i},'vertical_allocated',this.value)">
+      <div class="total-chip">${remaining ? fmtDollars(remaining) : '—'}</div>
       <button class="del-btn no-print" onclick="removeCommit(${i})" title="Remove group">&times;</button>
     </div>`;
   });
@@ -718,34 +817,48 @@ function renderCommitments() {
     html = `<div style="color:var(--text-dim);font-size:12px;padding:12px 0;text-align:center">No commitment groups yet. Click <strong style="color:var(--accent)">+ Add group</strong> to start.</div>`;
   }
   wrap.innerHTML = html;
-  document.getElementById('commit-tot-mpc').textContent  = tMpc ? fmtDollars(tMpc) : '—';
-  document.getElementById('commit-tot-vert').textContent = tVert ? fmtDollars(tVert) : '—';
-  document.getElementById('commit-tot-all').textContent  = (tMpc+tVert) ? fmtDollars(tMpc + tVert) : '—';
-  renderKPIs();  // refresh MPC/Vertical/Total KPI tiles
+  const totRemaining = (tMpc + tVert) - (tMpcA + tVertA);
+  document.getElementById('commit-tot-mpc').textContent        = tMpc  ? fmtDollars(tMpc)  : '—';
+  document.getElementById('commit-tot-mpc-alloc').textContent  = tMpcA ? fmtDollars(tMpcA) : '—';
+  document.getElementById('commit-tot-vert').textContent       = tVert ? fmtDollars(tVert) : '—';
+  document.getElementById('commit-tot-vert-alloc').textContent = tVertA? fmtDollars(tVertA): '—';
+  document.getElementById('commit-tot-remaining').textContent  = totRemaining ? fmtDollars(totRemaining) : '—';
+  renderKPIs();  // refresh KPI tiles (committed / allocated / available)
 }
 
 function editCommit(i, field, val) {
   if (!_commitGroups[i]) return;
   _commitGroups[i][field] = (field === 'name') ? val : (+val || 0);
-  // Don't re-render the row itself (would steal focus). Just refresh totals.
-  let tMpc = 0, tVert = 0;
-  _commitGroups.forEach(g => { tMpc += +g.mpc || 0; tVert += +g.vertical || 0; });
-  document.getElementById('commit-tot-mpc').textContent  = tMpc ? fmtDollars(tMpc) : '—';
-  document.getElementById('commit-tot-vert').textContent = tVert ? fmtDollars(tVert) : '—';
-  document.getElementById('commit-tot-all').textContent  = (tMpc+tVert) ? fmtDollars(tMpc + tVert) : '—';
-  // Update the row-level Total chip
+  // Don't re-render the row (would steal focus from the input being
+  // typed in). Recompute footer totals + the row-level Remaining chip.
+  let tMpc = 0, tVert = 0, tMpcA = 0, tVertA = 0;
+  _commitGroups.forEach(g => {
+    tMpc   += +g.mpc || 0;
+    tVert  += +g.vertical || 0;
+    tMpcA  += +g.mpc_allocated || 0;
+    tVertA += +g.vertical_allocated || 0;
+  });
+  const totRemaining = (tMpc + tVert) - (tMpcA + tVertA);
+  document.getElementById('commit-tot-mpc').textContent        = tMpc  ? fmtDollars(tMpc)  : '—';
+  document.getElementById('commit-tot-mpc-alloc').textContent  = tMpcA ? fmtDollars(tMpcA) : '—';
+  document.getElementById('commit-tot-vert').textContent       = tVert ? fmtDollars(tVert) : '—';
+  document.getElementById('commit-tot-vert-alloc').textContent = tVertA? fmtDollars(tVertA): '—';
+  document.getElementById('commit-tot-remaining').textContent  = totRemaining ? fmtDollars(totRemaining) : '—';
+  // Per-row Remaining chip
   const row = document.querySelectorAll('#commit-rows .commit-row')[i];
   if (row) {
     const chip = row.querySelector('.total-chip');
-    const tot = (+_commitGroups[i].mpc || 0) + (+_commitGroups[i].vertical || 0);
-    if (chip) chip.textContent = tot ? fmtDollars(tot) : '—';
+    const g = _commitGroups[i];
+    const rem = ((+g.mpc || 0) + (+g.vertical || 0))
+              - ((+g.mpc_allocated || 0) + (+g.vertical_allocated || 0));
+    if (chip) chip.textContent = rem ? fmtDollars(rem) : '—';
   }
   renderKPIs();
   markDirty();
 }
 
 function addCommitGroup() {
-  _commitGroups.push({name: '', mpc: 0, vertical: 0});
+  _commitGroups.push({name: '', mpc: 0, vertical: 0, mpc_allocated: 0, vertical_allocated: 0});
   renderCommitments();
   // Focus the new name input
   const rows = document.querySelectorAll('#commit-rows .commit-row');
@@ -770,7 +883,13 @@ async function saveCommitments() {
   const msg = document.getElementById('commit-msg');
   const cleaned = _commitGroups
     .filter(g => g.name && g.name.trim())
-    .map(g => ({name: g.name.trim(), mpc: +g.mpc || 0, vertical: +g.vertical || 0}));
+    .map(g => ({
+      name: g.name.trim(),
+      mpc: +g.mpc || 0,
+      vertical: +g.vertical || 0,
+      mpc_allocated: +g.mpc_allocated || 0,
+      vertical_allocated: +g.vertical_allocated || 0,
+    }));
   try {
     const res = await fetch('/api/ember-capital/commitments', {
       method: 'POST',
