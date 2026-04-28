@@ -94,8 +94,11 @@
   .cover h1 { font-family: var(--font-display); font-weight: 700; font-size: 84px; line-height: 0.94; letter-spacing: -0.025em; color: var(--ink); max-width: 9in; text-transform: uppercase; }
   .cover h1 em { font-style: normal; font-weight: 300; color: var(--accent); }
   .cover .lede { font-size: 14.5px; line-height: 1.55; color: var(--muted); margin-top: 28px; max-width: 6.4in; }
-  .cover .bot { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0; margin-top: 36px; padding-top: 22px; border-top: 1px solid var(--line-2); }
-  .cover .bot .col { padding-right: 24px; }
+  /* Flex (not grid) for the same WeasyPrint reason called out below on
+     .summary-body — grid columns weren't stretching to equal widths,
+     pushing the rightmost col off the page. */
+  .cover .bot { display: flex; flex-direction: row; margin-top: 36px; padding-top: 22px; border-top: 1px solid var(--line-2); }
+  .cover .bot .col { flex: 1 1 0; min-width: 0; padding-right: 24px; }
   .cover .bot .col + .col { padding-left: 24px; border-left: 1px solid var(--line); }
   .cover .bot .col .label { margin-bottom: 8px; }
   .cover .bot .col .val { font-family: var(--font-display); font-weight: 700; font-size: 16px; color: var(--ink); letter-spacing: 0.01em; text-transform: uppercase; }
@@ -108,8 +111,11 @@
   .summary h2 em { font-style: normal; font-weight: 300; color: var(--accent); text-transform: none; letter-spacing: -0.02em; }
   .summary .head-meta { text-align: right; font-family: var(--font-mono); font-size: 9.5px; color: var(--subtle); letter-spacing: 0.06em; }
 
-  .kpi-band { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0; border: 1px solid var(--line); margin-bottom: 14px; }
-  .kpi-band .kpi { padding: 11px 14px; border-left: 1px solid var(--line); }
+  /* Flex over grid (see note on .summary-body). 6 equal-flex children
+     fill 100% width regardless of intrinsic min-content; with grid we
+     were getting the rightmost KPI clipped at the page edge. */
+  .kpi-band { display: flex; flex-direction: row; border: 1px solid var(--line); margin-bottom: 14px; }
+  .kpi-band .kpi { flex: 1 1 0; min-width: 0; padding: 11px 14px; border-left: 1px solid var(--line); overflow: hidden; }
   .kpi-band .kpi:first-child { border-left: none; }
   .kpi .label { font-size: 8.5px; }
   .kpi .v { font-family: var(--font-display); font-weight: 700; font-size: 20px; letter-spacing: -0.01em; margin-top: 5px; color: var(--ink); font-variant-numeric: tabular-nums; }
@@ -121,7 +127,7 @@
      to stretch grid items to fill an explicit-height container, so we
      use plain flex everywhere with hard-coded inch values that add up
      to 5.55in. Two charts at ~2.65in each + 14px gap fits cleanly. */
-  .summary-body { display: flex; flex-direction: row; gap: 18px; height: 5.55in; }
+  .summary-body { display: flex; flex-direction: row; gap: 18px; width: 100%; height: 5.55in; }
   .summary-charts { flex: 1.55 1.55 0; display: flex; flex-direction: column; gap: 14px; min-width: 0; height: 5.55in; }
   .summary-chart { border: 1px solid var(--line); padding: 12px 14px 10px; display: flex; flex-direction: column; height: 2.65in; overflow: hidden; }
   .summary-chart .ttl { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
@@ -139,11 +145,17 @@
   /* Drop `flex: 1` from rows. With 9 projects and explicit container
      height, natural row sizing lets all rows fit without each one
      ballooning to fill the side. */
-  .proj-row { display: grid; grid-template-columns: 1fr 44px 44px 58px; gap: 8px; padding: 5px 14px; border-bottom: 1px solid var(--line); align-items: baseline; font-size: 10px; }
+  /* Flex (was grid: 1fr 44px 44px 58px). With grid the 1fr column
+     wasn't stretching, so the right-aligned numeric columns were
+     pushed past the sidebar's right edge. */
+  .proj-row { display: flex; flex-direction: row; gap: 8px; padding: 5px 14px; border-bottom: 1px solid var(--line); align-items: baseline; font-size: 10px; }
   .proj-row:last-child { border-bottom: none; }
+  .proj-row .pname-col { flex: 1 1 0; min-width: 0; overflow: hidden; }
   .proj-row .pname { color: var(--ink); font-weight: 500; line-height: 1.15; }
   .proj-row .pmeta { font-family: var(--font-mono); font-size: 8.5px; color: var(--subtle); margin-top: 1px; letter-spacing: 0.04em; }
-  .proj-row .num-cell { text-align: right; font-family: var(--font-display); font-weight: 700; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .proj-row .num-cell { text-align: right; font-family: var(--font-display); font-weight: 700; font-size: 12px; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+  .proj-row .num-cell.w44 { width: 44px; }
+  .proj-row .num-cell.w58 { width: 58px; }
   .proj-row .num-cell.accent { color: var(--accent); }
 
   /* Project pages */
@@ -158,7 +170,7 @@
      wasn't stretching grid rows to fill an explicit-height container,
      so cards collapsed to ~30px and clipped everything past the
      project name. Flex sizes cleanly with `flex: <ratio> <ratio> 0`. */
-  .pcard { height: 3.15in; display: flex; flex-direction: row; gap: 18px; padding: 14px 0; border-bottom: 1px solid var(--line); overflow: hidden; }
+  .pcard { width: 100%; height: 3.15in; display: flex; flex-direction: row; gap: 18px; padding: 14px 0; border-bottom: 1px solid var(--line); overflow: hidden; }
   .pcard .left  { flex: 1.4 1.4 0; min-width: 0; }
   .pcard .right { flex: 1 1 0;     min-width: 0; }
   .pcard:last-child { border-bottom: none; }
@@ -166,8 +178,10 @@
   .pcard .ph-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
   .pcard .ph-head .pname { font-family: var(--font-display); font-weight: 700; font-size: 16px; letter-spacing: -0.01em; text-transform: uppercase; }
   .pcard .ph-head .pmeta { font-family: var(--font-mono); font-size: 9px; color: var(--subtle); letter-spacing: 0.06em; }
-  .stat-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; margin-bottom: 10px; }
-  .stat-row .stat { padding: 6px 8px 6px 0; }
+  /* Flex over grid (see .summary-body note). 5 stats need to share the
+     left-column width evenly; grid was clipping the last (LP Equity). */
+  .stat-row { display: flex; flex-direction: row; margin-bottom: 10px; }
+  .stat-row .stat { flex: 1 1 0; min-width: 0; padding: 6px 8px 6px 0; overflow: hidden; }
   .stat-row .stat + .stat { border-left: 1px solid var(--line); padding-left: 10px; }
   .stat .l { font-family: var(--font-eyebrow); font-size: 8px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 500; color: var(--subtle); }
   .stat .v { font-family: var(--font-display); font-weight: 700; font-size: 15px; letter-spacing: -0.005em; margin-top: 3px; font-variant-numeric: tabular-nums; }
@@ -175,11 +189,16 @@
 
   /* Tightened density: the original 8.5px font + 4px padding overran
      the left-column width once the year range hit 22 cols. 7px font
-     + 2px padding fits the same 24 columns inside ~5.5in. */
+     + 2px padding fits the same 24 columns inside ~5.5in.
+     With table-layout: fixed every col gets equal width by default,
+     which clips long metric labels like "Total Distributions" — pin
+     col1 wider (and "Total" col2 a bit wider too) via <col>. */
   table.pcf { width: 100%; border-collapse: collapse; font-size: 7px; font-variant-numeric: tabular-nums; table-layout: fixed; }
-  table.pcf th { padding: 3px 2px; font-weight: 600; font-size: 6.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--subtle); border-bottom: 1px solid var(--line-2); text-align: right; white-space: nowrap; overflow: hidden; }
+  table.pcf col.col-metric { width: 78px; }
+  table.pcf col.col-total  { width: 36px; }
+  table.pcf th { padding: 3px 2px; font-weight: 600; font-size: 6.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--subtle); border-bottom: 1px solid var(--line-2); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: clip; }
   table.pcf th:first-child { text-align: left; padding-left: 0; }
-  table.pcf td { padding: 2px 2px; text-align: right; color: var(--muted); border-bottom: 1px solid var(--line); white-space: nowrap; font-feature-settings: 'tnum'; overflow: hidden; }
+  table.pcf td { padding: 2px 2px; text-align: right; color: var(--muted); border-bottom: 1px solid var(--line); white-space: nowrap; font-feature-settings: 'tnum'; overflow: hidden; text-overflow: clip; }
   table.pcf td:first-child { text-align: left; padding-left: 0; color: var(--ink); font-weight: 500; }
   table.pcf tr.hero td { color: var(--ink); font-weight: 600; border-top: 1px solid var(--line-2); padding-top: 4px; padding-bottom: 4px; }
   table.pcf tr.hero td:first-child { color: var(--accent); }
@@ -388,13 +407,13 @@
         <div class="proj-list">
           {% for p in projects_ranked %}
           <div class="proj-row">
-            <div>
+            <div class="pname-col">
               <div class="pname">{{ p.name }}</div>
               <div class="pmeta">VINTAGE {{ p.vintage }}</div>
             </div>
-            <div class="num-cell">{{ fmt_pct(p.irr) }}</div>
-            <div class="num-cell">{{ fmt_em(p.em) }}</div>
-            <div class="num-cell accent">${{ '%.1f'|format(p.profit / 1000) }}M</div>
+            <div class="num-cell w44">{{ fmt_pct(p.irr) }}</div>
+            <div class="num-cell w44">{{ fmt_em(p.em) }}</div>
+            <div class="num-cell w58 accent">${{ '%.1f'|format(p.profit / 1000) }}M</div>
           </div>
           {% endfor %}
         </div>
@@ -441,6 +460,11 @@
             <div class="stat"><div class="l">LP Equity</div><div class="v">{{ fmt_money_M(p.lp_equity) }}</div></div>
           </div>
           <table class="pcf">
+            <colgroup>
+              <col class="col-metric"/>
+              <col class="col-total"/>
+              {% for y in year_labels_short %}<col/>{% endfor %}
+            </colgroup>
             <thead>
               <tr>
                 <th>Metric</th>
