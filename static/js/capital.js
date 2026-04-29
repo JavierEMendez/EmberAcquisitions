@@ -123,8 +123,143 @@
     window.location.href = `/api/ember-capital/excel?view=${encodeURIComponent(view)}`;
   });
 
+  // ── Pipeline modal (manual entries) ──────────────────────────
+  initPipelineModal();
+
   // ── Commitments editor ──────────────────────────────────────
   initCommitmentsEditor();
+
+  function initPipelineModal() {
+    const modal      = $("#pipeline-modal");
+    const form       = $("#pipeline-form");
+    const titleEl    = $("#pipeline-modal-title");
+    const idInput    = form?.querySelector('input[name="id"]');
+    const statusEl   = $("#pipeline-modal-status");
+    const cancelBtn  = $("#pipeline-modal-cancel");
+    const closeBtn   = $("#pipeline-modal-close");
+    const addBtn     = $("#pipeline-add-btn");
+    const backdrop   = modal?.querySelector(".cap-modal-backdrop");
+    if (!modal || !form || !addBtn) return;
+
+    const open = () => {
+      modal.hidden = false;
+      // Focus the name field for instant typing
+      setTimeout(() => $('#pf-name', form)?.focus(), 0);
+    };
+    const close = () => {
+      modal.hidden = true;
+      statusEl.textContent = "";
+      statusEl.className = "modal-status";
+    };
+
+    const reset = () => {
+      form.reset();
+      idInput.value = "";
+      titleEl.textContent = "Add Pipeline Project";
+      // Clear all year inputs explicitly (form.reset doesn't always
+      // wipe inputs that started with no `value` attribute).
+      $$(".cf-grid input", form).forEach(i => { i.value = ""; });
+    };
+
+    const fillForm = (data) => {
+      reset();
+      titleEl.textContent = "Edit Pipeline Project";
+      idInput.value = data.id || "";
+      form.querySelector('[name="name"]').value         = data.name        || "";
+      form.querySelector('[name="location"]').value     = data.location    || "";
+      form.querySelector('[name="asset_class"]').value  = data.asset_class || "mpc-hub";
+      form.querySelector('[name="irr"]').value          = data.irr ?? "";
+      form.querySelector('[name="em"]').value           = data.em  ?? "";
+      const contribs = data.contributions_yearly || [];
+      const distribs = data.distributions_yearly || [];
+      $$('.cf-grid input[data-kind="contrib"]', form).forEach((inp, i) => {
+        inp.value = contribs[i] ? Math.abs(contribs[i]) : "";
+      });
+      $$('.cf-grid input[data-kind="dist"]', form).forEach((inp, i) => {
+        inp.value = distribs[i] || "";
+      });
+    };
+
+    addBtn.addEventListener("click", () => { reset(); open(); });
+    cancelBtn?.addEventListener("click", close);
+    closeBtn?.addEventListener("click", close);
+    backdrop?.addEventListener("click", close);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !modal.hidden) close();
+    });
+
+    // Edit / Delete buttons on each manual pipeline row
+    document.addEventListener("click", (e) => {
+      const editBtn = e.target.closest(".js-pipeline-edit");
+      const delBtn  = e.target.closest(".js-pipeline-del");
+      if (!editBtn && !delBtn) return;
+      const row = e.target.closest(".tr.grid-pipeline[data-manual-id]");
+      if (!row) return;
+      const manualId = row.dataset.manualId;
+      if (editBtn) {
+        try {
+          const data = JSON.parse(row.dataset.form || "{}");
+          data.id = manualId;
+          fillForm(data);
+          open();
+        } catch (err) { console.error("[capital] could not parse row data-form", err); }
+      } else if (delBtn) {
+        if (!confirm("Delete this pipeline project? This can't be undone.")) return;
+        fetch(`/api/ember-capital/pipeline/${encodeURIComponent(manualId)}`, { method: "DELETE" })
+          .then(r => { if (!r.ok) throw new Error(r.status); window.location.reload(); })
+          .catch(err => alert("Delete failed: " + err.message));
+      }
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const fd       = new FormData(form);
+      const id       = (fd.get("id") || "").toString();
+      // Collect year-by-year cashflow inputs into ordered arrays.
+      const contribs = [], distribs = [];
+      $$('.cf-grid input[data-kind="contrib"]', form).forEach(inp => {
+        contribs.push(parseFloat(inp.value || 0) || 0);
+      });
+      $$('.cf-grid input[data-kind="dist"]', form).forEach(inp => {
+        distribs.push(parseFloat(inp.value || 0) || 0);
+      });
+      const payload = {
+        name:                 (fd.get("name")        || "").toString().trim(),
+        location:             (fd.get("location")    || "").toString().trim(),
+        asset_class:          (fd.get("asset_class") || "mpc-hub").toString(),
+        irr:                  parseFloat(fd.get("irr") || 0) || 0,
+        em:                   parseFloat(fd.get("em")  || 0) || 0,
+        contributions_yearly: contribs,
+        distributions_yearly: distribs,
+      };
+      if (!payload.name) {
+        statusEl.textContent = "Project name is required";
+        statusEl.className = "modal-status error";
+        return;
+      }
+
+      const url = id
+        ? `/api/ember-capital/pipeline/${encodeURIComponent(id)}`
+        : `/api/ember-capital/pipeline`;
+      const method = id ? "PUT" : "POST";
+      statusEl.textContent = "Saving…";
+      statusEl.className = "modal-status";
+      try {
+        const res = await fetch(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error(`Save failed: ${res.status}`);
+        // Soft reload so the donut + pipeline table pick up the change.
+        window.location.reload();
+      } catch (err) {
+        console.error("[capital] pipeline save failed", err);
+        statusEl.textContent = "Save failed — see console";
+        statusEl.className = "modal-status error";
+      }
+    });
+  }
 
   function initCommitmentsEditor() {
     const root = $("#commitments-editor");

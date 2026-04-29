@@ -221,7 +221,144 @@
 .td.subtle { color: var(--cap-subtle); font-size: 11px; }
 
 .grid-active   { grid-template-columns: 1.7fr 1fr 90px 70px 90px 90px 90px; }
-.grid-pipeline { grid-template-columns: 1.5fr 1.4fr 92px 80px 80px 70px 70px 80px; }
+/* Pipeline grid: 9th column holds per-row actions on manual entries
+   (edit + delete). MPC Underwriting rows leave that cell empty. */
+.grid-pipeline { grid-template-columns: 1.4fr 1.3fr 84px 76px 76px 64px 64px 76px 56px; }
+
+.row-actions { display: inline-flex; align-items: center; gap: 4px; justify-content: flex-end; }
+.row-action-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px;
+  background: transparent;
+  border: 1px solid var(--cap-line);
+  border-radius: 5px;
+  color: var(--cap-subtle);
+  cursor: pointer; padding: 0;
+  font-size: 13px; line-height: 1;
+  transition: all .12s ease;
+}
+.row-action-btn:hover { color: var(--cap-accent); border-color: var(--cap-accent); }
+.row-action-btn.danger:hover { color: #C0311A; border-color: #C0311A; }
+
+.source-badge {
+  display: inline-block; margin-left: 6px;
+  padding: 1px 6px; border-radius: 999px;
+  background: var(--cap-bg-2); color: var(--cap-muted);
+  font-size: 9px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+}
+
+/* ── Pipeline modal ──────────────────────────────────────────── */
+.cap-modal {
+  position: fixed; inset: 0; z-index: 2000;
+  display: flex; align-items: center; justify-content: center;
+}
+.cap-modal[hidden] { display: none !important; }
+.cap-modal-backdrop {
+  position: absolute; inset: 0;
+  background: rgba(8, 35, 59, 0.45);
+  backdrop-filter: blur(2px);
+}
+.cap-modal-card {
+  position: relative;
+  background: var(--cap-surface);
+  border: 1px solid var(--cap-line-2);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(8, 35, 59, 0.30);
+  width: min(880px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.cap-modal-card header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--cap-line);
+}
+.cap-modal-card header h2 {
+  font-size: 18px; font-weight: 700;
+  color: var(--cap-ink); letter-spacing: -0.01em;
+}
+.cap-modal-close {
+  background: transparent; border: none;
+  color: var(--cap-muted); cursor: pointer;
+  font-size: 22px; line-height: 1;
+  padding: 4px 8px; border-radius: 6px;
+}
+.cap-modal-close:hover { color: var(--cap-ink); background: var(--cap-bg-2); }
+.cap-modal-body   { padding: 18px 22px; overflow-y: auto; }
+.cap-modal-footer {
+  display: flex; justify-content: flex-end; align-items: center; gap: 8px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--cap-line);
+  background: var(--cap-bg-2);
+}
+
+.form-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.form-row label {
+  font-size: 9.5px; letter-spacing: 0.16em;
+  text-transform: uppercase; font-weight: 600; color: var(--cap-muted);
+}
+.form-row input, .form-row select {
+  background: var(--cap-bg-2);
+  border: 1px solid var(--cap-line);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px; color: var(--cap-ink);
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.form-row input:focus, .form-row select:focus {
+  outline: none;
+  border-color: var(--cap-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cap-accent) 15%, transparent);
+}
+.form-row.split { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.form-row.split > div { display: flex; flex-direction: column; gap: 4px; }
+
+.cf-section-title {
+  font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+  font-weight: 600; color: var(--cap-ink); margin: 14px 0 4px;
+}
+.cf-section-sub  { font-size: 11px; color: var(--cap-muted); margin-bottom: 10px; }
+.cf-grid {
+  display: grid;
+  grid-template-columns: 60px 1fr 1fr;
+  gap: 6px 10px;
+  align-items: center;
+}
+.cf-grid .cf-h {
+  font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase;
+  font-weight: 600; color: var(--cap-subtle);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--cap-line);
+  margin-bottom: 4px;
+}
+.cf-grid .cf-h.right { text-align: right; }
+.cf-grid .cf-year { font-size: 11px; color: var(--cap-muted); font-family: ui-monospace, monospace; }
+.cf-grid input {
+  background: var(--cap-bg-2);
+  border: 1px solid var(--cap-line);
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-size: 12px; color: var(--cap-ink);
+  font-family: ui-monospace, monospace;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  width: 100%; box-sizing: border-box;
+}
+.cf-grid input::-webkit-outer-spin-button,
+.cf-grid input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.cf-grid input[type="number"] { -moz-appearance: textfield; }
+.cf-grid input:focus {
+  outline: none;
+  border-color: var(--cap-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--cap-accent) 15%, transparent);
+}
+
+.modal-status { font-size: 11px; color: var(--cap-muted); margin-right: auto; align-self: center; }
+.modal-status.error { color: #C0311A; }
+.modal-status.saved { color: var(--cap-good); }
 
 /* ── Asset-class chip ────────────────────────────────────────── */
 .class-chip {

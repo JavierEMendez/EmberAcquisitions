@@ -1306,6 +1306,54 @@ def _build_capital_view_context() -> dict:
         })
     cur.close(); conn.close()
 
+    # Manual pipeline entries — speculative deals the user typed in directly.
+    # These coexist with the live MPC underwriting rows in the same Pipeline
+    # table; we tag them with a `source: 'manual'` flag so the UI can show
+    # an Edit/Delete affordance and skip the asset-class chip dropdown
+    # (it's edited via the modal instead).
+    manual_blob = _capital_load_manual_pipeline()
+    for mp in (manual_blob.get("projects") or []):
+        contribs = mp.get("contributions_yearly") or []
+        distribs = mp.get("distributions_yearly") or []
+        # Total upfront contribution = |sum(contributions)| in $K
+        contrib_total = sum(abs(c) for c in contribs)
+        land_k = int(round(contrib_total / 1000))
+        # Duration = first contribution year → last distribution year.
+        ystart = mp.get("years_start", _CAP_MANUAL_PIPELINE_YEAR_START)
+        first_idx = next((i for i, c in enumerate(contribs) if abs(c) > 0), None)
+        last_idx_d = next((i for i in range(len(distribs) - 1, -1, -1) if abs(distribs[i]) > 0), None)
+        last_idx_c = next((i for i in range(len(contribs) - 1, -1, -1) if abs(contribs[i]) > 0), None)
+        last_idx = max(last_idx_d if last_idx_d is not None else -1,
+                       last_idx_c if last_idx_c is not None else -1)
+        if first_idx is None or last_idx < 0:
+            dur_months = 0
+        else:
+            dur_months = (last_idx - first_idx + 1) * 12
+        pipeline.append({
+            "id":           f"manual_{mp.get('id', '')}",
+            "name":         mp.get("name", ""),
+            "address":      mp.get("location", ""),
+            "asset_class":  _class_for(mp.get("name") or "") or mp.get("asset_class", "mpc-hub"),
+            "land_price":   land_k,
+            "duration":     dur_months,
+            "gross_margin": 0.0,
+            "irr":          float(mp.get("irr") or 0),
+            "em":           float(mp.get("em")  or 0),
+            "updated":      (mp.get("updated_at") or "")[:10],
+            "source":       "manual",
+            "manual_id":    mp.get("id", ""),
+            # Pre-populate the year inputs in the edit modal
+            "_form": {
+                "name":                 mp.get("name", ""),
+                "location":             mp.get("location", ""),
+                "asset_class":          mp.get("asset_class", "mpc-hub"),
+                "irr":                  mp.get("irr") or 0,
+                "em":                   mp.get("em")  or 0,
+                "contributions_yearly": contribs,
+                "distributions_yearly": distribs,
+            },
+        })
+
     pipeline_land_total = sum(p["land_price"] for p in pipeline)
     weighted_irr = (sum(p["irr"] * p["land_price"] for p in pipeline) / pipeline_land_total
                     if pipeline_land_total else 0.0)
@@ -1333,11 +1381,14 @@ def _build_capital_view_context() -> dict:
             remaining -= use
 
     quarter = (today.month - 1) // 3 + 1
+    pipeline_year_range = list(range(_CAP_MANUAL_PIPELINE_YEAR_START,
+                                     _CAP_MANUAL_PIPELINE_YEAR_END + 1))
     return {
         "as_of":         f"Q{quarter} {current_year}",
         "asset_classes": _CAP_ASSET_CLASSES,
         "active":        active,
         "pipeline":      pipeline,
+        "pipeline_year_range": pipeline_year_range,
         "returns": {
             "years":        years_str,
             "current_year": cur_year_str,
@@ -1442,6 +1493,144 @@ def update_project_asset_class(project_id):
 
     _capital_save_asset_class(project_name, new_cls)
     return jsonify({"id": project_id, "name": project_name, "asset_class": new_cls})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Manual pipeline projects — for forecast/placeholder deals that aren't yet
+# in MPC Underwriting. Stored as a single reports[ember_capital_pipeline_manual]
+# blob with shape {"projects": [{id, name, location, asset_class, irr, em,
+# years_start, contributions_yearly, distributions_yearly, created_at,
+# updated_at}]}. Dollar amounts are raw $ (not $K) — the data shaper rolls
+# them into $K before they hit the Pipeline table to match MPC rows.
+# ─────────────────────────────────────────────────────────────────────────────
+_CAP_MANUAL_PIPELINE_YEAR_START = 2024
+_CAP_MANUAL_PIPELINE_YEAR_END   = 2039  # inclusive
+_CAP_MANUAL_PIPELINE_N_YEARS    = _CAP_MANUAL_PIPELINE_YEAR_END - _CAP_MANUAL_PIPELINE_YEAR_START + 1
+
+
+def _capital_load_manual_pipeline() -> dict:
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "SELECT data FROM reports WHERE report_type = 'ember_capital_pipeline_manual' "
+        "ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    row = cur.fetchone(); cur.close(); conn.close()
+    d = (row["data"] if row else None) or {}
+    return d if isinstance(d, dict) and "projects" in d else {"projects": []}
+
+
+def _capital_save_manual_pipeline(data: dict) -> None:
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM reports WHERE report_type = 'ember_capital_pipeline_manual'")
+    cur.execute(
+        "INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+        ("ember_capital_pipeline_manual", json.dumps(data), session.get("user_id")),
+    )
+    conn.commit(); cur.close(); conn.close()
+
+
+def _clean_manual_pipeline_project(body: dict) -> dict | None:
+    """Validate + coerce a manual-pipeline payload. Returns None on bad input.
+
+    Year arrays are padded/truncated to N_YEARS so the data shape stays
+    consistent regardless of which years the form posted.
+    """
+    if not isinstance(body, dict):
+        return None
+    name = (body.get("name") or "").strip()
+    if not name:
+        return None
+
+    asset_class = body.get("asset_class") or "mpc-hub"
+    if asset_class not in _CAP_VALID_CLASSES:
+        asset_class = "mpc-hub"
+
+    def _f(v):
+        try: return float(v or 0)
+        except (TypeError, ValueError): return 0.0
+
+    def _arr(v):
+        out = []
+        for x in (v or []):
+            try: out.append(float(x or 0))
+            except (TypeError, ValueError): out.append(0.0)
+        # pad / truncate to N_YEARS
+        if len(out) < _CAP_MANUAL_PIPELINE_N_YEARS:
+            out += [0.0] * (_CAP_MANUAL_PIPELINE_N_YEARS - len(out))
+        return out[:_CAP_MANUAL_PIPELINE_N_YEARS]
+
+    return {
+        "name":                 name,
+        "location":             (body.get("location") or "").strip(),
+        "asset_class":          asset_class,
+        "irr":                  round(_f(body.get("irr")), 1),
+        "em":                   round(_f(body.get("em")),  2),
+        "years_start":          _CAP_MANUAL_PIPELINE_YEAR_START,
+        "contributions_yearly": _arr(body.get("contributions_yearly")),
+        "distributions_yearly": _arr(body.get("distributions_yearly")),
+    }
+
+
+@app.route("/api/ember-capital/pipeline", methods=["GET", "POST"])
+@login_required
+def ember_capital_manual_pipeline():
+    """List or create manual pipeline projects."""
+    if request.method == "GET":
+        return jsonify(_capital_load_manual_pipeline())
+
+    body = request.get_json(silent=True) or {}
+    proj = _clean_manual_pipeline_project(body)
+    if not proj:
+        return jsonify({"error": "invalid project"}), 400
+
+    data = _capital_load_manual_pipeline()
+    projects = list(data.get("projects") or [])
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    proj["id"]         = f"{_capital_slug(proj['name'])}-{int(datetime.datetime.now().timestamp())}"
+    proj["created_at"] = now
+    proj["updated_at"] = now
+    projects.append(proj)
+    _capital_save_manual_pipeline({"projects": projects})
+
+    # Layer in the asset class assignment so the donut + chip stay in sync
+    # with the Active/Returns side of the page.
+    _capital_save_asset_class(proj["name"], proj["asset_class"])
+
+    return jsonify({"ok": True, "project": proj})
+
+
+@app.route("/api/ember-capital/pipeline/<pid>", methods=["PUT", "DELETE"])
+@login_required
+def ember_capital_manual_pipeline_one(pid):
+    data = _capital_load_manual_pipeline()
+    projects = list(data.get("projects") or [])
+
+    if request.method == "DELETE":
+        new_list = [p for p in projects if p.get("id") != pid]
+        if len(new_list) == len(projects):
+            return jsonify({"error": "not found"}), 404
+        _capital_save_manual_pipeline({"projects": new_list})
+        return jsonify({"ok": True})
+
+    body = request.get_json(silent=True) or {}
+    cleaned = _clean_manual_pipeline_project(body)
+    if not cleaned:
+        return jsonify({"error": "invalid project"}), 400
+
+    found = False
+    for i, p in enumerate(projects):
+        if p.get("id") == pid:
+            cleaned["id"]         = pid
+            cleaned["created_at"] = p.get("created_at") or datetime.datetime.now().isoformat(timespec="seconds")
+            cleaned["updated_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+            projects[i] = cleaned
+            found = True
+            break
+    if not found:
+        return jsonify({"error": "not found"}), 404
+    _capital_save_manual_pipeline({"projects": projects})
+    _capital_save_asset_class(cleaned["name"], cleaned["asset_class"])
+    return jsonify({"ok": True, "project": cleaned})
 
 
 @app.route("/api/ember-capital/excel", methods=["GET"])

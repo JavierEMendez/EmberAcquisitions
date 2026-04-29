@@ -307,10 +307,13 @@
 
       {# ── VIEW: PIPELINE ─────────────────────────────────────── #}
       <section class="view view-pipeline" data-view="pipeline" hidden>
-        <header class="sec-head">
-          <div class="eyebrow">Live · MPC Underwriting</div>
-          <h2>Pipeline</h2>
-          <p>{{ capital.kpis.pipeline_count }} active opportunities · {{ fmt_money(capital.kpis.pipeline_land) }} land cost.</p>
+        <header class="sec-head" style="display:flex;align-items:flex-end;justify-content:space-between;gap:18px;flex-wrap:wrap;">
+          <div>
+            <div class="eyebrow">Live · MPC Underwriting + manual entries</div>
+            <h2>Pipeline</h2>
+            <p>{{ capital.kpis.pipeline_count }} active opportunities · {{ fmt_money(capital.kpis.pipeline_land) }} land cost.</p>
+          </div>
+          <button class="btn primary" id="pipeline-add-btn" type="button">+ Add Pipeline Project</button>
         </header>
 
         <div class="kpi-band kpi-band--5">
@@ -351,24 +354,36 @@
             <div class="th right">IRR</div>
             <div class="th right">EM</div>
             <div class="th right">Updated</div>
+            <div class="th right"></div>
           </div>
           {% for p in capital.pipeline %}
-          <div class="tr grid-pipeline" data-project-id="{{ p.id }}">
+          <div class="tr grid-pipeline" data-project-id="{{ p.id }}"
+               {% if p.source == 'manual' %}data-manual-id="{{ p.manual_id }}" data-form='{{ p._form|tojson }}'{% endif %}>
             <div class="td">
-              <div class="name">{{ p.name }}</div>
+              <div class="name">
+                {{ p.name }}{% if p.source == 'manual' %}<span class="source-badge">Manual</span>{% endif %}
+              </div>
               <div style="margin-top:3px">{{ class_chip(p.asset_class, capital.asset_classes) }}</div>
             </div>
             <div class="td muted">{{ p.address or '—' }}</div>
             <div class="td right num">{{ fmt_money(p.land_price) }}</div>
             <div class="td right num muted">{{ fmt_months(p.duration) }}</div>
-            <div class="td right num">{{ fmt_pct_dec(p.gross_margin) }}</div>
+            <div class="td right num">{% if p.source == 'manual' %}<span class="zero">—</span>{% else %}{{ fmt_pct_dec(p.gross_margin) }}{% endif %}</div>
             <div class="td right num accent">{{ fmt_pct(p.irr) }}</div>
             <div class="td right num">{{ fmt_em(p.em) }}</div>
             <div class="td right num subtle">{{ p.updated }}</div>
+            <div class="td right">
+              {% if p.source == 'manual' %}
+              <span class="row-actions">
+                <button type="button" class="row-action-btn js-pipeline-edit"   title="Edit"   aria-label="Edit project">✎</button>
+                <button type="button" class="row-action-btn danger js-pipeline-del" title="Delete" aria-label="Delete project">×</button>
+              </span>
+              {% endif %}
+            </div>
           </div>
           {% endfor %}
           {% if not capital.pipeline %}
-            <div class="tr"><div class="td muted" style="grid-column:1/-1;text-align:center;padding:24px;">No active underwriting projects. Add one from MPC Underwriting and set status to "Active".</div></div>
+            <div class="tr"><div class="td muted" style="grid-column:1/-1;text-align:center;padding:24px;">No pipeline projects yet. Click <strong>+ Add Pipeline Project</strong> above to add a forecast manually, or set an MPC Underwriting project's status to "Active".</div></div>
           {% endif %}
         </div>
       </section>
@@ -591,6 +606,82 @@
 
   </div>{# /#main-content #}
 </div>{# /#app #}
+
+{# ──────────────────────────────────────────────────────────────────
+   Pipeline Add/Edit modal — name, location, asset class, IRR, EM,
+   plus a year-by-year cashflow grid (contribution + distribution per
+   year, raw $). Posts to /api/ember-capital/pipeline (POST = create,
+   PUT = update) and reloads the page on success so the table picks
+   up the new row.
+   ────────────────────────────────────────────────────────────────── #}
+<div id="pipeline-modal" class="cap-modal" hidden aria-modal="true" role="dialog" aria-labelledby="pipeline-modal-title">
+  <div class="cap-modal-backdrop"></div>
+  <div class="cap-modal-card">
+    <header>
+      <h2 id="pipeline-modal-title">Add Pipeline Project</h2>
+      <button type="button" class="cap-modal-close" id="pipeline-modal-close" aria-label="Close">×</button>
+    </header>
+    <form id="pipeline-form" autocomplete="off">
+      <div class="cap-modal-body">
+        <input type="hidden" name="id" value=""/>
+
+        <div class="form-row">
+          <label for="pf-name">Project Name</label>
+          <input type="text" id="pf-name" name="name" required placeholder="e.g. Falls Crossing"/>
+        </div>
+
+        <div class="form-row split">
+          <div>
+            <label for="pf-location">Location</label>
+            <input type="text" id="pf-location" name="location" placeholder="City, State"/>
+          </div>
+          <div>
+            <label for="pf-asset-class">Asset Class</label>
+            <select id="pf-asset-class" name="asset_class">
+              {% for c in capital.asset_classes %}
+              <option value="{{ c.id }}">{{ c.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label for="pf-irr">LP IRR (%)</label>
+            <input type="number" id="pf-irr" name="irr" step="0.1" placeholder="0.0"/>
+          </div>
+        </div>
+
+        <div class="form-row split" style="grid-template-columns:1fr 1fr;max-width:50%;">
+          <div>
+            <label for="pf-em">Equity Multiple (×)</label>
+            <input type="number" id="pf-em" name="em" step="0.01" placeholder="0.00"/>
+          </div>
+        </div>
+
+        <div class="cf-section-title">Yearly Cashflows ($, raw dollars)</div>
+        <div class="cf-section-sub">
+          Enter contributions as positive amounts (we'll treat them as inflows from LP).
+          Distributions are payouts back to LPs. Leave blanks for years with no activity.
+        </div>
+
+        <div class="cf-grid" id="pf-cashflow-grid">
+          <div class="cf-h">Year</div>
+          <div class="cf-h right">Contribution ($)</div>
+          <div class="cf-h right">Distribution ($)</div>
+          {% for y in capital.pipeline_year_range %}
+          <div class="cf-year">{{ y }}</div>
+          <input type="number" name="contrib_{{ y }}" min="0" step="1000" placeholder="0" data-year="{{ y }}" data-kind="contrib"/>
+          <input type="number" name="dist_{{ y }}"    min="0" step="1000" placeholder="0" data-year="{{ y }}" data-kind="dist"/>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="cap-modal-footer">
+        <span class="modal-status" id="pipeline-modal-status"></span>
+        <button type="button" class="btn ghost"   id="pipeline-modal-cancel">Cancel</button>
+        <button type="submit"  class="btn primary" id="pipeline-modal-save">Save Project</button>
+      </div>
+    </form>
+  </div>
+</div>
 
 {# Bootstrap config — patchUrl points at our app endpoint. #}
 <script>
