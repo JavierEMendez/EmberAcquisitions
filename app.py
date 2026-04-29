@@ -1318,17 +1318,23 @@ def _build_capital_view_context() -> dict:
         # Total upfront contribution = |sum(contributions)| in $K
         contrib_total = sum(abs(c) for c in contribs)
         land_k = int(round(contrib_total / 1000))
-        # Duration = first contribution year → last distribution year.
-        ystart = mp.get("years_start", _CAP_MANUAL_PIPELINE_YEAR_START)
-        first_idx = next((i for i, c in enumerate(contribs) if abs(c) > 0), None)
-        last_idx_d = next((i for i in range(len(distribs) - 1, -1, -1) if abs(distribs[i]) > 0), None)
-        last_idx_c = next((i for i in range(len(contribs) - 1, -1, -1) if abs(contribs[i]) > 0), None)
-        last_idx = max(last_idx_d if last_idx_d is not None else -1,
-                       last_idx_c if last_idx_c is not None else -1)
-        if first_idx is None or last_idx < 0:
+        # Duration = gap from FIRST contribution year to LAST distribution
+        # year, in months. Trailing-only contributions don't extend the
+        # span; a project's life ends when capital stops coming back. If
+        # there are no distributions yet, duration is 0 (capital still at
+        # work, no full life span to report).
+        first_contrib_idx = next(
+            (i for i, c in enumerate(contribs) if abs(c) > 0),
+            None,
+        )
+        last_dist_idx = next(
+            (i for i in range(len(distribs) - 1, -1, -1) if abs(distribs[i]) > 0),
+            None,
+        )
+        if first_contrib_idx is None or last_dist_idx is None or last_dist_idx < first_contrib_idx:
             dur_months = 0
         else:
-            dur_months = (last_idx - first_idx + 1) * 12
+            dur_months = (last_dist_idx - first_contrib_idx + 1) * 12
         pipeline.append({
             "id":           f"manual_{mp.get('id', '')}",
             "name":         mp.get("name", ""),
