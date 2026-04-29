@@ -1319,10 +1319,13 @@ def _build_capital_view_context() -> dict:
         contrib_total = sum(abs(c) for c in contribs)
         land_k = int(round(contrib_total / 1000))
         # Duration = gap from FIRST contribution year to LAST distribution
-        # year, in months. Trailing-only contributions don't extend the
+        # year, in months. We use the year DIFFERENCE (not inclusive
+        # count): contribute in 2026 + last distribution in 2029 = 3y
+        # life, not 4y. Trailing-only contributions don't extend the
         # span; a project's life ends when capital stops coming back. If
-        # there are no distributions yet, duration is 0 (capital still at
-        # work, no full life span to report).
+        # there are no distributions yet, duration is 0 (capital still
+        # at work, no full life span to report). Same-year contribute +
+        # distribute floors at 12mo so we don't render "0mo".
         first_contrib_idx = next(
             (i for i, c in enumerate(contribs) if abs(c) > 0),
             None,
@@ -1334,7 +1337,7 @@ def _build_capital_view_context() -> dict:
         if first_contrib_idx is None or last_dist_idx is None or last_dist_idx < first_contrib_idx:
             dur_months = 0
         else:
-            dur_months = (last_dist_idx - first_contrib_idx + 1) * 12
+            dur_months = max(12, (last_dist_idx - first_contrib_idx) * 12)
         pipeline.append({
             "id":           f"manual_{mp.get('id', '')}",
             "name":         mp.get("name", ""),
