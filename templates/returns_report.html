@@ -1,8 +1,26 @@
 {# ============================================================
-   Project Returns — printable HTML report (Jinja template)
-   Server renders this with context from report.build_context().
-   WeasyPrint converts it to PDF.
-   Visual ground truth: _design_reference/Returns Report.html
+   Project Returns — printable HTML report (Jinja template).
+   Ground truth: the 18-page handoff PDF
+   "retruns report template.pdf" (8 pages × 2 tones).
+   Rendered by WeasyPrint at 11in × 8.5in landscape.
+
+   Layout strategy
+   ---------------
+   • All multi-column blocks use display: table + table-layout: fixed.
+     WeasyPrint's flex stretching is unreliable for our column counts
+     (6 KPIs, 5 stats, 3 period cols, 2 chart panels, 7+ table years);
+     tables are bulletproof for "share width evenly".
+   • Vertical sizing on summary + project bodies uses explicit inches
+     so a missing image / chart never collapses the row to 0.
+   • Cover uses absolute positioning (not column flex) so the title
+     block sits at the bottom of the page reliably.
+
+   Tones
+   -----
+   • institutional (Tone 1): h1/h2 fully uppercase + bold; emphasis
+     word colored accent.
+   • editorial (Tone 2): h1/h2 mixed-case light weight on the lead
+     phrase + uppercase bold accent on the emphasis word.
    ============================================================ #}
 <!doctype html>
 <html lang="en">
@@ -10,300 +28,722 @@
 <meta charset="utf-8"/>
 <title>Ember · Project Returns Report — {{ period_label }}</title>
 <style>
-  /* Brand fonts — read from disk by app.py's _weasyprint_local_fetcher().
-
-     HelveticaNeue Brand + Gotham are the handoff template's spec but
-     they're commercial (Linotype / Hoefler) so we don't ship them. If
-     license-purchased copies are dropped into /static/fonts/ later,
-     these @font-face declarations pick them up automatically and they
-     take precedence over Plus Jakarta Sans in the family chain. */
+  /* ---------- Fonts ---------- */
+  /* HelveticaNeue / Gotham are the design spec but commercial; if the
+     license is purchased and the files dropped into /static/fonts/
+     they take precedence over Plus Jakarta Sans below. Until then,
+     Plus Jakarta Sans (open license, bundled) is the brand fallback. */
   @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-Bold.ttf") format("truetype"); font-weight: 700; }
   @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-CondensedBold.ttf") format("truetype"); font-weight: 800; }
   @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-Light.ttf") format("truetype"); font-weight: 300; }
   @font-face { font-family: "Gotham"; src: url("/static/fonts/Gotham-Medium.otf") format("opentype"); font-weight: 500; }
 
-  /* Plus Jakarta Sans — the brand's free, open-licensed alternative
-     used everywhere else on the site. Bundled in /static/fonts/ so the
-     PDF always has real branded type even when HelveticaNeue/Gotham
-     are missing. Same weights the template uses (300/500/700/800). */
   @font-face { font-family: "Plus Jakarta Sans"; src: url("/static/fonts/PlusJakartaSans-Light.ttf")     format("truetype"); font-weight: 300; }
   @font-face { font-family: "Plus Jakarta Sans"; src: url("/static/fonts/PlusJakartaSans-Medium.ttf")    format("truetype"); font-weight: 500; }
   @font-face { font-family: "Plus Jakarta Sans"; src: url("/static/fonts/PlusJakartaSans-Bold.ttf")      format("truetype"); font-weight: 700; }
   @font-face { font-family: "Plus Jakarta Sans"; src: url("/static/fonts/PlusJakartaSans-ExtraBold.ttf") format("truetype"); font-weight: 800; }
 
   :root {
-    --paper: #FFFFFF;
-    --warm: #F8F4EE;
-    --ink: #08233B;
-    --ink-2: #13344E;
-    --muted: #5b6b7b;
-    --subtle: #97a3b0;
-    --line: rgba(8,35,59,0.10);
-    --line-2: rgba(8,35,59,0.20);
-    --line-3: rgba(8,35,59,0.35);
-    --accent: #F25929;
-    --good: #1F7A4D;
-    --bad: #C0311A;
+    --paper:   #FFFFFF;
+    --warm:    #F8F4EE;
+    --ink:     #08233B;   /* deep navy */
+    --ink-2:   #13344E;
+    --muted:   #5b6b7b;
+    --subtle:  #97a3b0;
+    --line:    rgba(8,35,59,0.10);
+    --line-2:  rgba(8,35,59,0.20);
+    --line-3:  rgba(8,35,59,0.32);
+    --accent:  #F25929;   /* Ember orange */
+    --accent-ed: #BF3F1F; /* deeper red for editorial tone */
+    --good:    #1F7A4D;
+    --bad:     #C0311A;
     --font-display: "HelveticaNeue Brand", "Plus Jakarta Sans", system-ui, sans-serif;
-    --font-sans: "Plus Jakarta Sans", system-ui, sans-serif;
-    --font-mono: "JetBrains Mono", ui-monospace, monospace;
+    --font-sans:    "Plus Jakarta Sans", system-ui, sans-serif;
+    --font-mono:    "JetBrains Mono", ui-monospace, monospace;
     --font-eyebrow: "Gotham", "Plus Jakarta Sans", system-ui, sans-serif;
   }
 
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { background: #fff; font-family: var(--font-sans); color: var(--ink); -webkit-font-smoothing: antialiased; }
+  @page { size: 11in 8.5in; margin: 0; }
 
-  /* Page chrome */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #fff; font-family: var(--font-sans); color: var(--ink); }
+
+  /* ---------- Page chrome ---------- */
   .page {
     width: 11in; height: 8.5in;
     background: var(--paper);
     position: relative;
     overflow: hidden;
     page-break-after: always;
-    color: var(--ink);
   }
   .page:last-child { page-break-after: auto; }
-  .page-pad { position: absolute; inset: 0; padding: 0.55in 0.65in 0.85in 0.65in; display: flex; flex-direction: column; }
 
-  /* Footer */
-  .page-foot {
-    position: absolute; left: 0.65in; right: 0.65in; bottom: 0.32in;
-    display: flex; justify-content: space-between; align-items: center;
-    padding-top: 10px; border-top: 1px solid var(--line);
-    font-family: var(--font-mono); font-size: 8.5px; letter-spacing: 0.06em; color: var(--subtle);
+  /* Body content area (everything except the page footer). */
+  .page-pad {
+    position: absolute;
+    left: 0.65in; right: 0.65in;
+    top: 0.55in;  bottom: 0.85in;
   }
-  .page-foot .l, .page-foot .c, .page-foot .r { display: flex; gap: 8px; align-items: center; }
-  .page-foot .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); display: inline-block; }
-  .page-foot .conf { font-weight: 600; color: var(--ink-2); letter-spacing: 0.18em; text-transform: uppercase; }
 
-  /* Type */
-  .num { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
-  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-  .eyebrow { font-family: var(--font-eyebrow); font-weight: 500; font-size: 9.5px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--accent); }
-  .label { font-family: var(--font-sans); font-weight: 600; font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--subtle); }
+  /* Page footer — single-row baseline at the bottom of every page. */
+  .page-foot {
+    position: absolute;
+    left: 0.65in; right: 0.65in;
+    bottom: 0.32in;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: var(--subtle);
+    letter-spacing: 0.06em;
+    display: table; table-layout: fixed; width: calc(100% - 1.3in);
+  }
+  .page-foot .l, .page-foot .c, .page-foot .r { display: table-cell; vertical-align: middle; }
+  .page-foot .c { text-align: center; }
+  .page-foot .r { text-align: right; }
+  .page-foot .conf {
+    font-weight: 700; color: var(--ink-2);
+    letter-spacing: 0.18em; text-transform: uppercase;
+    margin-right: 14px;
+  }
 
-  /* Cover — absolute positioning so .mid sits at the BOTTOM of the page
-     reliably. WeasyPrint wasn't stretching `.cover .mid { flex: 1 }` to
-     fill the column-flex parent, so `justify-content: flex-end` had no
-     space to push against and the title block stuck to the top. */
-  .cover .page-pad { padding: 0; display: block; }
-  .cover .top {
+  /* ---------- Type primitives ---------- */
+  .num   { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
+  .mono  { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .eyebrow {
+    font-family: var(--font-eyebrow);
+    font-weight: 500;
+    font-size: 10px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .label {
+    font-family: var(--font-eyebrow);
+    font-weight: 500;
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--subtle);
+  }
+  .hairline { width: 100%; height: 1px; background: var(--line-2); }
+
+  /* =================================================================
+     COVER PAGE
+     Absolute-positioned: title block sits at the bottom of the page
+     so the orange/navy headline reads against the empty top half.
+     ================================================================= */
+  .cover { color: var(--ink); }
+  .cover .top-row {
     position: absolute;
     top: 0.55in; left: 0.65in; right: 0.65in;
-    display: flex; justify-content: space-between; align-items: flex-start;
+    display: table; table-layout: fixed; width: calc(100% - 1.3in);
   }
+  .cover .top-row .l, .cover .top-row .r {
+    display: table-cell; vertical-align: top;
+  }
+  .cover .top-row .r { text-align: right; }
   .cover .conf-stamp {
-    font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.18em; text-transform: uppercase;
-    color: var(--ink-2); padding: 6px 12px; border: 1px solid var(--line-2); border-radius: 999px;
-    display: inline-flex; gap: 8px; align-items: center;
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    padding: 6px 14px;
+    border: 1px solid var(--line-2);
+    border-radius: 999px;
   }
-  .cover .conf-stamp::before { content: ""; width: 6px; height: 6px; background: var(--accent); border-radius: 50%; display: inline-block; }
-  .cover .mid {
+  .cover .conf-stamp::before {
+    content: "";
+    width: 6px; height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .cover .title-block {
     position: absolute;
-    left: 0.65in; right: 0.65in; bottom: 0.95in;  /* clears the page footer (~0.65in tall) plus a small gap */
+    left: 0.65in; right: 0.65in;
+    bottom: 1.0in;  /* clear the page footer (~0.65in tall) plus gap */
   }
-  .cover h1 { font-family: var(--font-display); font-weight: 700; font-size: 84px; line-height: 0.94; letter-spacing: -0.025em; color: var(--ink); max-width: 9in; text-transform: uppercase; }
-  .cover h1 em { font-style: normal; font-weight: 300; color: var(--accent); }
-  .cover .lede { font-size: 14.5px; line-height: 1.55; color: var(--muted); margin-top: 28px; max-width: 6.4in; }
-  /* Display: table on the period row guarantees three equal columns even
-     when WeasyPrint flex stretching is flaky (same workaround used on
-     the KPI band and stat-row below). */
-  .cover .bot { display: table; table-layout: fixed; width: 100%; border-collapse: collapse; margin-top: 36px; padding-top: 22px; border-top: 1px solid var(--line-2); }
-  .cover .bot .col { display: table-cell; vertical-align: top; padding-right: 24px; }
-  .cover .bot .col + .col { padding-left: 24px; border-left: 1px solid var(--line); }
-  .cover .bot .col .label { margin-bottom: 8px; }
-  .cover .bot .col .val { font-family: var(--font-display); font-weight: 700; font-size: 16px; color: var(--ink); letter-spacing: 0.01em; text-transform: uppercase; }
-  .cover .bot .col .val.mono { font-family: var(--font-mono); font-weight: 500; font-size: 12.5px; letter-spacing: 0.04em; }
-  .cover .footnote { font-size: 9.5px; line-height: 1.5; color: var(--subtle); max-width: 6.4in; padding-top: 10px; }
+  .cover .title-block .eyebrow { margin-bottom: 14px; }
+  .cover h1 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 96px;
+    line-height: 0.94;
+    letter-spacing: -0.025em;
+    color: var(--ink);
+    text-transform: uppercase;
+  }
+  .cover h1 em {
+    font-style: normal;
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .cover .lede {
+    margin-top: 20px;
+    font-size: 14.5px;
+    line-height: 1.55;
+    color: var(--muted);
+    max-width: 7in;
+  }
+  .cover .rule {
+    margin: 20px 0 18px;
+    height: 1px; background: var(--line-2);
+  }
+  .cover .period-strip {
+    display: table; table-layout: fixed; width: 100%;
+  }
+  .cover .period-strip .col {
+    display: table-cell; vertical-align: top;
+    padding-right: 24px;
+  }
+  .cover .period-strip .col .label { margin-bottom: 8px; }
+  .cover .period-strip .col .val {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--ink);
+    letter-spacing: 0.01em;
+    text-transform: uppercase;
+  }
+  .cover .period-strip .col .val.mono {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+  }
+  .cover .footnote {
+    margin-top: 18px;
+    font-size: 9.5px;
+    line-height: 1.55;
+    color: var(--subtle);
+    max-width: 8.5in;
+  }
 
-  /* Summary */
-  .summary .head { display: flex; justify-content: space-between; align-items: flex-end; gap: 18px; padding-bottom: 12px; border-bottom: 1px solid var(--line-2); margin-bottom: 14px; }
-  .summary .head > div:first-child { flex: 1 1 auto; min-width: 0; }
-  .summary .head-meta { flex: 0 0 auto; text-align: right; font-family: var(--font-mono); font-size: 9.5px; color: var(--subtle); letter-spacing: 0.06em; white-space: nowrap; }
-  /* white-space: nowrap keeps "Portfolio Performance Summary." on one
-     row; the smaller font (was 26px) gives it the room to do that
-     even with the meta block on the right. */
-  .summary h2 { font-family: var(--font-display); font-weight: 700; font-size: 22px; letter-spacing: -0.015em; line-height: 1.04; text-transform: uppercase; white-space: nowrap; }
-  .summary h2 em { font-style: normal; font-weight: 300; color: var(--accent); text-transform: none; letter-spacing: -0.02em; }
+  /* =================================================================
+     SUMMARY PAGE
+     ================================================================= */
+  .summary .head {
+    display: table; table-layout: fixed; width: 100%;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--line-2);
+    margin-bottom: 18px;
+  }
+  .summary .head .l, .summary .head .r {
+    display: table-cell; vertical-align: bottom;
+  }
+  .summary .head .r {
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--subtle);
+    letter-spacing: 0.06em;
+    line-height: 1.45;
+  }
+  .summary h2 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 30px;
+    letter-spacing: -0.018em;
+    line-height: 1.04;
+    text-transform: uppercase;
+    margin-top: 6px;
+  }
+  .summary h2 em {
+    font-style: normal;
+    color: var(--accent);
+    font-weight: 700;
+  }
 
-  /* display: table+table-cell is the most reliable way in WeasyPrint
-     to get six equal-width columns spanning 100%. Flex with
-     `flex: 1 1 0` was leaving ~30% of the row blank on the right
-     because the items wouldn't grow past their flex-basis. */
-  .kpi-band { display: table; table-layout: fixed; width: 100%; border-collapse: collapse; border: 1px solid var(--line); margin-bottom: 12px; }
-  .kpi-band .kpi { display: table-cell; vertical-align: top; padding: 10px 14px; border-left: 1px solid var(--line); }
-  .kpi-band .kpi:first-child { border-left: none; }
-  .kpi .label { font-size: 8.5px; }
-  .kpi .v { font-family: var(--font-display); font-weight: 700; font-size: 20px; letter-spacing: -0.01em; margin-top: 5px; color: var(--ink); font-variant-numeric: tabular-nums; }
-  .kpi.accent .v { color: var(--accent); }
-  .kpi .s { font-size: 9px; color: var(--muted); margin-top: 2px; font-family: var(--font-sans); }
+  /* KPI band — 6 equal columns, no surrounding border. Just a hairline
+     above (provided by .head's border-bottom + the band's own
+     border-bottom) and below. Matches the template's airy treatment. */
+  .kpi-band {
+    display: table; table-layout: fixed; width: 100%;
+    border-bottom: 1px solid var(--line-2);
+    margin-bottom: 22px;
+  }
+  .kpi-band .kpi {
+    display: table-cell; vertical-align: top;
+    padding: 4px 16px 18px 0;
+  }
+  .kpi-band .kpi .l {
+    font-family: var(--font-eyebrow);
+    font-weight: 500;
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--subtle);
+    margin-bottom: 6px;
+  }
+  .kpi-band .kpi .v {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 26px;
+    letter-spacing: -0.012em;
+    color: var(--ink);
+    line-height: 1.05;
+    font-variant-numeric: tabular-nums;
+  }
+  .kpi-band .kpi.accent .v { color: var(--accent); }
+  .kpi-band .kpi .s {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
 
-  /* Layout note: every container in the summary body has an explicit
-     height that adds up to 5.0in. Page-pad content area is 7.1in tall
-     (8.5in page - 0.55in top pad - 0.85in bottom pad). Above the body:
-     head ≈ 0.85in + kpi-band ≈ 0.93in + margins ≈ 0.15in = ~1.93in.
-     That leaves ~5.17in for the body — capping at 5.0in keeps the
-     bottom chart's x-axis from colliding with the page footer. Two
-     charts at 2.43in each + 14px gap fits cleanly. */
-  .summary-body { display: flex; flex-direction: row; gap: 18px; width: 100%; height: 5.0in; }
-  .summary-charts { flex: 1.55 1.55 0; display: flex; flex-direction: column; gap: 14px; min-width: 0; height: 5.0in; }
-  .summary-chart { border: 1px solid var(--line); padding: 12px 14px 10px; display: flex; flex-direction: column; height: 2.43in; overflow: hidden; }
-  .summary-chart .ttl { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
-  .summary-chart .ttl .h { font-family: var(--font-display); font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.02em; }
-  .summary-chart .ttl .s { font-size: 10px; color: var(--subtle); font-family: var(--font-mono); letter-spacing: 0.04em; }
-  .summary-chart .chart-area { flex: 1; min-height: 0; display: flex; align-items: stretch; }
-  .summary-chart .chart-area svg { width: 100%; height: 100%; display: block; }
-  .summary-chart .chart-xaxis { display: flex; justify-content: space-between; margin-top: 4px; font-family: var(--font-mono); font-size: 8.5px; color: var(--subtle); letter-spacing: 0.08em; padding-left: 56px; }
+  /* Body of the summary page: 2 charts on the left, BY PROJECT on the
+     right. Total height capped so the bottom chart axis doesn't crash
+     into the page footer. */
+  .summary-body {
+    display: table; table-layout: fixed; width: 100%;
+    height: 4.95in;
+  }
+  .summary-body .charts-col,
+  .summary-body .side-col {
+    display: table-cell;
+    vertical-align: top;
+  }
+  .summary-body .charts-col { width: 60%; padding-right: 18px; }
+  .summary-body .side-col   { width: 40%; }
 
-  .summary-side { flex: 1 1 0; display: flex; flex-direction: column; gap: 0; border: 1px solid var(--line); padding: 0; height: 5.0in; overflow: hidden; min-width: 0; }
-  .summary-side .ttl { padding: 10px 14px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
-  .summary-side .ttl .h { font-family: var(--font-display); font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.02em; }
-  .summary-side .ttl .s { font-size: 9px; color: var(--subtle); font-family: var(--font-mono); margin-top: 2px; }
-  .proj-list { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-  /* Drop `flex: 1` from rows. With 9 projects and explicit container
-     height, natural row sizing lets all rows fit without each one
-     ballooning to fill the side. */
-  /* Flex (was grid: 1fr 44px 44px 58px). With grid the 1fr column
-     wasn't stretching, so the right-aligned numeric columns were
-     pushed past the sidebar's right edge. */
-  .proj-row { display: flex; flex-direction: row; gap: 8px; padding: 5px 14px; border-bottom: 1px solid var(--line); align-items: baseline; font-size: 10px; }
-  .proj-row:last-child { border-bottom: none; }
-  .proj-row .pname-col { flex: 1 1 0; min-width: 0; overflow: hidden; }
-  .proj-row .pname { color: var(--ink); font-weight: 500; line-height: 1.15; }
-  .proj-row .pmeta { font-family: var(--font-mono); font-size: 8.5px; color: var(--subtle); margin-top: 1px; letter-spacing: 0.04em; }
-  .proj-row .num-cell { text-align: right; font-family: var(--font-display); font-weight: 700; font-size: 12px; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
-  .proj-row .num-cell.w44 { width: 44px; }
-  .proj-row .num-cell.w58 { width: 58px; }
-  .proj-row .num-cell.accent { color: var(--accent); }
+  .chartbox {
+    border: 1px solid var(--line);
+    padding: 12px 14px 10px;
+  }
+  .chartbox .ttl {
+    display: table; table-layout: fixed; width: 100%;
+    margin-bottom: 8px;
+  }
+  .chartbox .ttl .h {
+    display: table-cell; vertical-align: bottom;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink);
+  }
+  .chartbox .ttl .h .sub {
+    display: block;
+    font-family: var(--font-sans);
+    font-weight: 400;
+    font-size: 9.5px;
+    color: var(--muted);
+    letter-spacing: 0;
+    text-transform: none;
+    margin-top: 3px;
+  }
+  .chartbox .ttl .s {
+    display: table-cell; vertical-align: bottom;
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: var(--subtle);
+    letter-spacing: 0.06em;
+  }
+  .chartbox .area { height: 1.85in; }
+  .chartbox .area svg { width: 100%; height: 100%; display: block; }
+  .chartbox .xaxis {
+    display: table; table-layout: fixed; width: 100%;
+    margin-top: 4px;
+    /* Match the SVG's pad_left (64 of 900 viewBox units = 7.1%) so the
+       year labels track the data area as the chartbox resizes. */
+    padding-left: 7.1%;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--subtle);
+    letter-spacing: 0.04em;
+  }
+  .chartbox .xaxis span {
+    display: table-cell;
+    text-align: center;
+  }
 
-  /* Project pages */
-  .projects-page { display: flex; flex-direction: column; }
-  .projects-page .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 18px; padding-bottom: 12px; border-bottom: 1px solid var(--line-2); margin-bottom: 18px; }
-  .projects-page .page-head > div:first-child { flex: 0 0 auto; min-width: 0; }
-  .projects-page .page-head .meta { flex: 1 1 auto; min-width: 0; text-align: right; font-family: var(--font-mono); font-size: 9.5px; color: var(--subtle); letter-spacing: 0.06em; }
-  /* Smaller h2 + nowrap so "Modeled returns by project." stays on one
-     line even with the project-name list to its right. */
-  .projects-page .page-head h2 { font-family: var(--font-display); font-weight: 700; font-size: 19px; letter-spacing: -0.015em; text-transform: uppercase; white-space: nowrap; }
-  .projects-page .page-head h2 em { font-style: normal; font-weight: 300; color: var(--accent); text-transform: none; letter-spacing: -0.02em; }
-  .projects-body { display: block; }
-  /* Cards use plain flex (rows) with explicit height. Earlier attempts
-     used CSS Grid (grid-template-columns: 1.4fr 1fr) but WeasyPrint
-     wasn't stretching grid rows to fill an explicit-height container,
-     so cards collapsed to ~30px and clipped everything past the
-     project name. Flex sizes cleanly with `flex: <ratio> <ratio> 0`. */
-  .pcard { width: 100%; height: 3.15in; display: flex; flex-direction: row; gap: 18px; padding: 14px 0; border-bottom: 1px solid var(--line); overflow: hidden; }
-  .pcard .left  { flex: 1.4 1.4 0; min-width: 0; }
-  .pcard .right { flex: 1 1 0;     min-width: 0; }
-  .pcard:last-child { border-bottom: none; }
-  .pcard .left, .pcard .right { display: flex; flex-direction: column; min-height: 0; }
-  .pcard .ph-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
-  .pcard .ph-head .pname { font-family: var(--font-display); font-weight: 700; font-size: 16px; letter-spacing: -0.01em; text-transform: uppercase; }
-  .pcard .ph-head .pmeta { font-family: var(--font-mono); font-size: 9px; color: var(--subtle); letter-spacing: 0.06em; }
-  /* display: table for guaranteed equal column distribution (same
-     reason as .kpi-band; flex `1 1 0` was leaving blank space on the
-     right). 5 stats share the left-column width evenly. */
-  .stat-row { display: table; table-layout: fixed; width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-  .stat-row .stat { display: table-cell; vertical-align: top; padding: 6px 8px 6px 0; }
-  .stat-row .stat + .stat { border-left: 1px solid var(--line); padding-left: 10px; }
-  .stat .l { font-family: var(--font-eyebrow); font-size: 8px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 500; color: var(--subtle); }
-  .stat .v { font-family: var(--font-display); font-weight: 700; font-size: 15px; letter-spacing: -0.005em; margin-top: 3px; font-variant-numeric: tabular-nums; }
-  .stat.accent .v { color: var(--accent); }
+  .summary-body .charts-col .chartbox + .chartbox { margin-top: 14px; }
 
-  /* Tightened density: the original 8.5px font + 4px padding overran
-     the left-column width once the year range hit 22 cols. 7px font
-     + 2px padding fits the same 24 columns inside ~5.5in.
-     With table-layout: fixed every col gets equal width by default,
-     which clips long metric labels like "Total Distributions" — pin
-     col1 wider (and "Total" col2 a bit wider too) via <col>. */
-  table.pcf { width: 100%; border-collapse: collapse; font-size: 7px; font-variant-numeric: tabular-nums; table-layout: fixed; }
-  table.pcf col.col-metric { width: 78px; }
-  table.pcf col.col-total  { width: 36px; }
-  table.pcf th { padding: 3px 2px; font-weight: 600; font-size: 6.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--subtle); border-bottom: 1px solid var(--line-2); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: clip; }
+  /* BY PROJECT panel — bordered card on the right of summary body. */
+  .by-project {
+    border: 1px solid var(--line);
+    height: 100%;
+  }
+  .by-project .hd {
+    padding: 12px 16px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  .by-project .hd .h {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink);
+  }
+  .by-project .hd .s {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: var(--subtle);
+    letter-spacing: 0.04em;
+    margin-top: 3px;
+  }
+  .by-project .row {
+    display: table; table-layout: fixed; width: 100%;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .by-project .row:last-child { border-bottom: none; }
+  .by-project .row > div { display: table-cell; vertical-align: top; }
+  .by-project .pname-col { width: 40%; }
+  .by-project .num-col   { width: 20%; text-align: right; vertical-align: middle !important; }
+  .by-project .pname { font-size: 11px; font-weight: 500; line-height: 1.2; color: var(--ink); }
+  .by-project .pmeta { font-family: var(--font-mono); font-size: 8.5px; color: var(--subtle); margin-top: 2px; letter-spacing: 0.04em; }
+  .by-project .num {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 12px;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .by-project .num.accent { color: var(--accent); }
+
+  /* =================================================================
+     PROJECT PAGES (2 cards stacked vertically, top + bottom)
+     ================================================================= */
+  .pp .head {
+    display: table; table-layout: fixed; width: 100%;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--line-2);
+    margin-bottom: 16px;
+  }
+  .pp .head .l, .pp .head .r { display: table-cell; vertical-align: bottom; }
+  .pp .head .r {
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--subtle);
+    letter-spacing: 0.04em;
+    line-height: 1.45;
+  }
+  .pp h2 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 26px;
+    letter-spacing: -0.018em;
+    line-height: 1.04;
+    text-transform: uppercase;
+    margin-top: 6px;
+  }
+  .pp h2 em {
+    font-style: normal;
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  .pcard {
+    display: table; table-layout: fixed; width: 100%;
+    padding: 16px 0 14px;
+    height: 3.05in;
+  }
+  .pcard.first { border-top: none; }
+  .pcard.second { border-top: 1px solid var(--line); }
+
+  .pcard .left,
+  .pcard .right {
+    display: table-cell; vertical-align: top;
+  }
+  .pcard .left  { width: 62%; padding-right: 26px; }
+  .pcard .right { width: 38%; }
+
+  /* Project header — name on the left, vintage chip on the far right */
+  .pcard .ph-head {
+    display: table; table-layout: fixed; width: 100%;
+    margin-bottom: 12px;
+  }
+  .pcard .ph-head .l, .pcard .ph-head .r { display: table-cell; vertical-align: bottom; }
+  .pcard .ph-head .r { text-align: right; }
+  .pcard .pname {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: -0.005em;
+    text-transform: uppercase;
+    color: var(--ink);
+  }
+  .pcard .psub {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 3px;
+  }
+  .pcard .vint {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--subtle);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  /* Stat row — 5 evenly-divided cells with a thin vertical separator. */
+  .pcard .stat-row {
+    display: table; table-layout: fixed; width: 100%;
+    margin-bottom: 12px;
+  }
+  .pcard .stat-row .stat {
+    display: table-cell; vertical-align: top;
+    padding: 0 12px 0 0;
+  }
+  .pcard .stat-row .stat + .stat {
+    padding-left: 14px;
+    border-left: 1px solid var(--line);
+  }
+  .pcard .stat .l {
+    font-family: var(--font-eyebrow);
+    font-size: 8px;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--subtle);
+  }
+  .pcard .stat .v {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 17px;
+    letter-spacing: -0.008em;
+    color: var(--ink);
+    margin-top: 3px;
+    font-variant-numeric: tabular-nums;
+  }
+  .pcard .stat.accent .v { color: var(--accent); }
+
+  /* Project cashflow table.
+     `colgroup` pins the Metric (label) column wider than the year cols
+     so labels like "Total Distributions" don't get clipped. */
+  table.pcf {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8px;
+    font-variant-numeric: tabular-nums;
+    table-layout: fixed;
+  }
+  table.pcf col.col-metric { width: 86px; }
+  table.pcf col.col-total  { width: 38px; }
+  table.pcf th {
+    padding: 4px 2px;
+    font-family: var(--font-eyebrow);
+    font-weight: 500;
+    font-size: 7px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--subtle);
+    border-bottom: 1px solid var(--line-2);
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+  }
   table.pcf th:first-child { text-align: left; padding-left: 0; }
-  table.pcf td { padding: 2px 2px; text-align: right; color: var(--muted); border-bottom: 1px solid var(--line); white-space: nowrap; font-feature-settings: 'tnum'; overflow: hidden; text-overflow: clip; }
-  table.pcf td:first-child { text-align: left; padding-left: 0; color: var(--ink); font-weight: 500; }
-  table.pcf tr.hero td { color: var(--ink); font-weight: 600; border-top: 1px solid var(--line-2); padding-top: 4px; padding-bottom: 4px; }
-  table.pcf tr.hero td:first-child { color: var(--accent); }
-  table.pcf tr.hero td.neg { color: var(--bad); }
-  table.pcf tr.hero td.pos { color: var(--accent); }
-  table.pcf tr.cum td { color: var(--ink); font-weight: 600; }
-  table.pcf tr.cum td.neg { color: var(--muted); }
+  table.pcf td {
+    padding: 3px 2px;
+    text-align: right;
+    color: var(--muted);
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  table.pcf td:first-child {
+    text-align: left; padding-left: 0;
+    color: var(--ink);
+    font-weight: 500;
+  }
+  table.pcf tr.net td {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  table.pcf tr.net td:first-child { color: var(--accent); }
+  table.pcf tr.cum td {
+    color: var(--ink);
+    font-weight: 600;
+    border-top: 1px solid var(--line-2);
+    padding-top: 4px;
+  }
+  table.pcf td.zero { color: var(--subtle); }
 
-  /* Explicit height in addition to aspect-ratio: WeasyPrint <65 doesn't
-     honor aspect-ratio on block elements, leading to a 0-height photo
-     box. Right column is ~3.4in wide so 16:7 -> 1.5in tall.
-     Background gradient acts as a frame when the image is contained
-     and doesn't fill the box edge-to-edge. */
-  .pcard .right .photo { width: 100%; height: 1.5in; aspect-ratio: 16 / 7; background: linear-gradient(135deg, #d8d2c5, #b6ad9c); position: relative; overflow: hidden; margin-bottom: 8px; flex-shrink: 0; }
-  .pcard .right .photo .ph-tag { position: absolute; left: 10px; bottom: 10px; background: rgba(8,35,59,0.85); color: #fff; padding: 4px 10px; border-radius: 999px; font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.08em; z-index: 1; }
-  .pcard .right .photo .ph-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: rgba(8,35,59,0.35); font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; }
-  /* object-fit: contain (was cover) — show the entire photo centered
-     in the frame instead of cropping to fill. The brown gradient
-     bleeds through where the image's aspect doesn't match 16:7,
-     which reads as an intentional warm matte rather than awkward. */
-  .pcard .right .photo img { width: 100%; height: 100%; object-fit: contain; object-position: center; display: block; }
-  .pcard .right .chartbox { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--line); padding: 10px 12px; }
-  .pcard .right .chartbox .ttl { display: flex; justify-content: space-between; align-items: baseline; }
-  .pcard .right .chartbox .ttl .h { font-family: var(--font-display); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.02em; }
-  .pcard .right .chartbox .ttl .s { font-size: 8.5px; color: var(--subtle); font-family: var(--font-mono); letter-spacing: 0.04em; }
-  .pcard .right .chartbox svg { width: 100%; flex: 1; min-height: 0; display: block; }
+  /* Right column — image area + chart box stacked vertically.
+     When a hero image is uploaded, it fills the area edge-to-edge.
+     When there's no image, we render the wireframe-style text labels
+     (matches the design template's placeholder treatment). */
+  .pcard .right .image-area {
+    margin-bottom: 10px;
+    height: 1.05in;
+    overflow: hidden;
+  }
+  .pcard .right .image-area.has-image { padding: 0; }
+  .pcard .right .image-area.no-image {
+    padding-top: 4px;
+  }
+  .pcard .right .image-area .img-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--subtle);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    line-height: 1.4;
+  }
+  .pcard .right .image-area .img-loc {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+    margin-top: 6px;
+  }
+  .pcard .right .image-area img {
+    width: 100%; height: 1.05in;
+    object-fit: cover; object-position: center;
+    display: block;
+  }
 
-  /* Appendix */
-  .appx h2 { font-family: var(--font-display); font-weight: 700; font-size: 22px; letter-spacing: -0.015em; text-transform: uppercase; }
-  .appx .sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
-  .appx .glossary { columns: 2; column-gap: 32px; margin-top: 18px; font-size: 11px; line-height: 1.55; color: var(--muted); }
-  .appx .glossary dt { font-family: var(--font-display); font-weight: 700; color: var(--ink); margin-top: 8px; text-transform: uppercase; font-size: 11px; letter-spacing: 0.01em; }
-  .appx .glossary dd { margin-bottom: 6px; }
-  .appx .disclaimer { margin-top: 22px; padding: 16px 20px; background: var(--warm); border-left: 3px solid var(--accent); font-size: 10.5px; line-height: 1.6; color: var(--muted); }
-  .appx .disclaimer .h { font-family: var(--font-sans); font-weight: 700; font-size: 9.5px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink); margin-bottom: 8px; }
+  .pcard .right .chartbox { padding: 10px 12px 8px; }
+  .pcard .right .chartbox .ttl .h { font-size: 10.5px; }
+  .pcard .right .chartbox .ttl .s { font-size: 9px; }
+  .pcard .right .chartbox .area { height: 0.95in; }
+  /* Card chart — no x-axis labels in the template; render the SVG
+     edge-to-edge with no axis row below. */
 
-  /* Editorial tone overrides */
-  .tone-editorial .cover { background: var(--ink); color: #fff; }
-  .tone-editorial .cover h1 { color: #fff; font-weight: 300; font-size: 96px; text-transform: none; letter-spacing: -0.025em; }
-  .tone-editorial .cover h1 em { color: #F57346; font-weight: 700; text-transform: uppercase; font-size: 0.92em; }
-  .tone-editorial .cover .lede { color: rgba(255,255,255,0.78); }
-  .tone-editorial .cover .conf-stamp { color: rgba(255,255,255,0.85); border-color: rgba(255,255,255,0.25); }
-  .tone-editorial .cover .bot { border-top-color: rgba(255,255,255,0.18); }
-  .tone-editorial .cover .bot .col + .col { border-left-color: rgba(255,255,255,0.10); }
-  .tone-editorial .cover .bot .col .label { color: rgba(255,255,255,0.5); }
-  .tone-editorial .cover .bot .col .val { color: #fff; }
-  .tone-editorial .cover .footnote { color: rgba(255,255,255,0.55); }
-  .tone-editorial .summary h2 { font-weight: 300; font-size: 24px; text-transform: none; letter-spacing: -0.02em; }
-  .tone-editorial .summary h2 em { font-style: normal; color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: -0.005em; }
-  .tone-editorial .kpi-band { border: none; border-top: 1px solid var(--line-3); border-bottom: 1px solid var(--line-3); }
-  .tone-editorial .kpi-band .kpi { border-left: 1px solid var(--line); padding: 14px 14px; }
-  .tone-editorial .kpi-band .kpi:first-child { border-left: none; padding-left: 0; }
-  .tone-editorial .kpi .v { font-size: 24px; font-weight: 700; }
-  .tone-editorial .summary-chart, .tone-editorial .summary-side { border: none; border-top: 1px solid var(--line-3); padding-top: 14px; }
-  .tone-editorial .summary-side .ttl { border-bottom-color: var(--line-2); padding-left: 0; padding-right: 0; }
-  .tone-editorial .projects-page .page-head h2 { font-weight: 300; font-size: 21px; text-transform: none; letter-spacing: -0.02em; }
-  .tone-editorial .projects-page .page-head h2 em { color: var(--accent); font-style: normal; font-weight: 700; text-transform: uppercase; }
-  .tone-editorial .pcard .ph-head .pname { font-weight: 700; font-size: 18px; text-transform: uppercase; letter-spacing: -0.005em; }
-  .tone-editorial .pcard .ph-head { border-bottom-color: var(--line-2); }
-  .tone-editorial .stat .v { font-size: 17px; font-weight: 700; }
+  /* =================================================================
+     APPENDIX
+     ================================================================= */
+  .appx h2 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 28px;
+    letter-spacing: -0.018em;
+    text-transform: uppercase;
+    color: var(--ink);
+    margin-top: 6px;
+  }
+  .appx h2 em {
+    font-style: normal;
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .appx .sub {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 6px;
+    margin-bottom: 22px;
+  }
+  .appx .glossary {
+    display: table; table-layout: fixed; width: 100%;
+    margin-bottom: 22px;
+  }
+  .appx .glossary .col { display: table-cell; vertical-align: top; padding-right: 32px; width: 50%; }
+  .appx .glossary dt {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink);
+    margin-top: 12px;
+  }
+  .appx .glossary dt:first-child { margin-top: 0; }
+  .appx .glossary dd {
+    font-size: 11px;
+    line-height: 1.55;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+  .appx .disclaimer {
+    margin-top: 14px;
+    padding: 16px 22px;
+    border-left: 3px solid var(--accent);
+    background: var(--warm);
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--muted);
+    max-width: 9.5in;
+  }
+  .appx .disclaimer .h {
+    font-family: var(--font-eyebrow);
+    font-weight: 500;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink);
+    margin-bottom: 8px;
+  }
 
-  @page { size: 11in 8.5in; margin: 0; }
+  /* =================================================================
+     EDITORIAL TONE (Tone 2) overrides
+     The "lead phrase" is mixed-case + lighter weight + neutral gray;
+     the emphasis word (wrapped in <em>) is the loud accent.
+     ================================================================= */
+  .tone-editorial { --accent: var(--accent-ed); }
+
+  .tone-editorial .cover h1 {
+    font-weight: 300;
+    text-transform: none;
+    color: var(--subtle);
+    letter-spacing: -0.03em;
+  }
+  .tone-editorial .cover h1 em {
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .tone-editorial .summary h2 {
+    text-transform: none;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+  }
+  .tone-editorial .summary h2 em {
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: -0.01em;
+  }
+
+  .tone-editorial .pp h2 {
+    text-transform: none;
+    font-weight: 400;
+    letter-spacing: -0.018em;
+  }
+  .tone-editorial .pp h2 em {
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .tone-editorial .appx h2 {
+    text-transform: none;
+    font-weight: 400;
+  }
+  .tone-editorial .appx h2 em {
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--accent);
+  }
 </style>
 </head>
 <body class="{{ tone_class }}">
 
-{% set ember_mark_color = '#F57346' if tone == 'editorial' else '#F25929' %}
+{% set ember_mark_color = 'var(--accent-ed)' if tone == 'editorial' else 'var(--accent)' %}
 
-{# ---------- macros ---------- #}
+{# ---------------- Macros ---------------- #}
 
 {% macro page_footer(page_num) %}
-  <div class="page-foot">
-    <div class="l">
-      <span class="conf">Confidential</span><span class="dot"></span><span>{{ period_short }}</span>
-    </div>
-    <div class="c">Prepared by Ember Finance &amp; Analytics</div>
-    <div class="r"><span class="num mono">{{ "%02d"|format(page_num) }} / {{ "%02d"|format(total_pages) }}</span></div>
-  </div>
+<div class="page-foot">
+  <div class="l"><span class="conf">Confidential</span><span>{{ period_short }}</span></div>
+  <div class="c">Prepared by Ember Finance &amp; Analytics</div>
+  <div class="r">{{ "%02d"|format(page_num) }} / {{ "%02d"|format(total_pages) }}</div>
+</div>
 {% endmacro %}
 
 {% macro ember_mark() %}
-<svg width="38" height="38" viewBox="0 0 36 36" fill="none">
-  <g fill="{{ ember_mark_color }}">
+<svg width="38" height="38" viewBox="0 0 36 36" fill="none" aria-hidden="true">
+  <g fill="{{ '#BF3F1F' if tone == 'editorial' else '#F25929' }}">
     <rect x="2"  y="20" width="3.5" height="14" rx="0.5"/>
     <rect x="8"  y="14" width="3.5" height="20" rx="0.5"/>
     <rect x="14" y="6"  width="3.5" height="28" rx="0.5"/>
@@ -313,135 +753,140 @@
 </svg>
 {% endmacro %}
 
-{# ---------- Page 1 — Cover ---------- #}
+{# Choose between em-dash for zero values and the formatted number. #}
+{% macro pcf_num(v) -%}
+  {% if v is not none and v|round(0) != 0 -%}
+    {{ fmt_int(v) }}
+  {%- else -%}
+    <span class="zero">—</span>
+  {%- endif %}
+{%- endmacro %}
+
+
+{# ---------------- Page 1 — COVER ---------------- #}
 <div class="page cover">
-  <div class="page-pad">
-    <div class="top">
-      {{ ember_mark() }}
-      <div class="conf-stamp">Confidential · For Executive Review</div>
-    </div>
-    <div class="mid">
-      <div class="eyebrow" style="margin-bottom: 18px;{% if tone == 'editorial' %} color: #F57346;{% endif %}">
-        {{ period_label }} · Project Returns Report
-      </div>
-      <h1>Consolidated <em>Project Returns.</em></h1>
-      <p class="lede">{{ cover_lede }}</p>
-      <div class="bot">
-        <div class="col">
-          <div class="label">Period</div>
-          <div class="val">{{ period_label }}</div>
-        </div>
-        <div class="col">
-          <div class="label">Prepared by</div>
-          <div class="val">Ember Finance &amp; Analytics</div>
-        </div>
-        <div class="col">
-          <div class="label">Issued</div>
-          <div class="val mono">{{ period_short }}</div>
-        </div>
-      </div>
-      <div class="footnote">
-        Forward-looking statements. Returns presented in this document are forecasts based on current underwriting assumptions and are subject to change as project conditions, market conditions, and capital structures evolve. Past performance is not indicative of future results. Not an offer to sell or a solicitation to buy any security.
-      </div>
-    </div>
+  <div class="top-row">
+    <div class="l">{{ ember_mark() }}</div>
+    <div class="r"><span class="conf-stamp">Confidential · For Executive Review</span></div>
   </div>
+
+  <div class="title-block">
+    <div class="eyebrow">{{ period_label }} · Project Returns Report</div>
+    <h1>Consolidated <em>Project Returns.</em></h1>
+    <p class="lede">{{ cover_lede }}</p>
+    <div class="rule"></div>
+    <div class="period-strip">
+      <div class="col">
+        <div class="label">Period</div>
+        <div class="val">{{ period_label }}</div>
+      </div>
+      <div class="col">
+        <div class="label">Prepared by</div>
+        <div class="val">Ember Finance &amp; Analytics</div>
+      </div>
+      <div class="col">
+        <div class="label">Issued</div>
+        <div class="val mono">{{ period_short }}</div>
+      </div>
+    </div>
+    <p class="footnote">
+      Forward-looking statements. Returns presented in this document are forecasts based on current underwriting assumptions and are subject to change as project conditions, market conditions, and capital structures evolve. Past performance is not indicative of future results. Not an offer to sell or a solicitation to buy any security.
+    </p>
+  </div>
+
   {{ page_footer(1) }}
 </div>
 
-{# ---------- Page 2 — Performance Summary ---------- #}
+
+{# ---------------- Page 2 — PORTFOLIO PERFORMANCE SUMMARY ---------------- #}
 <div class="page summary">
   <div class="page-pad">
     <div class="head">
-      <div>
+      <div class="l">
         <div class="eyebrow">Portfolio Summary</div>
-        <h2 style="margin-top: 8px;">
-          {% if tone == 'editorial' %}<em>Portfolio</em> Performance Summary.{% else %}Portfolio Performance Summary.{% endif %}
-        </h2>
+        <h2>{% if tone == 'editorial' %}<em>Portfolio</em> Performance Summary.{% else %}Portfolio Performance Summary.{% endif %}</h2>
       </div>
-      <div class="head-meta">$ in 000s unless noted<br/>Modeled through {{ horizon_year }}</div>
+      <div class="r">$ in 000s unless noted<br/>Modeled through {{ horizon_year }}</div>
     </div>
 
     <div class="kpi-band">
       <div class="kpi accent">
-        <div class="label">Total LP Profit</div>
+        <div class="l">Total LP Profit</div>
         <div class="v">{{ fmt_money_M(kpis.total_profit) }}</div>
         <div class="s">across {{ n_projects }} projects</div>
       </div>
       <div class="kpi">
-        <div class="label">Weighted IRR</div>
+        <div class="l">Weighted IRR</div>
         <div class="v">{{ fmt_pct(kpis.weighted_irr) }}</div>
         <div class="s">equity-weighted</div>
       </div>
       <div class="kpi">
-        <div class="label">Weighted EM</div>
+        <div class="l">Weighted EM</div>
         <div class="v">{{ fmt_em(kpis.weighted_em) }}</div>
         <div class="s">equity-weighted</div>
       </div>
       <div class="kpi">
-        <div class="label">LP Equity</div>
+        <div class="l">LP Equity</div>
         <div class="v">{{ fmt_money_M(kpis.total_equity) }}</div>
         <div class="s">deployed</div>
       </div>
       <div class="kpi">
-        <div class="label">Distributions</div>
+        <div class="l">Distributions</div>
         <div class="v">{{ fmt_money_M(kpis.total_distributions) }}</div>
         <div class="s">modeled lifetime</div>
       </div>
       <div class="kpi">
-        <div class="label">Active</div>
+        <div class="l">Active</div>
         <div class="v">{{ n_projects }}</div>
         <div class="s">projects</div>
       </div>
     </div>
 
     <div class="summary-body">
-      <div class="summary-charts">
-        <div class="summary-chart">
+      <div class="charts-col">
+        <div class="chartbox">
           <div class="ttl">
-            <div>
-              <div class="h">Portfolio Cumulative Net Cashflow</div>
-              <div class="s" style="font-size:9.5px;color:var(--muted);margin-top:2px;font-family:var(--font-sans);letter-spacing:normal;">
-                All projects, modeled through {{ horizon_year }} · $ in 000s
-              </div>
+            <div class="h">
+              Portfolio Cumulative Net Cashflow
+              <span class="sub">All projects, modeled through {{ horizon_year }} · $ in 000s</span>
             </div>
             <div class="s">{{ start_year }} — {{ horizon_year }}</div>
           </div>
-          <div class="chart-area">{{ portfolio_net_chart_svg|safe }}</div>
-          <div class="chart-xaxis">
+          <div class="area">{{ portfolio_net_chart_svg|safe }}</div>
+          <div class="xaxis">
             {% for y in year_labels_xaxis %}<span>{{ y }}</span>{% endfor %}
           </div>
         </div>
-        <div class="summary-chart">
+        <div class="chartbox">
           <div class="ttl">
-            <div>
-              <div class="h">Portfolio Cumulative Promote</div>
-              <div class="s" style="font-size:9.5px;color:var(--muted);margin-top:2px;font-family:var(--font-sans);letter-spacing:normal;">
-                GP carry, accrued through {{ horizon_year }} · $ in 000s
-              </div>
+            <div class="h">
+              Portfolio Cumulative Promote
+              <span class="sub">GP carry, accrued through {{ horizon_year }} · $ in 000s</span>
             </div>
             <div class="s">{{ start_year }} — {{ horizon_year }}</div>
           </div>
-          <div class="chart-area">{{ portfolio_promote_chart_svg|safe }}</div>
-          <div class="chart-xaxis">
+          <div class="area">{{ portfolio_promote_chart_svg|safe }}</div>
+          <div class="xaxis">
             {% for y in year_labels_xaxis %}<span>{{ y }}</span>{% endfor %}
           </div>
         </div>
       </div>
-      <div class="summary-side">
-        <div class="ttl">
-          <div class="h">By Project</div>
-          <div class="s">IRR · EM · Profit</div>
-        </div>
-        <div class="proj-list">
+
+      <div class="side-col">
+        <div class="by-project">
+          <div class="hd">
+            <div class="h">By Project</div>
+            <div class="s">IRR · EM · Profit</div>
+          </div>
           {% for p in projects_ranked %}
-          <div class="proj-row">
+          <div class="row">
             <div class="pname-col">
               <div class="pname">{{ p.name }}</div>
               <div class="pmeta">VINTAGE {{ p.vintage }}</div>
             </div>
-            <div class="num-cell w44">{{ fmt_pct(p.irr) }}</div>
-            <div class="num-cell w44">{{ fmt_em(p.em) }}</div>
-            <div class="num-cell w58 accent">${{ '%.1f'|format(p.profit / 1000) }}M</div>
+            <div class="num-col"><span class="num">{{ fmt_pct(p.irr) }}</span></div>
+            <div class="num-col"><span class="num">{{ fmt_em(p.em) }}</span></div>
+            <div class="num-col"><span class="num accent">{{ fmt_money_M(p.profit) }}</span></div>
           </div>
           {% endfor %}
         </div>
@@ -451,142 +896,144 @@
   {{ page_footer(2) }}
 </div>
 
-{# ---------- Pages 3..N — Project Pages (2 per page) ---------- #}
+
+{# ---------------- Pages 3..N — PROJECT PAIRS ---------------- #}
 {% for page_projects in project_pages %}
-{% set page_idx = loop.index + 2 %}
-<div class="page projects-page">
+{% set page_num = loop.index + 2 %}
+<div class="page pp">
   <div class="page-pad">
-    <div class="page-head">
-      <div>
+    <div class="head">
+      <div class="l">
         <div class="eyebrow">Performance</div>
-        <h2 style="margin-top:6px;">
-          Modeled returns
-          {% if tone == 'editorial' %}<em>by project.</em>{% else %}by project.{% endif %}
-        </h2>
+        <h2>Modeled returns <em>by project.</em></h2>
       </div>
-      <div class="meta">
+      <div class="r">
         {{ page_projects | map(attribute='name') | join(' &nbsp;·&nbsp; ') | safe }}<br/>
-        $ in 000s · per-project active years
+        $ in 000s · {{ start_year }} — {{ horizon_year }}
       </div>
     </div>
-    <div class="projects-body">
-      {% for p in page_projects %}
-      <div class="pcard">
-        <div class="left">
-          <div class="ph-head">
-            <div>
-              <div class="pname">{{ p.name }}</div>
-              <div style="font-size:9.5px;color:var(--muted);margin-top:3px;">{{ p.location }} · {{ p.role }}</div>
-            </div>
-            <div class="pmeta">VINTAGE {{ p.vintage }}</div>
-          </div>
-          <div class="stat-row">
-            <div class="stat"><div class="l">LP IRR</div><div class="v">{{ fmt_pct(p.irr) }}</div></div>
-            <div class="stat"><div class="l">Eq. Mult.</div><div class="v">{{ fmt_em(p.em) }}</div></div>
-            <div class="stat accent"><div class="l">Profit</div><div class="v">{{ fmt_money_M(p.profit) }}</div></div>
-            <div class="stat"><div class="l">Promote</div><div class="v">{% if p.promote == 0 %}—{% else %}{{ fmt_money_M(p.promote) }}{% endif %}</div></div>
-            <div class="stat"><div class="l">LP Equity</div><div class="v">{{ fmt_money_M(p.lp_equity) }}</div></div>
-          </div>
-          <table class="pcf">
-            <colgroup>
-              <col class="col-metric"/>
-              <col class="col-total"/>
-              {% for y in p.year_labels_short %}<col/>{% endfor %}
-            </colgroup>
-            <thead>
-              <tr>
-                <th>Metric</th>
-                <th>Total</th>
-                {% for y in p.year_labels_short %}<th>{{ y }}</th>{% endfor %}
-              </tr>
-            </thead>
-            <tbody>
-              {% set rows_def = [
-                ('Preferred Return', p.rows.preferred_return, ''),
-                ('Return of Capital', p.rows.return_of_capital, ''),
-                ('Excess Cashflow', p.rows.excess_cashflow, ''),
-                ('Total Distributions', p.rows.lp_distributions, ''),
-                ('Total Contributions', p.rows.lp_contributions, ''),
-              ] %}
-              {% for label, vals, cls in rows_def %}
-              <tr class="{{ cls }}">
-                <td>{{ label }}</td>
-                <td>{{ fmt_int(vals|sum) }}</td>
-                {% for v in vals %}<td>{{ fmt_int(v) }}</td>{% endfor %}
-              </tr>
-              {% endfor %}
 
-              {# Net Cashflow — hero row, color by sign #}
-              {% set net = p.rows.net_cashflow %}
-              {% set net_total = net|sum %}
-              <tr class="hero">
-                <td>Net Cashflow</td>
-                <td class="{{ 'neg' if net_total < 0 else 'pos' }}">{{ fmt_int(net_total) }}</td>
-                {% for v in net %}<td class="{{ 'neg' if v < 0 else 'pos' if v > 0 else '' }}">{{ fmt_int(v) }}</td>{% endfor %}
-              </tr>
-
-              {# Cumulative Net CF — hero/cum, last value highlighted #}
-              {% set cum = p.rows.cumulative_net_cf %}
-              {% set cum_final = cum[-1] %}
-              <tr class="cum">
-                <td>Cumulative Net CF</td>
-                <td class="{{ 'neg' if cum_final < 0 else '' }}">{{ fmt_int(cum_final) }}</td>
-                {% for v in cum %}<td class="{{ 'neg' if v < 0 else '' }}">{{ fmt_int(v) }}</td>{% endfor %}
-              </tr>
-            </tbody>
-          </table>
+    {% for p in page_projects %}
+    <div class="pcard {{ 'first' if loop.first else 'second' }}">
+      <div class="left">
+        <div class="ph-head">
+          <div class="l">
+            <div class="pname">{{ p.name }}</div>
+            <div class="psub">{{ p.location }} · {{ p.role }}</div>
+          </div>
+          <div class="r"><span class="vint">VINTAGE {{ p.vintage }}</span></div>
         </div>
-        <div class="right">
-          <div class="photo">
-            {% if p.hero_image_url %}
-              <img src="{{ p.hero_image_url }}" alt="{{ p.name }}"/>
-            {% else %}
-              <div class="ph-placeholder">Project Image · {{ p.name }}</div>
-            {% endif %}
-            <div class="ph-tag">{{ p.location }}</div>
+
+        <div class="stat-row">
+          <div class="stat"><div class="l">LP IRR</div><div class="v">{{ fmt_pct(p.irr) }}</div></div>
+          <div class="stat"><div class="l">Eq. Mult.</div><div class="v">{{ fmt_em(p.em) }}</div></div>
+          <div class="stat accent"><div class="l">Profit</div><div class="v">{{ fmt_money_M(p.profit) }}</div></div>
+          <div class="stat"><div class="l">Promote</div><div class="v">{% if p.promote == 0 %}—{% else %}{{ fmt_money_M(p.promote) }}{% endif %}</div></div>
+          <div class="stat"><div class="l">LP Equity</div><div class="v">{{ fmt_money_M(p.lp_equity) }}</div></div>
+        </div>
+
+        <table class="pcf">
+          <colgroup>
+            <col class="col-metric"/>
+            <col class="col-total"/>
+            {% for y in p.year_labels_short %}<col/>{% endfor %}
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>Total</th>
+              {% for y in p.year_labels_short %}<th>{{ y }}</th>{% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% set rows_def = [
+              ('Preferred Return',    p.rows.preferred_return),
+              ('Return of Capital',   p.rows.return_of_capital),
+              ('Excess Cashflow',     p.rows.excess_cashflow),
+              ('Total Distributions', p.rows.lp_distributions),
+              ('Total Contributions', p.rows.lp_contributions),
+            ] %}
+            {% for label, vals in rows_def %}
+            <tr>
+              <td>{{ label }}</td>
+              <td>{{ pcf_num(vals|sum) }}</td>
+              {% for v in vals %}<td>{{ pcf_num(v) }}</td>{% endfor %}
+            </tr>
+            {% endfor %}
+
+            <tr class="net">
+              <td>Net Cashflow</td>
+              <td>{{ pcf_num(p.rows.net_cashflow|sum) }}</td>
+              {% for v in p.rows.net_cashflow %}<td>{{ pcf_num(v) }}</td>{% endfor %}
+            </tr>
+            <tr class="cum">
+              <td>Cumulative Net CF</td>
+              <td>{{ pcf_num(p.rows.cumulative_net_cf[-1] if p.rows.cumulative_net_cf else 0) }}</td>
+              {% for v in p.rows.cumulative_net_cf %}<td>{{ pcf_num(v) }}</td>{% endfor %}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="right">
+        {% if p.hero_image_url %}
+          <div class="image-area has-image">
+            <img src="{{ p.hero_image_url }}" alt="{{ p.name }}"/>
           </div>
-          <div class="chartbox">
-            <div class="ttl">
-              <div class="h">Cumulative Net Cashflow</div>
-              <div class="s">{{ p.pcf_start_year }} — {{ p.pcf_end_year }}</div>
-            </div>
-            {{ p.cum_chart_svg|safe }}
+        {% else %}
+          <div class="image-area no-image">
+            <div class="img-label">Project Image · {{ p.name }}</div>
+            <div class="img-loc">{{ p.location }}</div>
           </div>
+        {% endif %}
+        <div class="chartbox">
+          <div class="ttl">
+            <div class="h">Cumulative Net Cashflow</div>
+            <div class="s">{{ p.pcf_start_year }} — {{ p.pcf_end_year }}</div>
+          </div>
+          <div class="area">{{ p.cum_chart_svg|safe }}</div>
         </div>
       </div>
-      {% endfor %}
     </div>
+    {% endfor %}
   </div>
-  {{ page_footer(page_idx) }}
+  {{ page_footer(page_num) }}
 </div>
 {% endfor %}
 
-{# ---------- Last page — Appendix ---------- #}
+
+{# ---------------- Last page — APPENDIX ---------------- #}
 <div class="page appx">
   <div class="page-pad">
     <div class="eyebrow">Appendix</div>
-    <h2 style="margin-top:8px;">Definitions &amp; methodology.</h2>
+    <h2>Definitions &amp; <em>Methodology.</em></h2>
     <div class="sub">For internal review by ownership and the executive team. Definitions follow Ember's standard underwriting framework.</div>
-    <dl class="glossary">
-      <dt>LP IRR</dt>
-      <dd>The internal rate of return earned by Limited Partner equity, calculated on modeled cashflows from initial contribution through final distribution.</dd>
-      <dt>Equity Multiple (EM)</dt>
-      <dd>Total LP distributions divided by total LP contributions over the life of the project. A 2.0x EM means $2 returned for every $1 invested.</dd>
-      <dt>Preferred Return</dt>
-      <dd>Cumulative annual return paid to LP capital before any promote distribution to the General Partner, typically modeled at 8% per annum on unreturned equity.</dd>
-      <dt>Return of Capital</dt>
-      <dd>Distributions that repay the original LP contribution before any profit-sharing waterfall begins.</dd>
-      <dt>Excess Cashflow</dt>
-      <dd>Distributions remaining after the Preferred Return and Return of Capital are satisfied. Allocated per the operating agreement's promote tiers.</dd>
-      <dt>Promote</dt>
-      <dd>The General Partner's share of profits above the LP Preferred Return. Reflects the GP's incentive participation; not a fee.</dd>
-      <dt>Net Cashflow</dt>
-      <dd>LP-level cashflow per period (distributions less contributions). The basis for IRR calculation.</dd>
-      <dt>Cumulative Net Cashflow</dt>
-      <dd>Running sum of Net Cashflow. Inflection from negative to positive marks the project's modeled break-even.</dd>
-      <dt>Vintage</dt>
-      <dd>Year of LP capital first contribution.</dd>
-    </dl>
+
+    <div class="glossary">
+      <dl class="col">
+        <dt>LP IRR</dt>
+        <dd>The internal rate of return earned by Limited Partner equity, calculated on modeled cashflows from initial contribution through final distribution.</dd>
+        <dt>Equity Multiple (EM)</dt>
+        <dd>Total LP distributions divided by total LP contributions over the life of the project. A 2.0× EM means $2 returned for every $1 invested.</dd>
+        <dt>Preferred Return</dt>
+        <dd>Cumulative annual return paid to LP capital before any promote distribution to the General Partner, typically modeled at 8% per annum on unreturned equity.</dd>
+        <dt>Return of Capital</dt>
+        <dd>Distributions that repay the original LP contribution before any profit-sharing waterfall begins.</dd>
+        <dt>Excess Cashflow</dt>
+        <dd>Distributions remaining after the Preferred Return and Return of Capital are satisfied. Allocated per the operating agreement's promote tiers.</dd>
+      </dl>
+      <dl class="col">
+        <dt>Promote</dt>
+        <dd>The General Partner's share of profits above the LP Preferred Return. Reflects the GP's incentive participation; not a fee.</dd>
+        <dt>Net Cashflow</dt>
+        <dd>LP-level cashflow per period (distributions less contributions). The basis for IRR calculation.</dd>
+        <dt>Cumulative Net Cashflow</dt>
+        <dd>Running sum of Net Cashflow. Inflection from negative to positive marks the project's modeled break-even.</dd>
+        <dt>Vintage</dt>
+        <dd>Year of LP capital first contribution.</dd>
+      </dl>
+    </div>
+
     <div class="disclaimer">
       <div class="h">Disclaimer</div>
       This document contains forward-looking statements based on current underwriting assumptions, market conditions, and capital structures, all of which are subject to change. Returns shown are modeled and not guaranteed. Past performance is not indicative of future results. This document is confidential and intended only for the named recipient(s); it is not an offer to sell or a solicitation to buy any security. Distribution outside Ember Residential, its affiliates, and authorized partners is prohibited.
