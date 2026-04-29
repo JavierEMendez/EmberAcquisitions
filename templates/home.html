@@ -651,7 +651,7 @@
    Saves on change to PUT /api/admin/users/<id>/reports.
    ============================================================ #}
 <div id="reports-modal" class="admin-modal">
-  <div class="admin-box" style="max-width:980px;">
+  <div class="admin-box" style="width:880px;max-width:calc(100vw - 32px);">
     <div class="admin-header">
       <h3>Report Subscriptions</h3>
       <button onclick="closeReports()" style="background:none;border:none;color:var(--eax-subtle);font-size:22px;cursor:pointer;">&times;</button>
@@ -661,20 +661,30 @@
         Set which reports each team member receives in their monthly email — and in what format.
         Choose "—" to opt them out of a specific report. Changes save automatically.
       </p>
-      <div class="reports-table-wrap" style="overflow-x:auto;border:1px solid var(--eax-line);border-radius:8px;">
-        <table id="reports-table" style="width:100%;border-collapse:collapse;font-size:12px;">
+      <div class="reports-table-wrap" style="border:1px solid var(--eax-line);border-radius:8px;overflow:hidden;">
+        {# Table-layout: fixed + percentage widths so the columns share the
+           modal width evenly without horizontal overflow. The 4 report
+           columns each get a consistent slice; the Team Member column
+           takes whatever's left. #}
+        <table id="reports-table" style="width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;">
+          <colgroup>
+            <col style="width:auto;"/>
+            <col style="width:90px;"/>
+            <col style="width:90px;"/>
+            <col style="width:90px;"/>
+            <col style="width:90px;"/>
+          </colgroup>
           <thead>
             <tr style="background:var(--eax-bg-2);">
-              <th style="padding:10px 14px;text-align:left;font-size:10px;color:var(--eax-subtle);letter-spacing:0.16em;text-transform:uppercase;font-weight:700;border-bottom:1px solid var(--eax-line);">Team Member</th>
-              <th style="padding:10px 14px;text-align:center;font-size:10px;color:var(--eax-subtle);letter-spacing:0.16em;text-transform:uppercase;font-weight:700;border-bottom:1px solid var(--eax-line);">Project Returns</th>
-              <th style="padding:10px 14px;text-align:center;font-size:10px;color:var(--eax-subtle);letter-spacing:0.16em;text-transform:uppercase;font-weight:700;border-bottom:1px solid var(--eax-line);">Ember Capital</th>
-              <th style="padding:10px 14px;text-align:center;font-size:10px;color:var(--eax-subtle);letter-spacing:0.16em;text-transform:uppercase;font-weight:700;border-bottom:1px solid var(--eax-line);">Operating Cashflows</th>
-              <th style="padding:10px 14px;text-align:center;font-size:10px;color:var(--eax-subtle);letter-spacing:0.16em;text-transform:uppercase;font-weight:700;border-bottom:1px solid var(--eax-line);">Loans &amp; Debt</th>
-              <th style="padding:10px 14px;text-align:right;font-size:10px;color:var(--eax-subtle);letter-spacing:0.16em;text-transform:uppercase;font-weight:700;border-bottom:1px solid var(--eax-line);">Status</th>
+              <th style="padding:10px 14px;text-align:left;font-size:10px;color:var(--eax-subtle);letter-spacing:0.14em;text-transform:uppercase;font-weight:700;border-bottom:1px solid var(--eax-line);">Team Member</th>
+              <th style="padding:10px 6px;text-align:center;font-size:10px;color:var(--eax-subtle);letter-spacing:0.10em;text-transform:uppercase;font-weight:700;border-bottom:1px solid var(--eax-line);" title="Project Returns">Returns</th>
+              <th style="padding:10px 6px;text-align:center;font-size:10px;color:var(--eax-subtle);letter-spacing:0.10em;text-transform:uppercase;font-weight:700;border-bottom:1px solid var(--eax-line);" title="Ember Capital">Capital</th>
+              <th style="padding:10px 6px;text-align:center;font-size:10px;color:var(--eax-subtle);letter-spacing:0.10em;text-transform:uppercase;font-weight:700;border-bottom:1px solid var(--eax-line);" title="Operating Cashflows">Operations</th>
+              <th style="padding:10px 6px;text-align:center;font-size:10px;color:var(--eax-subtle);letter-spacing:0.10em;text-transform:uppercase;font-weight:700;border-bottom:1px solid var(--eax-line);" title="Loans &amp; Debt">Loans</th>
             </tr>
           </thead>
           <tbody id="reports-tbody">
-            <tr><td colspan="6" style="padding:24px;text-align:center;color:var(--eax-subtle);font-size:12px;">Loading…</td></tr>
+            <tr><td colspan="5" style="padding:24px;text-align:center;color:var(--eax-subtle);font-size:12px;">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -709,10 +719,11 @@ async function refreshReportsTable() {
     const res = await fetch('/api/admin/users');
     const users = await res.json();
     if (!Array.isArray(users) || users.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--eax-subtle);font-size:12px;">No team members.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:var(--eax-subtle);font-size:12px;">No team members.</td></tr>';
       return;
     }
-    const selectStyle = 'background:var(--eax-surface);border:1px solid var(--eax-line-2);color:var(--eax-ink);border-radius:6px;padding:5px 8px;font-size:11px;font-family:inherit;cursor:pointer;outline:none;width:90px;';
+    // Compact select that fits the 90px column without overflow
+    const selectStyle = 'background:var(--eax-surface);border:1px solid var(--eax-line-2);color:var(--eax-ink);border-radius:6px;padding:5px 4px 5px 8px;font-size:11px;font-family:inherit;cursor:pointer;outline:none;width:78px;text-transform:uppercase;font-weight:600;letter-spacing:0.04em;';
     tbody.innerHTML = users.map(u => {
       const fn = (u.first_name || '').trim();
       const ln = (u.last_name  || '').trim();
@@ -725,25 +736,28 @@ async function refreshReportsTable() {
           const label = o === '' ? '—' : o.toUpperCase();
           return `<option value="${o}"${sel}>${label}</option>`;
         }).join('');
-        return `<td style="padding:8px 14px;text-align:center;border-bottom:1px solid var(--eax-line);">
+        return `<td style="padding:8px 6px;text-align:center;border-bottom:1px solid var(--eax-line);">
           <select style="${selectStyle}" data-uid="${u.id}" data-report="${k}" onchange="saveReportSub(this)">${opts}</select>
         </td>`;
       }).join('');
+      // Subscription count rendered as a tiny pill inline next to the
+      // user's name — saves a whole column in the table.
       const subCount = Object.values(subs).filter(Boolean).length;
-      const statusText = subCount === 0 ? 'No reports' : `${subCount} report${subCount === 1 ? '' : 's'}`;
-      const statusColor = subCount === 0 ? 'var(--eax-subtle)' : 'var(--eax-good)';
+      const pillBg = subCount === 0 ? 'var(--eax-bg-2)' : 'rgba(31, 122, 77, 0.14)';
+      const pillFg = subCount === 0 ? 'var(--eax-subtle)' : 'var(--eax-good)';
+      const pillText = subCount === 0 ? 'NONE' : `${subCount}`;
+      const pill = `<span class="rsub-pill" id="rsub-status-${u.id}" data-count="${subCount}" style="display:inline-block;margin-left:8px;padding:1px 8px;border-radius:999px;background:${pillBg};color:${pillFg};font-size:9.5px;font-weight:700;letter-spacing:0.08em;vertical-align:1px;">${pillText}</span>`;
       return `<tr id="rsub-row-${u.id}">
-        <td style="padding:10px 14px;border-bottom:1px solid var(--eax-line);">
-          <div style="font-weight:600;color:var(--eax-ink);">${display}${u.is_admin ? ' <span class="badge">Admin</span>' : ''}</div>
-          <div style="font-size:10.5px;color:var(--eax-subtle);margin-top:2px;">${u.email || 'no email on file'}</div>
+        <td style="padding:10px 14px;border-bottom:1px solid var(--eax-line);overflow:hidden;text-overflow:ellipsis;">
+          <div style="font-weight:600;color:var(--eax-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${display}${u.is_admin ? ' <span class="badge">Admin</span>' : ''}${pill}</div>
+          <div style="font-size:10.5px;color:var(--eax-subtle);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${u.email || 'no email on file'}</div>
         </td>
         ${cells}
-        <td style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--eax-line);font-size:11px;color:${statusColor};font-weight:600;" id="rsub-status-${u.id}">${statusText}</td>
       </tr>`;
     }).join('');
   } catch (err) {
     console.error('refreshReportsTable failed', err);
-    tbody.innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--eax-leave,#c56028);">Failed to load users.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:var(--eax-leave,#c56028);">Failed to load users.</td></tr>';
   }
 }
 
@@ -764,12 +778,14 @@ async function saveReportSub(selectEl) {
       body: JSON.stringify({subscriptions: subs}),
     });
     if (!res.ok) throw new Error('save failed: ' + res.status);
-    // Update the status pill
+    // Update the inline subscription-count pill
     const subCount = Object.keys(subs).length;
-    const statusEl = document.getElementById('rsub-status-' + uid);
-    if (statusEl) {
-      statusEl.textContent = subCount === 0 ? 'No reports' : `${subCount} report${subCount === 1 ? '' : 's'}`;
-      statusEl.style.color = subCount === 0 ? 'var(--eax-subtle)' : 'var(--eax-good)';
+    const pillEl = document.getElementById('rsub-status-' + uid);
+    if (pillEl) {
+      pillEl.dataset.count = subCount;
+      pillEl.textContent   = subCount === 0 ? 'NONE' : `${subCount}`;
+      pillEl.style.background = subCount === 0 ? 'var(--eax-bg-2)' : 'rgba(31, 122, 77, 0.14)';
+      pillEl.style.color      = subCount === 0 ? 'var(--eax-subtle)' : 'var(--eax-good)';
     }
   } catch (err) {
     console.error(err);
