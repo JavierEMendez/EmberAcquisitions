@@ -101,6 +101,12 @@ def init_db():
         ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS report_opt_in BOOLEAN DEFAULT FALSE;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS report_format TEXT DEFAULT 'pdf';
+        -- Per-report subscriptions: {report_key: 'pdf'|'excel'|null}.
+        -- null/missing = not subscribed; 'pdf'|'excel' = subscribed in
+        -- that format. Replaces the legacy `report_opt_in`+`report_format`
+        -- one-flag-fits-all model. Admin manages this per user from the
+        -- Team Management → Reports panel.
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS report_subscriptions JSONB NOT NULL DEFAULT '{}'::jsonb;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name TEXT;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name TEXT;
         CREATE TABLE IF NOT EXISTS report_sends (
@@ -138,6 +144,21 @@ def init_db():
     # Admin-controllable per user; defaults to true so we don't yank the
     # ability away from existing accounts on deploy.
     cur.execute("UPDATE users SET page_access = page_access || '{\"reports\": true}'::jsonb WHERE page_access->>'reports' IS NULL")
+
+    # Backfill report_subscriptions for users created before the column
+    # existed. If they were opted-in under the legacy single-flag model,
+    # subscribe them to every report in their preferred format.
+    cur.execute("""
+        UPDATE users
+        SET report_subscriptions = jsonb_build_object(
+            'returns',       COALESCE(report_format, 'pdf'),
+            'ember_capital', COALESCE(report_format, 'pdf'),
+            'operations',    COALESCE(report_format, 'pdf'),
+            'loans',         COALESCE(report_format, 'pdf')
+        )
+        WHERE report_opt_in = TRUE
+          AND (report_subscriptions IS NULL OR report_subscriptions = '{}'::jsonb)
+    """)
     # Create default admin if no users exist
     cur.execute("SELECT COUNT(*) as cnt FROM users")
     row = cur.fetchone()
@@ -671,7 +692,12 @@ def recalculate(pid):
 def list_users():
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT id, username, email, is_admin, page_access, created_at, report_opt_in, report_format, first_name, last_name FROM users ORDER BY id")
+    cur.execute("""
+        SELECT id, username, email, is_admin, page_access, created_at,
+               report_opt_in, report_format, report_subscriptions,
+               first_name, last_name
+        FROM users ORDER BY id
+    """)
     rows = cur.fetchall()
     cur.close(); conn.close()
     return jsonify([dict(r) for r in rows])
@@ -796,6 +822,50 @@ def update_page_access(uid):
                 (json.dumps(page_access), uid))
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True})
+
+
+# Reports each user can subscribe to. Storage shape on `users`:
+#   report_subscriptions = {report_key: 'pdf' | 'excel'}
+# Missing key = not subscribed. Order here drives the column order in
+# the admin Reports management table.
+_REPORT_SUBSCRIPTION_KEYS = ("returns", "ember_capital", "operations", "loans")
+_REPORT_FORMATS           = ("pdf", "excel")
+
+
+@app.route("/api/admin/users/<int:uid>/reports", methods=["PUT"])
+@login_required
+@admin_required
+def update_user_report_subscriptions(uid):
+    """Set the per-report subscription map for a user.
+
+    Body:
+        {"subscriptions": {"returns": "pdf", "ember_capital": "excel", ...}}
+
+    Unknown keys and unknown formats are silently dropped. Pass the full
+    map every time — server replaces the column wholesale.
+    """
+    data = request.json or {}
+    incoming = data.get("subscriptions") or {}
+    clean = {}
+    for k, v in incoming.items():
+        if k not in _REPORT_SUBSCRIPTION_KEYS:
+            continue
+        if v in _REPORT_FORMATS:
+            clean[k] = v
+    # Mirror to the legacy single-flag columns so the existing
+    # _send_monthly_emails path keeps working until we cut it over.
+    legacy_opt_in = bool(clean)
+    legacy_format = next(iter(clean.values()), "pdf") if clean else "pdf"
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "UPDATE users SET report_subscriptions = %s, "
+        "                 report_opt_in = %s, "
+        "                 report_format = %s "
+        "WHERE id = %s",
+        (json.dumps(clean), legacy_opt_in, legacy_format, uid),
+    )
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True, "subscriptions": clean})
 
 @app.route("/api/account/report-settings", methods=["PUT"])
 @login_required
@@ -3422,23 +3492,433 @@ def export_operations_excel():
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Operating Cashflows — page + PDF report (Concept C · Pivot Grid)
+#
+# Reads the latest reports[operations] blob (per-project × per-category × 18
+# months, anchored to the current period) and shapes it for both the live
+# page and the WeasyPrint PDF. Math mirrors the JS prototype in the design
+# canvas (operations-data.jsx) so the live page matches the design ref.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_OPS_CATS = [
+    "Development Fees",
+    "Project Personnel",
+    "Bookkeeping",
+    "Receivables & Bond Fees",
+    "EB Fees (Lots)",
+    "EB Fees (Pods & Commercial)",
+]
+_OPS_CAT_COLORS = {
+    "Development Fees":             "#F25929",
+    "Project Personnel":            "#08233B",
+    "Bookkeeping":                  "#5B9BD5",
+    "Receivables & Bond Fees":      "#7E5BA6",
+    "EB Fees (Lots)":               "#1F7A4D",
+    "EB Fees (Pods & Commercial)":  "#C8A96E",
+}
+_OPS_MONTHS_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+
+
+def _ops_normalize(raw, anchor):
+    """Canonical shape: {anchor, projects, monthly{project: {category: [18 floats]}}}"""
+    projects = raw.get("projects") or []
+    monthly  = raw.get("monthly")  or {}
+    for p in projects:
+        monthly.setdefault(p, {})
+        for c in _OPS_CATS:
+            arr = monthly[p].get(c) or []
+            if len(arr) < 18:
+                arr = list(arr) + [0.0] * (18 - len(arr))
+            elif len(arr) > 18:
+                arr = arr[:18]
+            monthly[p][c] = [float(v or 0) for v in arr]
+    return {"anchor": anchor, "projects": list(projects), "monthly": monthly}
+
+
+def _ops_month_dates(anchor):
+    """18 months: anchor-3 .. anchor+14 (anchor at index 3)."""
+    out = []
+    for off in range(-3, 15):
+        m_idx = anchor.month - 1 + off
+        y = anchor.year + (m_idx // 12)
+        m = (m_idx % 12) + 1
+        out.append({
+            "short": _OPS_MONTHS_SHORT[m - 1],
+            "yy":    str(y)[-2:],
+            "year":  y,
+            "iso":   f"{y}-{m:02d}-01",
+        })
+    return out
+
+
+def _ops_fmtM(v):
+    return f"${v / 1_000_000:.2f}M"
+
+
+def _ops_kpis(monthly, projects, anchor):
+    grand = [0.0] * 18
+    for p in projects:
+        for c in _OPS_CATS:
+            for i, v in enumerate(monthly[p][c]):
+                grand[i] += v
+    fy_year      = anchor.year
+    realized_ytd = sum(grand[3 - anchor.month + 1 : 4]) if anchor.month <= 4 else sum(grand[max(0, 4 - anchor.month) : 4])
+    fy_total     = realized_ytd + sum(grand[4 : 4 + (12 - anchor.month)])
+    trailing12   = sum(grand[0:4])
+    next12       = sum(grand[3 : 15])
+    return [
+        {"label": f"FY {fy_year} Forecast", "val": _ops_fmtM(fy_total),
+         "sub": "across all projects"},
+        {"label": "Realized YTD", "val": _ops_fmtM(realized_ytd),
+         "sub": f"Jan – {_OPS_MONTHS_SHORT[anchor.month - 1]} {fy_year}"},
+        {"label": "Trailing 12 Months", "val": _ops_fmtM(trailing12),
+         "sub": "(window proxy — 4 past months)"},
+        {"label": "Expected Next 12 Months", "val": _ops_fmtM(next12),
+         "sub": f"{_OPS_MONTHS_SHORT[anchor.month % 12]} {fy_year} – "
+                f"{_OPS_MONTHS_SHORT[(anchor.month - 1) % 12]} {fy_year + 1}"},
+    ]
+
+
+def _ops_sparkline(values, color, bold=False, now_offset=None):
+    """Server-rendered SVG sparkline (88×22)."""
+    w, h, pad = 88, 22, 2
+    if not values: return ""
+    vmax, vmin = max(values), min(values)
+    rng = (vmax - vmin) or 1
+    step = (w - pad * 2) / max(1, len(values) - 1)
+    parts = []
+    for i, v in enumerate(values):
+        x = pad + i * step
+        y = pad + (1 - (v - vmin) / rng) * (h - pad * 2)
+        parts.append(f"{'M' if i == 0 else 'L'} {x:.1f} {y:.1f}")
+    d = " ".join(parts)
+    dot = ""
+    if now_offset is not None and 0 <= now_offset < len(values):
+        nx = pad + now_offset * step
+        ny = pad + (1 - (values[now_offset] - vmin) / rng) * (h - pad * 2)
+        dot = f'<circle cx="{nx:.1f}" cy="{ny:.1f}" r="1.8" fill="{color}"/>'
+    return (
+        f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}">'
+        f'<path d="{d}" fill="none" stroke="{color}" '
+        f'stroke-width="{1.6 if bold else 1.2}" opacity="{1 if bold else 0.85}"/>'
+        f'{dot}</svg>'
+    )
+
+
+def _build_operations_view_context(raw_data, uploaded_at):
+    """Build the dict the new operations.html template consumes."""
+    if not raw_data:
+        return None
+    anchor = raw_data.get("anchor")
+    if isinstance(anchor, str):
+        try: anchor = datetime.date.fromisoformat(anchor[:10])
+        except Exception: anchor = None
+    if anchor is None:
+        if uploaded_at:
+            anchor = uploaded_at.date().replace(day=1)
+        else:
+            anchor = datetime.date.today().replace(day=1)
+
+    data = _ops_normalize(raw_data, anchor)
+    projects = data["projects"]
+    monthly  = data["monthly"]
+    if not projects:
+        return None
+    month_dates = _ops_month_dates(anchor)
+    now_idx = 3
+
+    by_cat = {c: [0.0] * 18 for c in _OPS_CATS}
+    for p in projects:
+        for c in _OPS_CATS:
+            for i, v in enumerate(monthly[p][c]):
+                by_cat[c][i] += v
+
+    proj_totals = {p: [0.0] * 18 for p in projects}
+    for p in projects:
+        for c in _OPS_CATS:
+            for i, v in enumerate(monthly[p][c]):
+                proj_totals[p][i] += v
+
+    grand = [0.0] * 18
+    for c in _OPS_CATS:
+        for i, v in enumerate(by_cat[c]):
+            grand[i] += v
+
+    kpis = _ops_kpis(monthly, projects, anchor)
+
+    default_from, default_to = 0, 17
+    window_months = month_dates[default_from : default_to + 1]
+    window_now    = now_idx - default_from
+    window_grand  = grand[default_from : default_to + 1]
+
+    pivot_rows_default = []
+    for p in projects:
+        series = proj_totals[p][default_from : default_to + 1]
+        total_k = round(sum(series) / 1000)
+        spark = _ops_sparkline(series, "#F25929", bold=False, now_offset=window_now)
+        pivot_rows_default.append({
+            "label":     p,
+            "series":    series,
+            "total_k":   total_k,
+            "spark_svg": spark,
+        })
+    total_spark = _ops_sparkline(window_grand, "#08233B", bold=True, now_offset=window_now)
+
+    client_json = json.dumps({
+        "cats":       _OPS_CATS,
+        "projects":   projects,
+        "cat_colors": _OPS_CAT_COLORS,
+        "month_dates": month_dates,
+        "now_idx":    now_idx,
+        "monthly_totals_by_cat":  by_cat,
+        "project_monthly_totals": proj_totals,
+        "monthly_grand_total":    grand,
+        "default_from_idx":       default_from,
+        "default_to_idx":         default_to,
+    }, separators=(",", ":"))
+
+    period_label = f"{_OPS_MONTHS_SHORT[anchor.month - 1]} {anchor.year}"
+    return {
+        "cats":         _OPS_CATS,
+        "kpis":         kpis,
+        "month_dates":  month_dates,
+        "default_from_idx":     default_from,
+        "default_to_idx":       default_to,
+        "default_window_count": default_to - default_from + 1,
+        "now_idx":      now_idx,
+        "window_months":      window_months,
+        "window_now_idx":     window_now,
+        "window_grand_total": window_grand,
+        "window_total_k":     round(sum(window_grand) / 1000),
+        "pivot_rows_default": pivot_rows_default,
+        "total_spark_svg":    total_spark,
+        "period_label":       period_label,
+        "period_short":       f"FY {anchor.year} · Q{(anchor.month - 1) // 3 + 1}",
+        "updated_at_short":   datetime.datetime.now().strftime("%b %d %Y"),
+        "client_json":        client_json,
+        # Internal — used by the report builder, not the live template
+        "_anchor":   anchor,
+        "_monthly":  monthly,
+        "_projects": projects,
+        "_by_cat":   by_cat,
+        "_grand":    grand,
+        "_month_dates": month_dates,
+    }
+
+
+def _ops_pie_donut_svg(slices, total, size=170, stroke_w=26):
+    import math as _math
+    r = size / 2 - 18
+    cx = cy = size / 2
+    C = 2 * _math.pi * r
+    if total <= 0:
+        total = 1
+    parts = [
+        f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}" style="flex:0 0 auto">',
+        f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="rgba(8,35,59,0.10)" stroke-width="{stroke_w}"/>',
+    ]
+    acc = 0.0
+    for s in slices:
+        seg = (s["value"] / total) * C
+        parts.append(
+            f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" '
+            f'stroke="{s["color"]}" stroke-width="{stroke_w}" '
+            f'stroke-dasharray="{seg:.2f} {(C - seg):.2f}" '
+            f'stroke-dashoffset="{-acc:.2f}" '
+            f'transform="rotate(-90 {cx} {cy})"/>'
+        )
+        acc += seg
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _build_operations_report_context(view_ctx, run_date=None):
+    """Pre-renders the Category × Month pivot, donut SVG, KPIs for the PDF."""
+    anchor   = view_ctx["_anchor"]
+    by_cat   = view_ctx["_by_cat"]
+    projects = view_ctx["_projects"]
+    months   = view_ctx["_month_dates"]
+    now_idx  = view_ctx["now_idx"]
+
+    month_totals = [sum(by_cat[c][i] for c in _OPS_CATS) for i in range(18)]
+    cat_rows = [{
+        "name":    c,
+        "color":   _OPS_CAT_COLORS[c],
+        "row_k":   [int(round(v / 1000)) for v in by_cat[c]],
+        "total_k": int(round(sum(by_cat[c]) / 1000)),
+    } for c in _OPS_CATS]
+    grand_total_k  = int(round(sum(month_totals) / 1000))
+    month_totals_k = [int(round(v / 1000)) for v in month_totals]
+
+    next12_slices = [
+        {"name": c, "color": _OPS_CAT_COLORS[c], "value": sum(by_cat[c][4:16])}
+        for c in _OPS_CATS
+    ]
+    next12_total = sum(s["value"] for s in next12_slices)
+    pie_svg = _ops_pie_donut_svg(next12_slices, next12_total)
+    pie_legend = sorted(
+        [{"name": s["name"], "color": s["color"],
+          "value_k": int(round(s["value"] / 1000)),
+          "pct": int(round(s["value"] / next12_total * 100)) if next12_total else 0}
+         for s in next12_slices],
+        key=lambda x: x["value_k"], reverse=True,
+    )
+    next12_label = "{} {} — {} {}".format(
+        _OPS_MONTHS_SHORT[anchor.month % 12], anchor.year,
+        _OPS_MONTHS_SHORT[(anchor.month - 1) % 12], anchor.year + 1,
+    ).upper()
+
+    if next12_total > 0:
+        top_cat = max(next12_slices, key=lambda s: s["value"])
+        recurring_total = sum(
+            sum(by_cat[c][4:16])
+            for c in ("Development Fees", "Project Personnel", "Bookkeeping")
+        )
+        mix_note = (
+            f"<strong>{top_cat['name']}</strong> is the largest forecast revenue "
+            f"source over the next twelve months at "
+            f"${top_cat['value'] / 1_000_000:.2f}M "
+            f"({int(round(top_cat['value'] / next12_total * 100))}% of total). "
+            f"Recurring fees — Development, Personnel, Bookkeeping — provide a "
+            f"stable base of roughly ${recurring_total / 1_000_000:.1f}M annually. "
+            "Receivables &amp; Bond Fees lump on quarter-end months."
+        )
+    else:
+        mix_note = "No forward forecast yet."
+
+    generated = (run_date or datetime.datetime.now()).strftime("%Y-%m-%d")
+    period_label = (
+        f"{['January','February','March','April','May','June','July','August','September','October','November','December'][anchor.month - 1]}"
+        f" {anchor.year}"
+    )
+
+    return {
+        "rpt": {
+            "period_label":   period_label,
+            "generated_iso":  generated,
+            "project_count":  len(projects),
+            "cat_count":      len(_OPS_CATS),
+            "months":         months,
+            "now_idx":        now_idx,
+            "kpis":           view_ctx["kpis"],
+            "cat_rows":       cat_rows,
+            "month_totals_k": month_totals_k,
+            "grand_total_k":  grand_total_k,
+            "pie_svg":        pie_svg,
+            "pie_legend":     pie_legend,
+            "next12_label":   next12_label,
+            "mix_note":       mix_note,
+        }
+    }
+
+
+# Jinja filter — used by templates/_partials/_operations_pivot.html
+@app.template_filter("int_comma")
+def _jinja_int_comma(v):
+    if v is None or v == 0:
+        return "0"
+    try:
+        return f"{int(round(float(v))):,}"
+    except (TypeError, ValueError):
+        return "0"
+
+
 @app.route("/operations")
 @login_required
 def operations_report():
     pa = session.get("page_access") or {}
     if not session.get("is_admin") and not pa.get("operations", True):
         return redirect(url_for("home"))
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT data, uploaded_at FROM reports WHERE report_type = 'operations' ORDER BY uploaded_at DESC LIMIT 1")
-    row = cur.fetchone()
-    cur.close(); conn.close()
-    data = row["data"] if row else None
-    uploaded_at = row["uploaded_at"].strftime("%B %d, %Y") if row else None
-    pa = session.get("page_access") or {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
-    if session.get("is_admin"):
-        pa = {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
-    return render_template("operations.html", data=data, uploaded_at=uploaded_at, is_admin=session.get("is_admin"), page_access=pa)
+    pa.setdefault("operations", True)
+    pa.setdefault("reports",    True)
+
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "SELECT data, uploaded_at FROM reports "
+        "WHERE report_type = 'operations' ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    row = cur.fetchone(); cur.close(); conn.close()
+
+    raw_data    = row["data"]        if row else None
+    uploaded_at = row["uploaded_at"] if row else None
+    ops_ctx = _build_operations_view_context(raw_data, uploaded_at)
+    return render_template(
+        "operations.html",
+        ops=ops_ctx,
+        is_admin=session.get("is_admin", False),
+        page_access=pa,
+    )
+
+
+@app.route("/operations/pdf")
+@login_required
+def operations_pdf_view():
+    """3-page landscape PDF version of the Operating Cashflows page.
+
+    ?preview=1   → return raw HTML (debug)
+    ?download=1  → force attachment Content-Disposition
+    Falls back to the legacy fpdf2 export when WeasyPrint can't load.
+    """
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("operations", True):
+        return jsonify({"error": "Access denied"}), 403
+    if not session.get("is_admin") and not pa.get("reports", True):
+        return jsonify({"error": "Reports access disabled by admin"}), 403
+
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "SELECT data, uploaded_at FROM reports "
+        "WHERE report_type = 'operations' ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    row = cur.fetchone(); cur.close(); conn.close()
+    if not row or not row.get("data"):
+        return jsonify({"error": "No operations forecast uploaded"}), 404
+
+    view_ctx = _build_operations_view_context(row["data"], row.get("uploaded_at"))
+    if view_ctx is None:
+        return jsonify({"error": "Operations data is empty"}), 404
+    rpt_ctx = _build_operations_report_context(view_ctx, run_date=row.get("uploaded_at"))
+    html = render_template("operations_report.html", **rpt_ctx)
+
+    if request.args.get("preview") == "1":
+        return html
+
+    try:
+        from weasyprint import HTML
+        pdf_bytes = HTML(
+            string=html,
+            base_url=request.host_url,
+            url_fetcher=_weasyprint_local_fetcher,
+        ).write_pdf()
+    except (ImportError, OSError) as e:
+        app.logger.warning(
+            "WeasyPrint unavailable for operations report (%s: %s); falling back to fpdf2",
+            type(e).__name__, e,
+        )
+        return _send_exec_report_pdf("operations")
+
+    as_attachment = request.args.get("download") in ("1", "true", "yes")
+    fname = f"Ember_Operations_{datetime.datetime.now().strftime('%Y-%m')}.pdf"
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=as_attachment,
+        download_name=fname,
+    )
+
+
+@app.route("/operations/excel")
+@login_required
+def operations_excel_view():
+    """Alias to the existing /api/export-operations-excel workbook so the
+    cockpit's "Export Excel" button has a clean URL alongside /operations/pdf."""
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("operations", True):
+        return jsonify({"error": "Access denied"}), 403
+    if not session.get("is_admin") and not pa.get("reports", True):
+        return jsonify({"error": "Reports access disabled by admin"}), 403
+    return export_operations_excel()
 
 # ─── REPORT GENERATORS ────────────────────────────────────────────────────────
 

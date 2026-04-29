@@ -1,0 +1,38 @@
+{# Server-rendered initial pivot table — Project × Month, default window.
+   The JS (operations.js) re-renders this whole subtree on pivot/window change.
+   The Jinja version exists so the page paints meaningfully before JS runs and
+   so SEO / no-JS fallback shows real data. #}
+<table class="ops-pivot">
+  <thead>
+    <tr>
+      <th class="l">Project</th>
+      <th class="trend">Trend</th>
+      <th class="tot">Total</th>
+      {% for m in ops.window_months %}
+        <th class="{% if loop.index0 == ops.window_now_idx %}now{% endif %}">
+          {{ m.short }}<br/>{{ m.yy }}
+        </th>
+      {% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in ops.pivot_rows_default %}
+      <tr>
+        <td class="l">{{ r.label }}</td>
+        <td class="trend">{{ r.spark_svg|safe }}</td>
+        <td class="tot">{{ r.total_k|int_comma }}</td>
+        {% for v in r.series %}
+          <td class="{% if loop.index0 == ops.window_now_idx %}now{% endif %}">{{ (v / 1000)|round|int|int_comma }}</td>
+        {% endfor %}
+      </tr>
+    {% endfor %}
+    <tr class="tot-row">
+      <td class="l">Total · $K</td>
+      <td class="trend">{{ ops.total_spark_svg|safe }}</td>
+      <td class="tot accent">{{ ops.window_total_k|int_comma }}</td>
+      {% for v in ops.window_grand_total %}
+        <td class="{% if loop.index0 == ops.window_now_idx %}now{% endif %}">{{ (v / 1000)|round|int|int_comma }}</td>
+      {% endfor %}
+    </tr>
+  </tbody>
+</table>

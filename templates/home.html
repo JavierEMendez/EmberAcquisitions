@@ -439,6 +439,10 @@
       <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2m22-4l-4.5 4.5M18 13l4.5-4.5M15 3a4 4 0 110 8 4 4 0 010-8z" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Manage
     </button>
+    <button class="admin-btn" onclick="openReports()" title="Manage report subscriptions per team member">
+      <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 17v-6h13M9 17H4a1 1 0 01-1-1V8a1 1 0 011-1h5m0 10h13m-7-7v6m-3-3h6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Reports
+    </button>
     {% endif %}
     <button class="user-chip" onclick="openAcct()" aria-label="Account settings">
       <span class="user-avatar">{{ (display_name or username or '?').split()|map('first')|join|upper|truncate(2,end='') }}</span>
@@ -500,7 +504,7 @@
   ('returns',     '/returns',       'Active Project Returns',          'Current projected performance of active Ember projects.'),
   ('loans',       '/loans',         'Loan Capacities & Debt Schedules','All current active Ember loans and their respective KPIs.'),
   ('operations',  '/operations',    'Operating Revenues',              'Forecasted Ember operating revenues from active projects.'),
-  ('ember_capital','/ember-capital','Ember Portfolio',                 'Aggregate view of all active projects: total lots, IRR, margins, and status.'),
+  ('ember_capital','/ember-capital','Ember Capital',                   'Aggregate view of all active projects: total lots, IRR, margins, and status.'),
   ('macro',       '/macro',         'Macroeconomic Data',              'Population, income, GDP, employment, real estate for Houston metro.'),
   ('sales',       '/sales',         'Community Sales Tracker',         'Home and lot sales data for active Ember MPCs.'),
 ] %}
@@ -641,10 +645,138 @@
   </div>
 </div>
 
+{# ============================================================
+   Reports management modal — admin-only.
+   Per-team-member × per-report dropdown {None / PDF / Excel} grid.
+   Saves on change to PUT /api/admin/users/<id>/reports.
+   ============================================================ #}
+<div id="reports-modal" class="admin-modal">
+  <div class="admin-box" style="max-width:980px;">
+    <div class="admin-header">
+      <h3>Report Subscriptions</h3>
+      <button onclick="closeReports()" style="background:none;border:none;color:var(--eax-subtle);font-size:22px;cursor:pointer;">&times;</button>
+    </div>
+    <div class="admin-body">
+      <p style="font-size:12px;color:var(--eax-muted);margin:0 0 14px;line-height:1.5;">
+        Set which reports each team member receives in their monthly email — and in what format.
+        Choose "—" to opt them out of a specific report. Changes save automatically.
+      </p>
+      <div class="reports-table-wrap" style="overflow-x:auto;border:1px solid var(--eax-line);border-radius:8px;">
+        <table id="reports-table" style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead>
+            <tr style="background:var(--eax-bg-2);">
+              <th style="padding:10px 14px;text-align:left;font-size:10px;color:var(--eax-subtle);letter-spacing:0.16em;text-transform:uppercase;font-weight:700;border-bottom:1px solid var(--eax-line);">Team Member</th>
+              <th style="padding:10px 14px;text-align:center;font-size:10px;color:var(--eax-subtle);letter-spacing:0.16em;text-transform:uppercase;font-weight:700;border-bottom:1px solid var(--eax-line);">Project Returns</th>
+              <th style="padding:10px 14px;text-align:center;font-size:10px;color:var(--eax-subtle);letter-spacing:0.16em;text-transform:uppercase;font-weight:700;border-bottom:1px solid var(--eax-line);">Ember Capital</th>
+              <th style="padding:10px 14px;text-align:center;font-size:10px;color:var(--eax-subtle);letter-spacing:0.16em;text-transform:uppercase;font-weight:700;border-bottom:1px solid var(--eax-line);">Operating Cashflows</th>
+              <th style="padding:10px 14px;text-align:center;font-size:10px;color:var(--eax-subtle);letter-spacing:0.16em;text-transform:uppercase;font-weight:700;border-bottom:1px solid var(--eax-line);">Loans &amp; Debt</th>
+              <th style="padding:10px 14px;text-align:right;font-size:10px;color:var(--eax-subtle);letter-spacing:0.16em;text-transform:uppercase;font-weight:700;border-bottom:1px solid var(--eax-line);">Status</th>
+            </tr>
+          </thead>
+          <tbody id="reports-tbody">
+            <tr><td colspan="6" style="padding:24px;text-align:center;color:var(--eax-subtle);font-size:12px;">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--eax-line);font-size:11px;color:var(--eax-subtle);">
+        Subscriptions feed the monthly report email job. A user with no subscriptions stays on the team but receives no report email.
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 async function openAdmin() {
   document.getElementById('admin-modal').classList.add('open');
   await refreshUserList();
+}
+
+/* ── Reports management ─────────────────────────────────────── */
+const REPORT_KEYS   = ['returns', 'ember_capital', 'operations', 'loans'];
+const REPORT_LABELS = {returns:'Project Returns', ember_capital:'Ember Capital', operations:'Operating Cashflows', loans:'Loans & Debt'};
+
+async function openReports() {
+  document.getElementById('reports-modal').classList.add('open');
+  await refreshReportsTable();
+}
+function closeReports() {
+  document.getElementById('reports-modal').classList.remove('open');
+}
+
+async function refreshReportsTable() {
+  const tbody = document.getElementById('reports-tbody');
+  try {
+    const res = await fetch('/api/admin/users');
+    const users = await res.json();
+    if (!Array.isArray(users) || users.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--eax-subtle);font-size:12px;">No team members.</td></tr>';
+      return;
+    }
+    const selectStyle = 'background:var(--eax-surface);border:1px solid var(--eax-line-2);color:var(--eax-ink);border-radius:6px;padding:5px 8px;font-size:11px;font-family:inherit;cursor:pointer;outline:none;width:90px;';
+    tbody.innerHTML = users.map(u => {
+      const fn = (u.first_name || '').trim();
+      const ln = (u.last_name  || '').trim();
+      const display = `${fn} ${ln}`.trim() || u.username;
+      const subs = u.report_subscriptions || {};
+      const cells = REPORT_KEYS.map(k => {
+        const v = subs[k] || '';
+        const opts = ['', 'pdf', 'excel'].map(o => {
+          const sel = o === v ? ' selected' : '';
+          const label = o === '' ? '—' : o.toUpperCase();
+          return `<option value="${o}"${sel}>${label}</option>`;
+        }).join('');
+        return `<td style="padding:8px 14px;text-align:center;border-bottom:1px solid var(--eax-line);">
+          <select style="${selectStyle}" data-uid="${u.id}" data-report="${k}" onchange="saveReportSub(this)">${opts}</select>
+        </td>`;
+      }).join('');
+      const subCount = Object.values(subs).filter(Boolean).length;
+      const statusText = subCount === 0 ? 'No reports' : `${subCount} report${subCount === 1 ? '' : 's'}`;
+      const statusColor = subCount === 0 ? 'var(--eax-subtle)' : 'var(--eax-good)';
+      return `<tr id="rsub-row-${u.id}">
+        <td style="padding:10px 14px;border-bottom:1px solid var(--eax-line);">
+          <div style="font-weight:600;color:var(--eax-ink);">${display}${u.is_admin ? ' <span class="badge">Admin</span>' : ''}</div>
+          <div style="font-size:10.5px;color:var(--eax-subtle);margin-top:2px;">${u.email || 'no email on file'}</div>
+        </td>
+        ${cells}
+        <td style="padding:10px 14px;text-align:right;border-bottom:1px solid var(--eax-line);font-size:11px;color:${statusColor};font-weight:600;" id="rsub-status-${u.id}">${statusText}</td>
+      </tr>`;
+    }).join('');
+  } catch (err) {
+    console.error('refreshReportsTable failed', err);
+    tbody.innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--eax-leave,#c56028);">Failed to load users.</td></tr>';
+  }
+}
+
+async function saveReportSub(selectEl) {
+  const uid = selectEl.dataset.uid;
+  const reportKey = selectEl.dataset.report;
+  // Collect the full row's current state and PUT all of it (replace-all).
+  const row = document.getElementById('rsub-row-' + uid);
+  const subs = {};
+  row.querySelectorAll('select[data-report]').forEach(s => {
+    if (s.value) subs[s.dataset.report] = s.value;
+  });
+  selectEl.disabled = true;
+  try {
+    const res = await fetch(`/api/admin/users/${uid}/reports`, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({subscriptions: subs}),
+    });
+    if (!res.ok) throw new Error('save failed: ' + res.status);
+    // Update the status pill
+    const subCount = Object.keys(subs).length;
+    const statusEl = document.getElementById('rsub-status-' + uid);
+    if (statusEl) {
+      statusEl.textContent = subCount === 0 ? 'No reports' : `${subCount} report${subCount === 1 ? '' : 's'}`;
+      statusEl.style.color = subCount === 0 ? 'var(--eax-subtle)' : 'var(--eax-good)';
+    }
+  } catch (err) {
+    console.error(err);
+    alert('Could not save subscription. Try again.');
+  } finally {
+    selectEl.disabled = false;
+  }
 }
 function closeAdmin() {
   document.getElementById('admin-modal').classList.remove('open');

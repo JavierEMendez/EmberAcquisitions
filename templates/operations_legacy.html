@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ember Operating Revenues</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0d0f13;--surface:#151921;--card:#151921;--border:#1e2535;--border-light:#2e3750;
+    --accent:#c8a96e;--text:#e8eaf0;--text-muted:#8b95a8;--text-dim:#4a5568;
+    --teal:#5e9e8c;
+  }
+  [data-theme="light"]{
+    --bg:#f0f2f5;--surface:#ffffff;--card:#ffffff;--border:#e2e8f0;--border-light:#cbd5e0;
+    --accent:#003552;--text:#1a2a3a;--text-muted:#4a5568;--text-dim:#718096;--teal:#38a169;
+  }
+  [data-theme="light"] .totals-row td,[data-theme="light"] .totals-row td.label{background:var(--border-light);}
+  [data-theme="light"] button[onclick="saveAcctPw()"]{color:#fff!important;}
+  img.logo-light{display:none;}
+  [data-theme="light"] img.logo-dark{display:none;}
+  [data-theme="light"] img.logo-light{display:block;margin:0 auto;}
+  body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;height:100vh;overflow:hidden;padding:0;}
+  #app{display:flex;height:100vh;overflow:hidden}
+  /* ── SIDEBAR (canonical — matches /returns) ── */
+  #sidebar{width:240px;background:var(--eax-bg-2);border-right:1px solid var(--eax-line);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
+  #main-content{flex:1;overflow-y:auto;padding:24px 32px}
+  .sidebar-logo{padding:16px 18px 14px;border-bottom:1px solid var(--eax-line)}
+  .logo-img{width:100%;max-width:160px;height:auto;display:block;margin:0 auto}
+  .logo-sub{font-size:10px;color:var(--eax-subtle);letter-spacing:0.2em;text-transform:uppercase;margin-top:8px;text-align:center;font-weight:700}
+  .sidebar-section{padding:8px 16px 4px;font-size:9px;line-height:1.2;color:var(--eax-subtle);letter-spacing:0.22em;text-transform:uppercase;margin-top:8px;font-weight:700}
+  .sidebar-item{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;border-radius:8px;margin:1px 8px;transition:all .15s;color:var(--eax-muted);font-size:13px;line-height:1.2;text-decoration:none;font-weight:500}
+  .sidebar-item:hover{background:var(--eax-accent-soft);color:var(--eax-ink);text-decoration:none}
+  .sidebar-item.active{background:var(--eax-surface);color:var(--eax-ink);font-weight:600;border:1px solid var(--eax-line);position:relative}
+  .sidebar-item.active::before{content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:2px;background:var(--eax-accent);border-radius:2px}
+  .sidebar-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0}
+  .sidebar-item.active .icon{opacity:1;color:var(--eax-accent)}
+  .nav-link{display:flex;align-items:center;gap:10px;padding:7px 14px;cursor:pointer;border-radius:6px;margin:1px 8px;transition:all .15s;color:var(--eax-muted);font-size:12px;text-decoration:none;font-weight:500}
+  .nav-link:hover{background:var(--eax-accent-soft);color:var(--eax-ink);text-decoration:none}
+  a{color:var(--accent);text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  .top-bar{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:8px;}
+  .top-bar h1{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:24px;color:var(--text);}
+  .top-right{text-align:right;}
+  .top-right .meta{font-size:12px;color:var(--text-muted);margin-bottom:6px;}
+
+  /* Section titles */
+  .section-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:18px;color:var(--accent);margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border);}
+
+  /* Download PDF button */
+  .pdf-btn{
+    display:inline-flex;align-items:center;gap:6px;
+    background:rgba(242,89,41,0.1);border:1px solid rgba(242,89,41,0.3);
+    color:var(--accent);padding:6px 14px;border-radius:6px;font-size:12px;
+    font-family:'DM Sans',sans-serif;font-weight:600;cursor:pointer;transition:all .15s;
+  }
+  .pdf-btn:hover{background:rgba(242,89,41,0.2);border-color:var(--accent);}
+  .pdf-btn:disabled{opacity:.5;cursor:wait;}
+
+  /* KPI Cards */
+  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px;}
+  @media(max-width:900px){.kpi-grid{grid-template-columns:repeat(2,1fr);}}
+  @media(max-width:500px){.kpi-grid{grid-template-columns:1fr;}}
+  .kpi-card{
+    background:var(--card);border:1px solid var(--border);border-radius:8px;
+    padding:14px 16px;border-left:3px solid var(--accent);
+  }
+  .kpi-label{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);margin-bottom:6px;font-weight:500;}
+  .kpi-value{font-size:20px;font-weight:600;color:var(--accent);}
+
+  /* Tables */
+  .report-table-wrap{overflow-x:auto;margin-bottom:24px;background:var(--card);border:1px solid var(--border);border-radius:8px;}
+  table{width:100%;border-collapse:collapse;font-size:12px;}
+  th{background:var(--card);color:var(--text-muted);font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.05em;}
+  th,td{padding:5px 8px;border:1px solid var(--border);white-space:nowrap;}
+  td{color:var(--text);text-align:right;}
+  td.label{text-align:left;font-weight:500;min-width:180px;}
+  tr:hover td{background:rgba(242,89,41,.04);}
+  .totals-row td{font-weight:700;border-top:2px solid var(--accent);background:var(--surface);}
+
+  /* Sticky first column */
+  td.label,th.sticky-col{position:sticky;left:0;z-index:1;background:var(--card);}
+  th.sticky-col{z-index:3;}
+  .totals-row td.label{background:var(--surface);}
+
+  /* Filter bar */
+  .filter-bar{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap;}
+  .filter-bar label{font-size:12px;color:var(--text-muted);}
+  .filter-bar input[type="date"]{
+    background:var(--card);border:1px solid var(--border);color:var(--text);
+    padding:4px 8px;border-radius:4px;font-size:12px;font-family:'DM Sans',sans-serif;
+  }
+  .filter-bar input[type="date"]:focus{outline:none;border-color:var(--accent);}
+
+  .empty-state{text-align:center;padding:80px 20px;color:var(--text-muted);}
+  .empty-state h2{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:22px;color:var(--text);margin-bottom:8px;}
+
+  /* ── PDF Light-Mode Render ── */
+  #pdf-render{
+    position:fixed;left:0;top:0;z-index:99999;
+    width:1056px;font-family:'DM Sans',sans-serif;font-size:9px;
+    background:#fff;color:#1a1a1a;padding:0;overflow:auto;
+  }
+  #pdf-render *{color:#1a1a1a;background-color:transparent;}
+  #pdf-render{background:#fff!important;}
+  #pdf-render .pdf-page{
+    width:1056px;min-height:816px;
+    padding:28px 32px;box-sizing:border-box;background:#fff!important;
+    page-break-after:always;
+  }
+  #pdf-render .pdf-page:last-child{page-break-after:auto;}
+  #pdf-render .pdf-header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;}
+  #pdf-render .pdf-header h1{font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;font-size:16px;color:#1a1a1a;}
+  #pdf-render .pdf-header .pdf-meta{font-size:9px;color:#666;}
+  #pdf-render .pdf-section-title{
+    font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:11px;color:#8a7040;
+    margin:10px 0 4px;padding-bottom:3px;border-bottom:1px solid #ddd;
+  }
+  #pdf-render .pdf-kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:14px;}
+  #pdf-render .pdf-kpi-card{border:1px solid #ddd;border-radius:4px;padding:6px 8px;border-left:2px solid #8a7040;}
+  #pdf-render .pdf-kpi-label{font-size:7px;text-transform:uppercase;letter-spacing:.05em;color:#888;margin-bottom:3px;}
+  #pdf-render .pdf-kpi-value{font-size:13px;font-weight:600;color:#8a7040;}
+  #pdf-render table{border-collapse:collapse;width:100%;font-size:8px;line-height:1.3;}
+  #pdf-render th,#pdf-render td{padding:2px 5px;border:1px solid #e0e0e0;white-space:nowrap;}
+  #pdf-render th{background:#f7f6f3!important;color:#555;font-weight:600;text-align:center;font-size:7.5px;}
+  #pdf-render td{text-align:right;color:#1a1a1a;background:#fff!important;}
+  #pdf-render td.label{text-align:left;font-weight:500;min-width:140px;background:#fff!important;}
+  #pdf-render .totals-row td{font-weight:700;border-top:1.5px solid #8a7040;background:#faf9f6!important;}
+
+  /* ── Print ── */
+  @media print{
+    body{background:#fff;color:#000;padding:8px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    @page{size:landscape letter;margin:0.4in;}
+    #sidebar{display:none;} .pdf-btn{display:none;} body,#app,#main-content{display:block;height:auto;overflow:visible;padding:8px;}
+    .report-table-wrap{border-color:#ccc;}
+    table{font-size:9px;min-width:unset;}
+    th{background:#eee!important;color:#333;}
+    td{color:#000;}
+    td.label,th.sticky-col{position:static;}
+    .section-title{color:#333;border-bottom-color:#999;}
+    .totals-row td{background:#f5f5f5!important;}
+    .kpi-card{border-color:#ccc;border-left-color:#8a7040;}
+    .kpi-label{color:#666;}
+    .kpi-value{color:#333;}
+  }
+</style>
+<link rel="stylesheet" href="/static/theme.css">
+<script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
+</head>
+<body>
+<div id="app">
+  <nav id="sidebar">
+    <div class="sidebar-logo">
+      <img src="/static/img/ember_logo.png" alt="Ember" class="logo-img logo-dark">
+      <img src="/static/img/ember_logo_light.png" alt="Ember" class="logo-img logo-light">
+      <div class="logo-sub">Operating Revenues</div>
+    </div>
+
+    <div class="sidebar-section">Apps &amp; Dashboards</div>
+    {% if page_access.get('mpc_underwriting', true) %}
+    <a href="/" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+      MPC Underwriting
+    </a>
+    {% endif %}
+    {% if page_access.get('returns', true) %}
+    <a href="/returns" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Project Returns
+    </a>
+    {% endif %}
+    {% if page_access.get('loans', true) %}
+    <a href="/loans" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Loans & Debt
+    </a>
+    {% endif %}
+    {% if page_access.get('operations', true) %}
+    <a href="/operations" class="sidebar-item active">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Operating Revenues
+    </a>
+    {% endif %}
+    {% if page_access.get('macro', true) %}
+    <a href="/macro" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="1.5"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Macro Dashboard
+    </a>
+    {% endif %}
+    {% if page_access.get('portfolio', true) %}
+    <a href="/ember-capital" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 3.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Ember Capital
+    </a>
+    {% endif %}
+    {% if page_access.get('sales', true) %}
+    <a href="/sales" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l3-3 4 4 5-6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Community Sales
+    </a>
+    {% endif %}
+
+    {% if data %}
+    <div class="sidebar-section">Sections</div>
+    <a href="#sec-kpis" class="nav-link" onclick="event.preventDefault();document.getElementById('sec-kpis').scrollIntoView({behavior:'smooth',block:'start'})">
+      KPI Summary
+    </a>
+    <a href="#sec-annual" class="nav-link" onclick="event.preventDefault();document.getElementById('sec-annual').scrollIntoView({behavior:'smooth',block:'start'})">
+      Annual Forecast
+    </a>
+    <a href="#sec-monthly" class="nav-link" onclick="event.preventDefault();document.getElementById('sec-monthly').scrollIntoView({behavior:'smooth',block:'start'})">
+      Monthly Revenue
+    </a>
+    <a href="#sec-next12m" class="nav-link" onclick="event.preventDefault();document.getElementById('sec-next12m').scrollIntoView({behavior:'smooth',block:'start'})">
+      Next 12 Months
+    </a>
+    <a href="#sec-quarters" class="nav-link" onclick="event.preventDefault();document.getElementById('sec-quarters').scrollIntoView({behavior:'smooth',block:'start'})">
+      Next 12 Quarters
+    </a>
+    {% endif %}
+
+    <div style="flex:1"></div>
+    {% include "_partials/_sidebar_foot.html" %}
+  </nav>
+
+  <div id="main-content">
+<div class="top-bar">
+  <h1>Ember Operating Revenues</h1>
+  <div class="top-right">
+    <div class="meta">
+      {% if uploaded_at %}Last updated: {{ uploaded_at }}{% else %}No data uploaded yet{% endif %}
+    </div>
+    {% if data %}
+    <div style="display:flex;gap:8px;">
+    <button class="pdf-btn" onclick="openExecReport()" title="Open the branded executive PDF in a new tab">
+      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14L21 3M19 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Executive Report
+    </button>
+    <button class="pdf-btn" onclick="downloadExecReport()" title="Download the branded executive PDF">
+      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m4-5l5 5 5-5m-5 5V3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Download PDF
+    </button>
+    <a class="pdf-btn" href="/api/export-operations-excel" download>
+      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" stroke-width="1.8"/><path d="M8 12h8M8 8h5M8 16h6" stroke-width="1.8" stroke-linecap="round"/></svg>
+      Export Excel
+    </a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if data %}
+
+{# ── KPI Cards ── #}
+<div class="kpi-grid" id="sec-kpis">
+  {% for kpi in data.kpis %}
+  <div class="kpi-card">
+    <div class="kpi-label">{{ kpi.label }}</div>
+    <div class="kpi-value">${{ "{:,.0f}".format(kpi.value) }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+{# ── Annual Revenue Forecast ── #}
+<div class="section-title" id="sec-annual">Annual Revenue Forecast (Next 5 Years)</div>
+<div class="report-table-wrap">
+  <table id="yearly-table">
+    <thead>
+      <tr>
+        <th class="sticky-col">Revenue Source</th>
+        {% for yr in data.yearly_rollup.years %}
+        <th>{{ yr }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in data.yearly_rollup.rows %}
+      <tr>
+        <td class="label">{{ row.label }}</td>
+        {% for v in row['values'] %}
+        <td>{{ "${:,.0f}".format(v) if v else "" }}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+      <tr class="totals-row">
+        <td class="label">Total</td>
+        {% for v in data.yearly_rollup.totals %}
+        <td>{{ "${:,.0f}".format(v) }}</td>
+        {% endfor %}
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+{# ── Historical Monthly Table ── #}
+<div class="section-title" id="sec-monthly">Monthly Fee Revenue</div>
+<div class="filter-bar">
+  <label for="filter-from">From:</label>
+  <input type="date" id="filter-from" value="2018-11-01">
+  <label for="filter-to">To:</label>
+  <input type="date" id="filter-to">
+  <button class="pdf-btn" onclick="applyMonthlyFilter()" style="font-weight:500;">Apply</button>
+</div>
+<div class="report-table-wrap">
+  <table id="monthly-table">
+    <thead>
+      <tr>
+        <th class="sticky-col">Project / Category</th>
+        {% for d in data.monthly.dates %}
+        <th class="month-col" data-date="{{ d }}">{{ d[5:7] }}/{{ d[2:4] }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in data.monthly.rows %}
+      <tr>
+        <td class="label">{{ row.project }} — {{ row.category }}</td>
+        {% for v in row['values'] %}
+        <td class="month-col" data-date="{{ data.monthly.dates[loop.index0] }}">{{ "${:,.0f}".format(v) if v else "" }}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+      <tr class="totals-row">
+        <td class="label">Total</td>
+        {% for v in data.monthly.totals %}
+        <td class="month-col" data-date="{{ data.monthly.dates[loop.index0] }}">{{ "${:,.0f}".format(v) }}</td>
+        {% endfor %}
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+{# ── Next 12 Months Table ── #}
+<div class="section-title" id="sec-next12m">Next 12 Months</div>
+<div class="report-table-wrap">
+  <table id="next12m-table">
+    <thead>
+      <tr>
+        <th class="sticky-col">Revenue Source</th>
+        {% for d in data.next_12_months.dates %}
+        <th>{{ d[5:7] }}/{{ d[2:4] }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in data.next_12_months.rows %}
+      <tr>
+        <td class="label">{{ row.label }}</td>
+        {% for v in row['values'] %}
+        <td>{{ "${:,.0f}".format(v) if v else "" }}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+      <tr class="totals-row">
+        <td class="label">Total</td>
+        {% for v in data.next_12_months.totals %}
+        <td>{{ "${:,.0f}".format(v) }}</td>
+        {% endfor %}
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+{# ── Next 12 Quarters Table ── #}
+<div class="section-title" id="sec-quarters">Next 12 Quarters</div>
+<div class="report-table-wrap">
+  <table id="quarterly-table">
+    <thead>
+      <tr>
+        <th class="sticky-col">Revenue Source</th>
+        {% for q in data.quarterly_rollup.quarters %}
+        <th>{{ q }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in data.quarterly_rollup.rows %}
+      <tr>
+        <td class="label">{{ row.label }}</td>
+        {% for v in row['values'] %}
+        <td>{{ "${:,.0f}".format(v) if v else "" }}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+      <tr class="totals-row">
+        <td class="label">Total</td>
+        {% for v in data.quarterly_rollup.totals %}
+        <td>{{ "${:,.0f}".format(v) }}</td>
+        {% endfor %}
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+{% else %}
+<div class="empty-state">
+  <h2>No Report Data</h2>
+  <p>An admin needs to upload the Ember Dashboard Excel file from the home page to populate this report.</p>
+</div>
+{% endif %}
+
+<script>
+const fmtC = v => '$' + Math.round(v).toLocaleString();
+
+{% if data %}
+// ── Set default "To" date to today ──
+(function(){
+  const today = new Date().toISOString().slice(0,10);
+  document.getElementById('filter-to').value = today;
+})();
+
+// ── Monthly filter ──
+function applyMonthlyFilter(){
+  const from = document.getElementById('filter-from').value;
+  const to = document.getElementById('filter-to').value;
+  const cols = document.querySelectorAll('#monthly-table .month-col');
+  cols.forEach(c => {
+    const d = c.getAttribute('data-date');
+    if(d){
+      c.style.display = (d >= from && d <= to) ? '' : 'none';
+    }
+  });
+}
+// Apply filter on load
+applyMonthlyFilter();
+
+{% endif %}
+
+// ── Branded executive PDF — served by Flask (same format as Ember Capital) ──
+function openExecReport(){
+  window.open('/api/operations/pdf?ts=' + Date.now(), '_blank');
+}
+function downloadExecReport(){
+  window.location.href = '/api/operations/pdf?download=1&ts=' + Date.now();
+}
+</script>
+</div></div>
+
+{% include "_partials/_account_modal.html" %}
+<script>
+function _updateThemeButtons() {
+  const isDark   = document.documentElement.dataset.theme === 'dark';
+  const darkBtn  = document.getElementById('theme-btn-dark');
+  const lightBtn = document.getElementById('theme-btn-light');
+  if (!darkBtn || !lightBtn) return;
+  lightBtn.classList.toggle('is-active', !isDark);
+  darkBtn.classList.toggle('is-active', isDark);
+}
+function applyTheme(theme) {
+  // 'light' = Warm Paper (default) · 'dark' = Deep Navy
+  document.documentElement.dataset.theme = (theme === 'dark') ? 'dark' : 'light';
+  localStorage.setItem('ember-theme', theme === 'dark' ? 'dark' : 'light');
+  _updateThemeButtons();
+}
+(function(){ var t = localStorage.getItem('ember-theme'); document.documentElement.dataset.theme = (t === 'dark') ? 'dark' : 'light'; })();
+async function openAcct() {
+  const m = document.getElementById('acct-modal');
+  m.style.display = 'flex';
+  _updateThemeButtons();
+  document.getElementById('acct-cur-pw').value = '';
+  document.getElementById('acct-new-pw').value = '';
+  document.getElementById('acct-conf-pw').value = '';
+  document.getElementById('acct-msg').style.display = 'none';
+  document.getElementById('acct-report-msg').style.display = 'none';
+  try {
+    const res = await fetch('/api/account');
+    const d = await res.json();
+    document.getElementById('acct-email').textContent = d.email || '—';
+    document.getElementById('acct-report-optin').checked = d.report_opt_in || false;
+    document.getElementById(d.report_format === 'excel' ? 'acct-fmt-excel' : 'acct-fmt-pdf').checked = true;
+    document.getElementById('acct-format-row').style.display = d.report_opt_in ? 'block' : 'none';
+  } catch(e) {}
+}
+function closeAcct() { document.getElementById('acct-modal').style.display = 'none'; }
+document.getElementById('acct-modal').addEventListener('click', function(e) { if (e.target === this) closeAcct(); });
+document.getElementById('acct-report-optin').addEventListener('change', function() {
+  document.getElementById('acct-format-row').style.display = this.checked ? 'block' : 'none';
+});
+async function saveAcctPw() {
+  const cur = document.getElementById('acct-cur-pw').value;
+  const nw  = document.getElementById('acct-new-pw').value;
+  const conf= document.getElementById('acct-conf-pw').value;
+  const msg = document.getElementById('acct-msg');
+  function showMsg(txt, ok) { msg.textContent=txt; msg.style.color=ok?'#5e9e8c':'#e07a3e'; msg.style.display='block'; }
+  if (!cur||!nw||!conf) { showMsg('All fields are required.',false); return; }
+  if (nw!==conf)        { showMsg('New passwords do not match.',false); return; }
+  const res = await fetch('/api/account/password',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({current_password:cur,new_password:nw})});
+  const data = await res.json();
+  if (data.ok) { showMsg('Password updated.',true); setTimeout(closeAcct,1500); }
+  else         { showMsg(data.error||'Failed to update password.',false); }
+}
+async function saveReportSettings() {
+  const opt_in = document.getElementById('acct-report-optin').checked;
+  const fmt = document.querySelector('input[name="acct-report-fmt"]:checked')?.value || 'pdf';
+  const msg = document.getElementById('acct-report-msg');
+  const res = await fetch('/api/account/report-settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({report_opt_in:opt_in,report_format:fmt})});
+  const d = await res.json();
+  msg.style.display='block';
+  if (d.ok) { msg.textContent='Preferences saved.'; msg.style.color='#5e9e8c'; }
+  else      { msg.textContent=d.error||'Failed to save.'; msg.style.color='#e07a3e'; }
+}
+</script>
+</body>
+</html>

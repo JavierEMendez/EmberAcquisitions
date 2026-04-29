@@ -1,0 +1,263 @@
+{# ============================================================
+   Ember · Operating Cashflows — PDF report (2-page, 11×8.5 landscape).
+   Visual reference: _design_reference/Operations Report.html
+   Pivot table + donut are pre-rendered server-side (no JS) so WeasyPrint
+   doesn't need a headless browser to paint them.
+   ============================================================ #}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Ember · Operations Report</title>
+<style>
+  /* Brand fonts — read from disk by app.py's _weasyprint_local_fetcher.
+     Same pattern the Returns + Capital reports use. */
+  @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-Bold.ttf") format("truetype"); font-weight: 700; }
+  @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-CondensedBold.ttf") format("truetype"); font-weight: 800; font-stretch: condensed; }
+  @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-Light.ttf") format("truetype"); font-weight: 300; }
+  @font-face { font-family: "Gotham";              src: url("/static/fonts/Gotham-Medium.otf") format("opentype"); font-weight: 500; }
+  /* Plus Jakarta Sans — open-licensed brand fallback, bundled. */
+  @font-face { font-family: "Plus Jakarta Sans"; src: url("/static/fonts/PlusJakartaSans-Light.ttf")     format("truetype"); font-weight: 300; }
+  @font-face { font-family: "Plus Jakarta Sans"; src: url("/static/fonts/PlusJakartaSans-Medium.ttf")    format("truetype"); font-weight: 500; }
+  @font-face { font-family: "Plus Jakarta Sans"; src: url("/static/fonts/PlusJakartaSans-Bold.ttf")      format("truetype"); font-weight: 700; }
+  @font-face { font-family: "Plus Jakarta Sans"; src: url("/static/fonts/PlusJakartaSans-ExtraBold.ttf") format("truetype"); font-weight: 800; }
+
+  :root {
+    --paper:#FFFFFF; --warm:#F8F4EE;
+    --ink:#08233B; --ink-2:#13344E; --muted:#5b6b7b; --subtle:#97a3b0;
+    --line:rgba(8,35,59,0.10); --line-2:rgba(8,35,59,0.20);
+    --accent:#F25929; --accent-soft:rgba(242,89,41,0.10);
+    --c-dev:#F25929; --c-ppl:#08233B; --c-book:#5B9BD5; --c-rcv:#7E5BA6; --c-eblot:#1F7A4D; --c-ebpod:#C8A96E;
+    --font-display:"HelveticaNeue Brand","Plus Jakarta Sans",system-ui,sans-serif;
+    --font-sans:"Plus Jakarta Sans",system-ui,sans-serif;
+    --font-mono:"JetBrains Mono",ui-monospace,monospace;
+    --font-eyebrow:"Gotham","Plus Jakarta Sans",system-ui,sans-serif;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html, body { background:#fff; font-family:var(--font-sans); color:var(--ink); -webkit-print-color-adjust:exact; print-color-adjust:exact; color-adjust:exact; }
+  @page { size: 11in 8.5in; margin: 0; }
+  .page { width:11in; height:8.5in; background:var(--paper); position:relative; overflow:hidden; page-break-after:always; }
+  .page:last-child { page-break-after: auto; }
+  .page-pad { position:absolute; inset:0; padding:.55in .65in .85in .65in; display:flex; flex-direction:column; }
+  .page-foot { position:absolute; left:.65in; right:.65in; bottom:.32in; display:flex; justify-content:space-between; align-items:center; padding-top:10px; border-top:1px solid var(--line); font-family:var(--font-mono); font-size:8.5px; letter-spacing:.06em; color:var(--subtle); }
+  .page-foot .conf { font-weight:600; color:var(--ink-2); letter-spacing:.18em; text-transform:uppercase; }
+  .page-foot .dot  { width:4px; height:4px; border-radius:50%; background:var(--accent); display:inline-block; }
+
+  .num   { font-variant-numeric:tabular-nums; font-feature-settings:'tnum'; }
+  .mono  { font-family:var(--font-mono); font-variant-numeric:tabular-nums; }
+  .eyebrow { font-family:var(--font-eyebrow); font-weight:500; font-size:9.5px; letter-spacing:.24em; text-transform:uppercase; color:var(--accent); }
+  .label   { font-family:var(--font-sans); font-weight:600; font-size:9px; letter-spacing:.16em; text-transform:uppercase; color:var(--subtle); }
+
+  /* COVER */
+  .cover .top { display:flex; justify-content:space-between; align-items:flex-start; }
+  .cover-mark { width:38px; height:38px; }
+  .cover .conf-stamp { font-family:var(--font-mono); font-size:9.5px; letter-spacing:.18em; text-transform:uppercase; color:var(--ink-2); padding:6px 12px; border:1px solid var(--line-2); border-radius:999px; display:inline-flex; gap:8px; align-items:center; }
+  .cover .conf-stamp::before { content:""; width:6px; height:6px; background:var(--accent); border-radius:50%; }
+  .cover .mid { flex:1; display:flex; flex-direction:column; justify-content:flex-end; padding-bottom:12px; }
+  .cover h1 { font-family:var(--font-display); font-weight:700; font-size:84px; line-height:.94; letter-spacing:-.025em; max-width:9in; text-transform:uppercase; }
+  .cover h1 em { font-style:normal; font-weight:300; color:var(--accent); }
+  .cover .lede { font-size:14.5px; line-height:1.55; color:var(--muted); margin-top:28px; max-width:6.4in; }
+  .cover .bot { display:grid; grid-template-columns:1fr 1fr 1fr; margin-top:36px; padding-top:22px; border-top:1px solid var(--line-2); }
+  .cover .bot .col { padding-right:24px; }
+  .cover .bot .col + .col { padding-left:24px; border-left:1px solid var(--line); }
+  .cover .bot .col .label { margin-bottom:8px; }
+  .cover .bot .col .val { font-family:var(--font-display); font-weight:700; font-size:16px; text-transform:uppercase; }
+  .cover .bot .col .val.mono { font-family:var(--font-mono); font-weight:500; font-size:12.5px; letter-spacing:.04em; text-transform:none; }
+  .cover .footnote { font-size:9.5px; line-height:1.5; color:var(--subtle); max-width:6.4in; padding-top:10px; }
+
+  /* SHARED HEAD */
+  .phead { display:flex; justify-content:space-between; align-items:flex-end; padding-bottom:12px; border-bottom:1px solid var(--line-2); margin-bottom:14px; }
+  .phead h2 { font-family:var(--font-display); font-weight:700; font-size:24px; letter-spacing:-.015em; line-height:1.04; text-transform:uppercase; }
+  .phead h2 em { font-style:normal; font-weight:300; color:var(--accent); text-transform:none; letter-spacing:-.02em; }
+  .phead .meta { font-family:var(--font-mono); font-size:9.5px; color:var(--subtle); letter-spacing:.06em; text-align:right; }
+
+  /* KPI BAND */
+  .kpi-band { display:grid; grid-template-columns:repeat(4,1fr); border:1px solid var(--line); margin-bottom:14px; }
+  .kpi-band .kpi { padding:12px 14px; border-left:1px solid var(--line); }
+  .kpi-band .kpi:first-child { border-left:none; }
+  .kpi .label { font-size:8.5px; }
+  .kpi .v { font-family:var(--font-display); font-weight:700; font-size:24px; letter-spacing:-.01em; margin-top:6px; font-variant-numeric:tabular-nums; }
+  .kpi.accent .v { color:var(--accent); }
+  .kpi .s { font-size:9.5px; color:var(--muted); margin-top:3px; }
+
+  /* PANEL + PIVOT */
+  .panel { border:1px solid var(--line); padding:12px 14px 10px; display:flex; flex-direction:column; }
+  .panel .ttl { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; }
+  .panel .ttl .h { font-family:var(--font-display); font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.02em; }
+  .panel .ttl .s { font-size:9.5px; color:var(--subtle); font-family:var(--font-mono); letter-spacing:.04em; }
+
+  table.pivot { width:100%; border-collapse:collapse; font-size:8.5px; font-variant-numeric:tabular-nums; table-layout:fixed; }
+  table.pivot col.cat { width:150px; }
+  table.pivot col.tot { width:54px; }
+  table.pivot th { padding:5px 3px; font-weight:600; font-size:7px; letter-spacing:.08em; text-transform:uppercase; color:var(--subtle); border-bottom:1px solid var(--line-2); text-align:right; white-space:nowrap; }
+  table.pivot th.l { text-align:left; padding-left:0; font-size:7.5px; }
+  table.pivot th.now { color:var(--accent); font-weight:700; }
+  table.pivot th.divider { border-left:1px solid var(--line-2); }
+  table.pivot td { padding:5px 3px; text-align:right; color:var(--muted); border-bottom:1px solid var(--line); white-space:nowrap; font-family:var(--font-mono); font-size:9px; }
+  table.pivot td.l { text-align:left; padding-left:0; color:var(--ink); font-weight:600; font-family:var(--font-sans); font-size:9.5px; }
+  table.pivot td.now { color:var(--accent); font-weight:700; background:var(--accent-soft); }
+  table.pivot td.tot { color:var(--ink); font-weight:700; border-left:1px solid var(--line-2); font-size:9.5px; }
+  table.pivot tr.tot td { font-weight:700; color:var(--ink); border-top:2px solid var(--ink); border-bottom:none; padding-top:7px; }
+  table.pivot tr.tot td.tot { color:var(--accent); }
+  .swatch { display:inline-block; width:6px; height:11px; margin-right:7px; vertical-align:-1px; border-radius:1px; }
+
+  /* MIX ROW */
+  .mix-row { display:grid; grid-template-columns:1.55fr 1fr; gap:14px; margin-top:14px; }
+  .pie-wrap { display:flex; align-items:center; gap:18px; }
+  .pie-legend { flex:1; display:flex; flex-direction:column; gap:5px; font-size:9.5px; }
+  .pie-legend .row { display:flex; align-items:center; gap:7px; }
+  .pie-legend .row .nm  { flex:1; color:var(--ink); }
+  .pie-legend .row .pct { color:var(--muted); font-variant-numeric:tabular-nums; width:32px; text-align:right; font-family:var(--font-mono); }
+  .pie-legend .row .v   { color:var(--ink);   font-variant-numeric:tabular-nums; width:54px; text-align:right; font-weight:700; font-family:var(--font-mono); }
+  .mix-note { padding:14px 16px; background:var(--warm); border-left:3px solid var(--accent); font-size:10px; line-height:1.55; color:var(--muted); }
+  .mix-note .h { font-weight:700; font-size:9px; letter-spacing:.2em; text-transform:uppercase; color:var(--ink); margin-bottom:6px; }
+</style>
+</head>
+<body>
+
+{# ─── PAGE 1 · COVER ─── #}
+<div class="page cover">
+  <div class="page-pad">
+    <div class="top">
+      <svg class="cover-mark" viewBox="0 0 36 36" fill="none">
+        <g fill="#F25929">
+          <rect x="3"  y="14" width="2.5" height="14" rx="1.2"/>
+          <rect x="3"  y="9"  width="2.5" height="2.5" rx="1.2"/>
+          <rect x="8"  y="5"  width="2.5" height="23" rx="1.2"/>
+          <rect x="13" y="2"  width="2.5" height="3"  rx="1.2"/>
+          <rect x="13" y="11" width="2.5" height="20" rx="1.2"/>
+          <rect x="18" y="8"  width="2.5" height="22" rx="1.2"/>
+          <rect x="23" y="3"  width="2.5" height="14" rx="1.2"/>
+          <rect x="23" y="20" width="2.5" height="10" rx="1.2"/>
+          <rect x="28" y="6"  width="2.5" height="20" rx="1.2"/>
+        </g>
+      </svg>
+      <span class="conf-stamp">Confidential · Internal</span>
+    </div>
+    <div class="mid">
+      <div class="eyebrow">Ember Residential · Finance &amp; Analytics</div>
+      <h1 style="margin-top:14px">Operating<br/><em>Cashflows</em></h1>
+      <div class="lede">
+        Forward forecast of operating revenue across active Ember communities.
+        {{ rpt.cat_count }} fee categories rolled up by month over the next twelve months —
+        anchored to the current period.
+      </div>
+      <div class="bot">
+        <div class="col">
+          <div class="label">Period</div>
+          <div class="val">{{ rpt.period_label }}</div>
+        </div>
+        <div class="col">
+          <div class="label">Active Projects</div>
+          <div class="val">{{ rpt.project_count }} — {{ rpt.cat_count }} Fee Categories</div>
+        </div>
+        <div class="col">
+          <div class="label">Generated</div>
+          <div class="val mono">{{ rpt.generated_iso }}</div>
+        </div>
+      </div>
+      <div class="footnote">All figures in USD ($000s unless noted). Forward-looking forecasts based on current contracts, lot delivery schedules, and underwriting assumptions; subject to change. Distribution outside Ember Residential, its affiliates, and authorized partners is prohibited.</div>
+    </div>
+    <div class="page-foot">
+      <span class="l"><span class="conf">Confidential</span></span>
+      <span class="c"><span class="dot"></span> Ember Finance &amp; Analytics · Operations Report</span>
+      <span class="r mono">01 / 02</span>
+    </div>
+  </div>
+</div>
+
+{# ─── PAGE 2 · CATEGORY × MONTH PIVOT + DONUT ─── #}
+<div class="page">
+  <div class="page-pad">
+    <div class="phead">
+      <h2>Forecast by<br/>Category</h2>
+      <div class="meta">PAST 3 + NEXT 15 MONTHS · CATEGORY × MONTH</div>
+    </div>
+
+    <div class="kpi-band">
+      {% for k in rpt.kpis %}
+        <div class="kpi {% if loop.last %}accent{% endif %}">
+          <div class="label">{{ k.label }}</div>
+          <div class="v num">{{ k.val }}</div>
+          <div class="s">{{ k.sub }}</div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="panel" style="flex:0 0 auto">
+      <div class="ttl">
+        <div class="h">Category × Month · Operating Revenue</div>
+        <div class="s">$K · {{ rpt.cat_count }} CATEGORIES · 18 MONTHS</div>
+      </div>
+      <table class="pivot">
+        <colgroup>
+          <col class="cat"/>
+          <col class="tot"/>
+          {% for _ in rpt.months %}<col/>{% endfor %}
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="l">Category</th>
+            <th class="divider">Total</th>
+            {% for m in rpt.months %}
+              <th class="{% if loop.index0 == rpt.now_idx %}now{% endif %}">{{ m.short }}<br/>{{ m.yy }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rpt.cat_rows %}
+            <tr>
+              <td class="l"><span class="swatch" style="background:{{ r.color }}"></span>{{ r.name }}</td>
+              <td class="tot">{{ r.total_k|int_comma }}</td>
+              {% for v in r.row_k %}
+                <td class="{% if loop.index0 == rpt.now_idx %}now{% endif %}">{{ v|int_comma }}</td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+          <tr class="tot">
+            <td class="l">Total · $K</td>
+            <td class="tot">{{ rpt.grand_total_k|int_comma }}</td>
+            {% for v in rpt.month_totals_k %}
+              <td class="{% if loop.index0 == rpt.now_idx %}now{% endif %}">{{ v|int_comma }}</td>
+            {% endfor %}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mix-row">
+      <div class="panel">
+        <div class="ttl">
+          <div class="h">Revenue Mix by Source · Next 12 Months</div>
+          <div class="s">{{ rpt.next12_label }}</div>
+        </div>
+        <div class="pie-wrap">
+          {{ rpt.pie_svg|safe }}
+          <div class="pie-legend">
+            {% for c in rpt.pie_legend %}
+              <div class="row">
+                <span style="width:9px;height:9px;border-radius:2px;background:{{ c.color }};flex:0 0 auto"></span>
+                <span class="nm">{{ c.name }}</span>
+                <span class="pct">{{ c.pct }}%</span>
+                <span class="v">${{ c.value_k|int_comma }}K</span>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      <div class="mix-note">
+        <div class="h">Note</div>
+        {{ rpt.mix_note|safe }}
+      </div>
+    </div>
+
+    <div class="page-foot">
+      <span class="l"><span class="conf">Confidential</span></span>
+      <span class="c"><span class="dot"></span> Ember Finance &amp; Analytics · Operating Cashflows</span>
+      <span class="r mono">02 / 02</span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
