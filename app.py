@@ -3552,6 +3552,121 @@ def _ops_month_dates(anchor):
     return out
 
 
+def _ops_year_month(s):
+    """Best-effort 'YYYY-MM' extractor for the legacy parser's date strings.
+
+    The Excel parser writes one of: ISO date ('2024-01-01'), full ISO
+    timestamp, or a Python str() of a date. Pull out year+month from
+    any of those without crashing.
+    """
+    if s is None:
+        return None
+    s = str(s)
+    # Try ISO date first (handles '2024-01-01' and '2024-01-01T00:00:00' forms)
+    try:
+        d = datetime.date.fromisoformat(s[:10])
+        return f"{d.year:04d}-{d.month:02d}"
+    except (ValueError, TypeError):
+        pass
+    try:
+        d = datetime.datetime.fromisoformat(s[:19])
+        return f"{d.year:04d}-{d.month:02d}"
+    except (ValueError, TypeError):
+        pass
+    # Last-resort: first 7 chars look like YYYY-MM?
+    if len(s) >= 7 and s[4:5] == '-':
+        return s[:7]
+    return None
+
+
+def _ops_translate_legacy(raw):
+    """Translate the legacy uploaded-Excel shape to the new format the
+    redesigned /operations page expects.
+
+    Legacy shape (from report_parser._parse_operations):
+        {
+          "kpis": [...],
+          "yearly_rollup": {...},
+          "monthly": {
+              "dates": ["2024-01-01", "2024-02-01", ...],   # full lifetime
+              "rows":  [{"project": "...", "category": "...",
+                         "values": [...]}, ...],
+              "totals": [...],
+          },
+          ...
+        }
+
+    New shape (consumed by _build_operations_view_context):
+        {
+          "anchor": "YYYY-MM-01",
+          "projects": ["..."],
+          "monthly": {
+              "<project>": { "<category>": [18 floats], ... },
+              ...
+          },
+        }
+
+    We anchor on today's month (1st) and slice an 18-month window
+    (anchor-3 .. anchor+14). Months that fall outside the legacy
+    series are filled with 0.
+    """
+    if not isinstance(raw, dict):
+        return None
+    legacy_monthly = raw.get("monthly") or {}
+    rows  = legacy_monthly.get("rows")  or []
+    dates = legacy_monthly.get("dates") or []
+    if not rows or not dates:
+        return None
+
+    # Build {project: {category: {YYYY-MM: value}}} so the window slice
+    # below is a series of dict lookups regardless of how the legacy
+    # date series was sized.
+    by_pc = {}
+    project_order = []
+    for row in rows:
+        p = row.get("project")
+        c = row.get("category")
+        v = row.get("values") or []
+        if not p or not c:
+            continue
+        if p not in by_pc:
+            project_order.append(p)
+            by_pc[p] = {}
+        if c not in by_pc[p]:
+            by_pc[p][c] = {}
+        for i, val in enumerate(v):
+            if i >= len(dates):
+                break
+            ym = _ops_year_month(dates[i])
+            if not ym:
+                continue
+            by_pc[p][c][ym] = float(val or 0)
+
+    if not project_order:
+        return None
+
+    # Anchor on today's month; slice 18 months (-3..+14).
+    anchor = datetime.date.today().replace(day=1)
+    monthly_out = {}
+    for p in project_order:
+        monthly_out[p] = {}
+        for c in _OPS_CATS:
+            month_map = by_pc[p].get(c, {})
+            values = []
+            for off in range(-3, 15):
+                m_idx = anchor.month - 1 + off
+                yr = anchor.year + (m_idx // 12)
+                mo = (m_idx % 12) + 1
+                values.append(month_map.get(f"{yr:04d}-{mo:02d}", 0.0))
+            monthly_out[p][c] = values
+
+    return {
+        "anchor":   anchor.isoformat(),
+        "projects": project_order,
+        "monthly":  monthly_out,
+    }
+
+
 def _ops_fmtM(v):
     return f"${v / 1_000_000:.2f}M"
 
@@ -3607,9 +3722,28 @@ def _ops_sparkline(values, color, bold=False, now_offset=None):
 
 
 def _build_operations_view_context(raw_data, uploaded_at):
-    """Build the dict the new operations.html template consumes."""
+    """Build the dict the new operations.html template consumes.
+
+    Accepts two input shapes — auto-detects which one is on disk:
+      • New shape: {anchor, projects, monthly{project: {category: [18 vals]}}}
+      • Legacy shape (from the existing Excel uploader / report_parser):
+        {monthly: {dates, rows, totals}, kpis, yearly_rollup, ...}
+    Legacy data is reshaped in-memory through `_ops_translate_legacy`
+    so the user can keep uploading the same Excel without a parser
+    rewrite.
+    """
     if not raw_data:
         return None
+    # Detect legacy: a dict-shaped `monthly` with `rows` + `dates` keys.
+    legacy_monthly = raw_data.get("monthly")
+    if (isinstance(legacy_monthly, dict)
+        and "rows"  in legacy_monthly
+        and "dates" in legacy_monthly
+        and "anchor" not in raw_data):
+        translated = _ops_translate_legacy(raw_data)
+        if translated is None:
+            return None
+        raw_data = translated
     anchor = raw_data.get("anchor")
     if isinstance(anchor, str):
         try: anchor = datetime.date.fromisoformat(anchor[:10])
