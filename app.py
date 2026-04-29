@@ -1300,6 +1300,7 @@ def _build_capital_view_context() -> dict:
     unallocated_commitments_k = round(commit_totals["available"]       / 1000)
 
     # ── Pipeline: MPC underwriting projects with status='Active' ───────
+    hidden_pipeline = _capital_load_pipeline_visibility()
     cur.execute("""
         SELECT id, name, address, updated_at,
                outputs, inputs,
@@ -1330,8 +1331,9 @@ def _build_capital_view_context() -> dict:
         except (TypeError, ValueError): dur_months = 0
         # No EM in our outputs schema — rough proxy: 1 + gross_margin.
         em_val = round(1 + gm, 2) if gm else 1.0
+        pid = f"proj_{r['id']}"
         pipeline.append({
-            "id":           f"proj_{r['id']}",
+            "id":           pid,
             "name":         r.get("name") or f"Project {r['id']}",
             "address":      r.get("address") or "",
             "asset_class":  _class_for(r.get("name") or ""),
@@ -1342,6 +1344,7 @@ def _build_capital_view_context() -> dict:
             "em":           em_val,
             "updated":      (r["updated_at"].strftime("%Y-%m-%d")
                              if r.get("updated_at") else ""),
+            "show_in_report": pid not in hidden_pipeline,
         })
     cur.close(); conn.close()
 
@@ -1377,8 +1380,9 @@ def _build_capital_view_context() -> dict:
             dur_months = 0
         else:
             dur_months = max(12, (last_dist_idx - first_contrib_idx) * 12)
+        mpid = f"manual_{mp.get('id', '')}"
         pipeline.append({
-            "id":           f"manual_{mp.get('id', '')}",
+            "id":           mpid,
             "name":         mp.get("name", ""),
             "address":      mp.get("location", ""),
             "asset_class":  _class_for(mp.get("name") or "") or mp.get("asset_class", "mpc-hub"),
@@ -1390,6 +1394,7 @@ def _build_capital_view_context() -> dict:
             "updated":      (mp.get("updated_at") or "")[:10],
             "source":       "manual",
             "manual_id":    mp.get("id", ""),
+            "show_in_report": mpid not in hidden_pipeline,
             # Pre-populate the year inputs in the edit modal
             "_form": {
                 "name":                 mp.get("name", ""),
@@ -1504,12 +1509,27 @@ def portfolio_page():
 def _capital_report_context() -> dict:
     """Build the dict consumed by capital_report.html. Reuses the live
     /capital page context and layers on a few report-specific keys
-    (period label, generated date)."""
+    (period label, generated date), then filters the pipeline list to
+    just rows the user has flagged visible in the report and re-rolls
+    the pipeline KPIs against that subset.
+    """
     now = datetime.datetime.now()
     capital = _build_capital_view_context()
     capital["report_period_label"] = now.strftime("%B %Y").upper()
     capital["report_period_short"] = now.strftime("%b %Y").upper()
     capital["generated_date"]      = now.strftime("%Y-%m-%d")
+
+    # Pipeline visibility filter — drop hidden rows from the report,
+    # then re-derive the pipeline-side KPIs (count, land total,
+    # weighted IRR) so the cockpit numbers match the displayed table.
+    visible = [p for p in capital.get("pipeline", []) if p.get("show_in_report", True)]
+    capital["pipeline"] = visible
+    land_tot = sum(p["land_price"] for p in visible)
+    capital["kpis"]["pipeline_count"] = len(visible)
+    capital["kpis"]["pipeline_land"]  = land_tot
+    capital["kpis"]["weighted_irr"]   = round(
+        sum(p["irr"] * p["land_price"] for p in visible) / land_tot, 1
+    ) if land_tot else 0.0
     return capital
 
 
@@ -1694,6 +1714,57 @@ def _clean_manual_pipeline_project(body: dict) -> dict | None:
         "contributions_yearly": _arr(body.get("contributions_yearly")),
         "distributions_yearly": _arr(body.get("distributions_yearly")),
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pipeline visibility — per-project toggle for the Capital Report. Hides a
+# row from the report's pipeline table (and rolled-up KPIs) without removing
+# it from the live /capital page. Storage is a single JSONB blob with a list
+# of hidden project ids; default is "show". Project ids are the same shape
+# the pipeline table renders: `proj_<int>` for MPC projects, `manual_<id>`
+# for manually-added ones.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _capital_load_pipeline_visibility() -> set[str]:
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "SELECT data FROM reports WHERE report_type = 'ember_capital_pipeline_visibility' "
+        "ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    row = cur.fetchone(); cur.close(); conn.close()
+    d = (row["data"] if row else None) or {}
+    return set((d or {}).get("hidden") or [])
+
+
+def _capital_save_pipeline_visibility(hidden: set[str]) -> None:
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM reports WHERE report_type = 'ember_capital_pipeline_visibility'")
+    cur.execute(
+        "INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+        ("ember_capital_pipeline_visibility",
+         json.dumps({"hidden": sorted(hidden)}),
+         session.get("user_id")),
+    )
+    conn.commit(); cur.close(); conn.close()
+
+
+@app.route("/api/ember-capital/pipeline-visibility/<project_id>", methods=["POST"])
+@login_required
+def ember_capital_pipeline_visibility(project_id):
+    """Toggle whether a pipeline project shows in the Capital Report.
+
+    Body: {"show": true|false}. Returns the updated hidden-id list so
+    the client can verify state.
+    """
+    body = request.get_json(silent=True) or {}
+    show = bool(body.get("show", True))
+    hidden = _capital_load_pipeline_visibility()
+    if show:
+        hidden.discard(project_id)
+    else:
+        hidden.add(project_id)
+    _capital_save_pipeline_visibility(hidden)
+    return jsonify({"id": project_id, "show": show, "hidden": sorted(hidden)})
 
 
 @app.route("/api/ember-capital/pipeline", methods=["GET", "POST"])

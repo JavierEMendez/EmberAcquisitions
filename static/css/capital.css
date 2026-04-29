@@ -233,9 +233,51 @@
 .td.subtle { color: var(--cap-subtle); font-size: 11px; }
 
 .grid-active   { grid-template-columns: 1.7fr 1fr 90px 70px 90px 90px 90px; }
-/* Pipeline grid: 9th column holds per-row actions on manual entries
-   (edit + delete). MPC Underwriting rows leave that cell empty. */
-.grid-pipeline { grid-template-columns: 1.4fr 1.3fr 84px 76px 76px 64px 64px 76px 56px; }
+/* Pipeline grid: 9th column holds the "Show in report" toggle (all
+   rows), 10th column holds the per-row actions (edit + delete) on
+   manual entries — MPC rows leave the actions cell empty. */
+.grid-pipeline { grid-template-columns: 1.3fr 1.2fr 80px 72px 72px 60px 60px 72px 78px 56px; }
+
+/* "Show in report" toggle — a tiny labeled checkbox in each pipeline row */
+.report-toggle {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 9.5px; color: var(--cap-muted);
+  letter-spacing: 0.04em; text-transform: uppercase;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  justify-content: flex-end;
+}
+.report-toggle input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px; height: 14px;
+  border: 1.5px solid var(--cap-line-2);
+  border-radius: 3px;
+  background: var(--cap-surface);
+  cursor: pointer;
+  position: relative;
+  margin: 0; padding: 0;
+  flex-shrink: 0;
+}
+.report-toggle input[type="checkbox"]:checked {
+  background: var(--cap-accent);
+  border-color: var(--cap-accent);
+}
+.report-toggle input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 3px; top: -1px;
+  width: 5px; height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.report-toggle input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--cap-accent);
+  outline-offset: 1px;
+}
 
 .row-actions { display: inline-flex; align-items: center; gap: 4px; justify-content: flex-end; }
 .row-action-btn {

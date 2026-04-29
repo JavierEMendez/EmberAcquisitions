@@ -123,6 +123,22 @@
     window.location.href = `/api/ember-capital/excel?view=${encodeURIComponent(view)}`;
   });
 
+  // ── "Show in Capital Report" toggles on each pipeline row ───
+  document.addEventListener("change", (e) => {
+    const cb = e.target.closest(".js-report-toggle");
+    if (!cb) return;
+    const projectId = cb.dataset.projectId;
+    if (!projectId) return;
+    fetch(`/api/ember-capital/pipeline-visibility/${encodeURIComponent(projectId)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ show: cb.checked }),
+    }).catch(err => {
+      console.error("[capital] visibility toggle failed", err);
+      cb.checked = !cb.checked;  // revert on failure
+    });
+  });
+
   // ── Pipeline modal (manual entries) ──────────────────────────
   initPipelineModal();
 

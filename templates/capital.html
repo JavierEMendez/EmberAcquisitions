@@ -354,6 +354,7 @@
             <div class="th right">IRR</div>
             <div class="th right">EM</div>
             <div class="th right">Updated</div>
+            <div class="th right" title="Show in Capital Report">In Report</div>
             <div class="th right"></div>
           </div>
           {% for p in capital.pipeline %}
@@ -372,6 +373,14 @@
             <div class="td right num accent">{{ fmt_pct(p.irr) }}</div>
             <div class="td right num">{{ fmt_em(p.em) }}</div>
             <div class="td right num subtle">{{ p.updated }}</div>
+            <div class="td right">
+              <label class="report-toggle" title="Show in Capital Report">
+                <input type="checkbox" class="js-report-toggle"
+                       data-project-id="{{ p.id }}"
+                       {% if p.show_in_report %}checked{% endif %}/>
+                Show
+              </label>
+            </div>
             <div class="td right">
               {% if p.source == 'manual' %}
               <span class="row-actions">
