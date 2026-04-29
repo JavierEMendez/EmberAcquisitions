@@ -117,7 +117,7 @@
   .kpi-band--5 { grid-template-columns: repeat(2, 1fr); }
 }
 
-/* ── Annual Capital Recycling chart ──────────────────────── */
+/* ── Annual Capital Recycling chart (v3 — paired bars) ───────── */
 .recycle-card {
   background: var(--cap-surface);
   border: 1px solid var(--cap-line);
@@ -125,17 +125,29 @@
   padding: 18px 22px 14px;
 }
 .recycle-legend {
-  display: flex; gap: 18px;
-  font-size: 10px; color: var(--cap-muted);
+  display: flex; gap: 14px; flex-wrap: wrap;
+  font-size: 9.5px; color: var(--cap-muted);
   font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
-.recycle-legend > span { display: inline-flex; align-items: center; gap: 6px; }
-.recycle-legend .sw    { width: 10px; height: 10px; border-radius: 1px; display: inline-block; }
-.recycle-chart { width: 100%; height: 220px; display: block; }
-.recycle-chart .grid          { stroke: currentColor; opacity: 0.08; }
-.recycle-chart .axis-label    { font-size: 9px; fill: currentColor; opacity: 0.5; font-variant-numeric: tabular-nums; }
-.recycle-chart .axis-label--current { opacity: 1; font-weight: 700; fill: var(--cap-ink); }
+.recycle-legend .leg { display: inline-flex; align-items: center; gap: 6px; }
+.recycle-legend .sw {
+  width: 10px; height: 10px; border-radius: 1px;
+  display: inline-block; box-sizing: border-box;
+}
+.recycle-legend .sw.outline {
+  background: transparent;
+  border: 1px dashed currentColor;
+}
+.recycle-legend .sep {
+  width: 1px; height: 12px;
+  background: var(--cap-line-2);
+  margin: 0 4px;
+  align-self: center;
+}
+.recycle-chart { width: 100%; height: 240px; display: block; }
+.recycle-chart .axis-label { font-family: ui-monospace, "JetBrains Mono", monospace; font-size: 8px; fill: var(--cap-subtle); font-variant-numeric: tabular-nums; }
+.recycle-chart .axis-label--current { font-weight: 700; fill: var(--cap-ink); }
 
 .cockpit .pie-card {
   margin-top: 22px;

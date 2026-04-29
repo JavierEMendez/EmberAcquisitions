@@ -1,0 +1,117 @@
+{# ─────────────────────────────────────────────────────────────────
+   Annual Capital Recycling & Equity Investment chart (v3 design).
+
+   Expects: capital.recycle = {
+       years:        [2021..2035],
+       rows:         [{year, actC, actDLP, actDProm, pipC, pipD}, ...],
+       y_axis_max:   int ($K),  # auto-scaled, 50K minimum
+       current_year: int,
+       color_contrib / color_dist_lp / color_dist_promote /
+       color_pipeline_contrib / color_pipeline_dist:  hex strings
+   }
+
+   Geometry per CHANGELOG-v3.md:
+     viewBox  0 0 1000 200
+     chart    x = 38..990   y = 4..170
+     bars     barW = 18, gap = 4, groupW = 40
+     pxPerK   plotH / y_axis_max  (auto-scales when bars exceed 50K)
+   ───────────────────────────────────────────────────────────────── #}
+
+<header class="sec-head" style="margin-top: 32px;">
+  <div class="eyebrow">Contributions · Distributions · Active &amp; Pipeline</div>
+  <h2>Annual Capital Recycling &amp; Equity Investment</h2>
+  <p>{{ capital.recycle.rows[0].year }} – {{ capital.recycle.rows[-1].year }} · $ in 000s · Active solid · Pipeline dashed.</p>
+</header>
+
+<div class="recycle-card">
+  <div class="recycle-legend">
+    <span class="leg"><span class="sw"         style="background: {{ capital.recycle.color_contrib }};"></span>Contributions · Active</span>
+    <span class="leg"><span class="sw outline" style="border-color: {{ capital.recycle.color_pipeline_contrib }};"></span>Contributions · Pipeline</span>
+    <span class="leg sep"></span>
+    <span class="leg"><span class="sw"         style="background: {{ capital.recycle.color_dist_lp }};"></span>LP Distributions · Active</span>
+    <span class="leg"><span class="sw"         style="background: {{ capital.recycle.color_dist_promote }};"></span>Promote · Active</span>
+    <span class="leg"><span class="sw outline" style="border-color: {{ capital.recycle.color_pipeline_dist }};"></span>Distributions · Pipeline</span>
+  </div>
+
+  {% set rows = capital.recycle.rows %}
+  {% set n = rows | length %}
+  {% set ymax = capital.recycle.y_axis_max %}
+
+  {# Layout constants — keep in sync with CHANGELOG-v3.md geometry. #}
+  {% set xStart = 38 %}{% set xEnd = 990 %}
+  {% set yTop = 4 %}{% set yBase = 170 %}
+  {% set plotH = yBase - yTop %}
+  {% set cellW = (xEnd - xStart) / n %}
+  {% set barW = 18 %}{% set gap = 4 %}
+  {% set groupW = 2 * barW + gap %}
+  {% set pxPerK = plotH / ymax %}
+
+  <svg class="recycle-chart" viewBox="0 0 1000 200" preserveAspectRatio="none">
+    {# Axis frame + grid #}
+    <line x1="{{ xStart }}" y1="{{ yTop }}"  x2="{{ xStart }}" y2="{{ yBase }}" stroke="#08233B" stroke-opacity=".2"/>
+    <line x1="{{ xStart }}" y1="{{ yBase }}" x2="{{ xEnd }}"   y2="{{ yBase }}" stroke="#08233B" stroke-opacity=".2"/>
+
+    {% for f in [0.2, 0.4, 0.6, 0.8, 1.0] %}
+      {% set v = ymax * f %}
+      {% set y = yBase - v * pxPerK %}
+      <line x1="{{ xStart }}" y1="{{ '%.2f' | format(y) }}"
+            x2="{{ xEnd }}"   y2="{{ '%.2f' | format(y) }}"
+            stroke="#08233B" stroke-opacity=".07"/>
+      <text x="{{ xStart - 4 }}" y="{{ '%.2f' | format(y + 3) }}"
+            text-anchor="end" class="axis-label">{{ '{:,.0f}'.format(v) }}</text>
+    {% endfor %}
+    <text x="{{ xStart - 4 }}" y="{{ yBase + 3 }}" text-anchor="end" class="axis-label">0</text>
+
+    {# Bars — one pair per year #}
+    {% for r in rows %}
+      {% set i  = loop.index0 %}
+      {% set xC = xStart + cellW * (i + 0.5) - groupW / 2 %}
+      {% set xD = xC + barW + gap %}
+      {% set xM = xStart + cellW * (i + 0.5) %}
+
+      {# Contributions bar (left): active solid base + pipeline dashed top #}
+      {% set hAC = r.actC * pxPerK %}
+      {% set hPC = r.pipC * pxPerK %}
+      {% if hAC > 0 %}
+      <rect x="{{ '%.2f' | format(xC) }}" y="{{ '%.2f' | format(yBase - hAC) }}"
+            width="{{ barW }}" height="{{ '%.2f' | format(hAC) }}"
+            fill="{{ capital.recycle.color_contrib }}"/>
+      {% endif %}
+      {% if hPC > 0 %}
+      <rect x="{{ '%.2f' | format(xC) }}" y="{{ '%.2f' | format(yBase - hAC - hPC) }}"
+            width="{{ barW }}" height="{{ '%.2f' | format(hPC) }}"
+            fill="rgba(242,89,41,0.10)"
+            stroke="{{ capital.recycle.color_pipeline_contrib }}" stroke-width="1"
+            stroke-dasharray="3 2"/>
+      {% endif %}
+
+      {# Distributions bar (right): active LP base + active Promote stack + pipeline dashed top #}
+      {% set hLP = r.actDLP   * pxPerK %}
+      {% set hPR = r.actDProm * pxPerK %}
+      {% set hPD = r.pipD     * pxPerK %}
+      {% if hLP > 0 %}
+      <rect x="{{ '%.2f' | format(xD) }}" y="{{ '%.2f' | format(yBase - hLP) }}"
+            width="{{ barW }}" height="{{ '%.2f' | format(hLP) }}"
+            fill="{{ capital.recycle.color_dist_lp }}"/>
+      {% endif %}
+      {% if hPR > 0 %}
+      <rect x="{{ '%.2f' | format(xD) }}" y="{{ '%.2f' | format(yBase - hLP - hPR) }}"
+            width="{{ barW }}" height="{{ '%.2f' | format(hPR) }}"
+            fill="{{ capital.recycle.color_dist_promote }}"/>
+      {% endif %}
+      {% if hPD > 0 %}
+      <rect x="{{ '%.2f' | format(xD) }}" y="{{ '%.2f' | format(yBase - hLP - hPR - hPD) }}"
+            width="{{ barW }}" height="{{ '%.2f' | format(hPD) }}"
+            fill="rgba(94,158,140,0.10)"
+            stroke="{{ capital.recycle.color_pipeline_dist }}" stroke-width="1"
+            stroke-dasharray="3 2"/>
+      {% endif %}
+
+      {# X-axis label — current year is bold + dark, others muted #}
+      <text x="{{ '%.2f' | format(xM) }}" y="{{ yBase + 13 }}" text-anchor="middle"
+            class="axis-label{{ ' axis-label--current' if r.year == capital.recycle.current_year else '' }}">
+        {{ r.year }}
+      </text>
+    {% endfor %}
+  </svg>
+</div>

@@ -1215,29 +1215,68 @@ def _build_capital_view_context() -> dict:
         v = recycle_map.get(name) or {}
         return float(v.get("lp", 100)) / 100.0, float(v.get("prom", 100)) / 100.0
 
-    recycle_by_year = []
-    for i, yr in enumerate(years_int):
-        lp_total = 0.0
-        pr_total = 0.0
-        for p in raw_projects:
-            if p.get("active") is False:
-                continue
-            name = (p.get("name") or "").strip()
-            if not name:
-                continue
-            by_label = {m.get("label"): m for m in (p.get("metrics") or [])}
-            dist_y = (by_label.get("Total LP Distributions") or {}).get("yearly") or []
-            prom_y = (by_label.get("Promote") or {}).get("yearly") or []
-            ld = float(dist_y[i]) if i < len(dist_y) else 0.0
-            pd = float(prom_y[i]) if i < len(prom_y) else 0.0
-            r_lp, r_pr = _rec_for(name)
-            lp_total += ld * r_lp
-            pr_total += pd * r_pr
-        recycle_by_year.append({
-            "year": int(yr),
-            "lp":      int(round(lp_total)),
-            "promote": int(round(pr_total)),
+    # ── Annual Capital Recycling & Equity Investment ───────────────────
+    # Per the v3 chart redesign (CHANGELOG-v3.md): two stacked bars per
+    # year over a fixed 2021-2035 window. Left bar = Contributions
+    # (active solid + pipeline dashed top); right bar = Distributions
+    # (active LP solid base + active Promote stack + pipeline dashed top).
+    # All values in $K. Active rows roll up the live returns blob;
+    # pipeline rows roll up the manual_pipeline contributions /
+    # distributions arrays.
+    recycle_year_start = 2021
+    recycle_year_end   = 2035
+    recycle_years = list(range(recycle_year_start, recycle_year_end + 1))
+    # Pre-load manual pipeline once for the recycle aggregation
+    manual_for_recycle = list((manual_blob_for_recycle := _capital_load_manual_pipeline()).get("projects") or [])
+
+    recycle_rows = []
+    for yr in recycle_years:
+        actC = actDLP = actDProm = pipC = pipD = 0.0
+        # Active side — sum across the live returns projects, indexed by
+        # the project's native year array (typically 2023-2036).
+        if yr in years_int:
+            i_yr = years_int.index(yr)
+            for p in raw_projects:
+                if p.get("active") is False:
+                    continue
+                by_label = {m.get("label"): m for m in (p.get("metrics") or [])}
+                contrib_y = (by_label.get("Total LP Contributions") or {}).get("yearly") or []
+                dist_y    = (by_label.get("Total LP Distributions") or {}).get("yearly") or []
+                prom_y    = (by_label.get("Promote") or {}).get("yearly") or []
+                actC     += abs(float(contrib_y[i_yr])) if i_yr < len(contrib_y) else 0.0
+                actDLP   += float(dist_y[i_yr])        if i_yr < len(dist_y)    else 0.0
+                actDProm += float(prom_y[i_yr])        if i_yr < len(prom_y)    else 0.0
+
+        # Pipeline side — sum the manual pipeline yearly arrays. Stored
+        # in raw $; convert to $K to match the active side.
+        for mp in manual_for_recycle:
+            ystart = mp.get("years_start", _CAP_MANUAL_PIPELINE_YEAR_START)
+            idx = yr - ystart
+            mc = mp.get("contributions_yearly") or []
+            md = mp.get("distributions_yearly") or []
+            if 0 <= idx < len(mc):
+                pipC += abs(float(mc[idx])) / 1000.0
+            if 0 <= idx < len(md):
+                pipD += float(md[idx]) / 1000.0
+
+        recycle_rows.append({
+            "year":     yr,
+            "actC":     int(round(actC)),
+            "actDLP":   int(round(actDLP)),
+            "actDProm": int(round(actDProm)),
+            "pipC":     int(round(pipC)),
+            "pipD":     int(round(pipD)),
         })
+
+    # Y-axis ceiling: round to next 10K above the tallest bar so the
+    # chart auto-scales when numbers grow. Default 50K matches the
+    # design canvas reference numbers.
+    max_bar = 0
+    for r in recycle_rows:
+        contrib_total = r["actC"] + r["pipC"]
+        dist_total    = r["actDLP"] + r["actDProm"] + r["pipD"]
+        max_bar = max(max_bar, contrib_total, dist_total)
+    y_axis_max = max(50_000, int((max_bar // 10_000 + 1) * 10_000)) if max_bar else 50_000
 
     # ── Commitments ────────────────────────────────────────────────────
     cur.execute(
@@ -1311,8 +1350,8 @@ def _build_capital_view_context() -> dict:
     # table; we tag them with a `source: 'manual'` flag so the UI can show
     # an Edit/Delete affordance and skip the asset-class chip dropdown
     # (it's edited via the modal instead).
-    manual_blob = _capital_load_manual_pipeline()
-    for mp in (manual_blob.get("projects") or []):
+    # Reuse the manual pipeline blob already loaded for the recycle chart.
+    for mp in manual_for_recycle:
         contribs = mp.get("contributions_yearly") or []
         distribs = mp.get("distributions_yearly") or []
         # Total upfront contribution = |sum(contributions)| in $K
@@ -1404,10 +1443,18 @@ def _build_capital_view_context() -> dict:
             "by_project":   returns_by_project,
         },
         "recycle": {
-            "lp_color":      "#1F7A4D",
-            "promote_color": "#5B9BD5",
-            "current_year":  current_year,
-            "by_year":       recycle_by_year,
+            "years":        recycle_years,
+            "rows":         recycle_rows,
+            "y_axis_max":   y_axis_max,        # $K ceiling, auto-scaled
+            "current_year": current_year,
+            # Palette (active series solid, pipeline series dashed). The
+            # SVG inlines these so it renders correctly inside print PDFs
+            # where CSS variables don't always resolve.
+            "color_contrib":      "#F25929",   # active contributions (orange)
+            "color_dist_lp":      "#5E9E8C",   # active LP distributions (teal)
+            "color_dist_promote": "#C8A96E",   # active promote (gold)
+            "color_pipeline_contrib": "#F25929",  # dashed orange
+            "color_pipeline_dist":    "#5E9E8C",  # dashed teal
         },
         "commitments": {"groups": commit_groups, "totals": commit_totals},
         "kpis": {
@@ -1451,6 +1498,75 @@ def portfolio_page():
         is_admin=session.get("is_admin", False),
         page_access=pa,
         capital=capital,
+    )
+
+
+def _capital_report_context() -> dict:
+    """Build the dict consumed by capital_report.html. Reuses the live
+    /capital page context and layers on a few report-specific keys
+    (period label, generated date)."""
+    now = datetime.datetime.now()
+    capital = _build_capital_view_context()
+    capital["report_period_label"] = now.strftime("%B %Y").upper()
+    capital["report_period_short"] = now.strftime("%b %Y").upper()
+    capital["generated_date"]      = now.strftime("%Y-%m-%d")
+    return capital
+
+
+@app.route("/api/ember-capital/report", methods=["GET"])
+@app.route("/capital/report", methods=["GET"])
+@login_required
+def ember_capital_report_html():
+    """HTML preview of the 3-page Capital Report. Useful for debugging
+    layout without round-tripping through WeasyPrint. Use /report.pdf
+    for the actual download."""
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("reports", True):
+        return jsonify({"error": "Reports access disabled by admin"}), 403
+    capital = _capital_report_context()
+    return render_template("capital_report.html", capital=capital)
+
+
+@app.route("/api/ember-capital/report.pdf", methods=["GET"])
+@app.route("/capital/report.pdf", methods=["GET"])
+@login_required
+def ember_capital_report_pdf():
+    """Stream the 3-page Capital Report as a real PDF (WeasyPrint).
+
+    Falls back to the legacy fpdf2 2-page report if WeasyPrint can't
+    load (missing libpango/cairo, ImportError, etc.) so the button
+    never returns nothing.
+    """
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("reports", True):
+        return jsonify({"error": "Reports access disabled by admin"}), 403
+
+    capital = _capital_report_context()
+    html = render_template("capital_report.html", capital=capital)
+
+    try:
+        from weasyprint import HTML
+        pdf_bytes = HTML(
+            string=html,
+            base_url=request.host_url,
+            url_fetcher=_weasyprint_local_fetcher,
+        ).write_pdf()
+    except (ImportError, OSError) as e:
+        app.logger.warning(
+            "WeasyPrint unavailable for capital report (%s: %s); falling back to fpdf2",
+            type(e).__name__, e,
+        )
+        # Last-resort fallback — the older 2-page fpdf2 report
+        payload = _build_ember_capital_payload()
+        pdf_bytes = bytes(_gen_pdf_ember_capital(payload))
+
+    as_attachment = request.args.get("download") in ("1", "true", "yes")
+    fname = f"Ember_Capital_Report_{datetime.datetime.now().strftime('%Y-%m')}.pdf"
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=as_attachment,
+        download_name=fname,
     )
 
 

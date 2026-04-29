@@ -265,7 +265,7 @@
         <div class="pane-actions">
           {% if page_access.get('reports', true) or is_admin %}
           <button class="btn ghost"   id="export-excel">Excel</button>
-          <a class="btn primary" href="/api/ember-capital/pdf" target="_blank" rel="noopener">PDF Report</a>
+          <a class="btn primary" href="/api/ember-capital/report.pdf" target="_blank" rel="noopener">Capital Report</a>
           {% endif %}
         </div>
       </div>
@@ -452,59 +452,14 @@
           </div>
         </div>
 
-        {# ── Annual Capital Recycling chart ────────────────── #}
-        {% if capital.recycle.by_year %}
-        <header class="sec-head" style="margin-top: 32px;">
-          <div class="eyebrow">LP + Promote · annual</div>
-          <h2>Annual Capital Recycling</h2>
-          <p>Distributions recycled · LP vs Promote · {{ capital.recycle.by_year[0].year }}–{{ capital.recycle.by_year[-1].year }}.</p>
-        </header>
-
-        {% set recycle_max_ns = namespace(v=0) %}
-        {% for r in capital.recycle.by_year %}
-          {% set total = r.lp + r.promote %}
-          {% if total > recycle_max_ns.v %}{% set recycle_max_ns.v = total %}{% endif %}
-        {% endfor %}
-        {% set rmax = recycle_max_ns.v if recycle_max_ns.v > 0 else 1 %}
-        {% set bars = capital.recycle.by_year %}
-        {% set n = bars | length %}
-        {% set chart_w = 760 %}
-        {% set chart_h = 220 %}
-        {% set padL = 36 %}{% set padR = 12 %}{% set padT = 12 %}{% set padB = 26 %}
-        {% set plotW = chart_w - padL - padR %}
-        {% set plotH = chart_h - padT - padB %}
-        {% set xStep = plotW / n %}
-        {% set bw = xStep * 0.62 %}
-
-        <div class="recycle-card">
-          <div class="recycle-legend">
-            <span><span class="sw" style="background: {{ capital.recycle.lp_color }};"></span>LP Recycled</span>
-            <span><span class="sw" style="background: {{ capital.recycle.promote_color }};"></span>Promote Recycled</span>
-          </div>
-          <svg class="recycle-chart" viewBox="0 0 {{ chart_w }} {{ chart_h }}" preserveAspectRatio="none">
-            {% for f in [0, 0.25, 0.5, 0.75, 1.0] %}
-              {% set v = rmax * f %}
-              {% set y = padT + plotH - (v / rmax) * plotH %}
-              <line x1="{{ padL }}" x2="{{ chart_w - padR }}" y1="{{ '%.2f' | format(y) }}" y2="{{ '%.2f' | format(y) }}" class="grid"/>
-              <text x="{{ padL - 6 }}" y="{{ '%.2f' | format(y + 3) }}" text-anchor="end" class="axis-label">
-                {%- if v >= 1000 -%}{{ '%.0f' | format(v / 1000) }}M{%- else -%}{{ '%.0f' | format(v) }}K{%- endif -%}
-              </text>
-            {% endfor %}
-            {% for r in bars %}
-              {% set i = loop.index0 %}
-              {% set xMid = padL + i * xStep + xStep / 2 %}
-              {% set x = xMid - bw / 2 %}
-              {% set lpH = (r.lp / rmax) * plotH %}
-              {% set prH = (r.promote / rmax) * plotH %}
-              {% set yLP = padT + plotH - lpH %}
-              {% set yPR = yLP - prH %}
-              {% if r.lp > 0 %}<rect x="{{ '%.2f' | format(x) }}" y="{{ '%.2f' | format(yLP) }}" width="{{ '%.2f' | format(bw) }}" height="{{ '%.2f' | format(lpH) }}" fill="{{ capital.recycle.lp_color }}" rx="1"/>{% endif %}
-              {% if r.promote > 0 %}<rect x="{{ '%.2f' | format(x) }}" y="{{ '%.2f' | format(yPR) }}" width="{{ '%.2f' | format(bw) }}" height="{{ '%.2f' | format(prH) }}" fill="{{ capital.recycle.promote_color }}" rx="1"/>{% endif %}
-              <text x="{{ '%.2f' | format(xMid) }}" y="{{ chart_h - 8 }}" text-anchor="middle"
-                    class="axis-label{{ ' axis-label--current' if r.year == capital.recycle.current_year else '' }}">{{ r.year }}</text>
-            {% endfor %}
-          </svg>
-        </div>
+        {# ── Annual Capital Recycling & Equity Investment ──────────────
+           Two-bar-per-year design (v3): Contributions on the left of
+           each pair, Distributions on the right. Active = solid fill,
+           Pipeline = dashed outline (forecast). Active stack is always
+           on the bottom; pipeline always on top.
+           ────────────────────────────────────────────────────────── #}
+        {% if capital.recycle.rows %}
+        {% include "_partials/_recycle_chart.html" %}
         {% endif %}
       </section>
 

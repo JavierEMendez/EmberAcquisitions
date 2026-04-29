@@ -1,0 +1,939 @@
+{# ============================================================
+   Ember Capital — Executive Report (3-page landscape PDF).
+   Visual ground truth: ember capital report design.pdf (3 pages).
+
+   Reads the same `capital` dict the live /capital page uses.
+   Rendered by WeasyPrint at 11×8.5in landscape.
+   ============================================================ #}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Ember Capital — Executive Report · {{ capital.as_of }}</title>
+<style>
+  /* ---------- Brand fonts (read from disk by WeasyPrint url_fetcher) ---------- */
+  @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-Bold.ttf") format("truetype"); font-weight: 700; }
+  @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-CondensedBold.ttf") format("truetype"); font-weight: 800; }
+  @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-Light.ttf") format("truetype"); font-weight: 300; }
+  @font-face { font-family: "Gotham"; src: url("/static/fonts/Gotham-Medium.otf") format("opentype"); font-weight: 500; }
+  @font-face { font-family: "Plus Jakarta Sans"; src: url("/static/fonts/PlusJakartaSans-Light.ttf")     format("truetype"); font-weight: 300; }
+  @font-face { font-family: "Plus Jakarta Sans"; src: url("/static/fonts/PlusJakartaSans-Medium.ttf")    format("truetype"); font-weight: 500; }
+  @font-face { font-family: "Plus Jakarta Sans"; src: url("/static/fonts/PlusJakartaSans-Bold.ttf")      format("truetype"); font-weight: 700; }
+  @font-face { font-family: "Plus Jakarta Sans"; src: url("/static/fonts/PlusJakartaSans-ExtraBold.ttf") format("truetype"); font-weight: 800; }
+
+  :root {
+    --paper:   #FFFFFF;
+    --warm:    #F8F4EE;
+    --ink:     #08233B;
+    --ink-2:   #13344E;
+    --muted:   #5b6b7b;
+    --subtle:  #97a3b0;
+    --line:    rgba(8,35,59,0.10);
+    --line-2:  rgba(8,35,59,0.20);
+    --line-3:  rgba(8,35,59,0.32);
+    --accent:  #F25929;
+    --good:    #1F7A4D;
+    --c-hub:        #F25929;
+    --c-spoke:      #b058df;
+    --c-comm:       #C8A96E;
+    --c-condos:     #3D87C7;
+    --c-mfbtr:      #5E9E8C;
+    --c-land:       #E07A3E;
+    --font-display: "HelveticaNeue Brand", "Plus Jakarta Sans", system-ui, sans-serif;
+    --font-sans:    "Plus Jakarta Sans", system-ui, sans-serif;
+    --font-mono:    "JetBrains Mono", ui-monospace, monospace;
+    --font-eyebrow: "Gotham", "Plus Jakarta Sans", system-ui, sans-serif;
+  }
+
+  @page { size: 11in 8.5in; margin: 0; }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #fff; font-family: var(--font-sans); color: var(--ink); }
+
+  /* ---------- Page chrome ---------- */
+  .page {
+    width: 11in; height: 8.5in;
+    background: var(--paper);
+    position: relative; overflow: hidden;
+    page-break-after: always;
+  }
+  .page:last-child { page-break-after: auto; }
+  .page-pad {
+    position: absolute;
+    left: 0.55in; right: 0.55in;
+    top: 0.55in;  bottom: 0.85in;
+  }
+
+  .page-foot {
+    position: absolute;
+    left: 0.55in; right: 0.55in;
+    bottom: 0.32in;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: var(--subtle);
+    letter-spacing: 0.06em;
+    display: table; table-layout: fixed; width: calc(100% - 1.10in);
+  }
+  .page-foot .l, .page-foot .c, .page-foot .r { display: table-cell; vertical-align: middle; }
+  .page-foot .c { text-align: center; }
+  .page-foot .r { text-align: right; }
+  .page-foot .conf {
+    font-weight: 700; color: var(--ink-2);
+    letter-spacing: 0.18em; text-transform: uppercase;
+    margin-right: 14px;
+  }
+  .page-foot .dot {
+    width: 4px; height: 4px; border-radius: 50%;
+    background: var(--accent); display: inline-block;
+    vertical-align: middle; margin-right: 6px;
+  }
+
+  /* ---------- Type primitives ---------- */
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .eyebrow {
+    font-family: var(--font-eyebrow);
+    font-weight: 500;
+    font-size: 10px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .label-up {
+    font-family: var(--font-eyebrow);
+    font-weight: 500;
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--subtle);
+  }
+
+  /* =================================================================
+     PAGE 1 — COVER
+     ================================================================= */
+  .cover { color: var(--ink); }
+  .cover .top-row {
+    position: absolute;
+    top: 0.55in; left: 0.55in; right: 0.55in;
+    display: table; table-layout: fixed; width: calc(100% - 1.10in);
+  }
+  .cover .top-row .l, .cover .top-row .r {
+    display: table-cell; vertical-align: top;
+  }
+  .cover .top-row .r { text-align: right; }
+  .cover .conf-stamp {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    padding: 6px 14px;
+    border: 1px solid var(--line-2);
+    border-radius: 999px;
+  }
+  .cover .conf-stamp::before {
+    content: "";
+    width: 6px; height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .cover .title-block {
+    position: absolute;
+    left: 0.55in; right: 0.55in;
+    bottom: 1.0in;
+  }
+  .cover .title-block .eyebrow { margin-bottom: 14px; }
+  .cover h1 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 96px;
+    line-height: 0.96;
+    letter-spacing: -0.025em;
+    color: var(--ink);
+    text-transform: uppercase;
+  }
+  .cover h1 em {
+    font-style: normal;
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .cover .lede {
+    margin-top: 18px;
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--muted);
+    max-width: 7in;
+  }
+  .cover .rule { margin: 18px 0 14px; height: 1px; background: var(--line-2); }
+  .cover .period-strip { display: table; table-layout: fixed; width: 100%; }
+  .cover .period-strip .col {
+    display: table-cell; vertical-align: top;
+    padding-right: 24px;
+  }
+  .cover .period-strip .col .label-up { margin-bottom: 6px; }
+  .cover .period-strip .col .val {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--ink);
+    letter-spacing: 0.01em;
+    text-transform: uppercase;
+  }
+  .cover .period-strip .col .val.mono {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+  }
+  .cover .footnote {
+    margin-top: 16px;
+    font-size: 9.5px;
+    line-height: 1.55;
+    color: var(--subtle);
+    max-width: 8in;
+  }
+
+  /* =================================================================
+     SHARED — section heads + KPI bands (page 2 + page 3)
+     ================================================================= */
+  .sec-row {
+    display: table; table-layout: fixed; width: 100%;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--line-2);
+    margin-bottom: 16px;
+  }
+  .sec-row .l, .sec-row .r {
+    display: table-cell; vertical-align: bottom;
+  }
+  .sec-row .r {
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--subtle);
+    letter-spacing: 0.06em;
+  }
+  .sec-row h2 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 28px;
+    letter-spacing: -0.018em;
+    line-height: 1.04;
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  .kpi-band {
+    display: table; table-layout: fixed; width: 100%;
+    border: 1px solid var(--line);
+    margin-bottom: 18px;
+  }
+  .kpi-band .kpi {
+    display: table-cell; vertical-align: top;
+    padding: 12px 14px 14px;
+    border-left: 1px solid var(--line);
+  }
+  .kpi-band .kpi:first-child { border-left: none; }
+  .kpi-band .kpi .l {
+    font-family: var(--font-eyebrow);
+    font-weight: 500;
+    font-size: 8.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--subtle);
+    margin-bottom: 5px;
+  }
+  .kpi-band .kpi .v {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 22px;
+    letter-spacing: -0.012em;
+    color: var(--ink);
+    line-height: 1.05;
+    font-variant-numeric: tabular-nums;
+  }
+  .kpi-band .kpi.accent .v { color: var(--accent); }
+  .kpi-band .kpi .s {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 3px;
+  }
+  .kpi-band .kpi .s .acc { color: var(--accent); }
+
+  /* =================================================================
+     PAGE 2 — EXECUTIVE SUMMARY
+     ================================================================= */
+  .summary-body {
+    display: table; table-layout: fixed; width: 100%;
+  }
+  .summary-body .l, .summary-body .r {
+    display: table-cell; vertical-align: top;
+  }
+  .summary-body .l { width: 60%; padding-right: 18px; }
+  .summary-body .r { width: 40%; }
+
+  /* Active projects panel */
+  .panel {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    padding: 0;
+  }
+  .panel .panel-head {
+    display: table; table-layout: fixed; width: 100%;
+    padding: 12px 16px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  .panel .panel-head .h {
+    display: table-cell; vertical-align: bottom;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 12.5px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink);
+  }
+  .panel .panel-head .s {
+    display: table-cell; vertical-align: bottom;
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: var(--subtle);
+    letter-spacing: 0.06em;
+  }
+
+  table.proj-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+    table-layout: fixed;
+  }
+  table.proj-table col.col-name    { width: auto; }
+  table.proj-table col.col-num     { width: 60px; }
+  table.proj-table col.col-num-wide{ width: 72px; }
+  table.proj-table th {
+    padding: 9px 12px 7px;
+    font-family: var(--font-eyebrow);
+    font-weight: 500;
+    font-size: 8.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--subtle);
+    text-align: right;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--line);
+  }
+  table.proj-table th:first-child { text-align: left; padding-left: 16px; }
+  table.proj-table td {
+    padding: 9px 12px;
+    text-align: right;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  table.proj-table td:first-child {
+    text-align: left; padding-left: 16px;
+    font-weight: 500;
+  }
+  table.proj-table td .rail {
+    display: inline-block;
+    width: 3px; height: 14px;
+    border-radius: 2px;
+    vertical-align: -3px;
+    margin-right: 9px;
+  }
+  table.proj-table td.muted { color: var(--muted); }
+  table.proj-table td.accent { color: var(--accent); font-weight: 600; }
+  table.proj-table tr:last-child td { border-bottom: none; }
+  table.proj-table tr.total-row td {
+    border-top: 2px solid var(--line-2);
+    font-weight: 700;
+  }
+  table.proj-table tr.total-row td.accent { color: var(--accent); }
+
+  /* Donut + distributions cards on the right column */
+  .donut-card { padding: 16px 18px 14px; }
+  .donut-wrap { display: flex; justify-content: center; margin: 4px 0 8px; }
+  .donut svg { width: 180px; height: 180px; display: block; }
+  .donut-center {
+    text-anchor: middle;
+    font-family: var(--font-display);
+    font-weight: 700;
+    fill: var(--ink);
+  }
+  .donut-center.l1 { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; fill: var(--subtle); }
+  .donut-center.l2 { font-size: 22px; }
+  .donut-legend {
+    display: table; table-layout: fixed; width: 100%;
+    margin-top: 6px;
+  }
+  .donut-legend .row {
+    display: table-row;
+  }
+  .donut-legend .nm, .donut-legend .pct, .donut-legend .amt {
+    display: table-cell;
+    padding: 4px 0;
+    font-size: 11px;
+  }
+  .donut-legend .nm { color: var(--ink); }
+  .donut-legend .nm .sw {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 2px;
+    margin-right: 8px;
+    vertical-align: 1px;
+  }
+  .donut-legend .pct { text-align: right; color: var(--muted); padding-right: 16px; font-variant-numeric: tabular-nums; }
+  .donut-legend .amt { text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; font-weight: 500; }
+
+  .dist-card {
+    margin-top: 14px;
+    padding: 0;
+  }
+  .dist-card .panel-head .h { font-size: 12.5px; }
+  .dist-card .panel-head .s { font-family: var(--font-mono); font-size: 9.5px; }
+  .dist-pair {
+    display: table; table-layout: fixed; width: 100%;
+  }
+  .dist-pair .cell {
+    display: table-cell;
+    padding: 14px 16px 16px;
+    vertical-align: top;
+    width: 50%;
+  }
+  .dist-pair .cell + .cell { border-left: 1px solid var(--line); }
+  .dist-pair .cell .lbl {
+    font-family: var(--font-eyebrow);
+    font-weight: 500;
+    font-size: 8.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--subtle);
+    margin-bottom: 6px;
+  }
+  .dist-pair .cell .val {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 26px;
+    color: var(--ink);
+    line-height: 1.0;
+    letter-spacing: -0.012em;
+  }
+  .dist-pair .cell.accent .val { color: var(--accent); }
+  .dist-pair .cell .sub {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+
+  /* =================================================================
+     PAGE 3 — PIPELINE & CASH OUTFLOW
+     ================================================================= */
+  table.pipe-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+    table-layout: fixed;
+  }
+  table.pipe-table col.col-proj   { width: 140px; }
+  table.pipe-table col.col-class  { width: 105px; }
+  table.pipe-table col.col-addr   { width: 130px; }
+  table.pipe-table col.col-num    { width: 60px; }
+  table.pipe-table col.col-num-wide { width: 72px; }
+  table.pipe-table th {
+    padding: 9px 10px 7px;
+    font-family: var(--font-eyebrow);
+    font-weight: 500;
+    font-size: 8.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--subtle);
+    text-align: right;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--line);
+  }
+  table.pipe-table th:first-child,
+  table.pipe-table th.left { text-align: left; padding-left: 16px; }
+  table.pipe-table td {
+    padding: 8px 10px;
+    text-align: right;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  table.pipe-table td:first-child,
+  table.pipe-table td.left { text-align: left; padding-left: 16px; font-weight: 500; }
+  table.pipe-table td.muted { color: var(--muted); font-weight: 400; }
+  table.pipe-table td.accent { color: var(--accent); font-weight: 600; }
+  table.pipe-table td.subtle { color: var(--subtle); font-family: var(--font-mono); font-size: 10px; }
+  table.pipe-table tr:last-child td { border-bottom: none; }
+  table.pipe-table tr.total-row td {
+    border-top: 2px solid var(--line-2);
+    font-weight: 700;
+  }
+  table.pipe-table tr.total-row td.accent { color: var(--accent); }
+  table.pipe-table .class-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 10px; color: var(--ink);
+  }
+  table.pipe-table .class-pill .dot {
+    width: 7px; height: 7px; border-radius: 999px;
+    display: inline-block;
+  }
+
+  /* Recycle chart inherits styles from the partial via re-declaration. */
+  .recycle-card {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 18px 10px;
+    margin-top: 14px;
+  }
+  .sec-head { margin: 8px 0 12px; }
+  .sec-head .eyebrow { margin-bottom: 5px; }
+  .sec-head h2 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--ink);
+  }
+  .sec-head p {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--subtle);
+    margin-top: 4px;
+    letter-spacing: 0.04em;
+  }
+  .recycle-legend {
+    display: table; table-layout: auto; width: 100%;
+    font-size: 9.5px; color: var(--muted);
+    font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+    margin: 4px 0 10px;
+  }
+  .recycle-legend .leg {
+    display: inline-block;
+    margin-right: 14px;
+    line-height: 16px;
+  }
+  .recycle-legend .leg .sw {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 1px;
+    margin-right: 6px;
+    vertical-align: -1px;
+    box-sizing: border-box;
+  }
+  .recycle-legend .leg .sw.outline {
+    background: transparent;
+    border: 1px dashed currentColor;
+  }
+  .recycle-legend .sep {
+    display: inline-block;
+    width: 1px; height: 12px;
+    background: var(--line-2);
+    margin: 0 8px 0 0; vertical-align: -2px;
+  }
+  .recycle-chart {
+    width: 100%; height: 160px; display: block;
+  }
+  .recycle-chart .axis-label {
+    font-family: var(--font-mono);
+    font-size: 8px;
+    fill: var(--subtle);
+    font-variant-numeric: tabular-nums;
+  }
+  .recycle-chart .axis-label--current { font-weight: 700; fill: var(--ink); }
+</style>
+</head>
+<body>
+
+{# Tiny ember bar-chart logo, reused on the cover page. #}
+{% macro ember_mark() %}
+<svg width="38" height="38" viewBox="0 0 36 36" fill="none" aria-hidden="true">
+  <g fill="#F25929">
+    <rect x="2"  y="20" width="3.5" height="14" rx="0.5"/>
+    <rect x="8"  y="14" width="3.5" height="20" rx="0.5"/>
+    <rect x="14" y="6"  width="3.5" height="28" rx="0.5"/>
+    <rect x="20" y="12" width="3.5" height="22" rx="0.5"/>
+    <rect x="26" y="2"  width="3.5" height="32" rx="0.5"/>
+  </g>
+</svg>
+{% endmacro %}
+
+{% macro page_footer(page_num, total_pages, label='Capital Report') %}
+<div class="page-foot">
+  <div class="l"><span class="conf">Confidential</span></div>
+  <div class="c"><span class="dot"></span>Ember Finance &amp; Analytics &middot; {{ label }}</div>
+  <div class="r">{{ "%02d"|format(page_num) }} / {{ "%02d"|format(total_pages) }}</div>
+</div>
+{% endmacro %}
+
+{% macro fmt_money(v) -%}
+  {%- if v is none or v == 0 -%}—
+  {%- elif v|abs >= 1000 -%}${{ '%.1f' | format(v / 1000) }}M
+  {%- else -%}${{ '{:,.0f}'.format(v) }}K
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro fmt_money_raw(v) -%}
+  {%- if v is none or v == 0 -%}—
+  {%- elif v|abs >= 1000000 -%}${{ '%.1f' | format(v / 1000000) }}M
+  {%- elif v|abs >= 1000 -%}${{ '{:,.0f}'.format(v / 1000) }}K
+  {%- else -%}${{ '{:,.0f}'.format(v) }}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro fmt_num(v) -%}
+  {%- if v is none or v == 0 -%}—{%- else -%}{{ '{:,.0f}'.format(v) }}{%- endif -%}
+{%- endmacro %}
+{% macro fmt_pct(v, digits=1) -%}{{ '%.{}f'.format(digits) | format(v or 0) }}%{%- endmacro %}
+{% macro fmt_pct_dec(v, digits=1) -%}{{ '%.{}f'.format(digits) | format((v or 0) * 100) }}%{%- endmacro %}
+{% macro fmt_em(v) -%}{{ '%.2f' | format(v or 0) }}x{%- endmacro %}
+{% macro fmt_months(m) -%}
+  {%- set y = (m // 12) | int -%}{%- set mo = (m % 12) | int -%}
+  {%- if y == 0 -%}{{ m }}mo
+  {%- elif mo == 0 -%}{{ y }}y
+  {%- else -%}{{ y }}y {{ mo }}m
+  {%- endif -%}
+{%- endmacro %}
+
+{% set total_pages = 3 %}
+{% set ct = capital.commitments.totals %}
+
+{# ──────────────────────────────────────────────────────────────────
+   PAGE 1 — COVER
+   ────────────────────────────────────────────────────────────────── #}
+<div class="page cover">
+  <div class="top-row">
+    <div class="l">{{ ember_mark() }}</div>
+    <div class="r"><span class="conf-stamp">Confidential · Internal</span></div>
+  </div>
+
+  <div class="title-block">
+    <div class="eyebrow">Ember Residential · Finance &amp; Analytics</div>
+    <h1>Ember Capital <em>Executive Report</em></h1>
+    <p class="lede">A consolidated view of active projects, asset-class allocation, and the live pipeline sourced from MPC Underwriting. Prepared for ownership and the executive team.</p>
+    <div class="rule"></div>
+    <div class="period-strip">
+      <div class="col">
+        <div class="label-up">Period</div>
+        <div class="val">{{ capital.report_period_label or capital.as_of }}</div>
+      </div>
+      <div class="col">
+        <div class="label-up">Active Projects</div>
+        <div class="val">{{ capital.kpis.active_count }} — {{ fmt_money(capital.kpis.total_equity) }} Equity</div>
+      </div>
+      <div class="col">
+        <div class="label-up">Generated</div>
+        <div class="val mono">{{ capital.generated_date }}</div>
+      </div>
+    </div>
+    <p class="footnote">All figures in USD ($000s unless noted). Forward-looking IRR / EM are forecasts based on current underwriting assumptions and are subject to change. Distribution outside Ember Residential, its affiliates, and authorized partners is prohibited.</p>
+  </div>
+  {{ page_footer(1, total_pages) }}
+</div>
+
+{# ──────────────────────────────────────────────────────────────────
+   PAGE 2 — EXECUTIVE SUMMARY
+   ────────────────────────────────────────────────────────────────── #}
+<div class="page">
+  <div class="page-pad">
+    <div class="sec-row">
+      <div class="l">
+        <div class="eyebrow">Executive</div>
+        <h2>Executive Summary</h2>
+      </div>
+      <div class="r">Portfolio · Asset-class allocation · Active projects</div>
+    </div>
+
+    <div class="kpi-band">
+      <div class="kpi accent">
+        <div class="l">Active Projects</div>
+        <div class="v">{{ capital.kpis.active_count }}</div>
+        <div class="s">across portfolio</div>
+      </div>
+      <div class="kpi accent">
+        <div class="l">Total Equity Invested</div>
+        <div class="v">{{ fmt_money(capital.kpis.total_equity) }}</div>
+        <div class="s">LP + Promote</div>
+      </div>
+      <div class="kpi">
+        <div class="l">Total Commitments</div>
+        <div class="v">{{ fmt_money(capital.kpis.total_committed) }}</div>
+        <div class="s"><span class="acc">{{ fmt_money_raw(ct.total_allocated) }}</span> allocated · <span class="acc">{{ fmt_money_raw(ct.available) }}</span> open</div>
+      </div>
+      <div class="kpi">
+        <div class="l">Forecasted LP Profit</div>
+        <div class="v">{{ fmt_money(capital.kpis.forecasted_lp_profit) }}</div>
+        <div class="s">across all projects</div>
+      </div>
+      <div class="kpi">
+        <div class="l">Forecasted LP IRR</div>
+        <div class="v">{{ fmt_pct(capital.kpis.forecasted_lp_irr) }}</div>
+        <div class="s">LP-equity-weighted</div>
+      </div>
+      <div class="kpi accent">
+        <div class="l">Forecasted Promote</div>
+        <div class="v">{{ fmt_money(capital.kpis.forecasted_promote) }}</div>
+        <div class="s">across all projects</div>
+      </div>
+    </div>
+
+    <div class="summary-body">
+      <div class="l">
+        <div class="panel">
+          <div class="panel-head">
+            <div class="h">Active Projects</div>
+            <div class="s">{{ capital.kpis.active_count }} · $000s</div>
+          </div>
+          <table class="proj-table">
+            <colgroup>
+              <col class="col-name"/>
+              <col class="col-num"/>
+              <col class="col-num"/>
+              <col class="col-num"/>
+              <col class="col-num"/>
+              <col class="col-num-wide"/>
+            </colgroup>
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th>Equity</th>
+                <th>IRR</th>
+                <th>EM</th>
+                <th>To Date</th>
+                <th>Total Profit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% set _ag = namespace(eq=0, td=0, profit=0, irr_w=0, em_w=0) %}
+              {% for p in capital.active %}
+                {% set ac = (capital.asset_classes | selectattr('id','equalto',p.asset_class) | list | first) or capital.asset_classes[0] %}
+                <tr>
+                  <td>
+                    <span class="rail" style="background: {{ ac.color }};"></span>{{ p.name }}
+                  </td>
+                  <td>{{ fmt_num(p.equity) }}</td>
+                  <td>{{ fmt_pct(p.irr) }}</td>
+                  <td>{{ fmt_em(p.em) }}</td>
+                  <td class="muted">{{ fmt_num(p.to_date) }}</td>
+                  <td class="accent">{{ fmt_num(p.profit) }}</td>
+                </tr>
+                {% set _ag.eq      = _ag.eq + p.equity %}
+                {% set _ag.td      = _ag.td + p.to_date %}
+                {% set _ag.profit  = _ag.profit + p.profit %}
+                {% set _ag.irr_w   = _ag.irr_w + (p.irr * p.equity) %}
+                {% set _ag.em_w    = _ag.em_w  + (p.em  * p.equity) %}
+              {% endfor %}
+              {% if capital.active %}
+              <tr class="total-row">
+                <td>Portfolio</td>
+                <td>{{ fmt_num(_ag.eq) }}</td>
+                <td>{{ fmt_pct(_ag.irr_w / _ag.eq if _ag.eq else 0) }}</td>
+                <td>{{ fmt_em(_ag.em_w / _ag.eq if _ag.eq else 0) }}</td>
+                <td>{{ fmt_num(_ag.td) }}</td>
+                <td class="accent">{{ fmt_num(_ag.profit) }}</td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="r">
+        {# Equity by Asset Class donut #}
+        <div class="panel donut-card">
+          <div class="panel-head" style="border-bottom: 1px solid var(--line); padding: 0 0 10px;">
+            <div class="h">Equity by Asset Class</div>
+            <div class="s">$ Invested</div>
+          </div>
+          {% set _eq_total_ns = namespace(v=0) %}
+          {% for c in capital.asset_classes %}
+            {% set s = capital.active | selectattr('asset_class','equalto',c.id) | sum(attribute='equity') %}
+            {% set _eq_total_ns.v = _eq_total_ns.v + s %}
+          {% endfor %}
+          {% set eq_total = _eq_total_ns.v %}
+          <div class="donut-wrap">
+            {% set _ns = namespace(offset=0, R=72, C=2 * 3.14159265 * 72) %}
+            <svg class="donut" viewBox="0 0 200 200">
+              <circle cx="100" cy="100" r="{{ _ns.R }}" fill="none" stroke="var(--line)" stroke-width="22"/>
+              {% for c in capital.asset_classes %}
+                {% set s = capital.active | selectattr('asset_class','equalto',c.id) | sum(attribute='equity') %}
+                {% if s > 0 and eq_total > 0 %}
+                  {% set len = (s / eq_total) * _ns.C %}
+                  <circle cx="100" cy="100" r="{{ _ns.R }}" fill="none"
+                          stroke="{{ c.color }}" stroke-width="22"
+                          stroke-dasharray="{{ '%.2f' | format(len) }} {{ '%.2f' | format(_ns.C - len) }}"
+                          stroke-dashoffset="{{ '%.2f' | format(-_ns.offset) }}"
+                          transform="rotate(-90 100 100)"/>
+                  {% set _ns.offset = _ns.offset + len %}
+                {% endif %}
+              {% endfor %}
+              <text x="100" y="92" class="donut-center l1">Equity</text>
+              <text x="100" y="116" class="donut-center l2">{{ fmt_money(eq_total) }}</text>
+            </svg>
+          </div>
+
+          <div class="donut-legend">
+            {% for c in capital.asset_classes %}
+              {% set s = capital.active | selectattr('asset_class','equalto',c.id) | sum(attribute='equity') %}
+              {% if s > 0 %}
+              <div class="row">
+                <div class="nm"><span class="sw" style="background: {{ c.color }};"></span>{{ c.label }}</div>
+                <div class="pct">{{ '%.0f' | format(s / eq_total * 100 if eq_total else 0) }}%</div>
+                <div class="amt">{{ fmt_money(s) }}</div>
+              </div>
+              {% endif %}
+            {% endfor %}
+          </div>
+        </div>
+
+        {# Distributions card #}
+        <div class="panel dist-card">
+          <div class="panel-head">
+            <div class="h">Distributions</div>
+            <div class="s">{{ capital.report_period_short or capital.as_of }}</div>
+          </div>
+          <div class="dist-pair">
+            <div class="cell">
+              <div class="lbl">Distributed YTD</div>
+              <div class="val">{{ fmt_money(capital.kpis.distributed_ytd) }}</div>
+              <div class="sub">{{ capital.kpis.ytd_label }}</div>
+            </div>
+            <div class="cell accent">
+              <div class="lbl">To Be Distributed</div>
+              <div class="val">{{ fmt_money(capital.kpis.to_be_distributed) }}</div>
+              <div class="sub">Next 18 months</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {{ page_footer(2, total_pages, label='Executive Summary') }}
+</div>
+
+{# ──────────────────────────────────────────────────────────────────
+   PAGE 3 — PIPELINE & CASH OUTFLOW
+   ────────────────────────────────────────────────────────────────── #}
+<div class="page">
+  <div class="page-pad">
+    <div class="sec-row">
+      <div class="l">
+        <div class="eyebrow">Pipeline</div>
+        <h2>Pipeline &amp; Cash Outflow</h2>
+      </div>
+      <div class="r">Live pipeline · Annual capital recycling · {{ capital.report_period_short or capital.as_of }}</div>
+    </div>
+
+    <div class="kpi-band">
+      <div class="kpi">
+        <div class="l">Pipeline Projects</div>
+        <div class="v">{{ capital.kpis.pipeline_count }}</div>
+        <div class="s">currently active</div>
+      </div>
+      <div class="kpi accent">
+        <div class="l">Total Land Cost</div>
+        <div class="v">{{ fmt_money(capital.kpis.pipeline_land) }}</div>
+        <div class="s">underwritten</div>
+      </div>
+      <div class="kpi">
+        <div class="l">Weighted IRR</div>
+        <div class="v">{{ fmt_pct(capital.kpis.weighted_irr) }}</div>
+        <div class="s">land-$ weighted</div>
+      </div>
+      <div class="kpi">
+        <div class="l">Unallocated Commitments</div>
+        <div class="v">{{ fmt_money(capital.kpis.unallocated_commitments) }}</div>
+        <div class="s">available capital</div>
+      </div>
+      <div class="kpi accent">
+        <div class="l">Distributions Next 18mo</div>
+        <div class="v">{{ fmt_money(capital.kpis.to_be_distributed) }}</div>
+        <div class="s">pro-rated forecast</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div class="h">All Active Pipeline Projects</div>
+        <div class="s">Updated {{ capital.generated_date }}</div>
+      </div>
+      <table class="pipe-table">
+        <colgroup>
+          <col class="col-proj"/>
+          <col class="col-class"/>
+          <col class="col-addr"/>
+          <col class="col-num-wide"/>
+          <col class="col-num"/>
+          <col class="col-num-wide"/>
+          <col class="col-num"/>
+          <col class="col-num"/>
+          <col class="col-num-wide"/>
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="left">Project</th>
+            <th class="left"></th>
+            <th class="left">Address</th>
+            <th>Land Price</th>
+            <th>Duration</th>
+            <th>Gross Margin</th>
+            <th>IRR</th>
+            <th>EM</th>
+            <th>Updated</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set _pa = namespace(land=0, irr_w=0) %}
+          {% for p in capital.pipeline %}
+            {% set ac = (capital.asset_classes | selectattr('id','equalto',p.asset_class) | list | first) or capital.asset_classes[0] %}
+            <tr>
+              <td class="left">{{ p.name }}</td>
+              <td class="left"><span class="class-pill"><span class="dot" style="background: {{ ac.color }};"></span>{{ ac.label }}</span></td>
+              <td class="left muted">{{ p.address or '—' }}</td>
+              <td>{{ fmt_money(p.land_price) }}</td>
+              <td class="muted">{{ fmt_months(p.duration) }}</td>
+              <td>{% if p.source == 'manual' %}—{% else %}{{ fmt_pct_dec(p.gross_margin) }}{% endif %}</td>
+              <td class="accent">{{ fmt_pct(p.irr) }}</td>
+              <td>{{ fmt_em(p.em) }}</td>
+              <td class="subtle">{{ p.updated }}</td>
+            </tr>
+            {% set _pa.land  = _pa.land + p.land_price %}
+            {% set _pa.irr_w = _pa.irr_w + (p.irr * p.land_price) %}
+          {% endfor %}
+          {% if capital.pipeline %}
+          <tr class="total-row">
+            <td class="left">Pipeline Total · {{ capital.pipeline | length }} projects</td>
+            <td class="left"></td>
+            <td class="left"></td>
+            <td>{{ fmt_money(_pa.land) }}</td>
+            <td></td>
+            <td></td>
+            <td class="accent">{{ fmt_pct(_pa.irr_w / _pa.land if _pa.land else 0) }}</td>
+            <td></td>
+            <td></td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if capital.recycle and capital.recycle.rows %}
+    {% include "_partials/_recycle_chart.html" %}
+    {% endif %}
+  </div>
+  {{ page_footer(3, total_pages, label='Pipeline & Cash Outflow') }}
+</div>
+
+</body>
+</html>
