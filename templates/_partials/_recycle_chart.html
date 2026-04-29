@@ -37,8 +37,12 @@
   {% set n = rows | length %}
   {% set ymax = capital.recycle.y_axis_max %}
 
-  {# Layout constants — keep in sync with CHANGELOG-v3.md geometry. #}
-  {% set xStart = 38 %}{% set xEnd = 990 %}
+  {# Layout constants — keep in sync with CHANGELOG-v3.md geometry.
+     xStart bumped from 38 → 50 so y-axis labels like "50,000" have a
+     proper gutter without clipping the leading digits at narrow widths
+     (especially in the WeasyPrint PDF where the mono fallback was
+     wider than expected). #}
+  {% set xStart = 50 %}{% set xEnd = 990 %}
   {% set yTop = 4 %}{% set yBase = 170 %}
   {% set plotH = yBase - yTop %}
   {% set cellW = (xEnd - xStart) / n %}
