@@ -102,6 +102,12 @@
         body: JSON.stringify({ asset_class: classId }),
       });
       if (!res.ok) throw new Error(`PATCH failed: ${res.status}`);
+      // The donut, legend percentages, and Returns rail color are all
+      // server-rendered, so a soft reload is the cleanest way to pick
+      // up the change. The view-toggle hash (#active / #pipeline / etc.)
+      // is preserved by `history.replaceState` in setView, so we land
+      // back on the same tab.
+      window.location.reload();
     } catch (err) {
       console.error("[capital] failed to save asset class", err);
       // TODO: revert chip + show toast

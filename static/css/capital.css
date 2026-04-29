@@ -249,6 +249,11 @@
   display: flex; flex-direction: column; gap: 2px;
   min-width: 180px;
 }
+/* Custom `display: flex` above wins over the user-agent stylesheet's
+   `[hidden] { display: none }` rule, so without this override clicking
+   outside the popover would set the attribute but leave the box on
+   screen. Force `display: none` whenever `hidden` is present. */
+.class-popover[hidden] { display: none !important; }
 .class-popover .class-opt {
   display: flex; align-items: center; gap: 8px;
   padding: 7px 10px; border-radius: 6px;

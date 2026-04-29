@@ -1036,11 +1036,14 @@ def _apply_sensitivity_override(inp, field, value):
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Canonical asset-class palette — order drives the donut wedge order.
-# Hex values must match `static/css/capital.css` exactly.
+# Colors are pulled directly from this list into the chip, donut, and
+# Returns rail (no CSS-side hex duplication), so adding a class only
+# requires editing this one place.
 _CAP_ASSET_CLASSES = [
     {"id": "mpc-hub",        "label": "MPC Hub",        "color": "#F25929"},
     {"id": "mpc-spoke",      "label": "MPC Spoke",      "color": "#b058df"},
     {"id": "mpc-commercial", "label": "MPC Commercial", "color": "#C8A96E"},
+    {"id": "condos",         "label": "Condos",         "color": "#3D87C7"},
     {"id": "mf-btr",         "label": "MF / BTR",       "color": "#5E9E8C"},
     {"id": "land",           "label": "Land",           "color": "#E07A3E"},
 ]
