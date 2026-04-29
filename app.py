@@ -134,6 +134,10 @@ def init_db():
     cur.execute("UPDATE users SET page_access = page_access || '{\"portfolio\": true}'::jsonb WHERE page_access->>'portfolio' IS NULL")
     cur.execute("UPDATE users SET page_access = page_access || '{\"macro\": true}'::jsonb WHERE page_access->>'macro' IS NULL")
     cur.execute("UPDATE users SET page_access = page_access || '{\"sales\": true}'::jsonb WHERE page_access->>'sales' IS NULL")
+    # `reports` toggle gates download/export of executive PDFs and Excels.
+    # Admin-controllable per user; defaults to true so we don't yank the
+    # ability away from existing accounts on deploy.
+    cur.execute("UPDATE users SET page_access = page_access || '{\"reports\": true}'::jsonb WHERE page_access->>'reports' IS NULL")
     # Create default admin if no users exist
     cur.execute("SELECT COUNT(*) as cnt FROM users")
     row = cur.fetchone()
@@ -681,7 +685,11 @@ def create_user():
     password = data.get("password", "")
     email = data.get("email", "").strip() or None
     is_admin = data.get("is_admin", False)
-    page_access = data.get("page_access", {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True})
+    page_access = data.get("page_access", {
+        "mpc_underwriting": True, "returns": True, "loans": True,
+        "operations": True, "macro": True, "sales": True,
+        "portfolio": True, "reports": True,
+    })
     if not username or not password:
         return jsonify({"error": "Username and password required"}), 400
     conn = get_db()
@@ -1012,13 +1020,442 @@ def _apply_sensitivity_override(inp, field, value):
     return inp2
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Ember Capital — redesigned page (Concept C two-column cockpit)
+#
+# Pulls live data from four sources:
+#   • reports[returns]                       — project list, IRR/EM, yearly distributions
+#   • reports[ember_capital_commitments]     — investor groups (raw $)
+#   • reports[ember_capital_settings]        — LP/Promote recycle % per project
+#   • reports[ember_capital_asset_classes]   — asset class assigned per project name
+#   • projects table (status='Active')       — pipeline rows from MPC Underwriting
+#
+# Asset class is a piece of metadata layered onto each project independent of
+# the source. Storage is a JSON blob keyed by project name (so Active and
+# Pipeline rows with the same name share an assignment).
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Canonical asset-class palette — order drives the donut wedge order.
+# Hex values must match `static/css/capital.css` exactly.
+_CAP_ASSET_CLASSES = [
+    {"id": "mpc-hub",        "label": "MPC Hub",        "color": "#F25929"},
+    {"id": "mpc-spoke",      "label": "MPC Spoke",      "color": "#b058df"},
+    {"id": "mpc-commercial", "label": "MPC Commercial", "color": "#C8A96E"},
+    {"id": "mf-btr",         "label": "MF / BTR",       "color": "#5E9E8C"},
+    {"id": "land",           "label": "Land",           "color": "#E07A3E"},
+]
+_CAP_VALID_CLASSES = {c["id"] for c in _CAP_ASSET_CLASSES}
+
+
+def _capital_slug(name: str) -> str:
+    """Stable slug for a project name. Used as the row id in the active +
+    returns views (commitments use their own ids)."""
+    import re
+    s = (name or "").lower().strip()
+    s = re.sub(r"[^a-z0-9]+", "-", s)
+    return s.strip("-") or "project"
+
+
+def _capital_load_asset_classes() -> dict:
+    """{project_name: asset_class_id} from the reports JSONB blob."""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "SELECT data FROM reports "
+        "WHERE report_type = 'ember_capital_asset_classes' "
+        "ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    row = cur.fetchone(); cur.close(); conn.close()
+    d = (row["data"] if row else None) or {}
+    return d.get("by_project_name", {}) if isinstance(d, dict) else {}
+
+
+def _capital_save_asset_class(project_name: str, class_id: str) -> None:
+    """Upsert {project_name: class_id} into the asset-classes blob."""
+    by = _capital_load_asset_classes()
+    by[project_name] = class_id
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM reports WHERE report_type = 'ember_capital_asset_classes'")
+    cur.execute(
+        "INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+        ("ember_capital_asset_classes",
+         json.dumps({"by_project_name": by}),
+         session.get("user_id")),
+    )
+    conn.commit(); cur.close(); conn.close()
+
+
+def _capital_commitments_totals(groups: list[dict]) -> dict:
+    """Roll up the four commit/allocated columns + derived totals."""
+    mpc       = sum((g.get("mpc")                or 0) for g in groups)
+    mpc_a     = sum((g.get("mpc_allocated")      or 0) for g in groups)
+    vert      = sum((g.get("vertical")           or 0) for g in groups)
+    vert_a    = sum((g.get("vertical_allocated") or 0) for g in groups)
+    return {
+        "mpc": mpc, "mpc_allocated": mpc_a,
+        "vertical": vert, "vertical_allocated": vert_a,
+        "total_committed": mpc + vert,
+        "total_allocated": mpc_a + vert_a,
+        "available":       (mpc + vert) - (mpc_a + vert_a),
+    }
+
+
+def _build_capital_view_context() -> dict:
+    """Assemble the dict the redesigned /capital template consumes.
+
+    Defensive on every section: returns a usable shape even when there's no
+    returns upload, no commitments, no pipeline. The template's "no data"
+    fallbacks render gracefully against empty lists.
+    """
+    today = datetime.datetime.now()
+    current_year = today.year
+    months_elapsed = today.month - 1 + (today.day / 31.0)  # rough YTD fraction
+    ytd_fraction = months_elapsed / 12.0
+    months_left_this_year = 12 - months_elapsed
+    ytd_label = f"Jan – {today.strftime('%b')} {current_year}"
+
+    asset_class_map = _capital_load_asset_classes()
+    def _class_for(name: str) -> str:
+        return asset_class_map.get(name) or "mpc-hub"
+
+    # ── Returns blob: drives Active list + Returns view + recycle chart ──
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "SELECT data, uploaded_at FROM reports "
+        "WHERE report_type = 'returns' ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    rrow = cur.fetchone()
+    src = (rrow["data"] if rrow else {}) or {}
+    years_int = list(src.get("years", []) or [])
+    years_str = [str(y) for y in years_int]
+    cur_year_str = str(current_year)
+
+    # Pull project metrics into a clean per-project dict.
+    raw_projects = src.get("projects", []) or []
+    active = []
+    returns_by_project = {}
+    portfolio_lp_dist_yearly = [0.0] * len(years_str)
+    portfolio_promote_yearly = [0.0] * len(years_str)
+    eq_weighted_irr_num = 0.0
+    eq_weighted_irr_den = 0.0
+    total_lp_profit = 0.0
+    total_promote   = 0.0
+    total_equity    = 0.0
+    for p in raw_projects:
+        if p.get("active") is False:
+            continue
+        name = (p.get("name") or "").strip()
+        if not name:
+            continue
+        by_label = {m.get("label"): m for m in (p.get("metrics") or [])}
+        def _t(label, default=0.0):
+            v = (by_label.get(label) or {}).get("total")
+            try: return float(v) if v is not None else default
+            except (TypeError, ValueError): return default
+        def _y(label):
+            v = (by_label.get(label) or {}).get("yearly") or []
+            n = len(years_str)
+            return list((list(v) + [0] * max(0, n - len(v)))[:n])
+
+        irr_dec  = _t("LP IRR", 0.0)
+        irr_pct  = irr_dec * 100 if abs(irr_dec) <= 1.5 else irr_dec
+        em_val   = _t("LP Equity Multiple", 0.0)
+        profit   = _t("Total LP Profit", 0.0)
+        promote  = _t("Promote", 0.0)
+        contrib  = abs(_t("Total LP Contributions", 0.0))   # stored negative; equity is positive
+        dist_y   = _y("Total LP Distributions")
+        prom_y   = _y("Promote")
+
+        idx_cur = years_int.index(current_year) if current_year in years_int else -1
+        to_date = sum(dist_y[: idx_cur + 1]) if idx_cur >= 0 else 0.0
+
+        slug = _capital_slug(name)
+        active.append({
+            "id":          slug,
+            "name":        name,
+            "asset_class": _class_for(name),
+            "equity":      int(round(contrib)),
+            "irr":         round(irr_pct, 1),
+            "em":          round(em_val, 2),
+            "to_date":     int(round(to_date)),
+            "profit":      int(round(profit)),
+        })
+        returns_by_project[slug] = {
+            "name":        name,
+            "asset_class": _class_for(name),
+            "yearly":      [int(round(v)) for v in dist_y],
+        }
+
+        # Portfolio aggregates
+        for i in range(len(years_str)):
+            portfolio_lp_dist_yearly[i] += dist_y[i] if i < len(dist_y) else 0
+            portfolio_promote_yearly[i] += prom_y[i] if i < len(prom_y) else 0
+        if contrib:
+            eq_weighted_irr_num += irr_pct * contrib
+            eq_weighted_irr_den += contrib
+        total_lp_profit += profit
+        total_promote   += promote
+        total_equity    += contrib
+
+    forecasted_lp_irr = round(eq_weighted_irr_num / eq_weighted_irr_den, 1) if eq_weighted_irr_den else 0.0
+
+    # ── Recycle settings (LP/Promote % per project) → annual recycle bars ──
+    cur.execute(
+        "SELECT data FROM reports WHERE report_type = 'ember_capital_settings' "
+        "ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    srow = cur.fetchone()
+    settings = (srow["data"] if srow else {}) or {}
+    recycle_map = settings.get("recycle", {}) or {}
+    # Default 100/100 if a project hasn't been touched (matches the Returns
+    # page's new default).
+    def _rec_for(name):
+        v = recycle_map.get(name) or {}
+        return float(v.get("lp", 100)) / 100.0, float(v.get("prom", 100)) / 100.0
+
+    recycle_by_year = []
+    for i, yr in enumerate(years_int):
+        lp_total = 0.0
+        pr_total = 0.0
+        for p in raw_projects:
+            if p.get("active") is False:
+                continue
+            name = (p.get("name") or "").strip()
+            if not name:
+                continue
+            by_label = {m.get("label"): m for m in (p.get("metrics") or [])}
+            dist_y = (by_label.get("Total LP Distributions") or {}).get("yearly") or []
+            prom_y = (by_label.get("Promote") or {}).get("yearly") or []
+            ld = float(dist_y[i]) if i < len(dist_y) else 0.0
+            pd = float(prom_y[i]) if i < len(prom_y) else 0.0
+            r_lp, r_pr = _rec_for(name)
+            lp_total += ld * r_lp
+            pr_total += pd * r_pr
+        recycle_by_year.append({
+            "year": int(yr),
+            "lp":      int(round(lp_total)),
+            "promote": int(round(pr_total)),
+        })
+
+    # ── Commitments ────────────────────────────────────────────────────
+    cur.execute(
+        "SELECT data FROM reports WHERE report_type = 'ember_capital_commitments' "
+        "ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    crow = cur.fetchone()
+    cdata = (crow["data"] if crow else {}) or {}
+    commit_groups = []
+    for g in (cdata.get("groups") or []):
+        commit_groups.append({
+            "id":   _capital_slug(g.get("name", "")),
+            "name": g.get("name", ""),
+            "mpc":                int(g.get("mpc")                or 0),
+            "mpc_allocated":      int(g.get("mpc_allocated")      or 0),
+            "vertical":           int(g.get("vertical")           or 0),
+            "vertical_allocated": int(g.get("vertical_allocated") or 0),
+        })
+    commit_totals = _capital_commitments_totals(commit_groups)
+    total_committed_k         = round(commit_totals["total_committed"] / 1000)
+    unallocated_commitments_k = round(commit_totals["available"]       / 1000)
+
+    # ── Pipeline: MPC underwriting projects with status='Active' ───────
+    cur.execute("""
+        SELECT id, name, address, updated_at,
+               outputs, inputs,
+               COALESCE(p.status, 'Active') AS status, archived
+        FROM projects p
+        WHERE COALESCE(archived, FALSE) = FALSE
+          AND COALESCE(p.status, 'Active') = 'Active'
+        ORDER BY updated_at DESC
+    """)
+    pipeline_rows = cur.fetchall() or []
+    pipeline = []
+    for r in pipeline_rows:
+        out = r.get("outputs") or {}
+        inp = r.get("inputs")  or {}
+        # Best-effort field mapping. `total_land_cost` is calc.py output;
+        # if missing, fall back to gross-revenue × an estimate so the row
+        # at least renders.
+        land_cost = (out.get("total_land_cost")
+                     or inp.get("raw_land_cost")
+                     or 0)
+        try: land_cost_k = int(round(float(land_cost) / 1000))
+        except (TypeError, ValueError): land_cost_k = 0
+        try: irr_pct = float(out.get("unlevered_irr") or 0) * 100
+        except (TypeError, ValueError): irr_pct = 0.0
+        try: gm = float(out.get("gross_margin_pct") or 0)  # decimal
+        except (TypeError, ValueError): gm = 0.0
+        try: dur_months = int(round(float(out.get("project_length_years") or 0) * 12))
+        except (TypeError, ValueError): dur_months = 0
+        # No EM in our outputs schema — rough proxy: 1 + gross_margin.
+        em_val = round(1 + gm, 2) if gm else 1.0
+        pipeline.append({
+            "id":           f"proj_{r['id']}",
+            "name":         r.get("name") or f"Project {r['id']}",
+            "address":      r.get("address") or "",
+            "asset_class":  _class_for(r.get("name") or ""),
+            "land_price":   land_cost_k,
+            "duration":     dur_months,
+            "gross_margin": gm,
+            "irr":          round(irr_pct, 1),
+            "em":           em_val,
+            "updated":      (r["updated_at"].strftime("%Y-%m-%d")
+                             if r.get("updated_at") else ""),
+        })
+    cur.close(); conn.close()
+
+    pipeline_land_total = sum(p["land_price"] for p in pipeline)
+    weighted_irr = (sum(p["irr"] * p["land_price"] for p in pipeline) / pipeline_land_total
+                    if pipeline_land_total else 0.0)
+
+    # ── Distributed YTD + To Be Distributed (next 18mo), pro-rated ─────
+    idx_cur = years_int.index(current_year) if current_year in years_int else -1
+    distributed_ytd_k = 0
+    if idx_cur >= 0:
+        cur_year_dist = portfolio_lp_dist_yearly[idx_cur]
+        distributed_ytd_k = int(round(cur_year_dist * ytd_fraction))
+
+    # 18 months: remaining of current year + full next years until budget gone
+    to_be_distributed_k = 0
+    if idx_cur >= 0:
+        remaining = 18.0
+        # Total recycled = LP rec + Promote rec at current settings
+        for j in range(idx_cur, len(years_int)):
+            if remaining <= 0:
+                break
+            ld = portfolio_lp_dist_yearly[j]
+            pd = portfolio_promote_yearly[j]
+            month_window = months_left_this_year if j == idx_cur else 12
+            use = min(remaining, month_window)
+            to_be_distributed_k += int(round((ld + pd) * (use / 12.0)))
+            remaining -= use
+
+    quarter = (today.month - 1) // 3 + 1
+    return {
+        "as_of":         f"Q{quarter} {current_year}",
+        "asset_classes": _CAP_ASSET_CLASSES,
+        "active":        active,
+        "pipeline":      pipeline,
+        "returns": {
+            "years":        years_str,
+            "current_year": cur_year_str,
+            "by_project":   returns_by_project,
+        },
+        "recycle": {
+            "lp_color":      "#1F7A4D",
+            "promote_color": "#5B9BD5",
+            "current_year":  current_year,
+            "by_year":       recycle_by_year,
+        },
+        "commitments": {"groups": commit_groups, "totals": commit_totals},
+        "kpis": {
+            "active_count":            len(active),
+            "total_equity":            int(round(total_equity)),
+            "total_committed":         total_committed_k,
+            "forecasted_lp_profit":    int(round(total_lp_profit)),
+            "forecasted_lp_irr":       forecasted_lp_irr,
+            "forecasted_promote":      int(round(total_promote)),
+            "distributed_ytd":         distributed_ytd_k,
+            "to_be_distributed":       to_be_distributed_k,
+            "pipeline_count":          len(pipeline),
+            "pipeline_land":           pipeline_land_total,
+            "weighted_irr":            round(weighted_irr, 1),
+            "unallocated_commitments": unallocated_commitments_k,
+            "ytd_label":               ytd_label,
+        },
+    }
+
+
 @app.route("/portfolio")
 @app.route("/ember-capital")
+@app.route("/capital")
 @login_required
 def portfolio_page():
-    pa = {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True, "portfolio": True}
-    return render_template("portfolio.html", username=session.get("username"),
-                           is_admin=session.get("is_admin", False), page_access=pa)
+    pa = session.get("page_access") or {
+        "mpc_underwriting": True, "returns": True, "loans": True,
+        "operations": True, "portfolio": True, "reports": True,
+    }
+    if not session.get("is_admin"):
+        # Re-resolve from DB so a stale session doesn't bypass an admin
+        # toggle that just landed.
+        pa = pa or {}
+    pa.setdefault("portfolio", True)
+    pa.setdefault("reports",   True)
+
+    capital = _build_capital_view_context()
+    return render_template(
+        "capital.html",
+        username=session.get("username"),
+        is_admin=session.get("is_admin", False),
+        page_access=pa,
+        capital=capital,
+    )
+
+
+@app.route("/api/projects/<project_id>/asset-class", methods=["PATCH"])
+@login_required
+def update_project_asset_class(project_id):
+    """Save the asset class assignment for a project (active or pipeline).
+
+    `project_id` is the slug used in the template — either a returns slug
+    (`grand-prairie-east-ccc`) or a pipeline `proj_<int>`. Both resolve back
+    to the project's display name, which is the storage key.
+    """
+    body = request.get_json(silent=True) or {}
+    new_cls = body.get("asset_class")
+    if new_cls not in _CAP_VALID_CLASSES:
+        return jsonify({"error": "invalid asset_class"}), 400
+
+    # Resolve project_id → project name. Pipeline ids are `proj_<int>`;
+    # returns slugs we look up in the latest returns blob.
+    project_name = None
+    if project_id.startswith("proj_"):
+        try:
+            pid = int(project_id.split("_", 1)[1])
+            conn = get_db(); cur = conn.cursor()
+            cur.execute("SELECT name FROM projects WHERE id = %s", (pid,))
+            row = cur.fetchone()
+            cur.close(); conn.close()
+            if row:
+                project_name = row.get("name")
+        except (ValueError, IndexError):
+            pass
+    else:
+        # Returns slug — find the matching name from the returns blob
+        conn = get_db(); cur = conn.cursor()
+        cur.execute(
+            "SELECT data FROM reports WHERE report_type = 'returns' "
+            "ORDER BY uploaded_at DESC LIMIT 1"
+        )
+        rrow = cur.fetchone()
+        cur.close(); conn.close()
+        if rrow and rrow.get("data"):
+            for p in (rrow["data"].get("projects") or []):
+                if _capital_slug(p.get("name", "")) == project_id:
+                    project_name = p.get("name")
+                    break
+
+    if not project_name:
+        return jsonify({"error": "project not found"}), 404
+
+    _capital_save_asset_class(project_name, new_cls)
+    return jsonify({"id": project_id, "name": project_name, "asset_class": new_cls})
+
+
+@app.route("/api/ember-capital/excel", methods=["GET"])
+@login_required
+def ember_capital_excel():
+    """Excel export — same workbook the existing PDF endpoint draws from."""
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("reports", True):
+        return jsonify({"error": "Reports access disabled by admin"}), 403
+    payload = _build_ember_capital_payload()
+    xlsx_bytes = _gen_excel_ember_capital(payload)
+    return send_file(
+        io.BytesIO(xlsx_bytes),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=f"Ember_Capital_{datetime.datetime.now().strftime('%Y-%m')}.xlsx",
+    )
 
 
 @app.route("/api/ember-capital", methods=["GET"])
@@ -1233,6 +1670,9 @@ def ember_capital_pdf():
     """Stream the branded 2-page Ember Capital executive report as a PDF.
     Opens inline in the browser — user can print or save from there.
     ?download=1 forces a download instead of inline view."""
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("reports", True):
+        return jsonify({"error": "Reports access disabled by admin"}), 403
     try:
         payload = _build_ember_capital_payload()
         pdf_bytes = bytes(_gen_pdf_ember_capital(payload))
@@ -1790,6 +2230,10 @@ def returns_pdf():
     pa = session.get("page_access") or {}
     if not session.get("is_admin") and not pa.get("returns", True):
         return jsonify({"error": "Access denied"}), 403
+    # Separate report-export gate (admin can disable downloads while
+    # leaving page access intact).
+    if not session.get("is_admin") and not pa.get("reports", True):
+        return jsonify({"error": "Reports access disabled by admin"}), 403
 
     conn = get_db(); cur = conn.cursor()
     cur.execute(

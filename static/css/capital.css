@@ -1,0 +1,395 @@
+/* ============================================================
+   Ember Capital — Concept C styles
+   Two themes: [data-theme="paper"] (default) and [data-theme="navy"]
+   ============================================================ */
+
+/* ── Brand fonts ─────────────────────────────────────────────── */
+@font-face { font-family: "HelveticaNeue Brand"; src: url("../fonts/HelveticaNeue-Bold.ttf") format("truetype"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "HelveticaNeue Brand"; src: url("../fonts/HelveticaNeue-CondensedBold.ttf") format("truetype"); font-weight: 800; font-stretch: condensed; font-display: swap; }
+@font-face { font-family: "HelveticaNeue Brand"; src: url("../fonts/HelveticaNeue-Light.ttf") format("truetype"); font-weight: 300; font-display: swap; }
+@font-face { font-family: "Gotham"; src: url("../fonts/Gotham-Medium.otf") format("opentype"); font-weight: 500; font-display: swap; }
+
+/* ── Tokens ──────────────────────────────────────────────────── */
+[data-theme="paper"], :root {
+  --cap-bg:        #F8F4EE;
+  --cap-bg-2:      #F1ECE3;
+  --cap-surface:   #FFFFFF;
+  --cap-ink:       #08233B;
+  --cap-ink-2:     #13344E;
+  --cap-muted:     #5b6b7b;
+  --cap-subtle:    #97a3b0;
+  --cap-line:      rgba(8, 35, 59, 0.10);
+  --cap-line-2:    rgba(8, 35, 59, 0.20);
+  --cap-accent:    #F25929;
+  --cap-good:      #1F7A4D;
+  --cap-shadow:    0 1px 2px rgba(8, 35, 59, 0.04), 0 4px 14px rgba(8, 35, 59, 0.06);
+}
+[data-theme="navy"] {
+  --cap-bg:        #08233B;
+  --cap-bg-2:      #0E2C49;
+  --cap-surface:   #13344E;
+  --cap-ink:       #F8F4EE;
+  --cap-ink-2:     #FFFFFF;
+  --cap-muted:     #A8B5C2;
+  --cap-subtle:    #6b7c8d;
+  --cap-line:      rgba(248, 244, 238, 0.10);
+  --cap-line-2:    rgba(248, 244, 238, 0.20);
+  --cap-accent:    #F8906A;
+  --cap-good:      #4FBF89;
+  --cap-shadow:    0 1px 2px rgba(0, 0, 0, 0.30), 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* ── Type primitives ─────────────────────────────────────────── */
+.cap-shell .num         { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
+.cap-shell .mono        { font-family: ui-monospace, "JetBrains Mono", monospace; font-variant-numeric: tabular-nums; }
+.cap-shell .eyebrow     { font-family: "Gotham", "Plus Jakarta Sans", system-ui, sans-serif; font-weight: 500; font-size: 9.5px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--cap-accent); }
+.cap-shell .label       { font-weight: 600; font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--cap-muted); }
+.cap-shell .accent      { color: var(--cap-accent); }
+.cap-shell .good        { color: var(--cap-good); }
+.cap-shell .muted       { color: var(--cap-muted); }
+.cap-shell .subtle      { color: var(--cap-subtle); }
+.cap-shell .bold        { font-weight: 700; }
+.cap-shell .right       { text-align: right; }
+.cap-shell .left        { text-align: left; }
+.cap-shell .display, .cap-shell h1, .cap-shell h2 { font-family: "HelveticaNeue Brand", "Plus Jakarta Sans", system-ui, sans-serif; }
+
+/* ── Page shell ──────────────────────────────────────────────── */
+.cap-shell {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: calc(100vh - var(--app-topbar-height, 0px));
+  background: var(--cap-bg);
+  color: var(--cap-ink);
+  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Cockpit (left rail) ─────────────────────────────────────── */
+.cockpit {
+  width: 360px;
+  flex-shrink: 0;
+  padding: 32px 24px 32px 32px;
+  border-right: 1px solid var(--cap-line);
+  background: var(--cap-bg-2);
+  overflow-y: auto;
+}
+.cockpit .page-title { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; color: var(--cap-ink); margin: 8px 0 4px; text-transform: uppercase; }
+.cockpit .page-sub   { font-size: 11px; color: var(--cap-muted); margin: 0; }
+
+.cockpit .kpi-stack { display: flex; flex-direction: column; gap: 8px; margin-top: 22px; }
+.cockpit .kpi {
+  background: var(--cap-surface);
+  border-radius: 10px;
+  padding: 10px 13px;
+  border: 1px solid var(--cap-line);
+  border-left: 3px solid transparent;
+}
+.cockpit .kpi.accent { border-left-color: var(--cap-accent); }
+.cockpit .kpi .label { font-size: 8.5px; }
+.cockpit .kpi .v     { font-family: "HelveticaNeue Brand", system-ui, sans-serif; font-weight: 700; font-size: 19px; margin-top: 3px; color: var(--cap-ink); letter-spacing: -0.01em; }
+.cockpit .kpi.accent .v { color: var(--cap-accent); }
+.cockpit .kpi .s     { font-size: 9.5px; color: var(--cap-muted); margin-top: 1px; }
+
+/* ── Pipeline KPI band (above pipeline table) ────────────── */
+.kpi-band {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 22px;
+}
+.kpi-band--5 { grid-template-columns: repeat(5, 1fr); }
+.kpi-band .kpi {
+  background: var(--cap-surface);
+  border: 1px solid var(--cap-line);
+  border-left: 3px solid transparent;
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.kpi-band .kpi.accent { border-left-color: var(--cap-accent); }
+.kpi-band .kpi .label { font-weight: 600; font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--cap-muted); }
+.kpi-band .kpi .v     { font-family: "HelveticaNeue Brand", system-ui, sans-serif; font-weight: 700; font-size: 22px; margin-top: 6px; color: var(--cap-ink); letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.kpi-band .kpi.accent .v { color: var(--cap-accent); }
+.kpi-band .kpi .s     { font-size: 10.5px; color: var(--cap-muted); margin-top: 3px; }
+@media (max-width: 1280px) {
+  .kpi-band--5 { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 720px) {
+  .kpi-band--5 { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ── Annual Capital Recycling chart ──────────────────────── */
+.recycle-card {
+  background: var(--cap-surface);
+  border: 1px solid var(--cap-line);
+  border-radius: 12px;
+  padding: 18px 22px 14px;
+}
+.recycle-legend {
+  display: flex; gap: 18px;
+  font-size: 10px; color: var(--cap-muted);
+  font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.recycle-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.recycle-legend .sw    { width: 10px; height: 10px; border-radius: 1px; display: inline-block; }
+.recycle-chart { width: 100%; height: 220px; display: block; }
+.recycle-chart .grid          { stroke: currentColor; opacity: 0.08; }
+.recycle-chart .axis-label    { font-size: 9px; fill: currentColor; opacity: 0.5; font-variant-numeric: tabular-nums; }
+.recycle-chart .axis-label--current { opacity: 1; font-weight: 700; fill: var(--cap-ink); }
+
+.cockpit .pie-card {
+  margin-top: 22px;
+  background: var(--cap-surface);
+  border: 1px solid var(--cap-line);
+  border-radius: 12px;
+  padding: 18px;
+}
+.cockpit .pie-card .label { margin-bottom: 14px; }
+.cockpit .pie-wrap        { display: flex; justify-content: center; }
+.cockpit .pie-total       { font-family: "HelveticaNeue Brand", system-ui, sans-serif; font-weight: 700; font-size: 14px; fill: var(--cap-ink); }
+.cockpit .pie-legend      { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.cockpit .pie-legend .row { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+.cockpit .pie-legend .sw  { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.cockpit .pie-legend .nm  { flex: 1; color: var(--cap-ink); }
+.cockpit .pie-legend .pct { color: var(--cap-muted); font-variant-numeric: tabular-nums; }
+
+/* ── Right pane ──────────────────────────────────────────────── */
+.pane {
+  flex: 1;
+  padding: 32px 40px;
+  overflow: auto;
+  background: var(--cap-bg);
+  min-width: 0;
+}
+
+.pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 22px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.pane-head .seg {
+  display: flex;
+  gap: 4px;
+  background: var(--cap-bg-2);
+  padding: 4px;
+  border-radius: 999px;
+}
+.pane-head .seg-btn {
+  background: transparent; border: none; cursor: pointer;
+  padding: 8px 18px; border-radius: 999px;
+  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  font-size: 12px; font-weight: 600;
+  color: var(--cap-muted); transition: all 120ms ease;
+}
+.pane-head .seg-btn:hover  { color: var(--cap-ink); }
+.pane-head .seg-btn.active { background: var(--cap-surface); color: var(--cap-ink); box-shadow: var(--cap-shadow); }
+.pane-head .pane-actions   { display: flex; gap: 8px; }
+
+.btn { font-family: inherit; font-size: 11px; font-weight: 600; padding: 7px 12px; border-radius: 8px; cursor: pointer; border: 1px solid var(--cap-line-2); background: var(--cap-surface); color: var(--cap-ink); text-decoration: none; display: inline-flex; align-items: center; }
+.btn.ghost   { background: transparent; }
+.btn.primary { background: var(--cap-accent); color: #fff; border-color: var(--cap-accent); }
+.btn:hover   { filter: brightness(1.04); }
+
+/* ── Section head ────────────────────────────────────────────── */
+.sec-head { margin: 8px 0 14px; }
+.sec-head .eyebrow { margin-bottom: 6px; }
+.sec-head h2       { font-size: 18px; font-weight: 700; color: var(--cap-ink); margin: 0; letter-spacing: -0.01em; }
+.sec-head p        { font-size: 12px; color: var(--cap-muted); margin: 4px 0 0; }
+
+/* ── Tables (Active + Pipeline grids) ───────────────────────── */
+.table-card {
+  background: var(--cap-surface);
+  border: 1px solid var(--cap-line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.thead, .tr { display: grid; gap: 12px; align-items: center; }
+.thead { padding: 11px 22px; background: var(--cap-bg-2); border-bottom: 1px solid var(--cap-line); }
+.tr    { padding: 13px 22px; border-bottom: 1px solid var(--cap-line); }
+.tr:last-child { border-bottom: none; }
+.tr:hover      { background: var(--cap-bg-2); }
+.th { font-weight: 600; font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--cap-muted); }
+.td { font-size: 13px; color: var(--cap-ink); }
+.td.name { font-weight: 600; }
+.td.right { text-align: right; }
+.td.num { font-variant-numeric: tabular-nums; }
+.td.accent { color: var(--cap-accent); font-weight: 600; }
+.td.muted  { color: var(--cap-muted); }
+.td.subtle { color: var(--cap-subtle); font-size: 11px; }
+
+.grid-active   { grid-template-columns: 1.7fr 1fr 90px 70px 90px 90px 90px; }
+.grid-pipeline { grid-template-columns: 1.5fr 1.4fr 92px 80px 80px 70px 70px 80px; }
+
+/* ── Asset-class chip ────────────────────────────────────────── */
+.class-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 9px 3px 7px; border-radius: 999px;
+  background: color-mix(in srgb, var(--c) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c) 40%, transparent);
+  font-size: 10.5px; font-weight: 600; color: var(--c);
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+.class-chip .dot   { width: 6px; height: 6px; border-radius: 999px; background: var(--c); flex-shrink: 0; }
+.class-chip .caret { opacity: 0.7; }
+.class-chip.editable { cursor: pointer; transition: filter 120ms ease; }
+.class-chip.editable:hover { filter: brightness(0.95); }
+
+/* ── Class popover ───────────────────────────────────────────── */
+.class-popover {
+  position: absolute; z-index: 1000;
+  background: var(--cap-surface);
+  border: 1px solid var(--cap-line-2);
+  border-radius: 10px;
+  box-shadow: var(--cap-shadow);
+  padding: 6px;
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 180px;
+}
+.class-popover .class-opt {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; border-radius: 6px;
+  font-size: 12px; font-weight: 500;
+  background: transparent; border: none; cursor: pointer;
+  color: var(--cap-ink); text-align: left;
+  font-family: inherit;
+}
+.class-popover .class-opt:hover { background: var(--cap-bg-2); }
+.class-popover .class-opt .dot  { width: 8px; height: 8px; border-radius: 999px; flex-shrink: 0; }
+
+/* ── Returns table (wide, scrollable) ───────────────────────── */
+.returns-scroll  { overflow-x: auto; }
+.returns-table   { width: 100%; min-width: 1200px; border-collapse: collapse; }
+.returns-table th, .returns-table td { padding: 10px 8px; font-size: 11.5px; }
+.returns-table th {
+  font-weight: 600; font-size: 9px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--cap-muted);
+  background: var(--cap-bg-2); border-bottom: 1px solid var(--cap-line);
+}
+.returns-table th.left  { text-align: left; padding-left: 12px; }
+.returns-table th.right { text-align: right; }
+.returns-table td.left  { text-align: left; padding-left: 12px; }
+.returns-table td.right { text-align: right; font-variant-numeric: tabular-nums; }
+.returns-table tbody tr { border-top: 1px solid var(--cap-line); }
+.returns-table tbody tr:hover { background: var(--cap-bg-2); }
+.returns-table .divide { border-left: 1px solid var(--cap-line); }
+.returns-table .zero   { opacity: 0.35; }
+.returns-table .rail   { display: inline-block; width: 4px; height: 18px; border-radius: 2px; vertical-align: -4px; margin-right: 8px; }
+.returns-table .proj-name { font-weight: 600; color: var(--cap-ink); font-size: 12px; }
+.returns-table .portfolio-total { background: var(--cap-bg-2); border-top: 2px solid var(--cap-ink); }
+
+.table-foot {
+  padding: 10px 22px;
+  border-top: 1px solid var(--cap-line);
+  display: flex; justify-content: space-between;
+  font-size: 10px; color: var(--cap-subtle); letter-spacing: 0.04em;
+}
+
+/* ── Responsive: collapse cockpit on narrow screens ─────────── */
+@media (max-width: 1100px) {
+  .cap-shell { flex-direction: column; }
+  .cockpit   { width: 100%; border-right: none; border-bottom: 1px solid var(--cap-line); }
+  .pane      { padding: 24px 22px; }
+}
+
+/* ── Commitments editor ───────────────────────────────────── */
+.commit-card {
+  background: var(--cap-surface);
+  border: 1px solid var(--cap-line);
+  border-radius: 10px;
+  padding: 14px 18px;
+}
+.commit-grid {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr 1fr 1fr 1fr 0.9fr 36px;
+  gap: 10px;
+  align-items: center;
+}
+.commit-hdr .ch {
+  font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase;
+  font-weight: 600; color: var(--cap-subtle);
+  padding: 4px 0;
+}
+.commit-hdr .ch.right { text-align: right; }
+.commit-row { padding: 8px 0; border-bottom: 1px solid var(--cap-line); }
+.commit-row:last-child { border-bottom: none; }
+.commit-input {
+  background: var(--cap-bg-2);
+  border: 1px solid var(--cap-line);
+  color: var(--cap-ink);
+  border-radius: 5px;
+  padding: 7px 9px;
+  font-size: 12px;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-variant-numeric: tabular-nums;
+  width: 100%;
+  text-align: right;
+  box-sizing: border-box;
+}
+.commit-input.commit-name {
+  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  text-align: left;
+  font-variant-numeric: normal;
+}
+.commit-input:focus {
+  outline: none;
+  border-color: var(--cap-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cap-accent) 15%, transparent);
+}
+.commit-input::-webkit-outer-spin-button,
+.commit-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.commit-input[type="number"] { -moz-appearance: textfield; }
+.commit-rem {
+  text-align: right;
+  font-weight: 600;
+  color: var(--cap-accent);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  padding-right: 4px;
+}
+.commit-remove {
+  background: none;
+  border: 1px solid var(--cap-line);
+  color: var(--cap-subtle);
+  border-radius: 5px;
+  width: 28px;
+  height: 26px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+}
+.commit-remove:hover { color: var(--cap-accent); border-color: var(--cap-accent); }
+
+.commit-totals {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 2px solid var(--cap-line);
+  font-weight: 700;
+  font-size: 13px;
+}
+.commit-totals .ct { color: var(--cap-ink); }
+.commit-totals .ct.right { text-align: right; color: var(--cap-accent); font-variant-numeric: tabular-nums; }
+
+.commit-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--cap-line);
+}
+.commit-status { font-size: 11px; color: var(--cap-muted); }
+.commit-status.dirty { color: #B45309; }
+.commit-status.saved { color: var(--cap-good); }
+
+@media (max-width: 1280px) {
+  .commit-grid { grid-template-columns: 1.4fr 1fr 1fr 1fr 1fr 0.9fr 36px; gap: 8px; }
+}
+@media (max-width: 900px) {
+  .commit-grid { grid-template-columns: 1.6fr repeat(4, 1fr) 0.9fr 36px; font-size: 11px; }
+  .commit-input { padding: 6px 7px; font-size: 11px; }
+}

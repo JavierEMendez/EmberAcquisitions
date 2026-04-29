@@ -1,0 +1,605 @@
+{# ============================================================
+   Ember Capital — Concept C (Two-Column Cockpit) redesign.
+
+   Renders against the live `capital` dict shaped by
+   `_build_capital_view_context()` in app.py. Visual ground truth:
+   capital report redesign/_design_reference/Capital Redesign.html
+   (Concept C section).
+
+   Layout: our standard left sidebar + the cockpit/pane shell injected
+   into `#main-content`. The cockpit is a 360px-fixed left rail with
+   8 KPI cards + an asset-class donut + legend. The right pane rotates
+   between four views (Active / Pipeline / Returns / Commitments) via
+   a pill toggle, with no page reload.
+   ============================================================ #}
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Ember Capital · Ember Residential</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="/static/theme.css"/>
+<link rel="stylesheet" href="/static/css/capital.css"/>
+<style>
+  /* App shell (sidebar + main) — copied from the rest of the site so
+     /capital nests inside the same chrome the user already navigates. */
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;}
+  body{background:var(--eax-bg);color:var(--eax-ink);font-family:'Plus Jakarta Sans',system-ui,sans-serif;overflow:hidden;}
+  #app{display:flex;height:100vh;overflow:hidden;}
+
+  /* Sidebar — same canonical markup as portfolio.html / returns.html. */
+  #sidebar{width:240px;background:var(--eax-bg-2);border-right:1px solid var(--eax-line);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;}
+  .sidebar-logo{padding:16px 18px 14px;border-bottom:1px solid var(--eax-line)}
+  .logo-img{width:100%;max-width:160px;height:auto;display:block;margin:0 auto}
+  img.logo-light{display:none;}
+  [data-theme="light"] img.logo-dark{display:none;}
+  [data-theme="light"] img.logo-light{display:block;margin:0 auto;}
+  .logo-sub{font-size:10px;color:var(--eax-subtle);letter-spacing:0.2em;text-transform:uppercase;margin-top:8px;text-align:center;font-weight:700}
+  .sidebar-section{padding:8px 16px 4px;font-size:9px;line-height:1.2;color:var(--eax-subtle);letter-spacing:0.22em;text-transform:uppercase;margin-top:8px;font-weight:700}
+  .sidebar-item{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;border-radius:8px;margin:1px 8px;transition:all .15s;color:var(--eax-muted);font-size:13px;line-height:1.2;text-decoration:none;font-weight:500}
+  .sidebar-item:hover{background:var(--eax-accent-soft);color:var(--eax-ink);text-decoration:none}
+  .sidebar-item.active{background:var(--eax-surface);color:var(--eax-ink);font-weight:600;border:1px solid var(--eax-line);position:relative}
+  .sidebar-item.active::before{content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:2px;background:var(--eax-accent);border-radius:2px}
+  .sidebar-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0}
+  .sidebar-item.active .icon{opacity:1;color:var(--eax-accent)}
+
+  /* Main content area is the cap-shell — the cockpit + pane fill it. */
+  #main-content{flex:1;overflow:hidden;display:flex;background:var(--cap-bg);min-width:0;}
+  .cap-shell{height:100%;}
+
+  /* When the parent page applies data-theme=dark/light, hand it through
+     to the cockpit's paper/navy palette. The capital.js theme handler
+     keeps body[data-theme] in sync; this is a static fallback. */
+  [data-theme="dark"] body, body[data-theme="navy"] { color: #F8F4EE; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  {# ── SIDEBAR ─────────────────────────────────────────────────── #}
+  <nav id="sidebar">
+    <div class="sidebar-logo">
+      <img src="/static/img/ember_logo.png"        alt="Ember" class="logo-img logo-dark">
+      <img src="/static/img/ember_logo_light.png"  alt="Ember" class="logo-img logo-light">
+      <div class="logo-sub">Ember Capital</div>
+    </div>
+
+    <div class="sidebar-section">Apps &amp; Dashboards</div>
+    {% if page_access.get('mpc_underwriting', true) %}
+    <a href="/" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+      MPC Underwriting
+    </a>
+    {% endif %}
+    {% if page_access.get('returns', true) %}
+    <a href="/returns" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Project Returns
+    </a>
+    {% endif %}
+    {% if page_access.get('loans', true) %}
+    <a href="/loans" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Loans &amp; Debt
+    </a>
+    {% endif %}
+    {% if page_access.get('operations', true) %}
+    <a href="/operations" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Operating Revenues
+    </a>
+    {% endif %}
+    {% if page_access.get('macro', true) %}
+    <a href="/macro" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="1.5"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Macro Dashboard
+    </a>
+    {% endif %}
+    {% if page_access.get('portfolio', true) %}
+    <a href="/ember-capital" class="sidebar-item active">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 3.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Ember Capital
+    </a>
+    {% endif %}
+    {% if page_access.get('sales', true) %}
+    <a href="/sales" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l3-3 4 4 5-6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Community Sales
+    </a>
+    {% endif %}
+
+    <div style="flex:1"></div>
+    {% include "_partials/_sidebar_foot.html" %}
+  </nav>
+
+  {# ── MAIN — cap-shell hosts the cockpit + rotating pane ─────── #}
+  <div id="main-content">
+
+  {# ─── Helpers ─────────────────────────────────────────────────── #}
+  {% macro fmt_money(v) -%}
+    {%- if v is none or v == 0 -%}—
+    {%- elif v|abs >= 1000 -%}${{ '%.1f' | format(v / 1000) }}M
+    {%- else -%}${{ '{:,.0f}'.format(v) }}K
+    {%- endif -%}
+  {%- endmacro %}
+
+  {% macro fmt_money_raw(v) -%}
+    {%- if v is none or v == 0 -%}—
+    {%- elif v|abs >= 1000000 -%}${{ '%.1f' | format(v / 1000000) }}M
+    {%- elif v|abs >= 1000 -%}${{ '{:,.0f}'.format(v / 1000) }}K
+    {%- else -%}${{ '{:,.0f}'.format(v) }}
+    {%- endif -%}
+  {%- endmacro %}
+
+  {% macro fmt_num(v) -%}
+    {%- if v is none or v == 0 -%}—{%- else -%}{{ '{:,.0f}'.format(v) }}{%- endif -%}
+  {%- endmacro %}
+
+  {% macro fmt_pct(v, digits=1) -%}{{ '%.{}f'.format(digits) | format(v or 0) }}%{%- endmacro %}
+  {% macro fmt_pct_dec(v, digits=1) -%}{{ '%.{}f'.format(digits) | format((v or 0) * 100) }}%{%- endmacro %}
+  {% macro fmt_em(v) -%}{{ '%.2f' | format(v or 0) }}x{%- endmacro %}
+
+  {% macro fmt_months(m) -%}
+    {%- set y  = (m // 12) | int -%}
+    {%- set mo = (m %  12) | int -%}
+    {%- if y == 0 -%}{{ m }}mo
+    {%- elif mo == 0 -%}{{ y }}y
+    {%- else -%}{{ y }}y {{ mo }}m
+    {%- endif -%}
+  {%- endmacro %}
+
+  {% macro class_chip(class_id, asset_classes, editable=True) -%}
+    {%- set c = (asset_classes | selectattr('id', 'equalto', class_id) | list | first)
+              or (asset_classes | first) -%}
+    {%- if c -%}
+    <span class="class-chip {{ 'editable' if editable else '' }}"
+          data-class-id="{{ c.id }}"
+          style="--c: {{ c.color }};">
+      <span class="dot"></span>{{ c.label }}
+      {% if editable %}<svg class="caret" width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5l3 3 3-3"/></svg>{% endif %}
+    </span>
+    {%- endif -%}
+  {%- endmacro %}
+
+  <div class="cap-shell" data-page="capital">
+
+    {# ── COCKPIT RAIL ─────────────────────────────────────────── #}
+    <aside class="cockpit">
+      <div class="eyebrow">Capital · {{ capital.as_of }}</div>
+      <h1 class="page-title">Ember Capital</h1>
+      <p class="page-sub">Portfolio KPIs at a glance.</p>
+
+      <div class="kpi-stack">
+        <div class="kpi">
+          <div class="label">Active Projects</div>
+          <div class="v num">{{ capital.kpis.active_count }}</div>
+          <div class="s">across portfolio</div>
+        </div>
+        <div class="kpi accent">
+          <div class="label">Total Equity Deployed</div>
+          <div class="v num">{{ fmt_money(capital.kpis.total_equity) }}</div>
+          <div class="s">LP capital at work</div>
+        </div>
+        <div class="kpi">
+          <div class="label">Total Commitments</div>
+          <div class="v num">{{ fmt_money(capital.kpis.total_committed) }}</div>
+          <div class="s">MPC + Vertical</div>
+        </div>
+        <div class="kpi">
+          <div class="label">Forecasted LP Profit</div>
+          <div class="v num">{{ fmt_money(capital.kpis.forecasted_lp_profit) }}</div>
+          <div class="s">across all projects</div>
+        </div>
+        <div class="kpi">
+          <div class="label">Forecasted LP IRR</div>
+          <div class="v num">{{ fmt_pct(capital.kpis.forecasted_lp_irr) }}</div>
+          <div class="s">LP-equity-weighted</div>
+        </div>
+        <div class="kpi accent">
+          <div class="label">Forecasted Promote</div>
+          <div class="v num">{{ fmt_money(capital.kpis.forecasted_promote) }}</div>
+          <div class="s">across all projects</div>
+        </div>
+        <div class="kpi">
+          <div class="label">Distributed YTD</div>
+          <div class="v num">{{ fmt_money(capital.kpis.distributed_ytd) }}</div>
+          <div class="s">{{ capital.kpis.ytd_label }}</div>
+        </div>
+        <div class="kpi accent">
+          <div class="label">To Be Distributed</div>
+          <div class="v num">{{ fmt_money(capital.kpis.to_be_distributed) }}</div>
+          <div class="s">next 18 months</div>
+        </div>
+      </div>
+
+      {# ── Asset-class donut ───────────────────────────────────── #}
+      <div class="pie-card">
+        <div class="label">Equity by Asset Class</div>
+        <div class="pie-wrap">
+          {% set total = capital.active | sum(attribute='equity') %}
+          {% set _ns = namespace(offset=0, R=77, C=2 * 3.14159265 * 77) %}
+          <svg class="pie" viewBox="0 0 200 200" width="180" height="180">
+            <circle cx="100" cy="100" r="{{ _ns.R }}" fill="none" stroke="var(--cap-line)" stroke-width="26"/>
+            {% for c in capital.asset_classes %}
+              {% set sum = capital.active | selectattr('asset_class', 'equalto', c.id) | sum(attribute='equity') %}
+              {% if sum > 0 and total > 0 %}
+                {% set len = (sum / total) * _ns.C %}
+                <circle cx="100" cy="100" r="{{ _ns.R }}" fill="none"
+                        stroke="{{ c.color }}" stroke-width="26"
+                        stroke-dasharray="{{ '%.2f' | format(len) }} {{ '%.2f' | format(_ns.C - len) }}"
+                        stroke-dashoffset="{{ '%.2f' | format(-_ns.offset) }}"
+                        transform="rotate(-90 100 100)"/>
+                {% set _ns.offset = _ns.offset + len %}
+              {% endif %}
+            {% endfor %}
+            <text x="100" y="105" text-anchor="middle" class="pie-total">{{ fmt_money(total) }}</text>
+          </svg>
+        </div>
+        <div class="pie-legend">
+          {% for c in capital.asset_classes %}
+            {% set sum = capital.active | selectattr('asset_class', 'equalto', c.id) | sum(attribute='equity') %}
+            {% set pct = (sum / total * 100) if total > 0 else 0 %}
+            <div class="row">
+              <span class="sw" style="background: {{ c.color }};"></span>
+              <span class="nm">{{ c.label }}</span>
+              <span class="pct num">{{ '%.0f' | format(pct) }}%</span>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </aside>
+
+    {# ── ROTATING RIGHT PANE ────────────────────────────────────── #}
+    <main class="pane">
+
+      <div class="pane-head">
+        <div class="seg" role="tablist">
+          <button class="seg-btn active" data-view="active"      role="tab">Active</button>
+          <button class="seg-btn"        data-view="pipeline"    role="tab">Pipeline</button>
+          <button class="seg-btn"        data-view="returns"     role="tab">Returns</button>
+          <button class="seg-btn"        data-view="commitments" role="tab">Commitments</button>
+        </div>
+        <div class="pane-actions">
+          {% if page_access.get('reports', true) or is_admin %}
+          <button class="btn ghost"   id="export-excel">Excel</button>
+          <a class="btn primary" href="/api/ember-capital/pdf" target="_blank" rel="noopener">PDF Report</a>
+          {% endif %}
+        </div>
+      </div>
+
+      {# ── VIEW: ACTIVE ───────────────────────────────────────── #}
+      <section class="view view-active" data-view="active">
+        <header class="sec-head">
+          <div class="eyebrow">{{ capital.kpis.active_count }} projects</div>
+          <h2>Active Projects</h2>
+          <p>Equity, IRR, EM, distributions to date.</p>
+        </header>
+
+        <div class="table-card">
+          <div class="thead grid-active">
+            <div class="th">Project</div>
+            <div class="th">Asset Class</div>
+            <div class="th right">Equity</div>
+            <div class="th right">IRR</div>
+            <div class="th right">EM</div>
+            <div class="th right">To Date</div>
+            <div class="th right">Total Profit</div>
+          </div>
+          {% for p in capital.active %}
+          <div class="tr grid-active" data-project-id="{{ p.id }}">
+            <div class="td name">{{ p.name }}</div>
+            <div class="td">{{ class_chip(p.asset_class, capital.asset_classes) }}</div>
+            <div class="td right num">{{ fmt_money(p.equity) }}</div>
+            <div class="td right num">{{ fmt_pct(p.irr) }}</div>
+            <div class="td right num">{{ fmt_em(p.em) }}</div>
+            <div class="td right num muted">{{ fmt_money(p.to_date) }}</div>
+            <div class="td right num accent">{{ fmt_money(p.profit) }}</div>
+          </div>
+          {% endfor %}
+          {% if not capital.active %}
+            <div class="tr"><div class="td muted" style="grid-column:1/-1;text-align:center;padding:24px;">No active projects yet — upload the Ember Dashboard Excel from the home page to populate this view.</div></div>
+          {% endif %}
+        </div>
+      </section>
+
+      {# ── VIEW: PIPELINE ─────────────────────────────────────── #}
+      <section class="view view-pipeline" data-view="pipeline" hidden>
+        <header class="sec-head">
+          <div class="eyebrow">Live · MPC Underwriting</div>
+          <h2>Pipeline</h2>
+          <p>{{ capital.kpis.pipeline_count }} active opportunities · {{ fmt_money(capital.kpis.pipeline_land) }} land cost.</p>
+        </header>
+
+        <div class="kpi-band kpi-band--5">
+          <div class="kpi">
+            <div class="label">Pipeline Projects</div>
+            <div class="v num">{{ capital.kpis.pipeline_count }}</div>
+            <div class="s">currently active</div>
+          </div>
+          <div class="kpi accent">
+            <div class="label">Total Land Cost</div>
+            <div class="v num">{{ fmt_money(capital.kpis.pipeline_land) }}</div>
+            <div class="s">underwritten</div>
+          </div>
+          <div class="kpi">
+            <div class="label">Weighted IRR</div>
+            <div class="v num">{{ fmt_pct(capital.kpis.weighted_irr) }}</div>
+            <div class="s">land-$ weighted</div>
+          </div>
+          <div class="kpi">
+            <div class="label">Unallocated Commitments</div>
+            <div class="v num">{{ fmt_money(capital.kpis.unallocated_commitments) }}</div>
+            <div class="s">available capital</div>
+          </div>
+          <div class="kpi accent">
+            <div class="label">Distributions Next 18mo</div>
+            <div class="v num">{{ fmt_money(capital.kpis.to_be_distributed) }}</div>
+            <div class="s">pro-rated forecast</div>
+          </div>
+        </div>
+
+        <div class="table-card">
+          <div class="thead grid-pipeline">
+            <div class="th">Project</div>
+            <div class="th">Address</div>
+            <div class="th right">Land $</div>
+            <div class="th right">Duration</div>
+            <div class="th right">Gross Margin</div>
+            <div class="th right">IRR</div>
+            <div class="th right">EM</div>
+            <div class="th right">Updated</div>
+          </div>
+          {% for p in capital.pipeline %}
+          <div class="tr grid-pipeline" data-project-id="{{ p.id }}">
+            <div class="td">
+              <div class="name">{{ p.name }}</div>
+              <div style="margin-top:3px">{{ class_chip(p.asset_class, capital.asset_classes) }}</div>
+            </div>
+            <div class="td muted">{{ p.address or '—' }}</div>
+            <div class="td right num">{{ fmt_money(p.land_price) }}</div>
+            <div class="td right num muted">{{ fmt_months(p.duration) }}</div>
+            <div class="td right num">{{ fmt_pct_dec(p.gross_margin) }}</div>
+            <div class="td right num accent">{{ fmt_pct(p.irr) }}</div>
+            <div class="td right num">{{ fmt_em(p.em) }}</div>
+            <div class="td right num subtle">{{ p.updated }}</div>
+          </div>
+          {% endfor %}
+          {% if not capital.pipeline %}
+            <div class="tr"><div class="td muted" style="grid-column:1/-1;text-align:center;padding:24px;">No active underwriting projects. Add one from MPC Underwriting and set status to "Active".</div></div>
+          {% endif %}
+        </div>
+      </section>
+
+      {# ── VIEW: RETURNS ──────────────────────────────────────── #}
+      <section class="view view-returns" data-view="returns" hidden>
+        <header class="sec-head">
+          <div class="eyebrow">Distributions by year</div>
+          <h2>Project Returns</h2>
+          <p>$000s · No recycle assumption.</p>
+        </header>
+
+        {% set years = capital.returns.years %}
+        {% set current = capital.returns.current_year %}
+        {% set current_idx = years.index(current) if current in years else (years|length - 1) %}
+
+        <div class="table-card">
+          <div class="returns-scroll">
+            <table class="returns-table">
+              <thead>
+                <tr>
+                  <th class="left">Project</th>
+                  {% for y in years %}<th class="right">{{ y }}</th>{% endfor %}
+                  <th class="right divide good">To Date</th>
+                  <th class="right muted">Remaining</th>
+                  <th class="right accent">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% set _t = namespace(yearly=([0] * (years|length)), to_date=0, remaining=0) %}
+                {% for pid, p in capital.returns.by_project.items() %}
+                  {% set to_date    = p.yearly[:current_idx + 1] | sum %}
+                  {% set remaining  = p.yearly[current_idx + 1:] | sum %}
+                  {% set total      = to_date + remaining %}
+                  <tr data-project-id="{{ pid }}">
+                    <td class="left">
+                      <span class="rail" style="background: {{ (capital.asset_classes | selectattr('id','equalto',p.asset_class) | list | first or capital.asset_classes[0]).color }};"></span>
+                      <span class="proj-name">{{ p.name }}</span>
+                    </td>
+                    {% for v in p.yearly %}
+                      <td class="right num {{ 'muted' if loop.index0 > current_idx else '' }}">
+                        {%- if v == 0 -%}<span class="zero">—</span>{%- else -%}{{ '{:,.0f}'.format(v) }}{%- endif -%}
+                      </td>
+                    {% endfor %}
+                    <td class="right num divide good bold">{{ fmt_num(to_date) }}</td>
+                    <td class="right num muted bold">{{ fmt_num(remaining) }}</td>
+                    <td class="right num accent bold">{{ fmt_num(total) }}</td>
+                  </tr>
+                  {% for v in p.yearly %}{% set _ = _t.yearly.__setitem__(loop.index0, _t.yearly[loop.index0] + v) %}{% endfor %}
+                  {% set _t.to_date   = _t.to_date   + to_date %}
+                  {% set _t.remaining = _t.remaining + remaining %}
+                {% endfor %}
+                <tr class="portfolio-total">
+                  <td class="left bold">Portfolio</td>
+                  {% for v in _t.yearly %}<td class="right num bold">{{ fmt_num(v) }}</td>{% endfor %}
+                  <td class="right num divide good bold">{{ fmt_num(_t.to_date) }}</td>
+                  <td class="right num muted bold">{{ fmt_num(_t.remaining) }}</td>
+                  <td class="right num accent bold">{{ fmt_num(_t.to_date + _t.remaining) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="table-foot">
+            <span>Distributions in $000s. To Date = cumulative through {{ current }}. Remaining = {{ current|int + 1 }} onward. No recycle assumption applied.</span>
+            <span class="mono">Live from /returns</span>
+          </div>
+        </div>
+
+        {# ── Annual Capital Recycling chart ────────────────── #}
+        {% if capital.recycle.by_year %}
+        <header class="sec-head" style="margin-top: 32px;">
+          <div class="eyebrow">LP + Promote · annual</div>
+          <h2>Annual Capital Recycling</h2>
+          <p>Distributions recycled · LP vs Promote · {{ capital.recycle.by_year[0].year }}–{{ capital.recycle.by_year[-1].year }}.</p>
+        </header>
+
+        {% set recycle_max_ns = namespace(v=0) %}
+        {% for r in capital.recycle.by_year %}
+          {% set total = r.lp + r.promote %}
+          {% if total > recycle_max_ns.v %}{% set recycle_max_ns.v = total %}{% endif %}
+        {% endfor %}
+        {% set rmax = recycle_max_ns.v if recycle_max_ns.v > 0 else 1 %}
+        {% set bars = capital.recycle.by_year %}
+        {% set n = bars | length %}
+        {% set chart_w = 760 %}
+        {% set chart_h = 220 %}
+        {% set padL = 36 %}{% set padR = 12 %}{% set padT = 12 %}{% set padB = 26 %}
+        {% set plotW = chart_w - padL - padR %}
+        {% set plotH = chart_h - padT - padB %}
+        {% set xStep = plotW / n %}
+        {% set bw = xStep * 0.62 %}
+
+        <div class="recycle-card">
+          <div class="recycle-legend">
+            <span><span class="sw" style="background: {{ capital.recycle.lp_color }};"></span>LP Recycled</span>
+            <span><span class="sw" style="background: {{ capital.recycle.promote_color }};"></span>Promote Recycled</span>
+          </div>
+          <svg class="recycle-chart" viewBox="0 0 {{ chart_w }} {{ chart_h }}" preserveAspectRatio="none">
+            {% for f in [0, 0.25, 0.5, 0.75, 1.0] %}
+              {% set v = rmax * f %}
+              {% set y = padT + plotH - (v / rmax) * plotH %}
+              <line x1="{{ padL }}" x2="{{ chart_w - padR }}" y1="{{ '%.2f' | format(y) }}" y2="{{ '%.2f' | format(y) }}" class="grid"/>
+              <text x="{{ padL - 6 }}" y="{{ '%.2f' | format(y + 3) }}" text-anchor="end" class="axis-label">
+                {%- if v >= 1000 -%}{{ '%.0f' | format(v / 1000) }}M{%- else -%}{{ '%.0f' | format(v) }}K{%- endif -%}
+              </text>
+            {% endfor %}
+            {% for r in bars %}
+              {% set i = loop.index0 %}
+              {% set xMid = padL + i * xStep + xStep / 2 %}
+              {% set x = xMid - bw / 2 %}
+              {% set lpH = (r.lp / rmax) * plotH %}
+              {% set prH = (r.promote / rmax) * plotH %}
+              {% set yLP = padT + plotH - lpH %}
+              {% set yPR = yLP - prH %}
+              {% if r.lp > 0 %}<rect x="{{ '%.2f' | format(x) }}" y="{{ '%.2f' | format(yLP) }}" width="{{ '%.2f' | format(bw) }}" height="{{ '%.2f' | format(lpH) }}" fill="{{ capital.recycle.lp_color }}" rx="1"/>{% endif %}
+              {% if r.promote > 0 %}<rect x="{{ '%.2f' | format(x) }}" y="{{ '%.2f' | format(yPR) }}" width="{{ '%.2f' | format(bw) }}" height="{{ '%.2f' | format(prH) }}" fill="{{ capital.recycle.promote_color }}" rx="1"/>{% endif %}
+              <text x="{{ '%.2f' | format(xMid) }}" y="{{ chart_h - 8 }}" text-anchor="middle"
+                    class="axis-label{{ ' axis-label--current' if r.year == capital.recycle.current_year else '' }}">{{ r.year }}</text>
+            {% endfor %}
+          </svg>
+        </div>
+        {% endif %}
+      </section>
+
+      {# ── VIEW: COMMITMENTS ──────────────────────────────────── #}
+      <section class="view view-commitments" data-view="commitments" hidden>
+
+        {% set ct = capital.commitments.totals %}
+        <div class="kpi-band kpi-band--5">
+          <div class="kpi accent">
+            <div class="label">Total Commitments</div>
+            <div class="v num">{{ fmt_money_raw(ct.total_committed) }}</div>
+            <div class="s">{{ capital.commitments.groups | length }} {{ 'group' if capital.commitments.groups | length == 1 else 'groups' }}</div>
+          </div>
+          <div class="kpi">
+            <div class="label">Total Allocated</div>
+            <div class="v num">{{ fmt_money_raw(ct.total_allocated) }}</div>
+            <div class="s">drawn against commitments</div>
+          </div>
+          <div class="kpi">
+            <div class="label">Available</div>
+            <div class="v num">{{ fmt_money_raw(ct.available) }}</div>
+            <div class="s">remaining capacity</div>
+          </div>
+          <div class="kpi">
+            <div class="label">MPC Commitments</div>
+            <div class="v num">{{ fmt_money_raw(ct.mpc) }}</div>
+            <div class="s">{{ fmt_money_raw(ct.mpc_allocated) }} allocated</div>
+          </div>
+          <div class="kpi">
+            <div class="label">Vertical Commitments</div>
+            <div class="v num">{{ fmt_money_raw(ct.vertical) }}</div>
+            <div class="s">{{ fmt_money_raw(ct.vertical_allocated) }} allocated</div>
+          </div>
+        </div>
+
+        <header class="sec-head">
+          <div class="eyebrow">Investor groups · MPC + Vertical</div>
+          <h2>Capital Commitments</h2>
+          <p>Investor-group commitments by asset class, plus how much Ember has already drawn against each. Feeds the executive report and Committed / Allocated / Available KPIs.</p>
+        </header>
+
+        <div class="commit-card" id="commitments-editor"
+             data-save-url="/api/ember-capital/commitments"
+             data-csrf="">
+          <div class="commit-grid commit-hdr">
+            <div class="ch">Group</div>
+            <div class="ch right">MPC Commit ($)</div>
+            <div class="ch right">MPC Allocated ($)</div>
+            <div class="ch right">Vert. Commit ($)</div>
+            <div class="ch right">Vert. Allocated ($)</div>
+            <div class="ch right">Remaining</div>
+            <div class="ch"></div>
+          </div>
+
+          <div class="commit-rows">
+            {% for g in capital.commitments.groups %}
+            {% set rem = (g.mpc + g.vertical) - (g.mpc_allocated + g.vertical_allocated) %}
+            <div class="commit-grid commit-row" data-group-id="{{ g.id }}">
+              <input type="text"   class="commit-input commit-name" name="name"               value="{{ g.name }}"               placeholder="Investor / Group name" />
+              <input type="number" class="commit-input commit-num"  name="mpc"                value="{{ g.mpc or '' }}"                min="0" step="1000" placeholder="0" />
+              <input type="number" class="commit-input commit-num"  name="mpc_allocated"      value="{{ g.mpc_allocated or '' }}"      min="0" step="1000" placeholder="0" />
+              <input type="number" class="commit-input commit-num"  name="vertical"           value="{{ g.vertical or '' }}"           min="0" step="1000" placeholder="0" />
+              <input type="number" class="commit-input commit-num"  name="vertical_allocated" value="{{ g.vertical_allocated or '' }}" min="0" step="1000" placeholder="0" />
+              <div class="commit-rem num">{{ fmt_money_raw(rem) if rem else '—' }}</div>
+              <button type="button" class="commit-remove" title="Remove group" aria-label="Remove">×</button>
+            </div>
+            {% endfor %}
+          </div>
+
+          <div class="commit-grid commit-totals">
+            <div class="ct">Total</div>
+            <div class="ct right num" data-total="mpc">{{ fmt_money_raw(ct.mpc) if ct.mpc else '—' }}</div>
+            <div class="ct right num" data-total="mpc_allocated">{{ fmt_money_raw(ct.mpc_allocated) if ct.mpc_allocated else '—' }}</div>
+            <div class="ct right num" data-total="vertical">{{ fmt_money_raw(ct.vertical) if ct.vertical else '—' }}</div>
+            <div class="ct right num" data-total="vertical_allocated">{{ fmt_money_raw(ct.vertical_allocated) if ct.vertical_allocated else '—' }}</div>
+            <div class="ct right num" data-total="available">{{ fmt_money_raw(ct.available) if ct.available else '—' }}</div>
+            <div></div>
+          </div>
+
+          <div class="commit-actions">
+            <button type="button" class="btn ghost"   id="commit-add">+ Add group</button>
+            <button type="button" class="btn primary" id="commit-save">Save commitments</button>
+            <span class="commit-status" id="commit-status"></span>
+          </div>
+        </div>
+
+      </section>
+    </main>
+  </div>
+
+  {# ── Asset-class popover ────────────────────────────────── #}
+  <div id="class-popover" class="class-popover" hidden>
+    {% for c in capital.asset_classes %}
+      <button class="class-opt" data-class-id="{{ c.id }}">
+        <span class="dot" style="background: {{ c.color }};"></span>{{ c.label }}
+      </button>
+    {% endfor %}
+  </div>
+
+  </div>{# /#main-content #}
+</div>{# /#app #}
+
+{# Bootstrap config — patchUrl points at our app endpoint. #}
+<script>
+  window.CAPITAL_CONFIG = {
+    patchUrl:  "/api/projects",
+    csrfToken: ""
+  };
+</script>
+<script src="/static/js/capital.js" defer></script>
+
+</body>
+</html>
