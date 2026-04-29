@@ -345,7 +345,13 @@
     color: var(--subtle);
     letter-spacing: 0.06em;
   }
-  .chartbox .area { height: 1.85in; }
+  /* Chart area on the summary page. Each chartbox's chrome (title row,
+     padding, x-axis row, border) eats ~0.85in around the chart, so two
+     stacked charts at 1.5in inside the 4.95in summary-body sums to
+     ~4.85in + 0.15in gap = fits cleanly without the bottom chart
+     bleeding into the page footer. Project-card chartboxes override
+     this to 0.95in via `.pcard .right .chartbox .area`. */
+  .chartbox .area { height: 1.5in; }
   .chartbox .area svg { width: 100%; height: 100%; display: block; }
   .chartbox .xaxis {
     display: table; table-layout: fixed; width: 100%;
