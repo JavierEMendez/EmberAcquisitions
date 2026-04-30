@@ -10,7 +10,7 @@
   </div>
   <div class="balance">
     <div class="v">{{ loan.balance_fmt }}</div>
-    <div class="of">of {{ loan.loanAmount_fmt }} committed</div>
+    <div class="of">of {{ loan.loanAmount_fmt }} capacity</div>
     <div class="gauge"><div style="width:{{ loan.utilization_pct }}%"></div></div>
     <div class="gaugel"><span class="lbl">Utilization</span><span class="vv">{{ loan.utilization_fmt }}</span></div>
   </div>
@@ -23,7 +23,7 @@
     <div class="dial {{ loan.term_cls }}">
       <div class="lbl">Term Ends</div>
       <div class="v">{{ loan.termDate_short }}</div>
-      <div class="s {{ loan.term_cls }}">{{ loan.monthsRemaining|round|int }} months left</div>
+      <div class="s {{ loan.term_cls }}">{{ loan.monthsRemaining_fmt }} months left</div>
     </div>
     {% if kind == 'mpc' %}
       <div class="dial {{ loan.ir_cls }}">
@@ -40,7 +40,7 @@
     {% endif %}
     <div class="dial {{ loan.cap_cls }}">
       <div class="lbl">Capacity Coverage</div>
-      <div class="v">{{ '%.2f'|format(loan.capacityHealth) }}×</div>
+      <div class="v">{{ loan.capacityHealth_fmt }}</div>
       <div class="s {{ loan.cap_cls }}">{{ loan.remaining_fmt }} remaining</div>
     </div>
   </div>

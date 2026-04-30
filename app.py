@@ -4380,6 +4380,22 @@ def _loans_enrich_loan(raw, kind):
     l["irHealth_fmt"]      = _loans_fmt_pct1(l.get("irHealth")) if not is_vert else "—"
     l["remIR_fmt"]         = _loans_fmt_money_short(l.get("remIR")) if l.get("remIR") else "—"
     l["monthlyBurn_fmt"]   = _loans_fmt_money_short(l.get("monthlyBurn")) if l.get("monthlyBurn") else "—"
+
+    # Pre-format capacityHealth and monthsRemaining so the templates
+    # don't crash on None (legacy parser sometimes stores `Capacity
+    # Health` as a non-numeric string label, which our translator
+    # coerces to None — `'%.2f'|format(None)` would TypeError).
+    ch = l.get("capacityHealth")
+    try:
+        l["capacityHealth_fmt"] = f"{float(ch):.2f}×" if ch is not None else "—"
+    except (TypeError, ValueError):
+        l["capacityHealth_fmt"] = "—"
+    mr = l.get("monthsRemaining")
+    try:
+        l["monthsRemaining_fmt"] = f"{int(round(float(mr)))}" if mr is not None else "—"
+    except (TypeError, ValueError):
+        l["monthsRemaining_fmt"] = "—"
+
     l["term_cls"] = _loans_term_class(l.get("monthsRemaining"))
     l["ir_cls"]   = _loans_ir_class(l.get("irHealth")) if not is_vert else "na"
     l["cap_cls"]  = _loans_cap_class(l.get("capacityHealth"))
@@ -4420,7 +4436,7 @@ def _loans_kpis(data):
     p = data["portfolio"]
     return [
         {"label": "Outstanding", "val": _loans_fmt_money_m(p.get("totalOutstanding")),
-         "sub": f"of {_loans_fmt_money_m(p.get('totalCommitted'))} committed", "tone": ""},
+         "sub": f"of {_loans_fmt_money_m(p.get('totalCommitted'))} capacity", "tone": ""},
         {"label": "Remaining Capacity", "val": _loans_fmt_money_m(p.get("totalRemaining")),
          "sub": "across all facilities", "tone": ""},
         {"label": "Wtd Avg Rate", "val": _loans_fmt_pct(p.get("weightedAvgRate"), 2),
@@ -4790,7 +4806,7 @@ def _build_loans_report_context(view_ctx, run_date=None):
     p = portfolio
     overview_kpis = [
         {"label": "Outstanding", "val": _loans_fmt_money_m(p.get("totalOutstanding")),
-         "sub": f"of {_loans_fmt_money_m(p.get('totalCommitted'))} committed · "
+         "sub": f"of {_loans_fmt_money_m(p.get('totalCommitted'))} capacity · "
                 f"{_loans_fmt_pct1((p.get('totalOutstanding') or 0) / (p.get('totalCommitted') or 1))} drawn",
          "tone": ""},
         {"label": "Remaining Capacity", "val": _loans_fmt_money_m(p.get("totalRemaining")),

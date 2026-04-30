@@ -3,7 +3,7 @@
   <thead>
     <tr>
       <th class="l">Community / Lender</th>
-      <th>Commitment</th><th>Drawn</th><th>Balance</th><th>Remaining</th><th>Util.</th>
+      <th>Capacity</th><th>Drawn</th><th>Balance</th><th>Remaining</th><th>Util.</th>
       {% if kind == 'mpc' %}<th>Rem. IR</th><th>Mo. Burn</th><th>IR Health</th>{% endif %}
       <th>Cap Health</th><th>Rate</th><th>Term Ends</th><th>Mo. Left</th><th>Ext</th>
     </tr>
@@ -22,10 +22,10 @@
           <td>{{ l.monthlyBurn_fmt }}</td>
           <td><span class="pill {{ l.ir_cls }}"><span class="dot"></span>{{ l.irHealth_fmt }}</span></td>
         {% endif %}
-        <td><span class="pill {{ l.cap_cls }}"><span class="dot"></span>{{ '%.2f'|format(l.capacityHealth) }}×</span></td>
+        <td><span class="pill {{ l.cap_cls }}"><span class="dot"></span>{{ l.capacityHealth_fmt }}</span></td>
         <td>{{ l.todayRate_fmt }}</td>
         <td>{{ l.termDate_short }}</td>
-        <td><span class="pill {{ l.term_cls }}"><span class="dot"></span>{{ l.monthsRemaining|round|int }} mo</span></td>
+        <td><span class="pill {{ l.term_cls }}"><span class="dot"></span>{{ l.monthsRemaining_fmt }} mo</span></td>
         <td>{{ l.extensionsRem }}</td>
       </tr>
     {% endfor %}

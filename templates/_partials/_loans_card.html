@@ -18,7 +18,7 @@
 
   <div class="loans-card-balance">
     <div class="loans-card-balance-val num">{{ loan.balance_fmt }}</div>
-    <div class="loans-card-balance-sub">of {{ loan.loanAmount_fmt }} committed</div>
+    <div class="loans-card-balance-sub">of {{ loan.loanAmount_fmt }} capacity</div>
     <div class="loans-card-gauge">
       <div class="loans-card-gauge-fill" style="width: {{ loan.utilization_pct }}%"></div>
     </div>
@@ -41,7 +41,7 @@
       <div class="loans-dial-lbl">Term Ends</div>
       <div class="loans-dial-val num">{{ loan.termDate_short }}</div>
       <div class="loans-dial-sub is-{{ loan.term_cls }}">
-        {{ loan.monthsRemaining|round|int }} months left
+        {{ loan.monthsRemaining_fmt }} months left
       </div>
     </div>
 
@@ -63,7 +63,7 @@
     {# Capacity coverage #}
     <div class="loans-dial is-{{ loan.cap_cls }}">
       <div class="loans-dial-lbl">Capacity Coverage</div>
-      <div class="loans-dial-val num">{{ '%.2f'|format(loan.capacityHealth) }}×</div>
+      <div class="loans-dial-val num">{{ loan.capacityHealth_fmt }}</div>
       <div class="loans-dial-sub is-{{ loan.cap_cls }}">{{ loan.remaining_fmt }} remaining</div>
     </div>
   </div>

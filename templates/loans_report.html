@@ -248,7 +248,7 @@
     <div class="page-pad">
       <div class="phead">
         <h2>Portfolio<br/><em>Overview</em></h2>
-        <div class="meta">{{ report.active_facilities }} ACTIVE FACILITIES · {{ report.committed_fmt }} COMMITTED · ANCHORED TO {{ report.period_label|upper }}</div>
+        <div class="meta">{{ report.active_facilities }} ACTIVE FACILITIES · {{ report.committed_fmt }} CAPACITY · ANCHORED TO {{ report.period_label|upper }}</div>
       </div>
 
       <div class="kpi-band">
@@ -285,7 +285,7 @@
     <div class="page-pad">
       <div class="phead">
         <h2>MPC Land<br/><em>Facilities</em></h2>
-        <div class="meta">{{ report.mpc.loans|length }} ACTIVE · {{ report.mpc.totals.drawn_fmt }} DRAWN / {{ report.mpc.totals.loanAmount_fmt }} COMMITTED</div>
+        <div class="meta">{{ report.mpc.loans|length }} ACTIVE · {{ report.mpc.totals.drawn_fmt }} DRAWN / {{ report.mpc.totals.loanAmount_fmt }} CAPACITY</div>
       </div>
 
       <div class="cards cards-{{ report.mpc.loans|length }}">
@@ -312,7 +312,7 @@
     <div class="page-pad">
       <div class="phead">
         <h2>Vertical<br/><em>Construction Lines</em></h2>
-        <div class="meta">{{ report.vert.loans|length }} ACTIVE · {{ report.vert.totals.drawn_fmt }} DRAWN / {{ report.vert.totals.loanAmount_fmt }} COMMITTED</div>
+        <div class="meta">{{ report.vert.loans|length }} ACTIVE · {{ report.vert.totals.drawn_fmt }} DRAWN / {{ report.vert.totals.loanAmount_fmt }} CAPACITY</div>
       </div>
 
       <div class="cards cards-{{ report.vert.loans|length }}">
