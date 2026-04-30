@@ -68,6 +68,30 @@
 .ops-btn-primary { background:var(--accent); color:#fff; border:none; padding:8px 14px; border-radius:999px; font-size:11px; letter-spacing:.06em; text-transform:uppercase; font-weight:600; cursor:pointer; text-decoration:none; }
 .ops-theme-toggle { background:transparent; border:1px solid var(--line-2); color:var(--ink); border-radius:999px; width:30px; height:30px; cursor:pointer; }
 
+/* Top-right pill-shaped Excel + PDF buttons. Match the styling on
+   the Project Returns page (`.rw-btn`) so the export controls feel
+   consistent across the apps. */
+.ops-btn {
+  display:inline-flex; align-items:center; gap:6px;
+  background:transparent; color:var(--ink);
+  border:1px solid var(--line-2);
+  border-radius:999px;
+  padding:8px 16px; font-size:12px; font-weight:600;
+  font-family:var(--font-sans);
+  cursor:pointer; text-decoration:none;
+  transition:all .15s;
+}
+.ops-btn:hover  { border-color:var(--accent); color:var(--accent); }
+.ops-btn.primary {
+  background:var(--accent); color:#fff;
+  border-color:var(--accent);
+  box-shadow:0 6px 18px rgba(242,89,41,0.22);
+}
+.ops-btn.primary:hover {
+  color:#fff; transform:translateY(-1px);
+  box-shadow:0 10px 24px rgba(242,89,41,0.30);
+}
+
 /* ── Main column ─────────────────────────────────────────── */
 .ops-main { flex:1; min-width:0; display:flex; flex-direction:column; }
 .ops-topbar { padding:26px 36px 18px; border-bottom:1px solid var(--line); display:flex; align-items:flex-end; justify-content:space-between; gap:24px; }
@@ -82,7 +106,10 @@
 .ops-body { padding:24px 36px 60px; display:flex; flex-direction:column; gap:14px; }
 
 /* ── KPI band ────────────────────────────────────────────── */
-.ops-kpi-band { display:grid; grid-template-columns:repeat(4,1fr); border:1px solid var(--line); background:var(--paper); }
+/* Rounded card to match the Capital + Returns pages' visual language.
+   `overflow:hidden` so the inner left-borders don't poke through the
+   rounded corners on the first/last cell. */
+.ops-kpi-band { display:grid; grid-template-columns:repeat(4,1fr); border:1px solid var(--line); border-radius:10px; background:var(--paper); overflow:hidden; }
 .ops-kpi { padding:16px 18px; border-left:1px solid var(--line); }
 .ops-kpi:first-child { border-left:none; }
 .ops-kpi-label { font-family:var(--font-eyebrow); font-weight:500; font-size:9px; letter-spacing:.18em; text-transform:uppercase; color:var(--subtle); }
@@ -91,7 +118,7 @@
 .ops-kpi-sub   { font-size:10.5px; color:var(--muted); margin-top:4px; }
 
 /* ── Filter bar ──────────────────────────────────────────── */
-.ops-filterbar { display:flex; align-items:center; gap:14px; padding:12px 16px; background:var(--paper); border:1px solid var(--line); flex-wrap:wrap; }
+.ops-filterbar { display:flex; align-items:center; gap:14px; padding:12px 16px; background:var(--paper); border:1px solid var(--line); border-radius:10px; flex-wrap:wrap; }
 .ops-filter-label { font-size:9px; font-family:var(--font-eyebrow); color:var(--subtle); letter-spacing:.18em; text-transform:uppercase; font-weight:500; }
 .ops-filter-divider { width:1px; height:22px; background:var(--line-2); }
 .ops-filter-arrow { color:var(--muted); font-size:11px; }
@@ -103,7 +130,9 @@
 .ops-select { padding:6px 10px; background:var(--paper); border:1px solid var(--line-2); border-radius:4px; font-size:11px; color:var(--ink); font-family:inherit; cursor:pointer; }
 
 /* ── Panel ───────────────────────────────────────────────── */
-.ops-panel { background:var(--paper); border:1px solid var(--line); display:flex; flex-direction:column; }
+/* `overflow:hidden` so the rounded outer corners crop the inner
+   panel-head + table-head backgrounds cleanly. */
+.ops-panel { background:var(--paper); border:1px solid var(--line); border-radius:10px; display:flex; flex-direction:column; overflow:hidden; }
 .ops-panel-head { padding:12px 16px 10px; display:flex; align-items:baseline; justify-content:space-between; border-bottom:1px solid var(--line); }
 .ops-panel-title { font-family:var(--font-display); font-weight:700; font-size:12.5px; text-transform:uppercase; letter-spacing:.02em; color:var(--ink); }
 .ops-panel-sub   { font-size:9.5px; color:var(--subtle); letter-spacing:.05em; }

@@ -124,8 +124,8 @@
       <main class="ops-main">
         <header class="ops-topbar">
           <div class="ops-topbar-l">
-            <div class="ops-eyebrow">Ember Residential · Finance &amp; Analytics</div>
-            <h1 class="ops-display">Operating <em>Cashflows</em></h1>
+            <div class="ops-eyebrow">Cashflow Forecast</div>
+            <h1 class="ops-display">Operating Cashflows</h1>
             <p class="ops-subtitle">
               Forward forecast of operating revenue across Ember communities.
               {{ ops.cats|length }} fee categories rolled up by month, anchored to {{ ops.period_label }}.
@@ -138,8 +138,14 @@
             </div>
             <div class="ops-topbar-actions">
               {% if page_access.get('reports', true) or is_admin %}
-              <a class="ops-btn-primary" href="/operations/pdf" target="_blank" rel="noopener">Download PDF</a>
-              <a class="ops-btn-ghost"   href="/operations/excel">Export Excel</a>
+              <a class="ops-btn ghost" href="/operations/excel">
+                <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" stroke-width="1.6"/><path d="M8 12h8M8 8h5M8 16h6" stroke-width="1.6" stroke-linecap="round"/></svg>
+                Excel
+              </a>
+              <a class="ops-btn primary" href="/operations/pdf" target="_blank" rel="noopener">
+                <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4 m4-5l5 5 5-5 m-5 5V3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                PDF
+              </a>
               {% endif %}
             </div>
           </div>
