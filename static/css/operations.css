@@ -95,10 +95,14 @@
 /* ── Main column ─────────────────────────────────────────── */
 .ops-main { flex:1; min-width:0; display:flex; flex-direction:column; }
 .ops-topbar { padding:26px 36px 18px; border-bottom:1px solid var(--line); display:flex; align-items:flex-end; justify-content:space-between; gap:24px; }
-.ops-eyebrow { font-family:var(--font-eyebrow); font-weight:500; font-size:10px; letter-spacing:.22em; text-transform:uppercase; color:var(--accent); }
-.ops-display { font-family:var(--font-display); font-weight:700; font-size:36px; letter-spacing:-.02em; line-height:1.02; margin-top:8px; text-transform:uppercase; }
+/* Type aligned with the Project Returns page (`.rw-eyebrow`,
+   `.rw-detail-title`, `.rw-sub`) so the page header reads consistent
+   across apps: bold tracked-out eyebrow, oversized display title,
+   12px muted subtitle. */
+.ops-eyebrow { font-family:var(--font-eyebrow); font-weight:700; font-size:10px; letter-spacing:.22em; text-transform:uppercase; color:var(--accent); }
+.ops-display { font-family:var(--font-display); font-weight:700; font-size:36px; letter-spacing:-.025em; line-height:1.05; margin-top:8px; text-transform:uppercase; }
 .ops-display em { font-style:normal; font-weight:300; color:var(--accent); text-transform:none; letter-spacing:-.02em; }
-.ops-subtitle { font-size:13px; color:var(--muted); margin-top:8px; max-width:720px; line-height:1.55; }
+.ops-subtitle { font-size:12px; color:var(--muted); margin-top:8px; max-width:720px; line-height:1.55; }
 .ops-topbar-r { text-align:right; }
 .ops-meta { font-family:var(--font-mono); font-size:10px; color:var(--subtle); letter-spacing:.06em; }
 .ops-topbar-actions { display:flex; gap:8px; margin-top:12px; justify-content:flex-end; align-items:center; }
@@ -112,18 +116,23 @@
 .ops-kpi-band { display:grid; grid-template-columns:repeat(4,1fr); border:1px solid var(--line); border-radius:10px; background:var(--paper); overflow:hidden; }
 .ops-kpi { padding:16px 18px; border-left:1px solid var(--line); }
 .ops-kpi:first-child { border-left:none; }
-.ops-kpi-label { font-family:var(--font-eyebrow); font-weight:500; font-size:9px; letter-spacing:.18em; text-transform:uppercase; color:var(--subtle); }
-.ops-kpi-val   { font-family:var(--font-display); font-weight:700; font-size:26px; letter-spacing:-.01em; margin-top:6px; color:var(--ink); }
+/* KPI tile typography mirrors `.rw-kpi .lbl` / `.rw-kpi .val` on
+   the Project Returns page — 700-weight 0.22em label, 28px display
+   value with -0.025em tracking, tabular-nums for clean alignment. */
+.ops-kpi-label { font-family:var(--font-eyebrow); font-weight:700; font-size:9px; letter-spacing:.22em; text-transform:uppercase; color:var(--muted); }
+.ops-kpi-val   { font-family:var(--font-display); font-weight:700; font-size:28px; letter-spacing:-.025em; line-height:1.1; margin-top:8px; color:var(--ink); font-variant-numeric:tabular-nums; }
 .ops-kpi.is-accent .ops-kpi-val { color:var(--accent); }
-.ops-kpi-sub   { font-size:10.5px; color:var(--muted); margin-top:4px; }
+.ops-kpi-sub   { font-size:11px; color:var(--muted); margin-top:4px; }
 
 /* ── Filter bar ──────────────────────────────────────────── */
 .ops-filterbar { display:flex; align-items:center; gap:14px; padding:12px 16px; background:var(--paper); border:1px solid var(--line); border-radius:10px; flex-wrap:wrap; }
-.ops-filter-label { font-size:9px; font-family:var(--font-eyebrow); color:var(--subtle); letter-spacing:.18em; text-transform:uppercase; font-weight:500; }
+/* Filter-label uses the same 700-weight 0.22em eyebrow style as the
+   Returns table-head label so the chrome is consistent. */
+.ops-filter-label { font-size:9px; font-family:var(--font-eyebrow); color:var(--muted); letter-spacing:.22em; text-transform:uppercase; font-weight:700; }
 .ops-filter-divider { width:1px; height:22px; background:var(--line-2); }
 .ops-filter-arrow { color:var(--muted); font-size:11px; }
 .ops-filter-spacer { flex:1; }
-.ops-filter-meta { font-size:10.5px; color:var(--muted); }
+.ops-filter-meta { font-family:var(--font-mono); font-size:10px; color:var(--subtle); }
 .ops-pillgroup { display:flex; gap:4px; }
 .ops-pill { padding:6px 16px; border-radius:999px; border:1px solid var(--line); background:transparent; color:var(--muted); font-size:11px; letter-spacing:.06em; text-transform:uppercase; font-weight:600; cursor:pointer; font-family:inherit; }
 .ops-pill.is-active { background:var(--ink); color:var(--paper); border-color:var(--ink); }
@@ -133,26 +142,58 @@
 /* `overflow:hidden` so the rounded outer corners crop the inner
    panel-head + table-head backgrounds cleanly. */
 .ops-panel { background:var(--paper); border:1px solid var(--line); border-radius:10px; display:flex; flex-direction:column; overflow:hidden; }
-.ops-panel-head { padding:12px 16px 10px; display:flex; align-items:baseline; justify-content:space-between; border-bottom:1px solid var(--line); }
-.ops-panel-title { font-family:var(--font-display); font-weight:700; font-size:12.5px; text-transform:uppercase; letter-spacing:.02em; color:var(--ink); }
-.ops-panel-sub   { font-size:9.5px; color:var(--subtle); letter-spacing:.05em; }
+/* Panel head matches `.rw-table-head` on Returns:
+     • title  = 9px tracked-out eyebrow caps in muted (the small label
+                that sits over a data table)
+     • sub    = 10px font-mono in subtle (the `$K · …` metadata) */
+.ops-panel-head  { padding:14px 22px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--line); gap:14px; flex-wrap:wrap; }
+.ops-panel-title { font-family:var(--font-eyebrow); font-weight:700; font-size:9px; letter-spacing:0.22em; text-transform:uppercase; color:var(--muted); }
+.ops-panel-sub   { font-family:var(--font-mono); font-size:10px; color:var(--subtle); letter-spacing:0.04em; }
 .ops-panel-body  { padding:0; }
 .ops-table-scroll{ overflow-x:auto; }
 
 /* ── Pivot table ─────────────────────────────────────────── */
-.ops-pivot { width:100%; border-collapse:collapse; font-size:11px; font-variant-numeric:tabular-nums; }
-.ops-pivot th { padding:8px 6px; font-family:var(--font-sans); font-weight:600; font-size:8.5px; letter-spacing:.10em; text-transform:uppercase; color:var(--subtle); text-align:right; white-space:nowrap; border-bottom:1px solid var(--line-2); }
-.ops-pivot th.l { text-align:left; min-width:200px; }
+/* Sized + typed to match `table.rw-table` on /returns: 12px sans-serif
+   body, 9px tracked-out caps headers, tabular-nums for numeric
+   alignment. Numbers stay in font-sans (not mono) so the table reads
+   like the Returns cashflow grid — `tabular-nums` keeps columns
+   aligned without the typewriter feel. */
+.ops-pivot { width:100%; border-collapse:collapse; font-family:var(--font-sans); font-size:12px; font-variant-numeric:tabular-nums; }
+.ops-pivot th {
+  padding:11px 14px;
+  font-family:var(--font-sans);
+  font-weight:600; font-size:9px;
+  letter-spacing:0.16em; text-transform:uppercase;
+  color:var(--subtle);
+  background:color-mix(in srgb, var(--bg) 60%, var(--paper) 40%);
+  border-bottom:1px solid var(--line);
+  text-align:right; white-space:nowrap;
+}
+.ops-pivot th.l     { text-align:left; min-width:200px; }
 .ops-pivot th.trend { border-left:1px solid var(--line-2); width:120px; }
-.ops-pivot th.tot { width:64px; }
-.ops-pivot th.now { color:var(--accent); font-weight:700; }
-.ops-pivot td { padding:6px 6px; text-align:right; font-family:var(--font-mono); font-size:10.5px; color:var(--muted); white-space:nowrap; border-bottom:1px solid var(--line); }
-.ops-pivot td.l { text-align:left; padding-left:6px; min-width:200px; color:var(--ink); font-family:var(--font-sans); font-size:11px; font-weight:500; }
-.ops-pivot td.trend { border-left:1px solid var(--line-2); padding:6px 8px; }
-.ops-pivot td.tot { color:var(--ink); font-weight:700; border-left:none; }
+.ops-pivot th.tot   { width:64px; }
+.ops-pivot th.now   { color:var(--accent); font-weight:700; }
+.ops-pivot td {
+  padding:9px 14px;
+  text-align:right;
+  color:var(--muted);
+  white-space:nowrap;
+  border-top:1px solid var(--line);
+  font-variant-numeric:tabular-nums;
+}
+.ops-pivot td.l     { text-align:left; min-width:200px; color:var(--ink); font-weight:500; }
+.ops-pivot td.trend { border-left:1px solid var(--line-2); padding:9px 14px; }
+.ops-pivot td.tot   { color:var(--ink); font-weight:700; border-left:none; }
 .ops-pivot td.tot.accent { color:var(--accent); }
-.ops-pivot td.now { color:var(--accent); font-weight:700; background:var(--accent-soft); }
-.ops-pivot tr.tot-row td { color:var(--ink); font-weight:700; border-top:2px solid var(--ink); border-bottom:none; padding-top:8px; }
+.ops-pivot td.now   { color:var(--accent); font-weight:700; background:var(--accent-soft); }
+/* Portfolio-total row matches Returns' `.hero` row treatment:
+   13px / 700 with an emphasized top rule. */
+.ops-pivot tr.tot-row td {
+  color:var(--ink); font-weight:700; font-size:13px;
+  border-top:2px solid var(--line-2); border-bottom:none;
+  padding:14px 14px;
+}
+.ops-pivot tr.tot-row td.tot.accent { color:var(--accent); }
 .ops-pivot .swatch { display:inline-block; width:6px; height:12px; margin-right:8px; vertical-align:-1px; border-radius:1px; }
 
 @media (max-width: 1100px) {
