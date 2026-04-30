@@ -5620,6 +5620,63 @@ def _gen_pdf_report(report_type, data):
     return pdf.output()
 
 
+def _gen_new_pdf_report(rt, data, uploaded_at=None):
+    """Render the redesigned executive PDF for a given report type.
+
+    The same WeasyPrint pipeline the live download buttons use, callable
+    from outside a request context (e.g. APScheduler / the monthly email
+    job). Returns PDF bytes on success, or None on any failure — the
+    caller should fall back to the legacy fpdf2 `_gen_pdf_report` so
+    users still receive *something* when WeasyPrint can't load.
+
+    Reports covered:
+        returns         → templates/returns_report.html        (8-page)
+        ember_capital   → templates/capital_report.html        (3-page)
+        operations      → templates/operations_report.html     (2-page)
+        loans           → not yet redesigned, returns None     (legacy fallback)
+    """
+    try:
+        from weasyprint import HTML  # noqa: F401  (probe import only)
+    except (ImportError, OSError):
+        app.logger.warning("WeasyPrint unavailable; falling back to legacy PDF for %s", rt)
+        return None
+
+    # Manufacture a request context so render_template / url_for /
+    # request.host_url all resolve. Base URL doesn't matter much because
+    # _weasyprint_local_fetcher serves /static/* from disk.
+    base_url = os.environ.get("APP_BASE_URL") or "http://localhost"
+    try:
+        with app.test_request_context(base_url=base_url):
+            if rt == "returns":
+                pdf_bytes = _render_returns_report_pdf(data, uploaded_at)
+                return bytes(pdf_bytes)
+
+            if rt == "ember_capital":
+                from weasyprint import HTML
+                ctx = _capital_report_context()
+                html = render_template("capital_report.html", capital=ctx)
+                return HTML(string=html, base_url=base_url,
+                            url_fetcher=_weasyprint_local_fetcher).write_pdf()
+
+            if rt == "operations":
+                from weasyprint import HTML
+                view_ctx = _build_operations_view_context(data, uploaded_at)
+                if view_ctx is None:
+                    return None
+                rpt_ctx = _build_operations_report_context(view_ctx, run_date=uploaded_at)
+                html = render_template("operations_report.html", **rpt_ctx)
+                return HTML(string=html, base_url=base_url,
+                            url_fetcher=_weasyprint_local_fetcher).write_pdf()
+
+            # 'loans' (and any future rt without a redesigned report)
+            # falls through — caller will hit the legacy generator.
+            return None
+    except Exception as e:
+        app.logger.warning("_gen_new_pdf_report(%s) failed: %s: %s",
+                           rt, type(e).__name__, e)
+        return None
+
+
 def _send_monthly_emails(force=False):
     """Send monthly reports to all opted-in users. Returns count of emails sent."""
     now = datetime.datetime.utcnow()
@@ -5788,7 +5845,13 @@ def _send_monthly_emails(force=False):
                         filename = "Ember_Operating_Revenues.xlsx"
                         mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 else:
-                    file_bytes = bytes(_gen_pdf_report(rt, data))
+                    # Prefer the redesigned WeasyPrint PDF (same one the
+                    # live download buttons serve). Fall back to the
+                    # legacy fpdf2 generator only if WeasyPrint can't
+                    # load — guarantees the email always carries an
+                    # attachment instead of silently dropping it.
+                    new_bytes = _gen_new_pdf_report(rt, data, uploaded_at=now)
+                    file_bytes = bytes(new_bytes) if new_bytes else bytes(_gen_pdf_report(rt, data))
                     filename = f"{label.replace(' ','_')}.pdf"
                     mime_type = "application/pdf"
 
