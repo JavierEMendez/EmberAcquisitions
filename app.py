@@ -917,16 +917,22 @@ def set_user_name(uid):
 @login_required
 @admin_required
 def send_reports_now():
-    import threading
-    def _run():
-        try:
-            count = _send_monthly_emails(force=True)
-            print(f"[Reports] Sent to {count} recipient(s)", flush=True)
-        except Exception as e:
-            print(f"[Reports] Send failed: {e}", flush=True)
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
-    return jsonify({"ok": True, "queued": True})
+    """Run the monthly send job synchronously and return the per-recipient
+    diagnostics so the admin UI can show who got skipped and why.
+
+    Runs in-process (not a thread) so the response carries the result —
+    the job is bounded by the recipient count and SendGrid latency, and
+    knowing what happened beats fire-and-forget for debugging."""
+    try:
+        count = _send_monthly_emails(force=True)
+    except Exception as e:
+        print(f"[Reports] Send failed: {type(e).__name__}: {e}", flush=True)
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+    return jsonify({
+        "ok":    True,
+        "count": count,
+        "diag":  getattr(_send_monthly_emails, "last_diag", []),
+    })
 
 # ─── DEFAULT INPUTS TEMPLATE ──────────────────────────────────────────────────
 def default_inputs(name="New Project"):
@@ -5691,8 +5697,22 @@ def _send_monthly_emails(force=False):
             cur.close(); conn.close()
             return 0  # already sent this month
 
-    # Fetch opted-in users with emails
-    cur.execute("SELECT id, username, email, report_format, page_access, first_name, last_name FROM users WHERE report_opt_in = TRUE AND email IS NOT NULL AND email != ''")
+    # Fetch every user with an email + at least one subscription. We
+    # check both:
+    #   (a) the new `report_subscriptions` JSONB (set via the admin
+    #       Reports management modal) — preferred source.
+    #   (b) the legacy `report_opt_in` flag — kept for users who were
+    #       set up before the new UI shipped and never re-saved.
+    # A user matches if EITHER source says they're opted in.
+    cur.execute("""
+        SELECT id, username, email, report_format, report_subscriptions,
+               report_opt_in, page_access, first_name, last_name
+        FROM users
+        WHERE COALESCE(email, '') <> ''
+          AND ( report_opt_in = TRUE
+                OR (report_subscriptions IS NOT NULL
+                    AND report_subscriptions <> '{}'::jsonb) )
+    """)
     recipients = cur.fetchall()
 
     # Fetch latest report data for all three types
@@ -5734,6 +5754,9 @@ def _send_monthly_emails(force=False):
 
     sg = SendGridAPIClient(sendgrid_key)
     sent_count = 0
+    # Per-recipient diagnostic so the admin "Send Reports Now" UI can show
+    # who got skipped and why. Also goes to stdout for Railway logs.
+    diag = []
 
     # Load logo once
     logo_b64 = ""
@@ -5742,22 +5765,48 @@ def _send_monthly_emails(force=False):
         with open(logo_path, "rb") as f:
             logo_b64 = base64.b64encode(f.read()).decode()
 
+    print(f"[Reports] {len(recipients)} candidate recipient(s) matched the filter", flush=True)
+
     for user in recipients:
-        fmt = user["report_format"] or "pdf"
-        email_addr = user["email"]
-        fn = (user.get("first_name") or "").strip()
-        ln = (user.get("last_name") or "").strip()
+        email_addr  = (user.get("email") or "").strip()
+        fn          = (user.get("first_name") or "").strip()
+        ln          = (user.get("last_name") or "").strip()
         display_name = f"{fn} {ln}".strip() or user["username"]
+        legacy_fmt  = user.get("report_format") or "pdf"
+        subs        = user.get("report_subscriptions") or {}
+        pa          = user.get("page_access") or {}
 
-        pa = user["page_access"] or {}
-        accessible = {rt: label for rt, label in report_labels.items()
+        # Resolve which reports + format this user gets:
+        #   • If `report_subscriptions` has entries, use them as-is —
+        #     {report_key: 'pdf'|'excel'}. This is what the new admin
+        #     Reports modal writes.
+        #   • Otherwise fall back to the legacy flag: send every report
+        #     they have page access to, in their global preferred format.
+        if subs:
+            user_subs = {rt: subs[rt] for rt in subs
+                         if rt in report_labels and subs[rt] in ("pdf", "excel")}
+        else:
+            user_subs = {rt: legacy_fmt for rt in report_labels
+                         if pa.get(rt, True)}
+
+        # Filter out reports we don't actually have data for, and respect
+        # page_access. (page_access still gates: an admin can disable a
+        # whole report category for a user.)
+        accessible = {rt: report_labels[rt] for rt in user_subs
                       if report_data.get(rt) and pa.get(rt, True)}
-
         if not accessible:
-            continue  # user has no access to any available reports
+            reason = ("no subscriptions" if not user_subs
+                      else "no accessible reports (page_access or no data)")
+            print(f"[Reports]  · skip {display_name} <{email_addr}>: {reason}", flush=True)
+            diag.append({"user": display_name, "email": email_addr,
+                         "status": "skipped", "reason": reason})
+            continue
 
+        # Build the inline list for the email body, showing the per-report
+        # format ("[PDF]" or "[EXCEL]") next to each title.
         report_list_items = "".join(
-            f'<li style="margin:4px 0">{label} <span style="color:#8b95a8;font-size:12px">({fmt.upper()})</span></li>'
+            f'<li style="margin:4px 0">{label} '
+            f'<span style="color:#8b95a8;font-size:12px">({user_subs[rt].upper()})</span></li>'
             for rt, label in accessible.items()
         )
 
@@ -5799,7 +5848,7 @@ def _send_monthly_emails(force=False):
             f"Hello {display_name},\n\n"
             f"Please find your {now.strftime('%B %Y')} Ember reports attached below.\n\n"
             "Reports included:\n" +
-            "".join(f"  • {label} ({fmt.upper()})\n" for rt, label in accessible.items()) +
+            "".join(f"  • {label} ({user_subs[rt].upper()})\n" for rt, label in accessible.items()) +
             "\nThese reports are generated automatically on the 1st of each month.\n\n"
             "Ember Finance & Analytics Team"
         )
@@ -5814,6 +5863,13 @@ def _send_monthly_emails(force=False):
             Content("text/html", html_body),
         ]
 
+        # Collect ALL attachments first, then assign once. SendGrid's
+        # Mail.attachment setter REPLACES on each call in modern SDK
+        # versions — assigning per-iteration would silently drop every
+        # attachment except the last one. Building a list and assigning
+        # at the end keeps every PDF / Excel + the inline logo.
+        attachments = []
+
         if logo_b64:
             logo_att = Attachment(
                 FileContent(logo_b64),
@@ -5822,28 +5878,27 @@ def _send_monthly_emails(force=False):
                 Disposition("inline"),
             )
             logo_att.content_id = "ember_logo"
-            message.attachment = logo_att
+            attachments.append(logo_att)
 
+        attached_rts = []
         for rt, label in accessible.items():
             data = report_data[rt]
+            fmt  = user_subs[rt]   # 'pdf' or 'excel', per-report from subscriptions
             try:
                 if fmt == "excel":
                     if rt == "returns":
                         file_bytes = _gen_excel_returns(data)
                         filename = f"{label.replace(' ','_')}.xlsx"
-                        mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     elif rt == "loans":
                         file_bytes = _gen_excel_loans(data)
                         filename = "Loan_Capacities.xlsx"
-                        mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     elif rt == "ember_capital":
                         file_bytes = _gen_excel_ember_capital(data)
                         filename = "Ember_Capital_Executive_Report.xlsx"
-                        mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     else:
                         file_bytes = _gen_excel_operations(data)
                         filename = "Ember_Operating_Revenues.xlsx"
-                        mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 else:
                     # Prefer the redesigned WeasyPrint PDF (same one the
                     # live download buttons serve). Fall back to the
@@ -5855,21 +5910,51 @@ def _send_monthly_emails(force=False):
                     filename = f"{label.replace(' ','_')}.pdf"
                     mime_type = "application/pdf"
 
-                attachment = Attachment(
+                attachments.append(Attachment(
                     FileContent(base64.b64encode(file_bytes).decode()),
                     FileName(filename),
                     FileType(mime_type),
                     Disposition("attachment"),
-                )
-                message.attachment = attachment
+                ))
+                attached_rts.append(f"{rt}({fmt})")
             except Exception as e:
-                print(f"Error generating {rt} {fmt}: {e}")
+                print(f"[Reports] {display_name}: failed to build {rt} {fmt}: "
+                      f"{type(e).__name__}: {e}", flush=True)
+
+        if not attachments or all(a.disposition.get() == "inline" if hasattr(a.disposition, 'get') else False
+                                   for a in attachments):
+            # Only the inline logo, no actual reports — don't bother sending.
+            print(f"[Reports]  · skip {display_name} <{email_addr}>: "
+                  f"no report attachments built", flush=True)
+            diag.append({"user": display_name, "email": email_addr,
+                         "status": "skipped", "reason": "no attachments built"})
+            continue
+
+        message.attachment = attachments
 
         try:
             sg.send(message)
             sent_count += 1
+            print(f"[Reports]  · sent {display_name} <{email_addr}>: "
+                  f"{', '.join(attached_rts)}", flush=True)
+            diag.append({"user": display_name, "email": email_addr,
+                         "status": "sent", "reports": attached_rts})
         except Exception as e:
-            print(f"SendGrid error sending to {email_addr}: {e}")
+            print(f"[Reports] SendGrid error sending to <{email_addr}>: "
+                  f"{type(e).__name__}: {e}", flush=True)
+            # If SendGrid returns a structured error body, log it too —
+            # this is the only way to see why an email was rejected
+            # (over quota, bounced, suppressed, etc.).
+            err_body = getattr(getattr(e, "body", None), "decode", lambda *_: None)("utf-8") \
+                       if hasattr(getattr(e, "body", None), "decode") else getattr(e, "body", None)
+            if err_body:
+                print(f"[Reports]    response: {err_body}", flush=True)
+            diag.append({"user": display_name, "email": email_addr,
+                         "status": "send_failed",
+                         "reason": f"{type(e).__name__}: {e}"})
+
+    print(f"[Reports] Done — {sent_count} email(s) sent, "
+          f"{len(diag) - sent_count} skipped/failed.", flush=True)
 
     # Record successful send (skip if forced to allow re-testing)
     if not force:
@@ -5877,6 +5962,11 @@ def _send_monthly_emails(force=False):
         cur2 = conn2.cursor()
         cur2.execute("INSERT INTO report_sends (period) VALUES (%s) ON CONFLICT DO NOTHING", (period,))
         conn2.commit(); cur2.close(); conn2.close()
+
+    # Stash the per-recipient breakdown so the admin "Send Reports Now"
+    # endpoint can surface it back to the UI.
+    _send_monthly_emails.last_diag = diag
+    _send_monthly_emails.last_count = sent_count
 
     return sent_count
 

@@ -1203,13 +1203,46 @@ async function saveReportSettings() {
 }
 async function sendReportsNow() {
   const status = document.getElementById('send-reports-status');
-  status.textContent = 'Sending…'; status.style.color = 'var(--eax-muted)';
+  status.textContent = 'Sending… (this can take a minute)';
+  status.style.color = 'var(--eax-muted)';
   try {
     const res = await fetch('/api/admin/send-reports-now', {method:'POST'});
     const d = await res.json();
-    if (d.ok) { status.textContent = d.queued ? 'Queued — check Railway logs for result.' : `Sent to ${d.sent} recipient${d.sent !== 1 ? 's' : ''}.`; status.style.color = 'var(--eax-good)'; }
-    else      { status.textContent = d.error || 'Error'; status.style.color = 'var(--eax-bad)'; }
-  } catch(e) { status.textContent = 'Request failed'; status.style.color = 'var(--eax-bad)'; }
+    if (!d.ok) {
+      status.textContent = d.error || 'Error';
+      status.style.color = 'var(--eax-bad)';
+      return;
+    }
+    const count = d.count || 0;
+    const diag  = Array.isArray(d.diag) ? d.diag : [];
+    const sent     = diag.filter(x => x.status === 'sent');
+    const skipped  = diag.filter(x => x.status !== 'sent');
+
+    let summary = `Sent to ${count} recipient${count !== 1 ? 's' : ''}.`;
+    if (skipped.length) {
+      summary += ` ${skipped.length} skipped.`;
+    }
+    // Per-recipient detail panel — clearer than digging through Railway logs
+    let detail = '<div style="margin-top:10px;padding:10px 12px;background:var(--eax-bg);border:1px solid var(--eax-line);border-radius:6px;font-size:11px;line-height:1.6;color:var(--eax-ink);">';
+    if (sent.length) {
+      detail += '<div style="font-weight:700;color:var(--eax-good);margin-bottom:4px;">Sent</div>';
+      sent.forEach(x => {
+        detail += `<div>· ${x.user} <span style="color:var(--eax-subtle)">&lt;${x.email}&gt;</span> — ${(x.reports || []).join(', ') || '(no attachments)'}</div>`;
+      });
+    }
+    if (skipped.length) {
+      detail += '<div style="font-weight:700;color:var(--eax-bad);margin:6px 0 4px;">Skipped / Failed</div>';
+      skipped.forEach(x => {
+        detail += `<div>· ${x.user} <span style="color:var(--eax-subtle)">&lt;${x.email}&gt;</span> — ${x.reason || x.status}</div>`;
+      });
+    }
+    detail += '</div>';
+    status.innerHTML = `<span style="color:var(--eax-good);font-weight:600">${summary}</span>${detail}`;
+    status.style.color = '';
+  } catch(e) {
+    status.textContent = 'Request failed: ' + (e && e.message || e);
+    status.style.color = 'var(--eax-bad)';
+  }
 }
 </script>
 </body>
