@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Loan Capacities & Debt Schedules — Ember</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0d0f13;--surface:#151921;--card:#151921;--border:#1e2535;--border-light:#2e3750;
+    --accent:#c8a96e;--text:#e8eaf0;--text-muted:#8b95a8;--text-dim:#4a5568;
+    --teal:#5e9e8c;--green:#4ade80;--red:#f87171;--yellow:#fbbf24;
+  }
+  [data-theme="light"]{
+    --bg:#f0f2f5;--surface:#ffffff;--card:#ffffff;--border:#e2e8f0;--border-light:#cbd5e0;
+    --accent:#003552;--text:#1a2a3a;--text-muted:#4a5568;--text-dim:#718096;--teal:#38a169;
+  }
+  [data-theme="light"] th{background:var(--card);color:var(--text-muted);}
+  [data-theme="light"] th.sticky-col{background:var(--card);}
+  [data-theme="light"] .group-header{background:var(--border);color:var(--accent);}
+  [data-theme="light"] .group-header.sticky-col{background:var(--border);}
+  [data-theme="light"] .totals-row td,[data-theme="light"] .totals-row td.sticky-col{background:var(--border-light);}
+  [data-theme="light"] button[onclick="saveAcctPw()"]{color:#fff!important;}
+  img.logo-light{display:none;}
+  [data-theme="light"] img.logo-dark{display:none;}
+  [data-theme="light"] img.logo-light{display:block;margin:0 auto;}
+  body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;height:100vh;overflow:hidden;padding:0;}
+  #app{display:flex;height:100vh;overflow:hidden}
+  /* ── SIDEBAR (canonical — matches /returns) ── */
+  #sidebar{width:240px;background:var(--eax-bg-2);border-right:1px solid var(--eax-line);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
+  #main-content{flex:1;overflow-y:auto;padding:24px 32px}
+  .sidebar-logo{padding:16px 18px 14px;border-bottom:1px solid var(--eax-line)}
+  .logo-img{width:100%;max-width:160px;height:auto;display:block;margin:0 auto}
+  .logo-sub{font-size:10px;color:var(--eax-subtle);letter-spacing:0.2em;text-transform:uppercase;margin-top:8px;text-align:center;font-weight:700}
+  .sidebar-section{padding:8px 16px 4px;font-size:9px;line-height:1.2;color:var(--eax-subtle);letter-spacing:0.22em;text-transform:uppercase;margin-top:8px;font-weight:700}
+  .sidebar-item{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;border-radius:8px;margin:1px 8px;transition:all .15s;color:var(--eax-muted);font-size:13px;line-height:1.2;text-decoration:none;font-weight:500}
+  .sidebar-item:hover{background:var(--eax-accent-soft);color:var(--eax-ink);text-decoration:none}
+  .sidebar-item.active{background:var(--eax-surface);color:var(--eax-ink);font-weight:600;border:1px solid var(--eax-line);position:relative}
+  .sidebar-item.active::before{content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:2px;background:var(--eax-accent);border-radius:2px}
+  .sidebar-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0}
+  .sidebar-item.active .icon{opacity:1;color:var(--eax-accent)}
+  .nav-link{display:flex;align-items:center;gap:10px;padding:7px 14px;cursor:pointer;border-radius:6px;margin:1px 8px;transition:all .15s;color:var(--eax-muted);font-size:12px;text-decoration:none;font-weight:500}
+  .nav-link:hover{background:var(--eax-accent-soft);color:var(--eax-ink);text-decoration:none}
+  a{color:var(--accent);text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  .top-bar{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:8px;}
+  .top-bar h1{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:24px;color:var(--text);}
+  .top-bar .meta{font-size:12px;color:var(--text-muted);}
+  .section-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:18px;color:var(--accent);margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border);}
+
+  /* ── Tables ── */
+  .report-table-wrap{overflow-x:auto;margin-bottom:24px;background:var(--card);border:1px solid var(--border);border-radius:8px;}
+  table{border-collapse:collapse;width:100%;font-size:12px;}
+  th,td{padding:5px 8px;border:1px solid var(--border);white-space:nowrap;}
+  th{background:var(--surface);color:var(--text-muted);font-weight:600;text-align:center;}
+  td{text-align:right;}
+  td.label{text-align:left;color:var(--text);font-weight:500;}
+
+  /* Sticky first column */
+  td.sticky-col,th.sticky-col{position:sticky;left:0;z-index:1;background:var(--card);}
+  th.sticky-col{background:var(--surface);z-index:3;}
+  .totals-row td.sticky-col{background:var(--surface);}
+
+  /* Column group headers */
+  .group-header{
+    background:var(--border);color:var(--accent);font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;
+    font-size:13px;border-bottom:2px solid rgba(242,89,41,0.3);padding:6px 8px;text-align:center;
+  }
+  .group-header.sticky-col{position:sticky;left:0;z-index:3;background:var(--border);}
+
+  .totals-row td{font-weight:700;border-top:2px solid var(--accent);background:var(--surface);}
+
+  /* Health pills */
+  .health-pill{
+    display:inline-block;padding:2px 10px;border-radius:12px;
+    font-size:11px;font-weight:700;text-align:center;min-width:48px;
+  }
+  .health-pill.good{background:rgba(74,222,128,0.15);color:var(--green);}
+  .health-pill.warn{background:rgba(251,191,36,0.15);color:var(--yellow);}
+  .health-pill.bad{background:rgba(248,113,113,0.15);color:var(--red);}
+
+  .footnote{font-size:12px;color:var(--text-muted);font-style:italic;margin:8px 0 24px;line-height:1.6;max-width:900px;}
+
+  /* Debt schedules */
+  .ds-section{margin-top:32px;}
+  .ds-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start;}
+  @media(max-width:1200px){.ds-grid{grid-template-columns:1fr;}}
+  .ds-subtitle{font-size:13px;color:var(--text-muted);margin-bottom:8px;font-weight:600;}
+
+  /* Bar chart */
+  .chart-cell{padding:4px 2px;vertical-align:bottom;}
+  .bar-wrap{display:flex;gap:1px;align-items:flex-end;height:100%;justify-content:center;}
+  .bar{width:8px;border-radius:2px 2px 0 0;min-height:1px;}
+  .bar-rev{background:var(--teal);}
+  .bar-pay{background:var(--accent);}
+  .chart-legend{display:flex;gap:16px;font-size:11px;color:var(--text-muted);margin:6px 0 0 0;}
+  .legend-dot{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:middle;margin-right:4px;}
+
+  .empty-state{text-align:center;padding:80px 20px;color:var(--text-muted);}
+  .empty-state h2{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:22px;color:var(--text);margin-bottom:8px;}
+
+  /* Download PDF button */
+  .pdf-btn{
+    display:inline-flex;align-items:center;gap:6px;
+    background:rgba(242,89,41,0.1);border:1px solid rgba(242,89,41,0.3);
+    color:var(--accent);padding:6px 14px;border-radius:6px;font-size:12px;
+    font-family:'DM Sans',sans-serif;font-weight:600;cursor:pointer;transition:all .15s;
+  }
+  .pdf-btn:hover{background:rgba(242,89,41,0.2);border-color:var(--accent);}
+  .pdf-btn:disabled{opacity:.5;cursor:wait;}
+
+  /* ── PDF Light-Mode Render ── */
+  #pdf-render{
+    position:fixed;left:0;top:0;z-index:99999;
+    width:1056px;font-family:'DM Sans',sans-serif;font-size:8px;
+    background:#fff;color:#1a1a1a;padding:0;overflow:auto;
+  }
+  #pdf-render *{color:#1a1a1a;background-color:transparent;}
+  #pdf-render{background:#fff!important;}
+  #pdf-render .pdf-page{
+    width:1056px;min-height:816px;
+    padding:20px 24px;box-sizing:border-box;background:#fff!important;
+    page-break-after:always;
+  }
+  #pdf-render .pdf-page:last-child{page-break-after:auto;}
+  #pdf-render .pdf-header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:2px;}
+  #pdf-render .pdf-header h1{font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;font-size:15px;color:#1a1a1a;}
+  #pdf-render .pdf-header .pdf-meta{font-size:8px;color:#666;}
+  #pdf-render .pdf-section-title{
+    font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:11px;color:#8a7040;
+    margin:10px 0 4px;padding-bottom:3px;border-bottom:1px solid #ddd;
+  }
+  #pdf-render table{border-collapse:collapse;width:100%;font-size:7px;line-height:1.3;}
+  #pdf-render th,#pdf-render td{padding:2px 4px;border:1px solid #ddd;white-space:nowrap;}
+  #pdf-render th{background:#f7f6f3!important;color:#555;font-weight:600;text-align:center;font-size:6.5px;}
+  #pdf-render td{text-align:right;color:#1a1a1a;background:#fff!important;}
+  #pdf-render td.label{text-align:left;font-weight:500;background:#fff!important;}
+  #pdf-render .group-header{
+    background:#f0ead8!important;color:#6b5a2e;font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;
+    font-size:8px;border-bottom:1.5px solid #c8a96e;text-align:center;padding:3px 4px;
+  }
+  [data-theme="light"] #pdf-render .group-header{
+    border-bottom:1.5px solid #003552!important;
+  }
+  #pdf-render .totals-row td{font-weight:700;border-top:1.5px solid #8a7040;background:#faf9f6!important;}
+  #pdf-render .health-pill{display:inline-block;padding:1px 6px;border-radius:8px;font-size:6.5px;font-weight:700;}
+  #pdf-render .health-pill.good{background:#d1fae5!important;color:#166534;}
+  #pdf-render .health-pill.warn{background:#fef3c7!important;color:#92400e;}
+  #pdf-render .health-pill.bad{background:#fee2e2!important;color:#991b1b;}
+  #pdf-render .ds-subtitle{font-size:8px;color:#555;font-weight:600;margin-bottom:3px;}
+  #pdf-render .bar-rev{background:#3d7a6a!important;}
+  #pdf-render .bar-pay{background:#8a7040!important;}
+  #pdf-render .chart-legend{font-size:7px;color:#555;}
+  #pdf-render .legend-dot{width:7px;height:7px;}
+  #pdf-render .footnote{font-size:7px;color:#666;font-style:italic;margin:3px 0 8px;}
+
+  /* ── Print ── */
+  @media print{
+    body{background:#fff;color:#000;padding:8px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    @page{size:landscape letter;margin:0.4in;}
+    #sidebar{display:none;} body,#app,#main-content{display:block;height:auto;overflow:visible;padding:8px;}
+    .ds-grid{grid-template-columns:1fr;}
+    .report-table-wrap{border-color:#ccc;}
+    table{font-size:9px;}
+    th{background:#eee!important;color:#333;}
+    td{color:#000;}
+    td.sticky-col,th.sticky-col{position:static;}
+    .group-header{background:#f0ead8!important;color:#6b5a2e;border-bottom-color:#999;}
+    .section-title{color:#333;border-bottom-color:#999;}
+    .health-pill.good{background:#d1fae5;color:#166534;}
+    .health-pill.warn{background:#fef3c7;color:#92400e;}
+    .health-pill.bad{background:#fee2e2;color:#991b1b;}
+    .totals-row td{background:#f5f5f5!important;}
+    .bar-rev{background:#3d7a6a;}
+    .bar-pay{background:#8a7040;}
+  }
+</style>
+<link rel="stylesheet" href="/static/theme.css">
+<script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
+</head>
+<body>
+<div id="app">
+  <nav id="sidebar">
+    <div class="sidebar-logo">
+      <img src="/static/img/ember_logo.png" alt="Ember" class="logo-img logo-dark">
+      <img src="/static/img/ember_logo_light.png" alt="Ember" class="logo-img logo-light">
+      <div class="logo-sub">Loans & Debt</div>
+    </div>
+
+    <div class="sidebar-section">Apps &amp; Dashboards</div>
+    {% if page_access.get('mpc_underwriting', true) %}
+    <a href="/" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+      MPC Underwriting
+    </a>
+    {% endif %}
+    {% if page_access.get('returns', true) %}
+    <a href="/returns" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Project Returns
+    </a>
+    {% endif %}
+    {% if page_access.get('loans', true) %}
+    <a href="/loans" class="sidebar-item active">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Loans & Debt
+    </a>
+    {% endif %}
+    {% if page_access.get('operations', true) %}
+    <a href="/operations" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Operating Revenues
+    </a>
+    {% endif %}
+    {% if page_access.get('macro', true) %}
+    <a href="/macro" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="1.5"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Macro Dashboard
+    </a>
+    {% endif %}
+    {% if page_access.get('portfolio', true) %}
+    <a href="/ember-capital" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 3.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Ember Capital
+    </a>
+    {% endif %}
+    {% if page_access.get('sales', true) %}
+    <a href="/sales" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l3-3 4 4 5-6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Community Sales
+    </a>
+    {% endif %}
+
+    {% if data %}
+    <div class="sidebar-section">Sections</div>
+    <a href="#sec-mpc" class="nav-link" onclick="event.preventDefault();document.getElementById('sec-mpc').scrollIntoView({behavior:'smooth',block:'start'})">
+      MPC Loans
+    </a>
+    <a href="#sec-vertical" class="nav-link" onclick="event.preventDefault();document.getElementById('sec-vertical').scrollIntoView({behavior:'smooth',block:'start'})">
+      Vertical Loans
+    </a>
+    <a href="#sec-debt" class="nav-link" onclick="event.preventDefault();document.getElementById('sec-debt').scrollIntoView({behavior:'smooth',block:'start'})">
+      Debt Schedules
+    </a>
+    {% endif %}
+
+    <div style="flex:1"></div>
+    {% include "_partials/_sidebar_foot.html" %}
+  </nav>
+
+  <div id="main-content">
+<div class="top-bar">
+  <h1>Loan Capacities & Debt Schedules</h1>
+  <div style="text-align:right">
+    <div class="meta" style="margin-bottom:6px">
+      {% if uploaded_at %}Last updated: {{ uploaded_at }}{% else %}No data uploaded yet{% endif %}
+    </div>
+    {% if data %}
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+    <button class="pdf-btn" onclick="openExecReport()" title="Open the branded executive PDF in a new tab">
+      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14L21 3M19 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Executive Report
+    </button>
+    <button class="pdf-btn" onclick="downloadExecReport()" title="Download the branded executive PDF">
+      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m4-5l5 5 5-5m-5 5V3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Download PDF
+    </button>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if data %}
+
+{# ── Column Group Definitions ── #}
+{% set col_groups = [
+  {"name": "Identity", "cols": ["Community", "Lender", "Collateral", "Recourse"]},
+  {"name": "Timeline", "cols": ["Loan Origination", "Loan Term Date", "Months Remaining", "Extensions Remaining", "Extension Cost"]},
+  {"name": "Interest Reserve", "cols": ["Rem. Interest Reserve", "Monthly Interest Burn", "Remaining Mos. of IR", "IR Health"]},
+  {"name": "Rate", "cols": ["Index + Spread", "Today's Rate"]},
+  {"name": "Capacity", "cols": ["Loan Amount", "Drawn", "Balance", "Utilization", "Remaining", "Forecasted Thru Term", "Capacity Health"]}
+] %}
+
+{# ── Macro: Render a loan table ── #}
+{% macro loan_table(section) %}
+<div class="report-table-wrap">
+<table>
+<thead>
+  <tr>
+    {% for g in col_groups %}
+      {% set count = namespace(n=0) %}
+      {% for h in section.headers %}
+        {% if h in g.cols %}{% set count.n = count.n + 1 %}{% endif %}
+      {% endfor %}
+      {% if count.n > 0 %}
+      <th colspan="{{ count.n }}" class="group-header {% if loop.first %}sticky-col{% endif %}">{{ g.name }}</th>
+      {% endif %}
+    {% endfor %}
+  </tr>
+  <tr>
+    {% for h in section.headers %}
+    <th class="{% if loop.first %}sticky-col{% endif %}">{{ h }}</th>
+    {% endfor %}
+  </tr>
+</thead>
+<tbody>
+{% for row in section.rows %}
+<tr>
+  {% for h in section.headers %}
+  <td class="{% if loop.first %}sticky-col{% endif %}{% if h == 'Community' %} label{% endif %}">
+    {% set v = row[h] %}
+    {% if h == 'Community' or h == 'Lender' or h == 'Collateral' or h == 'Recourse' %}{{ v }}
+    {% elif h == 'IR Health' or h == 'Capacity Health' %}
+      {% set fv = v|float %}
+      <span class="health-pill {% if fv >= 1.0 %}good{% elif fv >= 0.5 %}warn{% else %}bad{% endif %}">{{ "%.2f"|format(fv) }}</span>
+    {% elif 'Rate' in h or 'Spread' in h or h == 'Utilization' %}{{ "%.2f"|format(v * 100) }}%
+    {% elif h == 'Loan Origination' or h == 'Loan Term Date' %}{{ v }}
+    {% elif h == 'Months Remaining' or h == 'Remaining Mos. of IR' %}{{ "%.1f"|format(v) }}
+    {% elif h == 'Extensions Remaining' %}{{ v|int }}
+    {% else %}{{ "{:,.0f}".format(v) }}
+    {% endif %}
+  </td>
+  {% endfor %}
+</tr>
+{% endfor %}
+{% if section.totals %}
+<tr class="totals-row">
+  {% for h in section.headers %}
+  <td class="{% if loop.first %}sticky-col{% endif %}">
+    {% if h in section.totals %}
+      {% set v = section.totals[h] %}
+      {% if h == 'Community' %}{{ v }}
+      {% elif 'Rate' in h or h == 'Utilization' %}{{ "%.2f"|format(v * 100) }}%
+      {% elif h == 'Capacity Health' %}
+        {% set fv = v|float %}
+        <span class="health-pill {% if fv >= 1.0 %}good{% elif fv >= 0.5 %}warn{% else %}bad{% endif %}">{{ "{:,.0f}".format(fv) }}</span>
+      {% else %}{{ "{:,.0f}".format(v) }}
+      {% endif %}
+    {% endif %}
+  </td>
+  {% endfor %}
+</tr>
+{% endif %}
+</tbody>
+</table>
+</div>
+{% endmacro %}
+
+<!-- MPC Loans -->
+<div class="section-title" id="sec-mpc">MPC Loans</div>
+{{ loan_table(data.mpc_loans) }}
+
+<!-- Vertical Loans -->
+<div class="section-title" id="sec-vertical">Vertical Loans</div>
+{{ loan_table(data.vertical_loans) }}
+{% if data.vertical_loans.footnote %}
+<div class="footnote">{{ data.vertical_loans.footnote }}</div>
+{% endif %}
+
+<!-- Debt Schedules -->
+{% if data.debt_schedules %}
+<div class="section-title" id="sec-debt">Debt Schedules</div>
+{% for ds in data.debt_schedules %}
+<div class="ds-section">
+  <h3 style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:16px;color:var(--text);margin-bottom:16px;">{{ ds.project }}</h3>
+
+  <div class="ds-grid">
+    <!-- Upcoming Payments -->
+    <div>
+      <div class="ds-subtitle">Upcoming Payments</div>
+      <div class="report-table-wrap">
+      <table>
+        <thead><tr><th>Date</th><th>Lender</th><th>Amount</th><th>Covered</th></tr></thead>
+        <tbody>
+        {% for p in ds.payments %}
+        <tr>
+          <td class="label">{{ p.date }}</td>
+          <td>{{ p.lender }}</td>
+          <td>{{ "{:,.0f}".format(p.amount) }}</td>
+          <td style="text-align:center">
+            {% if 'Paid' in p.covered %}<span class="health-pill good">{{ p.covered }}</span>
+            {% elif 'Expected' in p.covered %}<span class="health-pill warn">{{ p.covered }}</span>
+            {% else %}{{ p.covered }}{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        <tr class="totals-row">
+          <td class="label" colspan="2">Total</td>
+          <td>{{ "{:,.0f}".format(ds.payment_total) }}</td>
+          <td></td>
+        </tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+
+    <!-- Associated Revenues -->
+    <div>
+      <div class="ds-subtitle">Associated Revenues</div>
+      <div class="report-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th class="sticky-col">Type</th><th>%</th><th>Total</th>
+            {% for mo in ds.months %}<th>{{ mo[5:7] }}/{{ mo[2:4] }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+        {% for rv in ds.revenues %}
+        <tr>
+          <td class="label sticky-col">{{ rv.type }}</td>
+          <td>{{ "%.1f"|format(rv.pct * 100) }}%</td>
+          <td>{{ "{:,.0f}".format(rv.total) }}</td>
+          {% for v in rv.monthly %}
+          <td>{% if v != 0 %}{{ "{:,.0f}".format(v) }}{% endif %}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+        {% if ds.total_revenues %}
+        <tr class="totals-row">
+          <td class="label sticky-col">Total Revenues</td>
+          <td>{{ "%.0f"|format(ds.total_revenues.pct * 100) }}%</td>
+          <td>{{ "{:,.0f}".format(ds.total_revenues.total) }}</td>
+          {% for v in ds.total_revenues.monthly %}
+          <td>{{ "{:,.0f}".format(v) }}</td>
+          {% endfor %}
+        </tr>
+        {% endif %}
+        <tr>
+          <td class="label sticky-col" style="font-weight:600;color:var(--teal)">Cumulative Revenues</td>
+          <td colspan="2"></td>
+          {% for v in ds.cumulative_revenues %}
+          <td style="color:var(--teal)">{{ "{:,.0f}".format(v) }}</td>
+          {% endfor %}
+        </tr>
+        <tr>
+          <td class="label sticky-col" style="font-weight:600;color:var(--accent)">Cumulative Payments</td>
+          <td colspan="2"></td>
+          {% for v in ds.cumulative_payments %}
+          <td style="color:var(--accent)">{{ "{:,.0f}".format(v) }}</td>
+          {% endfor %}
+        </tr>
+        {# ── Visual Bar Chart Row ── #}
+        {% set max_cum = namespace(val=1) %}
+        {% for v in ds.cumulative_revenues %}
+          {% if v > max_cum.val %}{% set max_cum.val = v %}{% endif %}
+        {% endfor %}
+        {% for v in ds.cumulative_payments %}
+          {% if v > max_cum.val %}{% set max_cum.val = v %}{% endif %}
+        {% endfor %}
+        <tr>
+          <td class="label sticky-col" style="font-weight:600;color:var(--text-muted);vertical-align:bottom">Coverage</td>
+          <td colspan="2" style="vertical-align:bottom"></td>
+          {% for i in range(ds.months|length) %}
+          <td class="chart-cell" style="height:60px;">
+            <div class="bar-wrap">
+              <div class="bar bar-rev" style="height:{{ ((ds.cumulative_revenues[i] / max_cum.val) * 100)|int }}%;" title="Rev: {{ '{:,.0f}'.format(ds.cumulative_revenues[i]) }}"></div>
+              <div class="bar bar-pay" style="height:{{ ((ds.cumulative_payments[i] / max_cum.val) * 100)|int }}%;" title="Pay: {{ '{:,.0f}'.format(ds.cumulative_payments[i]) }}"></div>
+            </div>
+          </td>
+          {% endfor %}
+        </tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="chart-legend">
+        <span><span class="legend-dot" style="background:var(--teal)"></span>Cumulative Revenue</span>
+        <span><span class="legend-dot" style="background:var(--accent)"></span>Cumulative Payments</span>
+      </div>
+    </div>
+  </div>
+</div>
+{% endfor %}
+{% endif %}
+
+{% else %}
+<div class="empty-state">
+  <h2>No Report Data</h2>
+  <p>An admin needs to upload the Ember Dashboard Excel file from the home page to populate this report.</p>
+</div>
+{% endif %}
+
+{% if data %}
+<script>
+/* Open the server-rendered branded executive PDF in a new tab. */
+function openExecReport(){
+  window.open('/api/loans/pdf?ts=' + Date.now(), '_blank');
+}
+/* Download the branded executive PDF. */
+function downloadExecReport(){
+  window.location.href = '/api/loans/pdf?download=1&ts=' + Date.now();
+}
+</script>
+{% endif %}
+</div></div>
+
+{% include "_partials/_account_modal.html" %}
+<script>
+function _updateThemeButtons() {
+  const isDark   = document.documentElement.dataset.theme === 'dark';
+  const darkBtn  = document.getElementById('theme-btn-dark');
+  const lightBtn = document.getElementById('theme-btn-light');
+  if (!darkBtn || !lightBtn) return;
+  lightBtn.classList.toggle('is-active', !isDark);
+  darkBtn.classList.toggle('is-active', isDark);
+}
+function applyTheme(theme) {
+  // 'light' = Warm Paper (default) · 'dark' = Deep Navy
+  document.documentElement.dataset.theme = (theme === 'dark') ? 'dark' : 'light';
+  localStorage.setItem('ember-theme', theme === 'dark' ? 'dark' : 'light');
+  _updateThemeButtons();
+}
+(function(){ var t = localStorage.getItem('ember-theme'); document.documentElement.dataset.theme = (t === 'dark') ? 'dark' : 'light'; })();
+async function openAcct() {
+  const m = document.getElementById('acct-modal');
+  m.style.display = 'flex';
+  _updateThemeButtons();
+  document.getElementById('acct-cur-pw').value = '';
+  document.getElementById('acct-new-pw').value = '';
+  document.getElementById('acct-conf-pw').value = '';
+  document.getElementById('acct-msg').style.display = 'none';
+  document.getElementById('acct-report-msg').style.display = 'none';
+  try {
+    const res = await fetch('/api/account');
+    const d = await res.json();
+    document.getElementById('acct-email').textContent = d.email || '—';
+    document.getElementById('acct-report-optin').checked = d.report_opt_in || false;
+    document.getElementById(d.report_format === 'excel' ? 'acct-fmt-excel' : 'acct-fmt-pdf').checked = true;
+    document.getElementById('acct-format-row').style.display = d.report_opt_in ? 'block' : 'none';
+  } catch(e) {}
+}
+function closeAcct() { document.getElementById('acct-modal').style.display = 'none'; }
+document.getElementById('acct-modal').addEventListener('click', function(e) { if (e.target === this) closeAcct(); });
+document.getElementById('acct-report-optin').addEventListener('change', function() {
+  document.getElementById('acct-format-row').style.display = this.checked ? 'block' : 'none';
+});
+async function saveAcctPw() {
+  const cur = document.getElementById('acct-cur-pw').value;
+  const nw  = document.getElementById('acct-new-pw').value;
+  const conf= document.getElementById('acct-conf-pw').value;
+  const msg = document.getElementById('acct-msg');
+  function showMsg(txt, ok) { msg.textContent=txt; msg.style.color=ok?'#5e9e8c':'#e07a3e'; msg.style.display='block'; }
+  if (!cur||!nw||!conf) { showMsg('All fields are required.',false); return; }
+  if (nw!==conf)        { showMsg('New passwords do not match.',false); return; }
+  const res = await fetch('/api/account/password',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({current_password:cur,new_password:nw})});
+  const data = await res.json();
+  if (data.ok) { showMsg('Password updated.',true); setTimeout(closeAcct,1500); }
+  else         { showMsg(data.error||'Failed to update password.',false); }
+}
+async function saveReportSettings() {
+  const opt_in = document.getElementById('acct-report-optin').checked;
+  const fmt = document.querySelector('input[name="acct-report-fmt"]:checked')?.value || 'pdf';
+  const msg = document.getElementById('acct-report-msg');
+  const res = await fetch('/api/account/report-settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({report_opt_in:opt_in,report_format:fmt})});
+  const d = await res.json();
+  msg.style.display='block';
+  if (d.ok) { msg.textContent='Preferences saved.'; msg.style.color='#5e9e8c'; }
+  else      { msg.textContent=d.error||'Failed to save.'; msg.style.color='#e07a3e'; }
+}
+</script>
+</body>
+</html>

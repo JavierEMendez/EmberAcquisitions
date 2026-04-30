@@ -1,0 +1,189 @@
+/* ============================================================
+   Ember · Loans & Debt — page styles (Concept B Hybrid Stacks).
+   Both themes via [data-theme="paper"|"navy"] on .loans-page (matches
+   the toggle pattern already used by /returns, /capital, /operations).
+   Visual ground truth: _design_reference/Loans Redesign.html → Concept B.
+   ============================================================ */
+
+@font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-Bold.ttf") format("truetype"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-CondensedBold.ttf") format("truetype"); font-weight: 800; font-stretch: condensed; font-display: swap; }
+@font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-Light.ttf") format("truetype"); font-weight: 300; font-display: swap; }
+@font-face { font-family: "Gotham"; src: url("/static/fonts/Gotham-Medium.otf") format("opentype"); font-weight: 500; font-display: swap; }
+
+.loans-page {
+  --paper: #FFFFFF;
+  --bg:    #F4ECDD;
+  --warm:  #F8F4EE;
+  --ink:   #08233B;
+  --ink-2: #13344E;
+  --muted: #5b6b7b;
+  --subtle:#97a3b0;
+  --line:  rgba(8,35,59,0.10);
+  --line-2:rgba(8,35,59,0.20);
+  --line-3:rgba(8,35,59,0.35);
+  --accent:#F25929;
+  --accent-soft: rgba(242,89,41,0.10);
+  --good:      #1F7A4D;
+  --good-soft: rgba(31,122,77,0.10);
+  --warn:      #C9871F;
+  --warn-soft: rgba(201,135,31,0.12);
+  --bad:       #C0311A;
+  --bad-soft:  rgba(192,49,26,0.10);
+  --font-display: "HelveticaNeue Brand","Plus Jakarta Sans",system-ui,sans-serif;
+  --font-sans:    "Plus Jakarta Sans",system-ui,sans-serif;
+  --font-mono:    "JetBrains Mono",ui-monospace,monospace;
+  --font-eyebrow: "Gotham","Plus Jakarta Sans",system-ui,sans-serif;
+  display: flex; min-height: 100vh; background: var(--bg);
+  color: var(--ink); font-family: var(--font-sans);
+}
+.loans-page[data-theme="navy"] {
+  --paper: #0E1E2E;
+  --bg:    #08111B;
+  --warm:  #13283C;
+  --ink:   #F4ECDD;
+  --ink-2: #E0D6C2;
+  --muted: #9DAEC0;
+  --subtle:#6B7E92;
+  --line:  rgba(244,236,221,0.10);
+  --line-2:rgba(244,236,221,0.18);
+  --line-3:rgba(244,236,221,0.35);
+  --accent-soft: rgba(242,89,41,0.16);
+  --good:      #4FB385;
+  --good-soft: rgba(79,179,133,0.16);
+  --warn:      #E0A859;
+  --warn-soft: rgba(224,168,89,0.18);
+  --bad:       #E55B41;
+  --bad-soft:  rgba(229,91,65,0.18);
+}
+
+.num  { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* ── Sidebar ─────────────────────────────────────────────── */
+.loans-sidebar { width:232px; flex-shrink:0; background: color-mix(in oklab, var(--bg) 90%, var(--ink) 10%); border-right:1px solid var(--line); display:flex; flex-direction:column; padding:20px 0; }
+.loans-page[data-theme="navy"] .loans-sidebar { background:#0A1622; }
+.loans-brand { padding:0 20px 18px; border-bottom:1px solid var(--line); }
+.loans-brand-mark { font-family:var(--font-display); font-weight:700; font-size:24px; letter-spacing:.04em; color:var(--ink); }
+.loans-brand-sub  { margin-top:4px; font-size:9px; letter-spacing:.18em; text-transform:uppercase; color:var(--subtle); font-family:var(--font-eyebrow); font-weight:500; }
+.loans-nav { display:flex; flex-direction:column; padding:12px 8px; gap:1px; }
+.loans-nav-section { padding:6px 14px; font-size:9px; letter-spacing:.18em; text-transform:uppercase; color:var(--subtle); font-family:var(--font-eyebrow); font-weight:500; }
+.loans-nav-item { padding:9px 14px; border-radius:6px; font-size:12.5px; color:var(--muted); text-decoration:none; }
+.loans-nav-item.is-active { color:var(--accent); background:var(--accent-soft); font-weight:600; }
+.loans-sidebar-foot { margin-top:auto; padding:0 14px; display:flex; flex-direction:column; gap:6px; }
+.loans-btn-ghost { width:100%; padding:8px 12px; background:transparent; border:1px solid var(--line-2); color:var(--muted); font-size:11px; border-radius:6px; cursor:pointer; font-family:inherit; text-align:center; text-decoration:none; }
+.loans-btn-primary { background:var(--accent); color:#fff; border:none; padding:8px 14px; border-radius:999px; font-size:11px; letter-spacing:.06em; text-transform:uppercase; font-weight:600; cursor:pointer; text-decoration:none; }
+.loans-theme-toggle { background:transparent; border:1px solid var(--line-2); color:var(--ink); border-radius:999px; width:30px; height:30px; cursor:pointer; font-size:14px; }
+
+/* ── Main column / topbar ────────────────────────────────── */
+.loans-main { flex:1; min-width:0; display:flex; flex-direction:column; }
+.loans-topbar { padding:26px 36px 18px; border-bottom:1px solid var(--line); display:flex; align-items:flex-end; justify-content:space-between; gap:24px; }
+.loans-eyebrow { font-family:var(--font-eyebrow); font-weight:500; font-size:10px; letter-spacing:.22em; text-transform:uppercase; color:var(--accent); }
+.loans-display { font-family:var(--font-display); font-weight:700; font-size:36px; letter-spacing:-.02em; line-height:1.02; margin-top:8px; text-transform:uppercase; }
+.loans-display em { font-style:normal; font-weight:300; color:var(--accent); text-transform:none; letter-spacing:-.02em; }
+.loans-subtitle { font-size:13px; color:var(--muted); margin-top:8px; max-width:780px; line-height:1.55; }
+.loans-topbar-r { text-align:right; }
+.loans-meta { font-family:var(--font-mono); font-size:10px; color:var(--subtle); letter-spacing:.06em; }
+.loans-meta div + div { margin-top:2px; }
+.loans-topbar-actions { display:flex; gap:8px; margin-top:12px; justify-content:flex-end; align-items:center; }
+
+/* ── Body ────────────────────────────────────────────────── */
+.loans-body { padding: 22px 36px 60px; flex:1; min-width:0; }
+
+/* ── KPI band ────────────────────────────────────────────── */
+.loans-kpi-band { display:grid; grid-template-columns: repeat(6, 1fr); border:1px solid var(--line); background:var(--paper); margin-bottom: 28px; }
+.loans-kpi { padding: 14px 16px 16px; border-left:1px solid var(--line); }
+.loans-kpi:first-child { border-left:none; }
+.loans-kpi-label { font-family:var(--font-sans); font-weight:600; font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--subtle); }
+.loans-kpi-val { font-family:var(--font-display); font-weight:700; font-size:26px; letter-spacing:-.01em; margin-top:6px; color:var(--ink); }
+.loans-kpi-sub { font-size:11px; color:var(--muted); margin-top:4px; line-height:1.35; }
+.loans-kpi.is-bad  .loans-kpi-val { color:var(--bad); }
+.loans-kpi.is-warn .loans-kpi-val { color:var(--warn); }
+.loans-kpi.is-good .loans-kpi-val { color:var(--good); }
+.loans-kpi.is-accent .loans-kpi-val { color:var(--accent); }
+
+/* ── Section heads ───────────────────────────────────────── */
+.loans-section-head { display:flex; align-items:baseline; justify-content:space-between; gap:16px; border-bottom:1px solid var(--line-2); padding-bottom:10px; margin-bottom:14px; }
+.loans-section-l { display:flex; align-items:baseline; gap:14px; }
+.loans-section-eyebrow { font-family:var(--font-mono); font-size:10px; letter-spacing:.18em; text-transform:uppercase; color:var(--accent); font-weight:700; }
+.loans-section-title { font-family:var(--font-display); font-weight:700; font-size:22px; letter-spacing:-.01em; color:var(--ink); text-transform:uppercase; }
+.loans-section-meta { font-size:10.5px; color:var(--muted); letter-spacing:.04em; }
+
+/* ── Card grid ───────────────────────────────────────────── */
+.loans-cards { display:grid; gap:14px; }
+.loans-cards-2 { grid-template-columns: repeat(2, 1fr); }
+.loans-cards-3 { grid-template-columns: repeat(3, 1fr); }
+.loans-cards-4 { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 1280px) { .loans-cards-4 { grid-template-columns: repeat(2, 1fr); } }
+
+/* ── Loan card ───────────────────────────────────────────── */
+.loans-card { border:1px solid var(--line); background:var(--paper); border-radius:12px; display:flex; flex-direction:column; position:relative; overflow:hidden; }
+.loans-card-stripe { position:absolute; top:0; left:0; right:0; height:3px; background:var(--ink-2); }
+.loans-card-stripe.is-good { background:var(--good); }
+.loans-card-stripe.is-warn { background:var(--warn); }
+.loans-card-stripe.is-bad  { background:var(--bad); }
+
+.loans-card-head { padding: 16px 16px 12px; border-bottom:1px solid var(--line); }
+.loans-card-name { font-weight:700; font-size:14px; color:var(--ink); line-height:1.2; letter-spacing:-.01em; }
+.loans-card-meta { font-size:10.5px; color:var(--muted); margin-top:4px; display:flex; justify-content:space-between; gap:8px; }
+.loans-card-tag { color:var(--subtle); letter-spacing:.04em; text-transform:uppercase; font-size:9.5px; }
+
+.loans-card-balance { padding: 14px 16px 6px; }
+.loans-card-balance-val { font-family:var(--font-display); font-weight:700; font-size:26px; letter-spacing:-.01em; color:var(--ink); }
+.loans-card-balance-sub { font-size:10.5px; color:var(--muted); margin-top:4px; }
+.loans-card-gauge { height:5px; background: color-mix(in oklab, var(--warm) 80%, var(--ink) 20%); background:var(--warm); border-radius:2.5px; overflow:hidden; margin-top:8px; }
+.loans-card-gauge-fill { height:100%; background:var(--accent); }
+.loans-card-gauge-row { display:flex; justify-content:space-between; margin-top:4px; }
+.loans-card-gauge-lbl { font-size:9.5px; color:var(--subtle); font-family:var(--font-mono); letter-spacing:.06em; }
+.loans-card-gauge-val { font-size:10.5px; color:var(--ink); font-weight:600; }
+
+.loans-card-dials { padding: 10px 16px 16px; display:grid; grid-template-columns: 1fr 1fr; gap:10px; border-top:1px solid var(--line); margin-top:8px; }
+
+/* ── Dial ────────────────────────────────────────────────── */
+.loans-dial { display:flex; flex-direction:column; gap:2px; padding-left:10px; border-left:2px solid var(--line-2); }
+.loans-dial.is-good { border-left-color: var(--good); }
+.loans-dial.is-warn { border-left-color: var(--warn); }
+.loans-dial.is-bad  { border-left-color: var(--bad); }
+.loans-dial-lbl { font-weight:600; font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:var(--subtle); }
+.loans-dial-val { font-family:var(--font-display); font-weight:700; font-size:16px; letter-spacing:-.01em; color:var(--ink); }
+.loans-dial-val.is-na { color:var(--subtle); }
+.loans-dial-sub { font-size:10px; color:var(--muted); }
+.loans-dial-sub.is-good { color:var(--good); font-weight:600; }
+.loans-dial-sub.is-warn { color:var(--warn); font-weight:600; }
+.loans-dial-sub.is-bad  { color:var(--bad); font-weight:600; }
+.loans-dial-sub.is-na   { color:var(--subtle); }
+
+/* ── Panels ─────────────────────────────────────────────── */
+.loans-panel { border:1px solid var(--line); background:var(--paper); border-radius:8px; }
+.loans-panel-head { display:flex; justify-content:space-between; align-items:baseline; padding:12px 14px 10px; border-bottom:1px solid var(--line); }
+.loans-panel-title { font-family:var(--font-display); font-weight:700; font-size:13px; text-transform:uppercase; letter-spacing:.02em; color:var(--ink); }
+.loans-panel-sub { font-size:10px; color:var(--subtle); letter-spacing:.06em; }
+.loans-panel-body { padding: 12px 14px 14px; }
+.loans-panel-body--flush { padding: 0; }
+.loans-table-scroll { overflow-x:auto; }
+
+/* ── Detail table ────────────────────────────────────────── */
+.loans-table { width:100%; border-collapse:collapse; font-size:11.5px; }
+.loans-table thead tr { border-bottom:1px solid var(--line-2); background:var(--warm); }
+.loans-table th { padding:8px 10px; font-weight:600; font-size:9.5px; letter-spacing:.10em; text-transform:uppercase; color:var(--subtle); text-align:right; white-space:nowrap; }
+.loans-table th.l { text-align:left; }
+.loans-table td { padding:10px; text-align:right; color:var(--muted); border-bottom:1px solid var(--line); white-space:nowrap; font-family:var(--font-mono); font-variant-numeric:tabular-nums; font-size:11.5px; }
+.loans-table td.l { text-align:left; color:var(--ink); font-family:var(--font-sans); font-weight:600; font-size:12px; }
+.loans-table td.l .nm  { font-weight:600; color:var(--ink); font-size:12px; }
+.loans-table td.l .sub { font-weight:400; color:var(--muted); font-size:10.5px; margin-top:2px; }
+.loans-table td.emph { color:var(--ink); font-weight:700; }
+.loans-table tr.loans-table-tot td { font-weight:700; color:var(--ink); border-top:2px solid var(--ink); border-bottom:none; background:var(--warm); padding-top:12px; }
+.loans-table tr.loans-table-tot td.l { font-family:var(--font-sans); text-transform:uppercase; letter-spacing:.04em; font-size:11.5px; }
+
+/* ── Pill ────────────────────────────────────────────────── */
+.loans-pill { display:inline-flex; align-items:center; gap:5px; padding:2px 8px; border-radius:999px; font-size:10.5px; font-weight:600; font-family:var(--font-mono); }
+.loans-pill .dot { width:5px; height:5px; border-radius:50%; }
+.loans-pill.is-good { color:var(--good); background:var(--good-soft); }
+.loans-pill.is-good .dot { background:var(--good); }
+.loans-pill.is-warn { color:var(--warn); background:var(--warn-soft); }
+.loans-pill.is-warn .dot { background:var(--warn); }
+.loans-pill.is-bad  { color:var(--bad);  background:var(--bad-soft); }
+.loans-pill.is-bad  .dot { background:var(--bad); }
+
+/* ── Footnote ────────────────────────────────────────────── */
+.loans-note { margin-top:24px; padding:14px 16px; background:var(--warm); border-left:3px solid var(--accent); font-size:11.5px; line-height:1.55; color:var(--muted); }
+.loans-note-tag { font-weight:700; font-size:9.5px; letter-spacing:.18em; text-transform:uppercase; color:var(--ink); display:block; margin-bottom:4px; }

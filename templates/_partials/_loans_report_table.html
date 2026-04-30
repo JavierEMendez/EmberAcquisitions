@@ -1,0 +1,49 @@
+{# Detail table for the PDF report (same shape as the page table, denser fonts). #}
+<table class="t">
+  <thead>
+    <tr>
+      <th class="l">Community / Lender</th>
+      <th>Commitment</th><th>Drawn</th><th>Balance</th><th>Remaining</th><th>Util.</th>
+      {% if kind == 'mpc' %}<th>Rem. IR</th><th>Mo. Burn</th><th>IR Health</th>{% endif %}
+      <th>Cap Health</th><th>Rate</th><th>Term Ends</th><th>Mo. Left</th><th>Ext</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for l in loans_set.loans %}
+      <tr>
+        <td class="l">{{ l.community }}<span class="sub">{{ l.lender }} · {{ l.recourse }}</span></td>
+        <td>{{ l.loanAmount_fmt }}</td>
+        <td>{{ l.drawn_fmt }}</td>
+        <td class="emph">{{ l.balance_fmt }}</td>
+        <td>{{ l.remaining_fmt }}</td>
+        <td>{{ l.utilization_fmt }}</td>
+        {% if kind == 'mpc' %}
+          <td>{{ l.remIR_fmt }}</td>
+          <td>{{ l.monthlyBurn_fmt }}</td>
+          <td><span class="pill {{ l.ir_cls }}"><span class="dot"></span>{{ l.irHealth_fmt }}</span></td>
+        {% endif %}
+        <td><span class="pill {{ l.cap_cls }}"><span class="dot"></span>{{ '%.2f'|format(l.capacityHealth) }}×</span></td>
+        <td>{{ l.todayRate_fmt }}</td>
+        <td>{{ l.termDate_short }}</td>
+        <td><span class="pill {{ l.term_cls }}"><span class="dot"></span>{{ l.monthsRemaining|round|int }} mo</span></td>
+        <td>{{ l.extensionsRem }}</td>
+      </tr>
+    {% endfor %}
+    <tr class="tot">
+      <td class="l">Totals</td>
+      <td>{{ loans_set.totals.loanAmount_fmt }}</td>
+      <td>{{ loans_set.totals.drawn_fmt }}</td>
+      <td>{{ loans_set.totals.balance_fmt }}</td>
+      <td>{{ loans_set.totals.remaining_fmt }}</td>
+      <td>{{ loans_set.totals.utilization_fmt }}</td>
+      {% if kind == 'mpc' %}
+        <td>{{ loans_set.totals.remIR_fmt }}</td>
+        <td>{{ loans_set.totals.monthlyBurn_fmt }}</td>
+        <td></td>
+      {% endif %}
+      <td></td>
+      <td>{{ loans_set.totals.todayRate_fmt }}</td>
+      <td></td><td></td><td></td>
+    </tr>
+  </tbody>
+</table>

@@ -1,0 +1,70 @@
+{# ============================================================
+   Per-loan summary card. Used twice on the page — once for MPC,
+   once for Vertical. Pass `loan` (a normalized loan dict from
+   loans.py) and `kind` ('mpc' | 'vert').
+   ============================================================ #}
+<div class="loans-card">
+  <div class="loans-card-stripe is-{{ loan.term_cls }}"></div>
+
+  <div class="loans-card-head">
+    <div class="loans-card-name">{{ loan.community }}</div>
+    <div class="loans-card-meta">
+      <span>{{ loan.lender }}</span>
+      <span class="loans-card-tag mono">
+        {{ loan.recourse }} · {% if kind == 'vert' %}Vertical{% else %}Land{% endif %}
+      </span>
+    </div>
+  </div>
+
+  <div class="loans-card-balance">
+    <div class="loans-card-balance-val num">{{ loan.balance_fmt }}</div>
+    <div class="loans-card-balance-sub">of {{ loan.loanAmount_fmt }} committed</div>
+    <div class="loans-card-gauge">
+      <div class="loans-card-gauge-fill" style="width: {{ loan.utilization_pct }}%"></div>
+    </div>
+    <div class="loans-card-gauge-row">
+      <span class="loans-card-gauge-lbl">UTILIZATION</span>
+      <span class="loans-card-gauge-val mono">{{ loan.utilization_fmt }}</span>
+    </div>
+  </div>
+
+  <div class="loans-card-dials">
+    {# Today's rate #}
+    <div class="loans-dial">
+      <div class="loans-dial-lbl">Today's Rate</div>
+      <div class="loans-dial-val num">{{ loan.todayRate_fmt }}</div>
+      <div class="loans-dial-sub">+{{ loan.indexSpread_fmt }} spread</div>
+    </div>
+
+    {# Term countdown #}
+    <div class="loans-dial is-{{ loan.term_cls }}">
+      <div class="loans-dial-lbl">Term Ends</div>
+      <div class="loans-dial-val num">{{ loan.termDate_short }}</div>
+      <div class="loans-dial-sub is-{{ loan.term_cls }}">
+        {{ loan.monthsRemaining|round|int }} months left
+      </div>
+    </div>
+
+    {# IR runway — MPC only #}
+    {% if kind == 'mpc' %}
+      <div class="loans-dial is-{{ loan.ir_cls }}">
+        <div class="loans-dial-lbl">IR Runway</div>
+        <div class="loans-dial-val num">{{ '%.1f'|format(loan.remMosIR) }} mo</div>
+        <div class="loans-dial-sub is-{{ loan.ir_cls }}">{{ loan.irHealth_fmt }} of term</div>
+      </div>
+    {% else %}
+      <div class="loans-dial">
+        <div class="loans-dial-lbl">IR Runway</div>
+        <div class="loans-dial-val num is-na">—</div>
+        <div class="loans-dial-sub is-na">n/a · vertical line</div>
+      </div>
+    {% endif %}
+
+    {# Capacity coverage #}
+    <div class="loans-dial is-{{ loan.cap_cls }}">
+      <div class="loans-dial-lbl">Capacity Coverage</div>
+      <div class="loans-dial-val num">{{ '%.2f'|format(loan.capacityHealth) }}×</div>
+      <div class="loans-dial-sub is-{{ loan.cap_cls }}">{{ loan.remaining_fmt }} remaining</div>
+    </div>
+  </div>
+</div>

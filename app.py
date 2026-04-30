@@ -3338,20 +3338,117 @@ def returns_report():
 @app.route("/loans")
 @login_required
 def loans_report():
+    """Loans & Debt page — Concept B Hybrid Stacks redesign.
+
+    Reads the latest reports[loans] row, runs it through the legacy
+    adapter (`_loans_translate_legacy`) so existing parser-uploaded
+    Excel data still works, then enriches each loan with formatted
+    strings + health classes. Empty state renders when no data.
+    """
     pa = session.get("page_access") or {}
     if not session.get("is_admin") and not pa.get("loans", True):
         return redirect(url_for("home"))
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT data, uploaded_at FROM reports WHERE report_type = 'loans' ORDER BY uploaded_at DESC LIMIT 1")
-    row = cur.fetchone()
-    cur.close(); conn.close()
-    data = row["data"] if row else None
-    uploaded_at = row["uploaded_at"].strftime("%B %d, %Y") if row else None
-    pa = session.get("page_access") or {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
-    if session.get("is_admin"):
-        pa = {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
-    return render_template("loans.html", data=data, uploaded_at=uploaded_at, is_admin=session.get("is_admin"), page_access=pa)
+    pa.setdefault("loans",   True)
+    pa.setdefault("reports", True)
+
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "SELECT data, uploaded_at FROM reports "
+        "WHERE report_type = 'loans' ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    row = cur.fetchone(); cur.close(); conn.close()
+    raw_data    = row["data"]        if row else None
+    uploaded_at = row["uploaded_at"] if row else None
+    loans_ctx = _build_loans_view_context(raw_data, uploaded_at)
+    return render_template(
+        "loans.html",
+        loans=loans_ctx,
+        is_admin=session.get("is_admin", False),
+        page_access=pa,
+    )
+
+
+@app.route("/loans/pdf")
+@login_required
+def loans_pdf_view():
+    """5-page landscape PDF of the Loans & Debt report.
+
+    ?preview=1   → return raw HTML (debug)
+    ?download=1  → force attachment Content-Disposition
+    Falls back to the legacy fpdf2 generator when WeasyPrint can't load.
+    """
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("loans", True):
+        return jsonify({"error": "Access denied"}), 403
+    if not session.get("is_admin") and not pa.get("reports", True):
+        return jsonify({"error": "Reports access disabled by admin"}), 403
+
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "SELECT data, uploaded_at FROM reports "
+        "WHERE report_type = 'loans' ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    row = cur.fetchone(); cur.close(); conn.close()
+    if not row or not row.get("data"):
+        return jsonify({"error": "No loans data uploaded"}), 404
+
+    view_ctx = _build_loans_view_context(row["data"], row.get("uploaded_at"))
+    if view_ctx is None:
+        return jsonify({"error": "Loans data is empty"}), 404
+    rpt_ctx = _build_loans_report_context(view_ctx, run_date=row.get("uploaded_at"))
+    html = render_template("loans_report.html", **rpt_ctx)
+
+    if request.args.get("preview") == "1":
+        return html
+
+    try:
+        from weasyprint import HTML
+        pdf_bytes = HTML(
+            string=html,
+            base_url=request.host_url,
+            url_fetcher=_weasyprint_local_fetcher,
+        ).write_pdf()
+    except (ImportError, OSError) as e:
+        app.logger.warning(
+            "WeasyPrint unavailable for loans report (%s: %s); falling back to fpdf2",
+            type(e).__name__, e,
+        )
+        return _send_exec_report_pdf("loans")
+
+    as_attachment = request.args.get("download") in ("1", "true", "yes")
+    fname = f"Ember_Loans_{datetime.datetime.now().strftime('%Y-%m')}.pdf"
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=as_attachment,
+        download_name=fname,
+    )
+
+
+@app.route("/api/export-loans-excel")
+@login_required
+def export_loans_excel_view():
+    """Excel export — drives the existing `_gen_excel_loans` workbook."""
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("loans", True):
+        return jsonify({"error": "Access denied"}), 403
+    if not session.get("is_admin") and not pa.get("reports", True):
+        return jsonify({"error": "Reports access disabled by admin"}), 403
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "SELECT data, uploaded_at FROM reports "
+        "WHERE report_type = 'loans' ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    row = cur.fetchone(); cur.close(); conn.close()
+    if not row or not row.get("data"):
+        return jsonify({"error": "No loans data uploaded"}), 404
+    xlsx_bytes = _gen_excel_loans(row["data"])
+    return send_file(
+        io.BytesIO(xlsx_bytes),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name="Ember_Loans_Capacities.xlsx",
+    )
 
 @app.route("/api/export-operations-excel")
 @login_required
@@ -4059,6 +4156,680 @@ def operations_excel_view():
     if not session.get("is_admin") and not pa.get("reports", True):
         return jsonify({"error": "Reports access disabled by admin"}), 403
     return export_operations_excel()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Loans & Debt — page + PDF report (Concept B · Hybrid Stacks)
+#
+# Pulls the latest reports[loans] blob and reshapes it for both the
+# redesigned /loans page and the 5-page WeasyPrint executive report.
+# Health-class thresholds (term / IR / capacity) drive the dial colors,
+# stripe colors, and pill colors in lockstep.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ---------------------------------------------------------------------------
+# Format helpers
+# ---------------------------------------------------------------------------
+def _loans_fmt_money_short(v):
+    if v is None:
+        return "—"
+    try: v = float(v)
+    except (TypeError, ValueError): return "—"
+    if abs(v) >= 1_000_000:
+        return f"${v / 1_000_000:.1f}M"
+    if abs(v) >= 1_000:
+        return f"${round(v / 1_000)}K"
+    return f"${round(v)}"
+
+
+def _loans_fmt_money_m(v, places=2):
+    if v is None:
+        return "—"
+    try: return f"${float(v) / 1_000_000:.{places}f}M"
+    except (TypeError, ValueError): return "—"
+
+
+def _loans_fmt_pct(v, places=2):
+    if v is None:
+        return "—"
+    try: return f"{float(v) * 100:.{places}f}%"
+    except (TypeError, ValueError): return "—"
+
+
+def _loans_fmt_pct1(v):
+    return _loans_fmt_pct(v, 1)
+
+
+def _loans_fmt_date_short(iso):
+    """2027-03-15 → 'Mar 27'."""
+    if not iso:
+        return "—"
+    try:
+        d = datetime.date.fromisoformat(str(iso)[:10])
+    except Exception:
+        return str(iso)
+    return d.strftime("%b %y")
+
+
+# ---------------------------------------------------------------------------
+# Health-class thresholds (shared with the design ref + the PDF)
+# ---------------------------------------------------------------------------
+def _loans_term_class(months_remaining):
+    if months_remaining is None: return "na"
+    if months_remaining < 12:    return "bad"
+    if months_remaining < 18:    return "warn"
+    return "good"
+
+
+def _loans_ir_class(ir_health):
+    if ir_health is None: return "na"
+    if ir_health < 0.5:   return "bad"
+    if ir_health < 0.75:  return "warn"
+    return "good"
+
+
+def _loans_cap_class(cap_health):
+    if cap_health is None: return "na"
+    if cap_health < 1.0:   return "bad"
+    if cap_health < 1.1:   return "warn"
+    return "good"
+
+
+# ---------------------------------------------------------------------------
+# Legacy adapter — translates the report_parser._parse_loans shape
+# ({mpc_loans: {headers, rows, totals}, vertical_loans: {...},
+#   debt_schedules: [...]}) into the canonical shape the new templates
+# expect ({mpcLoans: [...], mpcTotals: {...}, verticalLoans: [...],
+# verticalTotals: {...}, portfolio: {...}, debtSchedules: [...]}).
+# ---------------------------------------------------------------------------
+_LOANS_HEADER_TO_KEY = {
+    "Community":            "community",
+    "Lender":               "lender",
+    "Collateral":           "collateral",
+    "Recourse":             "recourse",
+    "Loan Origination":     "origination",
+    "Loan Term Date":       "termDate",
+    "Months Remaining":     "monthsRemaining",
+    "Rem. Interest Reserve":"remIR",
+    "Monthly Interest Burn":"monthlyBurn",
+    "Remaining Mos. of IR": "remMosIR",
+    "IR Health":            "irHealth",
+    "Index + Spread":       "indexSpread",
+    "Today's Rate":         "todayRate",
+    "Extensions Remaining": "extensionsRem",
+    "Extension Cost":       "extensionCost",
+    "Loan Amount":          "loanAmount",
+    "Drawn":                "drawn",
+    "Balance":              "balance",
+    "Utilization":          "utilization",
+    "Remaining":            "remaining",
+    "Forecasted Thru Term": "forecastedThruTerm",
+    "Capacity Health":      "capacityHealth",
+}
+
+
+def _loans_translate_legacy(raw):
+    """Map the report_parser legacy shape onto the new design's contract.
+
+    Legacy:
+      {
+        "mpc_loans":      {"headers": [...], "rows": [...], "totals": {...}},
+        "vertical_loans": {"headers": [...], "rows": [...], "totals": {...}, "footnote": "..."},
+        "debt_schedules": [...]
+      }
+    New shape (matches `server/sample_data.json` from the handoff):
+      {
+        "anchor": "YYYY-MM-01",
+        "mpcLoans": [...], "mpcTotals": {...},
+        "verticalLoans": [...], "verticalTotals": {...},
+        "portfolio": {...},
+        "debtSchedules": [...],
+        "months": [12 ISO YYYY-MM strings],
+      }
+    """
+    if not isinstance(raw, dict):
+        return None
+    if "mpcLoans" in raw or "mpc_loans" not in raw:
+        # Either already in new shape or unrecognized — return as-is.
+        return raw
+
+    def _row_to_obj(row):
+        """Map a header-keyed row dict to camelCase keys."""
+        out = {}
+        for k, v in (row or {}).items():
+            new_key = _LOANS_HEADER_TO_KEY.get(k)
+            if new_key:
+                # IR Health and Capacity Health were stored as strings in
+                # the legacy parser; coerce numerics where possible.
+                if new_key in ("irHealth", "capacityHealth"):
+                    try: v = float(v) if v not in (None, "", "—") else None
+                    except (TypeError, ValueError): v = None
+                out[new_key] = v
+        return out
+
+    mpc_loans  = [_row_to_obj(r) for r in (raw.get("mpc_loans",      {}) or {}).get("rows") or []]
+    vert_loans = [_row_to_obj(r) for r in (raw.get("vertical_loans", {}) or {}).get("rows") or []]
+    mpc_tot    = _row_to_obj((raw.get("mpc_loans",      {}) or {}).get("totals") or {})
+    vert_tot   = _row_to_obj((raw.get("vertical_loans", {}) or {}).get("totals") or {})
+
+    # Roll up portfolio KPIs from the loan lists. Legacy data didn't
+    # carry these, so we derive: outstanding = sum(balance), committed =
+    # sum(loanAmount), weighted-avg-rate = balance-weighted, term-at-risk
+    # count = how many have <12 months left.
+    all_loans = mpc_loans + vert_loans
+    total_outstanding = sum((l.get("balance") or 0) for l in all_loans)
+    total_committed   = sum((l.get("loanAmount") or 0) for l in all_loans)
+    total_remaining   = sum((l.get("remaining") or 0) for l in all_loans)
+    weighted_rate_num = sum((l.get("todayRate") or 0) * (l.get("balance") or 0) for l in all_loans)
+    weighted_rate     = (weighted_rate_num / total_outstanding) if total_outstanding else 0.0
+    monthly_burn      = sum((l.get("monthlyBurn") or 0) for l in mpc_loans)
+    term_expiring     = sum(1 for l in all_loans if (l.get("monthsRemaining") or 999) < 12)
+    ir_at_risk        = sum(1 for l in mpc_loans if (l.get("irHealth") or 999) < 0.5)
+    cap_at_risk       = sum(1 for l in all_loans if (l.get("capacityHealth") or 999) < 1.0)
+
+    # Build a 12-month window starting at next month so the schedule
+    # tables on the report align with the live page header.
+    today = datetime.date.today().replace(day=1)
+    months = []
+    y, m = today.year, today.month
+    for _ in range(12):
+        m += 1
+        if m > 12:
+            m = 1; y += 1
+        months.append(f"{y:04d}-{m:02d}")
+
+    return {
+        "anchor": today.isoformat(),
+        "today":  datetime.date.today().isoformat(),
+        "months": months,
+        "portfolio": {
+            "totalOutstanding":    int(round(total_outstanding)),
+            "totalCommitted":      int(round(total_committed)),
+            "totalRemaining":      int(round(total_remaining)),
+            "weightedAvgRate":     round(weighted_rate, 4),
+            "monthlyInterestBurn": int(round(monthly_burn)),
+            "termExpiringCount":   int(term_expiring),
+            "irAtRiskCount":       int(ir_at_risk),
+            "capacityAtRiskCount": int(cap_at_risk),
+        },
+        "mpcLoans":      mpc_loans,
+        "mpcTotals":     mpc_tot,
+        "verticalLoans": vert_loans,
+        "verticalTotals": vert_tot,
+        "debtSchedules": raw.get("debt_schedules") or [],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Per-loan + totals enrichment (formatted strings + health classes)
+# ---------------------------------------------------------------------------
+def _loans_enrich_loan(raw, kind):
+    l = dict(raw)
+    is_vert = kind == "vert"
+    l["loanAmount_fmt"] = _loans_fmt_money_short(l.get("loanAmount"))
+    l["drawn_fmt"]      = _loans_fmt_money_short(l.get("drawn"))
+    l["balance_fmt"]    = _loans_fmt_money_short(l.get("balance"))
+    l["remaining_fmt"]  = _loans_fmt_money_short(l.get("remaining"))
+    l["utilization_fmt"]   = _loans_fmt_pct1(l.get("utilization"))
+    try:    l["utilization_pct"] = round(float(l.get("utilization") or 0) * 100, 1)
+    except (TypeError, ValueError): l["utilization_pct"] = 0
+    l["todayRate_fmt"]     = _loans_fmt_pct(l.get("todayRate"), 2)
+    try:    l["indexSpread_fmt"] = f"{float(l.get('indexSpread') or 0) * 100:.2f}%"
+    except (TypeError, ValueError): l["indexSpread_fmt"] = "0.00%"
+    l["termDate_short"]    = _loans_fmt_date_short(l.get("termDate"))
+    l["irHealth_fmt"]      = _loans_fmt_pct1(l.get("irHealth")) if not is_vert else "—"
+    l["remIR_fmt"]         = _loans_fmt_money_short(l.get("remIR")) if l.get("remIR") else "—"
+    l["monthlyBurn_fmt"]   = _loans_fmt_money_short(l.get("monthlyBurn")) if l.get("monthlyBurn") else "—"
+    l["term_cls"] = _loans_term_class(l.get("monthsRemaining"))
+    l["ir_cls"]   = _loans_ir_class(l.get("irHealth")) if not is_vert else "na"
+    l["cap_cls"]  = _loans_cap_class(l.get("capacityHealth"))
+    return l
+
+
+def _loans_enrich_totals(raw, kind):
+    t = dict(raw or {})
+    t["loanAmount_fmt"]    = _loans_fmt_money_short(t.get("loanAmount"))
+    t["drawn_fmt"]         = _loans_fmt_money_short(t.get("drawn"))
+    t["balance_fmt"]       = _loans_fmt_money_short(t.get("balance"))
+    t["remaining_fmt"]     = _loans_fmt_money_short(t.get("remaining"))
+    t["utilization_fmt"]   = _loans_fmt_pct1(t.get("utilization"))
+    t["todayRate_fmt"]     = _loans_fmt_pct(t.get("todayRate"), 2)
+    t["remIR_fmt"]         = _loans_fmt_money_short(t.get("remIR")) if kind == "mpc" else "—"
+    t["monthlyBurn_fmt"]   = _loans_fmt_money_short(t.get("monthlyBurn")) if kind == "mpc" else "—"
+    return t
+
+
+def _loans_normalize(raw, anchor):
+    raw = _loans_translate_legacy(raw)
+    if not raw:
+        return None
+    mpc_loans  = [_loans_enrich_loan(l, "mpc")  for l in (raw.get("mpcLoans")      or [])]
+    vert_loans = [_loans_enrich_loan(l, "vert") for l in (raw.get("verticalLoans") or [])]
+    return {
+        "anchor":  anchor,
+        "today":   raw.get("today"),
+        "months":  raw.get("months") or [],
+        "mpc":  {"loans": mpc_loans,  "totals": _loans_enrich_totals(raw.get("mpcTotals")      or {}, "mpc")},
+        "vert": {"loans": vert_loans, "totals": _loans_enrich_totals(raw.get("verticalTotals") or {}, "vert")},
+        "portfolio":     raw.get("portfolio") or {},
+        "debt_schedules": raw.get("debtSchedules") or [],
+    }
+
+
+def _loans_kpis(data):
+    p = data["portfolio"]
+    return [
+        {"label": "Outstanding", "val": _loans_fmt_money_m(p.get("totalOutstanding")),
+         "sub": f"of {_loans_fmt_money_m(p.get('totalCommitted'))} committed", "tone": ""},
+        {"label": "Remaining Capacity", "val": _loans_fmt_money_m(p.get("totalRemaining")),
+         "sub": "across all facilities", "tone": ""},
+        {"label": "Wtd Avg Rate", "val": _loans_fmt_pct(p.get("weightedAvgRate"), 2),
+         "sub": "on outstanding balance", "tone": ""},
+        {"label": "Monthly IR Burn", "val": _loans_fmt_money_m(p.get("monthlyInterestBurn")),
+         "sub": "MPC interest reserves", "tone": ""},
+        {"label": "Term < 12 mo", "val": str(p.get("termExpiringCount") or 0),
+         "sub": "requires action",
+         "tone": "bad" if (p.get("termExpiringCount") or 0) > 0 else ""},
+        {"label": "IR Runway < 50%", "val": str(p.get("irAtRiskCount") or 0),
+         "sub": "below break-even",
+         "tone": "warn" if (p.get("irAtRiskCount") or 0) > 0 else ""},
+    ]
+
+
+def _build_loans_view_context(raw_data, uploaded_at):
+    """Build the dict the redesigned loans.html template consumes."""
+    if not raw_data:
+        return None
+    # Anchor on `anchor` if the new shape carries one, else today's
+    # 1st-of-month. The legacy adapter sets it itself.
+    anchor = None
+    if isinstance(raw_data, dict):
+        a = raw_data.get("anchor")
+        if isinstance(a, str):
+            try: anchor = datetime.date.fromisoformat(a[:10])
+            except Exception: anchor = None
+    if anchor is None:
+        if uploaded_at:
+            anchor = uploaded_at.date().replace(day=1) if hasattr(uploaded_at, "date") else datetime.date.today().replace(day=1)
+        else:
+            anchor = datetime.date.today().replace(day=1)
+
+    data = _loans_normalize(raw_data, anchor)
+    if data is None or (not data["mpc"]["loans"] and not data["vert"]["loans"]):
+        return None
+
+    today_iso = data.get("today")
+    try:
+        updated = datetime.datetime.fromisoformat(today_iso) if today_iso else datetime.datetime.now()
+    except Exception:
+        updated = datetime.datetime.now()
+
+    ctx = {
+        "kpis":            _loans_kpis(data),
+        "mpc":             data["mpc"],
+        "vert":            data["vert"],
+        "portfolio":       data["portfolio"],
+        "debt_schedules":  data["debt_schedules"],
+        "period_label":    anchor.strftime("%B %Y"),
+        "period_short":    anchor.strftime("%b %Y").upper(),
+        "updated_at_short": updated.strftime("%Y-%m-%d"),
+        # Internal — used by the report builder
+        "_anchor":   anchor,
+        "_today":    data.get("today"),
+        "_months":   data.get("months"),
+    }
+    return ctx
+
+
+# ---------------------------------------------------------------------------
+# PDF Report — server-rendered SVG widgets (capacity stack, maturity wall,
+# coverage curve), per-project schedule rows, KPI band, and the 5-page
+# layout in templates/loans_report.html.
+# ---------------------------------------------------------------------------
+_LOANS_REPORT_COLORS = {
+    "ink":     "#08233B",
+    "ink_2":   "#13344E",
+    "muted":   "#5b6b7b",
+    "subtle":  "#97a3b0",
+    "line":    "rgba(8,35,59,0.10)",
+    "line_2":  "rgba(8,35,59,0.20)",
+    "warm":    "#F8F4EE",
+    "accent":  "#F25929",
+    "accent_soft": "rgba(242,89,41,0.10)",
+    "good":    "#1F7A4D",
+    "warn":    "#C9871F",
+    "bad":     "#C0311A",
+}
+_LOANS_MONTHS_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+
+
+def _loans_month_idx(iso, start_year):
+    parts = str(iso).split("-")
+    y, m = int(parts[0]), int(parts[1])
+    return (y - start_year) * 12 + (m - 1)
+
+
+def _loans_short_month_label(iso):
+    parts = str(iso).split("-")
+    y, m = int(parts[0]), int(parts[1])
+    return f"{_LOANS_MONTHS_SHORT[m - 1]} {str(y)[2:]}"
+
+
+def _loans_render_capacity_stack(loans):
+    """HTML (not SVG) — CSS-positioned bars are simpler for stacking."""
+    if not loans:
+        return ""
+    max_loan = max((l.get("loanAmount") or 0) for l in loans) or 1
+    rows = []
+    for l in loans:
+        drawn_pct = ((l.get("balance") or 0) / max_loan) * 100
+        rem_pct   = ((l.get("remaining") or 0) / max_loan) * 100
+        irh = l.get("irHealth")
+        ircls = _loans_ir_class(irh) if irh is not None else None
+        ir_dot = (
+            f'<span class="dot" style="background:var(--{ircls})"></span>'
+            if ircls and ircls != "na" else ""
+        )
+        rows.append(f"""
+<div class="row">
+  <div class="nm">{l.get('community','')}<span class="ld">{l.get('lender','')}</span></div>
+  <div class="bar">
+    <div class="drawn" style="width:{drawn_pct:.2f}%"></div>
+    <div class="rem"   style="left:{drawn_pct:.2f}%;width:{rem_pct:.2f}%"></div>
+    <div class="lbl">{_loans_fmt_money_short(l.get('balance'))}</div>
+  </div>
+  <div class="util">{ir_dot}<span>{_loans_fmt_pct1(l.get('utilization'))}</span></div>
+</div>""")
+    legend = """
+<div class="legend">
+  <div class="it"><span class="sw" style="background:var(--accent)"></span>Drawn</div>
+  <div class="it"><span class="sw" style="background:var(--accent-soft);border:1px solid var(--accent)"></span>Remaining</div>
+  <div class="it" style="margin-left:auto">●&nbsp;IR&nbsp;health</div>
+</div>"""
+    return '<div class="capstack">' + "".join(rows) + legend + "</div>"
+
+
+def _loans_render_maturity_wall(mpc_loans, vert_loans, today, start_year=2023, end_year=2029):
+    all_loans = (
+        [{**l, "kind": "MPC"} for l in mpc_loans] +
+        [{**l, "kind": "VRT"} for l in vert_loans]
+    )
+    if not all_loans:
+        return ""
+    today_idx = _loans_month_idx(today.isoformat(), start_year)
+    total = (end_year - start_year) * 12 or 1
+    W, ROW = 520, 22
+    PADL, PADR, PADT = 130, 10, 22
+    H = PADT + len(all_loans) * ROW + 18
+    inner_w = W - PADL - PADR
+    C = _LOANS_REPORT_COLORS
+
+    def x(m): return PADL + (m / total) * inner_w
+
+    parts = [f'<svg viewBox="0 0 {W} {H}" preserveAspectRatio="xMidYMid meet">']
+    # Year ticks
+    for i in range(end_year - start_year + 1):
+        xx = x(i * 12)
+        dash = ' stroke-dasharray="2 3"' if i != 0 else ""
+        parts.append(f'<line x1="{xx}" y1="{PADT-3}" x2="{xx}" y2="{H-14}" stroke="{C["line"]}"{dash}/>')
+        parts.append(
+            f'<text x="{xx}" y="{PADT-8}" text-anchor="middle" font-size="7" '
+            f'fill="{C["subtle"]}" font-family="JetBrains Mono" font-weight="700">'
+            f'{start_year + i}</text>'
+        )
+    # Today line
+    parts.append(
+        f'<line x1="{x(today_idx)}" y1="{PADT-3}" x2="{x(today_idx)}" y2="{H-14}" '
+        f'stroke="{C["accent"]}" stroke-width="1.5"/>'
+    )
+    parts.append(
+        f'<text x="{x(today_idx)}" y="{PADT-12}" text-anchor="middle" font-size="6.5" '
+        f'fill="{C["accent"]}" font-weight="700" font-family="Plus Jakarta Sans" '
+        f'letter-spacing="1.4" style="text-transform:uppercase">Today</text>'
+    )
+    # Loan rows
+    for i, l in enumerate(all_loans):
+        y = PADT + i * ROW + 4
+        try:
+            x0 = x(_loans_month_idx(l.get("origination") or today.isoformat(), start_year))
+            x1 = x(_loans_month_idx(l.get("termDate")    or today.isoformat(), start_year))
+        except Exception:
+            continue
+        bar_h = 14
+        cls = _loans_term_class(l.get("monthsRemaining"))
+        col = {"bad": C["bad"], "warn": C["warn"]}.get(cls, C["ink_2"])
+        parts.append(
+            f'<text x="{PADL-6}" y="{y+9}" text-anchor="end" font-size="7.5" '
+            f'fill="{C["ink"]}" font-family="Plus Jakarta Sans" font-weight="600">'
+            f'{l.get("community","")}</text>'
+        )
+        parts.append(
+            f'<text x="{PADL-6}" y="{y+18}" text-anchor="end" font-size="6" '
+            f'fill="{C["subtle"]}" font-family="JetBrains Mono">'
+            f'{l.get("lender","")} · {l["kind"]}</text>'
+        )
+        past_end = min(x(today_idx), x1)
+        parts.append(
+            f'<rect x="{x0}" y="{y}" width="{past_end-x0}" height="{bar_h}" '
+            f'fill="{C["ink_2"]}" fill-opacity="0.12" stroke="{C["line_2"]}"/>'
+        )
+        if x1 > x(today_idx):
+            fx = max(x0, x(today_idx))
+            opacity = 0.65 if cls == "bad" else 0.35
+            parts.append(
+                f'<rect x="{fx}" y="{y}" width="{x1-fx}" height="{bar_h}" '
+                f'fill="{col}" fill-opacity="{opacity}" stroke="{col}"/>'
+            )
+        parts.append(f'<circle cx="{x1}" cy="{y+bar_h/2}" r="2.6" fill="{col}"/>')
+        parts.append(
+            f'<text x="{x1+5}" y="{y+bar_h/2+2.5}" font-size="6.5" '
+            f'fill="{col}" font-weight="700" font-family="JetBrains Mono">'
+            f'{_loans_fmt_date_short(l.get("termDate"))}</text>'
+        )
+        parts.append(
+            f'<text x="{x0+4}" y="{y+9}" font-size="6.5" '
+            f'fill="{C["ink"]}" font-family="JetBrains Mono" font-weight="700">'
+            f'{_loans_fmt_money_short(l.get("balance"))}</text>'
+        )
+    parts.append(f'<g transform="translate({PADL},{H-6})">')
+    for i, (cls, lbl) in enumerate([("bad", "&lt;12 mo"), ("warn", "12–18 mo"), ("ink_2", "&gt;18 mo")]):
+        ox = i * 90
+        opacity = "0.65" if cls == "bad" else "0.35"
+        parts.append(
+            f'<rect x="{ox}" y="-5" width="9" height="6" fill="{C[cls]}" fill-opacity="{opacity}"/>'
+            f'<text x="{ox+13}" y="0" font-size="6" fill="{C["muted"]}" '
+            f'font-family="Plus Jakarta Sans" letter-spacing="1" '
+            f'style="text-transform:uppercase">{lbl}</text>'
+        )
+    parts.append("</g></svg>")
+    return "".join(parts)
+
+
+def _loans_render_coverage_curve(scheds, months):
+    if not scheds or not months:
+        return ""
+    n = len(months)
+    cum_p = [sum((s.get("cumulativePayments") or [0]*n)[i] for s in scheds) for i in range(n)]
+    cum_r = [sum((s.get("cumulativeRevenues") or [0]*n)[i] for s in scheds) for i in range(n)]
+    if max(cum_p + cum_r) == 0:
+        return ""
+    W, H = 900, 160
+    PADL, PADR, PADT, PADB = 46, 70, 12, 24
+    iw, ih = W - PADL - PADR, H - PADT - PADB
+    max_v = max(max(cum_p), max(cum_r)) * 1.05 or 1.0
+    C = _LOANS_REPORT_COLORS
+
+    def xp(i):  return PADL + (i / max(1, n - 1)) * iw
+    def yp(v):  return PADT + ih - (v / max_v) * ih
+    def path(vals):
+        return " ".join(f"{'M' if i == 0 else 'L'} {xp(i):.1f} {yp(v):.1f}" for i, v in enumerate(vals))
+    def area(vals):
+        return path(vals) + f" L {xp(n-1):.1f} {yp(0):.1f} L {xp(0):.1f} {yp(0):.1f} Z"
+
+    parts = [f'<svg viewBox="0 0 {W} {H}" preserveAspectRatio="xMidYMid meet">']
+    for p in (0, 0.25, 0.5, 0.75, 1):
+        v, y = max_v * p, yp(max_v * p)
+        op = "" if p == 0 else ' stroke-opacity="0.5"'
+        parts.append(f'<line x1="{PADL}" y1="{y}" x2="{PADL+iw}" y2="{y}" stroke="{C["line"]}"{op}/>')
+        lbl = f"{v/1e6:.1f}M" if v >= 1e6 else f"{round(v/1000)}K"
+        parts.append(
+            f'<text x="{PADL-5}" y="{y+2.5}" text-anchor="end" font-size="7" '
+            f'fill="{C["subtle"]}" font-family="JetBrains Mono">{lbl}</text>'
+        )
+    parts.append(f'<path d="{area(cum_r)}" fill="{C["good"]}" fill-opacity="0.12"/>')
+    parts.append(f'<path d="{path(cum_r)}" fill="none" stroke="{C["good"]}" stroke-width="1.8"/>')
+    parts.append(f'<path d="{path(cum_p)}" fill="none" stroke="{C["accent"]}" stroke-width="1.8"/>')
+    last = n - 1
+    parts.append(f'<circle cx="{xp(last)}" cy="{yp(cum_r[last])}" r="3" fill="{C["good"]}"/>')
+    parts.append(f'<circle cx="{xp(last)}" cy="{yp(cum_p[last])}" r="3" fill="{C["accent"]}"/>')
+    parts.append(
+        f'<text x="{xp(last)+5}" y="{yp(cum_r[last])+2.5}" font-size="8" '
+        f'fill="{C["good"]}" font-weight="700" font-family="JetBrains Mono">'
+        f'{_loans_fmt_money_m(cum_r[last])}</text>'
+    )
+    parts.append(
+        f'<text x="{xp(last)+5}" y="{yp(cum_p[last])+2.5}" font-size="8" '
+        f'fill="{C["accent"]}" font-weight="700" font-family="JetBrains Mono">'
+        f'{_loans_fmt_money_m(cum_p[last])}</text>'
+    )
+    for i, m in enumerate(months):
+        col = C["accent"] if i == 0 else C["subtle"]
+        weight = ' font-weight="700"' if i == 0 else ''
+        parts.append(
+            f'<text x="{xp(i)}" y="{H-PADB+10}" text-anchor="middle" font-size="7" '
+            f'fill="{col}" font-family="JetBrains Mono"{weight}>'
+            f'{_loans_short_month_label(m)}</text>'
+        )
+    parts.append(f'<g transform="translate({PADL},{PADT-2})">')
+    parts.append(
+        f'<rect x="0" y="-5" width="8" height="2.5" fill="{C["good"]}"/>'
+        f'<text x="12" y="-1.5" font-size="7" fill="{C["good"]}" '
+        f'font-weight="600" letter-spacing="1" style="text-transform:uppercase">Cumulative Revenue</text>'
+    )
+    parts.append(
+        f'<rect x="140" y="-5" width="8" height="2.5" fill="{C["accent"]}"/>'
+        f'<text x="152" y="-1.5" font-size="7" fill="{C["accent"]}" '
+        f'font-weight="600" letter-spacing="1" style="text-transform:uppercase">Cumulative Payments</text>'
+    )
+    parts.append("</g></svg>")
+    return "".join(parts)
+
+
+def _loans_coverage_cls(ratio):
+    if ratio is None:    return "na"
+    if ratio >= 1.5:     return "good"
+    if ratio >= 1.0:     return "warn"
+    return "bad"
+
+
+def _loans_build_schedule(sch, months):
+    n = len(months)
+    monthly_pmts = []
+    for m in months:
+        amt = sum(p.get("amount", 0) for p in (sch.get("payments") or []) if str(p.get("date","")).startswith(m))
+        monthly_pmts.append(amt)
+    total_pmts = sum(monthly_pmts)
+    total_rev  = sum(r.get("total", 0) for r in (sch.get("revenues") or []))
+    monthly_rev = [
+        sum((r.get("monthly") or [0]*n)[i] for r in (sch.get("revenues") or []))
+        for i in range(n)
+    ]
+    coverage = (total_rev / total_pmts) if total_pmts else None
+    cum_p = sch.get("cumulativePayments") or [0] * n
+    cum_r = sch.get("cumulativeRevenues") or [0] * n
+    cum_ratios = [
+        {
+            "ratio": (cum_r[i] / cum_p[i]) if cum_p[i] else None,
+            "cls":   _loans_coverage_cls((cum_r[i] / cum_p[i]) if cum_p[i] else None),
+        } for i in range(n)
+    ]
+    return {
+        "project":      sch.get("project", ""),
+        "month_labels": [_loans_short_month_label(m) for m in months],
+        "revenues": [{
+            "type":        r.get("type", ""),
+            "pct_fmt":     f"{round((r.get('pct') or 0) * 100)}% of mix",
+            "monthly_fmt": [_loans_fmt_money_short(v) if v else "—" for v in (r.get("monthly") or [0]*n)],
+            "total_fmt":   _loans_fmt_money_short(r.get("total")),
+        } for r in (sch.get("revenues") or [])],
+        "monthly_rev_fmt": [_loans_fmt_money_short(v) for v in monthly_rev],
+        "total_rev_fmt":   _loans_fmt_money_m(total_rev, 2),
+        "monthly_pmts_fmt":[_loans_fmt_money_short(v) if v else "—" for v in monthly_pmts],
+        "total_pmts_fmt":  _loans_fmt_money_m(total_pmts, 2),
+        "cum_ratios": [{
+            "ratio_fmt": f"{r['ratio']:.2f}×" if r["ratio"] is not None else "—",
+            "cls": r["cls"],
+        } for r in cum_ratios],
+        "coverage_fmt":  f"{coverage:.2f}×" if coverage is not None else "—",
+        "coverage_cls":  _loans_coverage_cls(coverage),
+    }
+
+
+def _build_loans_report_context(view_ctx, run_date=None):
+    """Build the dict consumed by templates/loans_report.html."""
+    anchor   = view_ctx["_anchor"]
+    today    = view_ctx.get("_today")
+    months   = view_ctx.get("_months") or []
+    try:
+        today_d = datetime.date.fromisoformat(str(today)[:10]) if today else anchor
+    except Exception:
+        today_d = anchor
+
+    mpc = view_ctx["mpc"]
+    vert = view_ctx["vert"]
+    portfolio = view_ctx["portfolio"]
+    scheds = view_ctx["debt_schedules"]
+
+    # Capacity stack expects raw loan dicts (not enriched). Strip the
+    # _fmt fields by keeping only the numeric ones.
+    cap_stack = _loans_render_capacity_stack(list(mpc["loans"]) + list(vert["loans"]))
+    mat_wall  = _loans_render_maturity_wall(mpc["loans"], vert["loans"], today_d)
+    cov_curve = _loans_render_coverage_curve(scheds, months)
+    schedules = [_loans_build_schedule(s, months) for s in scheds]
+
+    p = portfolio
+    overview_kpis = [
+        {"label": "Outstanding", "val": _loans_fmt_money_m(p.get("totalOutstanding")),
+         "sub": f"of {_loans_fmt_money_m(p.get('totalCommitted'))} committed · "
+                f"{_loans_fmt_pct1((p.get('totalOutstanding') or 0) / (p.get('totalCommitted') or 1))} drawn",
+         "tone": ""},
+        {"label": "Remaining Capacity", "val": _loans_fmt_money_m(p.get("totalRemaining")),
+         "sub": "across all facilities", "tone": ""},
+        {"label": "Wtd Avg Rate", "val": _loans_fmt_pct(p.get("weightedAvgRate"), 2),
+         "sub": "on outstanding balance", "tone": ""},
+        {"label": "Monthly IR Burn", "val": _loans_fmt_money_m(p.get("monthlyInterestBurn")),
+         "sub": "MPC interest reserves", "tone": ""},
+        {"label": "Term < 12 mo", "val": str(p.get("termExpiringCount") or 0),
+         "sub": "requires action",
+         "tone": "bad" if (p.get("termExpiringCount") or 0) > 0 else ""},
+        {"label": "IR Runway < 50%", "val": str(p.get("irAtRiskCount") or 0),
+         "sub": "below break-even",
+         "tone": "warn" if (p.get("irAtRiskCount") or 0) > 0 else ""},
+    ]
+    run = run_date or datetime.datetime.now()
+
+    return {
+        "report": {
+            "period_label":  anchor.strftime("%B %Y"),
+            "generated":     run.strftime("%Y-%m-%d"),
+            "active_facilities": len(mpc["loans"]) + len(vert["loans"]),
+            "active_facilities_label": (
+                f"{len(mpc['loans']) + len(vert['loans'])} — "
+                f"{len(mpc['loans'])} MPC + {len(vert['loans'])} Vert"
+            ),
+            "outstanding_fmt": _loans_fmt_money_m(p.get("totalOutstanding")),
+            "committed_fmt":   _loans_fmt_money_m(p.get("totalCommitted")),
+            "kpis":            overview_kpis,
+            "mpc":             mpc,
+            "vert":            vert,
+            "cap_stack_svg":   cap_stack,
+            "mat_wall_svg":    mat_wall,
+            "cov_curve_svg":   cov_curve,
+            "schedules":       schedules,
+            "months":          months,
+        }
+    }
+
 
 # ─── REPORT GENERATORS ────────────────────────────────────────────────────────
 
