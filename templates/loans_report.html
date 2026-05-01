@@ -1,9 +1,12 @@
 {# ============================================================
    Ember · Loans & Debt — PDF report (5-page landscape, 11×8.5in).
-   Visual ground truth: ember-loans-report__claude-code-handoff/
-                        _design_reference/Loans Report.html.
+   Visual ground truth: Ember Design System.pdf (5-page reference).
    All SVGs are pre-rendered server-side (app.py builders) because
    WeasyPrint can't run JS.
+
+   Layout pattern matches capital_report.html / returns_report.html:
+   absolute positioning of page-pad + page-foot, table-based grids
+   inside (no flex), so WeasyPrint paginates reliably.
    ============================================================ #}
 <!doctype html>
 <html lang="en">
@@ -11,13 +14,11 @@
 <meta charset="utf-8"/>
 <title>Ember · Loans &amp; Debt Schedules</title>
 <style>
-  /* Brand fonts — served at /static/fonts/* and read off disk by
-     app.py's _weasyprint_local_fetcher (same as Returns/Capital/Ops). */
+  /* Brand fonts — read off disk by app.py's _weasyprint_local_fetcher. */
   @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-Bold.ttf") format("truetype"); font-weight: 700; }
   @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-CondensedBold.ttf") format("truetype"); font-weight: 800; font-stretch: condensed; }
   @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-Light.ttf") format("truetype"); font-weight: 300; }
   @font-face { font-family: "Gotham"; src: url("/static/fonts/Gotham-Medium.otf") format("opentype"); font-weight: 500; }
-  /* Plus Jakarta Sans — open-licensed brand fallback, bundled. */
   @font-face { font-family: "Plus Jakarta Sans"; src: url("/static/fonts/PlusJakartaSans-Light.ttf")     format("truetype"); font-weight: 300; }
   @font-face { font-family: "Plus Jakarta Sans"; src: url("/static/fonts/PlusJakartaSans-Medium.ttf")    format("truetype"); font-weight: 500; }
   @font-face { font-family: "Plus Jakarta Sans"; src: url("/static/fonts/PlusJakartaSans-Bold.ttf")      format("truetype"); font-weight: 700; }
@@ -36,324 +37,656 @@
     --font-mono:"JetBrains Mono",ui-monospace,monospace;
     --font-eyebrow:"Gotham","Plus Jakarta Sans",system-ui,sans-serif;
   }
+
+  @page { size: 11in 8.5in; margin: 0; }
+
   *{box-sizing:border-box;margin:0;padding:0}
-  html,body{background:#d4cfc6;font-family:var(--font-sans);color:var(--ink);
+  html,body{background:#fff;font-family:var(--font-sans);color:var(--ink);
             -webkit-font-smoothing:antialiased;-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact}
 
-  .pages{padding:40px 0;display:flex;flex-direction:column;align-items:center;gap:28px}
-  .page{width:11in;height:8.5in;background:var(--paper);box-shadow:0 12px 36px rgba(0,0,0,.15);position:relative;overflow:hidden;page-break-after:always;color:var(--ink)}
-  .page-pad{position:absolute;inset:0;padding:.55in .65in .85in .65in;display:flex;flex-direction:column}
-  .page-foot{position:absolute;left:.65in;right:.65in;bottom:.32in;display:flex;justify-content:space-between;align-items:center;padding-top:10px;border-top:1px solid var(--line);font-family:var(--font-mono);font-size:8.5px;letter-spacing:.06em;color:var(--subtle)}
-  .page-foot .conf{font-weight:600;color:var(--ink-2);letter-spacing:.18em;text-transform:uppercase}
-  .page-foot .dot{width:4px;height:4px;border-radius:50%;background:var(--accent);display:inline-block}
+  /* ── Page chrome (matches capital_report.html pattern) ───────── */
+  .page {
+    width: 11in; height: 8.5in;
+    background: var(--paper);
+    position: relative; overflow: hidden;
+    page-break-after: always;
+    color: var(--ink);
+  }
+  .page:last-child { page-break-after: auto; }
+  .page-pad {
+    position: absolute;
+    left: 0.65in; right: 0.65in;
+    top: 0.55in;  bottom: 0.85in;
+  }
+  .page-foot {
+    position: absolute;
+    left: 0.65in; right: 0.65in; bottom: 0.32in;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    color: var(--subtle);
+    letter-spacing: 0.06em;
+    display: table; table-layout: fixed; width: calc(100% - 1.30in);
+  }
+  .page-foot .l, .page-foot .c, .page-foot .r { display: table-cell; vertical-align: middle; }
+  .page-foot .c { text-align: center; }
+  .page-foot .r { text-align: right; }
+  .page-foot .conf { font-weight: 600; color: var(--ink-2); letter-spacing: 0.18em; text-transform: uppercase; }
+  .page-foot .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); display: inline-block; vertical-align: middle; margin-right: 6px; }
 
-  .display{font-family:var(--font-display);font-weight:700;letter-spacing:-.02em;color:var(--ink);text-transform:uppercase}
   .num{font-variant-numeric:tabular-nums;font-feature-settings:'tnum'}
   .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
   .eyebrow{font-family:var(--font-eyebrow);font-weight:500;font-size:9.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--accent)}
   .label{font-family:var(--font-sans);font-weight:600;font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--subtle)}
 
-  /* COVER */
-  .cover .top{display:flex;justify-content:space-between;align-items:flex-start}
-  .cover-mark{width:38px;height:38px}
-  .cover .conf-stamp{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-2);padding:6px 12px;border:1px solid var(--line-2);border-radius:999px;display:inline-flex;gap:8px;align-items:center}
-  .cover .conf-stamp::before{content:"";width:6px;height:6px;background:var(--accent);border-radius:50%}
-  .cover .mid{flex:1;display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:12px}
-  .cover h1{font-family:var(--font-display);font-weight:700;font-size:84px;line-height:.94;letter-spacing:-.025em;color:var(--ink);max-width:9in;text-transform:uppercase}
-  .cover h1 em{font-style:normal;font-weight:700;color:var(--ink)}
-  .cover .lede{font-size:14.5px;line-height:1.55;color:var(--muted);margin-top:28px;max-width:6.4in}
-  .cover .bot{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:0;margin-top:36px;padding-top:22px;border-top:1px solid var(--line-2)}
-  .cover .bot .col{padding-right:20px}
-  .cover .bot .col + .col{padding-left:20px;border-left:1px solid var(--line)}
-  .cover .bot .col .label{margin-bottom:8px}
-  .cover .bot .col .val{font-family:var(--font-display);font-weight:700;font-size:15px;color:var(--ink);text-transform:uppercase}
-  .cover .bot .col .val.mono{font-family:var(--font-mono);font-weight:500;font-size:12px;letter-spacing:.04em;text-transform:none}
-  .cover .footnote{font-size:9.5px;line-height:1.5;color:var(--subtle);max-width:6.4in;padding-top:10px}
+  /* ── COVER ─────────────────────────────────────────────────── */
+  .cover .top-row {
+    position: absolute;
+    top: 0.55in; left: 0.65in; right: 0.65in;
+    display: table; table-layout: fixed; width: calc(100% - 1.30in);
+  }
+  .cover .top-row .l, .cover .top-row .r { display: table-cell; vertical-align: top; }
+  .cover .top-row .r { text-align: right; }
+  .cover-mark { width: 38px; height: 38px; }
+  .cover .conf-stamp {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--font-mono); font-size: 9.5px;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--ink-2);
+    padding: 6px 14px; border: 1px solid var(--line-2); border-radius: 999px;
+  }
+  .cover .conf-stamp::before { content:""; width:6px; height:6px; background: var(--accent); border-radius: 50%; display: inline-block; }
 
-  /* PAGE HEAD */
-  .phead{display:flex;justify-content:space-between;align-items:flex-end;padding-bottom:12px;border-bottom:1px solid var(--line-2);margin-bottom:14px}
-  .phead h2{font-family:var(--font-display);font-weight:700;font-size:24px;letter-spacing:-.015em;line-height:1.04;text-transform:uppercase}
-  .phead h2 em{font-style:normal;font-weight:700;color:var(--ink);text-transform:uppercase;letter-spacing:-.015em}
-  .phead .meta{font-family:var(--font-mono);font-size:9.5px;color:var(--subtle);letter-spacing:.06em;text-align:right}
+  .cover .title-block {
+    position: absolute;
+    left: 0.65in; right: 0.65in;
+    bottom: 2.7in;
+  }
+  .cover h1 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 84px;
+    line-height: 0.94;
+    letter-spacing: -0.025em;
+    color: var(--ink);
+    text-transform: uppercase;
+  }
+  .cover h1 em {
+    font-style: normal; font-weight: 700; color: var(--ink);
+  }
+  .cover .lede {
+    margin-top: 22px;
+    font-size: 13.5px; line-height: 1.55;
+    color: var(--muted); max-width: 7in;
+  }
 
-  /* KPI band */
-  .kpi-band{display:grid;grid-template-columns:repeat(6,1fr);border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:14px}
-  .kpi-band .kpi{padding:11px 12px;border-left:1px solid var(--line)}
-  .kpi-band .kpi:first-child{border-left:none}
-  .kpi .label{font-size:8.5px}
-  .kpi .v{font-family:var(--font-display);font-weight:700;font-size:21px;letter-spacing:-.01em;margin-top:5px;color:var(--ink);font-variant-numeric:tabular-nums}
-  .kpi.accent .v{color:var(--accent)}
-  .kpi.bad .v{color:var(--bad)}
-  .kpi.warn .v{color:var(--warn)}
-  .kpi.good .v{color:var(--good)}
-  .kpi .s{font-size:9px;color:var(--muted);margin-top:3px;line-height:1.3}
+  .cover .strip {
+    position: absolute;
+    left: 0.65in; right: 0.65in;
+    bottom: 1.0in;
+    padding-top: 16px;
+    border-top: 1px solid var(--line-2);
+  }
+  .cover .strip-grid {
+    display: table; table-layout: fixed; width: 100%;
+  }
+  .cover .strip-grid .col {
+    display: table-cell; vertical-align: top;
+    padding-right: 16px; padding-left: 16px;
+    border-left: 1px solid var(--line);
+  }
+  .cover .strip-grid .col:first-child { padding-left: 0; border-left: none; }
+  .cover .strip-grid .col .lbl {
+    font-family: var(--font-sans);
+    font-weight: 600; font-size: 9px;
+    letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--subtle); margin-bottom: 8px;
+  }
+  .cover .strip-grid .col .val {
+    font-family: var(--font-display); font-weight: 700;
+    font-size: 15px; color: var(--ink); text-transform: uppercase;
+  }
+  .cover .strip-grid .col .val.mono {
+    font-family: var(--font-mono); font-weight: 500;
+    font-size: 12px; letter-spacing: 0.04em; text-transform: none;
+  }
+  .cover .footnote {
+    margin-top: 14px;
+    font-size: 9.5px; line-height: 1.5;
+    color: var(--subtle); max-width: 7in;
+  }
 
-  /* Panel */
-  .panel{border:1px solid var(--line);border-radius:8px;padding:11px 13px 10px;display:flex;flex-direction:column}
-  .panel .ttl{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
-  .panel .ttl .h{font-family:var(--font-display);font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.02em}
-  .panel .ttl .s{font-size:9px;color:var(--subtle);font-family:var(--font-mono);letter-spacing:.04em}
+  /* ── PAGE HEAD (pages 2-5) ─────────────────────────────────── */
+  .phead {
+    display: table; table-layout: fixed; width: 100%;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--line-2);
+    margin-bottom: 14px;
+  }
+  .phead .l, .phead .r { display: table-cell; vertical-align: bottom; }
+  .phead .r { text-align: right; }
+  .phead h2 {
+    font-family: var(--font-display);
+    font-weight: 700; font-size: 24px;
+    letter-spacing: -0.015em; line-height: 1.04;
+    text-transform: uppercase; color: var(--ink);
+  }
+  .phead .meta {
+    font-family: var(--font-mono); font-size: 9.5px;
+    color: var(--subtle); letter-spacing: 0.06em;
+  }
 
-  /* TABLES */
-  table.t{width:100%;border-collapse:collapse;font-size:9px;font-variant-numeric:tabular-nums;table-layout:auto}
-  table.t th{padding:6px 6px;font-weight:600;font-size:7.5px;letter-spacing:.10em;text-transform:uppercase;color:var(--subtle);border-bottom:1px solid var(--line-2);text-align:right;white-space:nowrap;font-family:var(--font-sans);background:var(--warm)}
-  table.t th.l{text-align:left}
-  table.t td{padding:6px 6px;text-align:right;color:var(--muted);border-bottom:1px solid var(--line);white-space:nowrap;font-family:var(--font-mono);font-size:9.5px}
-  table.t td.l{text-align:left;color:var(--ink);font-weight:600;font-family:var(--font-sans);font-size:10px}
-  table.t td.l .sub{display:block;font-weight:400;color:var(--muted);font-size:8.5px;margin-top:1px;font-family:var(--font-sans)}
-  table.t td.emph{color:var(--ink);font-weight:700}
-  table.t tr.tot td{font-weight:700;color:var(--ink);border-top:2px solid var(--ink);border-bottom:none;background:var(--warm);padding-top:8px}
-  table.t tr.tot td.l{font-family:var(--font-sans);text-transform:uppercase;letter-spacing:.04em;font-size:9.5px}
-  table.t .pill{display:inline-flex;align-items:center;gap:5px;padding:1px 7px;border-radius:999px;font-size:8.5px;font-weight:600;font-family:var(--font-mono)}
-  table.t .pill .dot{width:5px;height:5px;border-radius:999px}
-  table.t .pill.good{color:var(--good);background:var(--good-soft)}
-  table.t .pill.good .dot{background:var(--good)}
-  table.t .pill.warn{color:var(--warn);background:var(--warn-soft)}
-  table.t .pill.warn .dot{background:var(--warn)}
-  table.t .pill.bad{color:var(--bad);background:var(--bad-soft)}
-  table.t .pill.bad .dot{background:var(--bad)}
-  table.t .pill.na{color:var(--subtle);background:rgba(151,163,176,0.10)}
-  table.t .pill.na .dot{background:var(--subtle)}
+  /* ── KPI BAND ──────────────────────────────────────────────── */
+  .kpi-band {
+    display: table; table-layout: fixed; width: 100%;
+    border: 1px solid var(--line); border-radius: 8px;
+    margin-bottom: 14px;
+  }
+  .kpi-band .kpi {
+    display: table-cell; vertical-align: top;
+    padding: 11px 12px;
+    border-left: 1px solid var(--line);
+  }
+  .kpi-band .kpi:first-child { border-left: none; }
+  .kpi-band .kpi .label { font-size: 8.5px; }
+  .kpi-band .kpi .v {
+    font-family: var(--font-display); font-weight: 700;
+    font-size: 21px; letter-spacing: -0.01em;
+    margin-top: 5px; color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .kpi-band .kpi.bad .v { color: var(--bad); }
+  .kpi-band .kpi.warn .v { color: var(--warn); }
+  .kpi-band .kpi.good .v { color: var(--good); }
+  .kpi-band .kpi .s {
+    font-size: 9px; color: var(--muted);
+    margin-top: 3px; line-height: 1.3;
+  }
 
-  /* Loan cards */
-  .cards{display:grid;gap:10px;margin-bottom:12px}
-  .cards.cards-4{grid-template-columns:repeat(4,1fr)}
-  .cards.cards-3{grid-template-columns:repeat(3,1fr)}
-  .cards.cards-2{grid-template-columns:repeat(2,1fr)}
-  .cards.cards-1{grid-template-columns:1fr}
-  .lcard{border:1px solid var(--line);border-radius:8px;background:var(--paper);position:relative;overflow:hidden;display:flex;flex-direction:column}
-  .lcard .stripe{position:absolute;top:0;left:0;right:0;height:3px}
-  .lcard .stripe.good{background:var(--good)}
-  .lcard .stripe.warn{background:var(--warn)}
-  .lcard .stripe.bad{background:var(--bad)}
-  .lcard .head{padding:11px 12px 9px;border-bottom:1px solid var(--line)}
-  .lcard .head .nm{font-weight:700;font-size:11.5px;color:var(--ink);letter-spacing:-.005em;line-height:1.2}
-  .lcard .head .meta{display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-top:4px}
-  .lcard .head .meta .tag{font-family:var(--font-mono);color:var(--subtle);font-size:8.5px;letter-spacing:.04em;text-transform:uppercase}
-  .lcard .balance{padding:10px 12px 4px}
-  .lcard .balance .v{font-family:var(--font-display);font-weight:700;font-size:21px;letter-spacing:-.01em;color:var(--ink);font-variant-numeric:tabular-nums}
-  .lcard .balance .of{font-size:9px;color:var(--muted);margin-top:2px}
-  .lcard .gauge{height:5px;background:var(--warm);border-radius:2.5px;overflow:hidden;margin-top:7px}
-  .lcard .gauge>div{height:100%;background:var(--accent);border-radius:2.5px}
-  .lcard .gaugel{display:flex;justify-content:space-between;margin-top:3px;font-size:8.5px;font-family:var(--font-mono);letter-spacing:.06em}
-  .lcard .gaugel .lbl{color:var(--subtle);text-transform:uppercase}
-  .lcard .gaugel .vv{color:var(--ink);font-weight:600}
-  .lcard .dials{padding:8px 12px 12px;display:grid;grid-template-columns:1fr 1fr;gap:8px;border-top:1px solid var(--line);margin-top:6px}
-  .dial{padding-left:8px;border-left:2px solid var(--line-2)}
-  .dial.good{border-left-color:var(--good)}
-  .dial.warn{border-left-color:var(--warn)}
-  .dial.bad{border-left-color:var(--bad)}
-  .dial .lbl{font-weight:600;font-size:7.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--subtle)}
-  .dial .v{font-family:var(--font-display);font-weight:700;font-size:13.5px;letter-spacing:-.005em;color:var(--ink);font-variant-numeric:tabular-nums;margin-top:1px}
-  .dial .s{font-size:8.5px;color:var(--muted);margin-top:1px}
-  .dial .s.good{color:var(--good);font-weight:600}
-  .dial .s.warn{color:var(--warn);font-weight:600}
-  .dial .s.bad{color:var(--bad);font-weight:600}
-  .dial .s.na{color:var(--subtle)}
+  /* ── PANEL ─────────────────────────────────────────────────── */
+  .panel {
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 11px 13px 10px;
+    margin-bottom: 10px;
+  }
+  .panel .ttl {
+    display: table; table-layout: fixed; width: 100%;
+    margin-bottom: 8px;
+  }
+  .panel .ttl .h, .panel .ttl .s { display: table-cell; vertical-align: baseline; }
+  .panel .ttl .s { text-align: right; }
+  .panel .ttl .h {
+    font-family: var(--font-display); font-weight: 700;
+    font-size: 11.5px; text-transform: uppercase;
+    letter-spacing: 0.02em; color: var(--ink);
+  }
+  .panel .ttl .s {
+    font-size: 9px; color: var(--subtle);
+    font-family: var(--font-mono); letter-spacing: 0.04em;
+  }
 
-  /* Capacity stack */
-  .capstack{display:flex;flex-direction:column;gap:6px;font-size:9px}
-  .capstack .row{display:grid;grid-template-columns:200px 1fr 90px;gap:12px;align-items:center}
-  .capstack .row .nm{font-weight:600;color:var(--ink);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .capstack .row .nm .ld{display:block;color:var(--subtle);font-family:var(--font-mono);font-size:8px;letter-spacing:.04em;font-weight:400;margin-top:1px}
-  .capstack .row .bar{height:20px;background:var(--warm);border-radius:2px;position:relative;overflow:hidden}
-  .capstack .row .bar .drawn{position:absolute;left:0;top:0;bottom:0;background:var(--accent)}
-  .capstack .row .bar .rem{position:absolute;top:0;bottom:0;background:var(--accent-soft);border-left:1px solid var(--accent)}
-  .capstack .row .bar .lbl{position:absolute;left:7px;top:0;bottom:0;display:flex;align-items:center;font-family:var(--font-mono);font-size:8.5px;color:#fff;font-weight:700;text-shadow:0 1px 2px rgba(0,0,0,.2)}
-  .capstack .row .util{display:flex;align-items:center;justify-content:flex-end;gap:5px;font-family:var(--font-mono);font-size:9px;color:var(--muted)}
-  .capstack .row .util .dot{width:7px;height:7px;border-radius:999px}
-  .capstack .legend{display:flex;gap:14px;margin-top:5px;padding-top:6px;border-top:1px solid var(--line);font-size:8px;color:var(--muted);font-family:var(--font-mono);letter-spacing:.04em;text-transform:uppercase}
-  .capstack .legend .it{display:flex;align-items:center;gap:5px}
-  .capstack .legend .sw{width:10px;height:10px}
+  /* ── DETAIL TABLE ──────────────────────────────────────────── */
+  table.t {
+    width: 100%; border-collapse: collapse;
+    font-size: 9px; font-variant-numeric: tabular-nums;
+    table-layout: auto;
+  }
+  table.t th {
+    padding: 6px 6px;
+    font-weight: 600; font-size: 7.5px;
+    letter-spacing: 0.10em; text-transform: uppercase;
+    color: var(--subtle);
+    border-bottom: 1px solid var(--line-2);
+    text-align: right; white-space: nowrap;
+    font-family: var(--font-sans); background: var(--warm);
+  }
+  table.t th.l { text-align: left; }
+  table.t td {
+    padding: 6px 6px; text-align: right;
+    color: var(--muted);
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+    font-family: var(--font-mono); font-size: 9.5px;
+  }
+  table.t td.l {
+    text-align: left; color: var(--ink); font-weight: 600;
+    font-family: var(--font-sans); font-size: 10px;
+  }
+  table.t td.l .sub {
+    display: block; font-weight: 400; color: var(--muted);
+    font-size: 8.5px; margin-top: 1px; font-family: var(--font-sans);
+  }
+  table.t td.emph { color: var(--ink); font-weight: 700; }
+  table.t tr.tot td {
+    font-weight: 700; color: var(--ink);
+    border-top: 2px solid var(--ink); border-bottom: none;
+    background: var(--warm); padding-top: 8px;
+  }
+  table.t tr.tot td.l {
+    font-family: var(--font-sans);
+    text-transform: uppercase; letter-spacing: 0.04em;
+    font-size: 9.5px;
+  }
+  table.t .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 1px 7px; border-radius: 999px;
+    font-size: 8.5px; font-weight: 600;
+    font-family: var(--font-mono);
+  }
+  table.t .pill .dot { width: 5px; height: 5px; border-radius: 999px; }
+  table.t .pill.good { color: var(--good); background: var(--good-soft); }
+  table.t .pill.good .dot { background: var(--good); }
+  table.t .pill.warn { color: var(--warn); background: var(--warn-soft); }
+  table.t .pill.warn .dot { background: var(--warn); }
+  table.t .pill.bad  { color: var(--bad);  background: var(--bad-soft); }
+  table.t .pill.bad  .dot { background: var(--bad); }
+  table.t .pill.na   { color: var(--subtle); background: rgba(151,163,176,0.10); }
+  table.t .pill.na   .dot { background: var(--subtle); }
 
-  .matwall svg, .covcurve svg { width:100%; height:auto; display:block }
+  /* ── LOAN CARDS (pages 3 + 4) ──────────────────────────────── */
+  .cards {
+    display: table; table-layout: fixed; width: 100%;
+    border-spacing: 10px 0;
+    margin: -0px -10px 12px -10px;
+    width: calc(100% + 20px);
+  }
+  .cards .lcell { display: table-cell; vertical-align: top; }
+  .lcard {
+    border: 1px solid var(--line); border-radius: 8px;
+    background: var(--paper);
+    position: relative; overflow: hidden;
+  }
+  .lcard .stripe { height: 3px; background: var(--ink-2); }
+  .lcard .stripe.good { background: var(--good); }
+  .lcard .stripe.warn { background: var(--warn); }
+  .lcard .stripe.bad  { background: var(--bad); }
+  .lcard .head {
+    padding: 11px 12px 9px;
+    border-bottom: 1px solid var(--line);
+  }
+  .lcard .head .nm {
+    font-weight: 700; font-size: 11.5px;
+    color: var(--ink); letter-spacing: -0.005em;
+    line-height: 1.2;
+  }
+  .lcard .head .meta {
+    display: table; table-layout: fixed; width: 100%;
+    margin-top: 4px;
+  }
+  .lcard .head .meta .l, .lcard .head .meta .r {
+    display: table-cell; vertical-align: top;
+    font-size: 9px; color: var(--muted);
+  }
+  .lcard .head .meta .r {
+    text-align: right;
+    font-family: var(--font-mono);
+    color: var(--subtle); font-size: 8.5px;
+    letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  .lcard .balance { padding: 10px 12px 8px; }
+  .lcard .balance .v {
+    font-family: var(--font-display); font-weight: 700;
+    font-size: 21px; letter-spacing: -0.01em;
+    color: var(--ink); font-variant-numeric: tabular-nums;
+  }
+  .lcard .balance .of {
+    font-size: 9px; color: var(--muted); margin-top: 2px;
+  }
+  .lcard .gauge {
+    height: 5px; background: var(--warm); border-radius: 2.5px;
+    overflow: hidden; margin-top: 7px;
+  }
+  .lcard .gauge > div {
+    height: 100%; background: var(--accent); border-radius: 2.5px;
+  }
+  .lcard .gaugel {
+    display: table; table-layout: fixed; width: 100%;
+    margin-top: 3px;
+    font-size: 8.5px; font-family: var(--font-mono); letter-spacing: 0.06em;
+  }
+  .lcard .gaugel .lbl, .lcard .gaugel .vv { display: table-cell; vertical-align: middle; }
+  .lcard .gaugel .lbl { color: var(--subtle); text-transform: uppercase; }
+  .lcard .gaugel .vv { color: var(--ink); font-weight: 600; text-align: right; }
 
-  /* Schedule grid */
-  .scheds{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-  .scheds .scbox{border:1px solid var(--line);border-radius:8px;overflow:hidden;display:flex;flex-direction:column}
-  .scheds .scbox .scttl{padding:8px 11px;background:var(--warm);border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:baseline}
-  .scheds .scbox .scttl .h{font-family:var(--font-display);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.02em}
-  .scheds .scbox .scttl .s{font-family:var(--font-mono);font-size:8.5px;color:var(--muted);letter-spacing:.04em}
-  .scheds table.t{font-size:8.5px}
-  .scheds table.t th{font-size:7px;padding:5px 4px}
-  .scheds table.t td{padding:4.5px 4px;font-size:8.5px}
-  .scheds table.t td.l{font-size:9px}
-  .scheds table.t td.l .sub{font-size:7.5px}
-  .scheds .rev-row td{color:var(--good)}
-  .scheds .pmt-row td{color:var(--accent)}
-  .scheds tr.subhead td{background:var(--good-soft);color:var(--good);font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:8px;padding:4px 4px}
-  .scheds tr.tothead td{background:var(--warm);color:var(--ink);font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:8px;padding:5px 4px;border-top:1px solid var(--line-2)}
+  .lcard .dials {
+    display: table; table-layout: fixed; width: 100%;
+    border-top: 1px solid var(--line);
+    padding: 8px 12px 12px;
+  }
+  .lcard .dials .drow { display: table-row; }
+  .lcard .dials .dcell {
+    display: table-cell; vertical-align: top;
+    padding: 4px 0 4px 8px;
+    width: 50%;
+    border-left: 2px solid var(--line-2);
+  }
+  .lcard .dials .dcell.good { border-left-color: var(--good); }
+  .lcard .dials .dcell.warn { border-left-color: var(--warn); }
+  .lcard .dials .dcell.bad  { border-left-color: var(--bad); }
+  .lcard .dials .dcell .lbl {
+    font-weight: 600; font-size: 7.5px;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--subtle);
+  }
+  .lcard .dials .dcell .v {
+    font-family: var(--font-display); font-weight: 700;
+    font-size: 13.5px; letter-spacing: -0.005em;
+    color: var(--ink); font-variant-numeric: tabular-nums;
+    margin-top: 2px;
+  }
+  .lcard .dials .dcell .s {
+    font-size: 8.5px; color: var(--muted); margin-top: 1px;
+  }
+  .lcard .dials .dcell .s.good { color: var(--good); font-weight: 600; }
+  .lcard .dials .dcell .s.warn { color: var(--warn); font-weight: 600; }
+  .lcard .dials .dcell .s.bad  { color: var(--bad);  font-weight: 600; }
+  .lcard .dials .dcell .s.na   { color: var(--subtle); }
 
-  @page { size: 11in 8.5in; margin: 0; }
-  @media print {
-    body { background: #fff; }
-    *,*::before,*::after { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-    .pages { padding: 0; gap: 0; }
-    .page { box-shadow: none; }
+  /* ── CAPACITY STACK (page 2) ──────────────────────────────── */
+  .capstack-row {
+    display: table; table-layout: fixed; width: 100%;
+    margin-bottom: 6px;
+  }
+  .capstack-row .nm, .capstack-row .bar-cell, .capstack-row .util {
+    display: table-cell; vertical-align: middle;
+  }
+  .capstack-row .nm { width: 200px; padding-right: 12px; }
+  .capstack-row .nm .name {
+    font-weight: 600; font-size: 10px; color: var(--ink);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    display: block;
+  }
+  .capstack-row .nm .ld {
+    color: var(--subtle); font-family: var(--font-mono);
+    font-size: 8px; letter-spacing: 0.04em; font-weight: 400;
+    margin-top: 1px; display: block;
+  }
+  .capstack-row .bar {
+    height: 20px; background: var(--warm); border-radius: 2px;
+    position: relative; overflow: hidden;
+  }
+  .capstack-row .bar .drawn {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    background: var(--accent);
+  }
+  .capstack-row .bar .rem {
+    position: absolute; top: 0; bottom: 0;
+    background: var(--accent-soft); border-left: 1px solid var(--accent);
+  }
+  .capstack-row .bar .lbl {
+    position: absolute; left: 7px; top: 0; bottom: 0;
+    display: flex; align-items: center;
+    font-family: var(--font-mono); font-size: 8.5px;
+    color: #fff; font-weight: 700;
+    text-shadow: 0 1px 2px rgba(0,0,0,.2);
+  }
+  .capstack-row .util {
+    width: 90px; padding-left: 12px;
+    text-align: right;
+    font-family: var(--font-mono); font-size: 9px; color: var(--muted);
+  }
+  .capstack-row .util .dot {
+    display: inline-block; width: 7px; height: 7px;
+    border-radius: 999px; margin-right: 5px; vertical-align: middle;
+  }
+  .capstack-legend {
+    display: table; table-layout: fixed; width: 100%;
+    margin-top: 7px; padding-top: 6px;
+    border-top: 1px solid var(--line);
+    font-size: 8px; color: var(--muted);
+    font-family: var(--font-mono); letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .capstack-legend .it {
+    display: table-cell; vertical-align: middle;
+    padding-right: 14px;
+  }
+  .capstack-legend .it .sw {
+    display: inline-block; width: 10px; height: 10px;
+    margin-right: 5px; vertical-align: middle;
+  }
+  .capstack-legend .it.right { text-align: right; }
+
+  /* ── MATURITY WALL + COVERAGE CURVE ─────────────────────── */
+  .matwall svg, .covcurve svg { width: 100%; height: auto; display: block; }
+
+  /* ── DEBT SCHEDULE BOXES (page 5) ────────────────────────── */
+  .scheds {
+    display: table; table-layout: fixed; width: 100%;
+    border-spacing: 10px 0;
+    margin: 0 -10px;
+    width: calc(100% + 20px);
+  }
+  .scheds .scell { display: table-cell; vertical-align: top; }
+  .scbox {
+    border: 1px solid var(--line); border-radius: 8px;
+    overflow: hidden;
+  }
+  .scbox .scttl {
+    display: table; table-layout: fixed; width: 100%;
+    padding: 8px 11px;
+    background: var(--warm);
+    border-bottom: 1px solid var(--line);
+  }
+  .scbox .scttl .h, .scbox .scttl .s { display: table-cell; vertical-align: baseline; }
+  .scbox .scttl .s { text-align: right; }
+  .scbox .scttl .h {
+    font-family: var(--font-display); font-weight: 700;
+    font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+  .scbox .scttl .s {
+    font-family: var(--font-mono); font-size: 8.5px;
+    color: var(--muted); letter-spacing: 0.04em;
+  }
+  .scbox table.t { font-size: 8.5px; }
+  .scbox table.t th { font-size: 7px; padding: 5px 4px; }
+  .scbox table.t td { padding: 4.5px 4px; font-size: 8.5px; }
+  .scbox table.t td.l { font-size: 9px; }
+  .scbox table.t td.l .sub { font-size: 7.5px; }
+  .scbox .rev-row td { color: var(--good); }
+  .scbox .pmt-row td { color: var(--accent); }
+  .scbox tr.subhead td {
+    background: var(--good-soft); color: var(--good);
+    font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.04em; font-size: 8px; padding: 4px 4px;
+  }
+  .scbox tr.tothead td {
+    background: var(--warm); color: var(--ink);
+    font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.04em; font-size: 8px; padding: 5px 4px;
+    border-top: 1px solid var(--line-2);
+  }
+
+  /* ── Note callout (page 4) ────────────────────────────────── */
+  .note-call {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: var(--warm); border-left: 3px solid var(--accent);
+    font-size: 9.5px; line-height: 1.55; color: var(--muted);
+  }
+  .note-call .tag {
+    font-weight: 700; font-size: 8.5px;
+    letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--ink); display: block; margin-bottom: 4px;
   }
 </style>
 </head>
 <body>
 
-<div class="pages">
+{# ─────────────── PAGE 1 · COVER ─────────────── #}
+<div class="page cover">
+  <div class="top-row">
+    <span class="l">
+      <svg class="cover-mark" viewBox="0 0 36 36" fill="none">
+        <g fill="#F25929">
+          <rect x="3" y="14" width="2.5" height="14" rx="1.2"/>
+          <rect x="3" y="9" width="2.5" height="2.5" rx="1.2"/>
+          <rect x="8" y="5" width="2.5" height="23" rx="1.2"/>
+          <rect x="13" y="2" width="2.5" height="3" rx="1.2"/>
+          <rect x="13" y="11" width="2.5" height="20" rx="1.2"/>
+          <rect x="18" y="8" width="2.5" height="22" rx="1.2"/>
+          <rect x="23" y="3" width="2.5" height="14" rx="1.2"/>
+          <rect x="23" y="20" width="2.5" height="10" rx="1.2"/>
+          <rect x="28" y="6" width="2.5" height="20" rx="1.2"/>
+        </g>
+      </svg>
+    </span>
+    <span class="r"><span class="conf-stamp">Confidential · Internal</span></span>
+  </div>
 
-  {# ─────────────── PAGE 1 · COVER ─────────────── #}
-  <div class="page cover">
-    <div class="page-pad">
-      <div class="top">
-        <svg class="cover-mark" viewBox="0 0 36 36" fill="none">
-          <g fill="#F25929">
-            <rect x="3" y="14" width="2.5" height="14" rx="1.2"/>
-            <rect x="3" y="9" width="2.5" height="2.5" rx="1.2"/>
-            <rect x="8" y="5" width="2.5" height="23" rx="1.2"/>
-            <rect x="13" y="2" width="2.5" height="3" rx="1.2"/>
-            <rect x="13" y="11" width="2.5" height="20" rx="1.2"/>
-            <rect x="18" y="8" width="2.5" height="22" rx="1.2"/>
-            <rect x="23" y="3" width="2.5" height="14" rx="1.2"/>
-            <rect x="23" y="20" width="2.5" height="10" rx="1.2"/>
-            <rect x="28" y="6" width="2.5" height="20" rx="1.2"/>
-          </g>
-        </svg>
-        <span class="conf-stamp">Confidential · Internal</span>
+  <div class="title-block">
+    <div class="eyebrow">Ember Residential · Finance &amp; Analytics</div>
+    <h1 style="margin-top:14px">Loans &amp;<br/><em>Debt Schedules</em></h1>
+    <div class="lede">Status of every active credit facility — capacity, interest reserve runway, term countdown — and the next-12-month payment schedule for each project, paired with the revenue expected to cover it.</div>
+  </div>
+
+  <div class="strip">
+    <div class="strip-grid">
+      <div class="col">
+        <div class="lbl">Period</div>
+        <div class="val">{{ report.period_label }}</div>
       </div>
-      <div class="mid">
-        <div class="eyebrow">Ember Residential · Finance &amp; Analytics</div>
-        <h1 style="margin-top:14px">Loans &amp;<br/><em>Debt Schedules</em></h1>
-        <div class="lede">Status of every active credit facility — capacity, interest reserve runway, term countdown — and the next-12-month payment schedule for each project, paired with the revenue expected to cover it.</div>
-        <div class="bot">
-          <div class="col">
-            <div class="label">Period</div>
-            <div class="val">{{ report.period_label }}</div>
-          </div>
-          <div class="col">
-            <div class="label">Active Facilities</div>
-            <div class="val">{{ report.active_facilities_label }}</div>
-          </div>
-          <div class="col">
-            <div class="label">Outstanding</div>
-            <div class="val">{{ report.outstanding_fmt }}</div>
-          </div>
-          <div class="col">
-            <div class="label">Generated</div>
-            <div class="val mono">{{ report.generated }}</div>
-          </div>
+      <div class="col">
+        <div class="lbl">Active Facilities</div>
+        <div class="val">{{ report.active_facilities_label }}</div>
+      </div>
+      <div class="col">
+        <div class="lbl">Outstanding</div>
+        <div class="val">{{ report.outstanding_fmt }}</div>
+      </div>
+      <div class="col">
+        <div class="lbl">Generated</div>
+        <div class="val mono">{{ report.generated }}</div>
+      </div>
+    </div>
+    <div class="footnote">All figures in USD. Capacity and interest reserve health are computed against current draw schedules and underwriting assumptions; covenant tests not reflected. Distribution outside Ember Residential, its affiliates, and authorized partners is prohibited.</div>
+  </div>
+
+  <div class="page-foot">
+    <span class="l"><span class="conf">Confidential</span></span>
+    <span class="c"><span class="dot"></span>Ember Finance &amp; Analytics · Loans &amp; Debt Schedules</span>
+    <span class="r mono">01 / 05</span>
+  </div>
+</div>
+
+{# ─────────────── PAGE 2 · PORTFOLIO OVERVIEW ─────────────── #}
+<div class="page">
+  <div class="page-pad">
+    <div class="phead">
+      <span class="l"><h2>Portfolio Overview</h2></span>
+      <span class="r"><span class="meta">{{ report.active_facilities }} ACTIVE FACILITIES · {{ report.committed_fmt }} CAPACITY · ANCHORED TO {{ report.period_label|upper }}</span></span>
+    </div>
+
+    <div class="kpi-band">
+      {% for k in report.kpis %}
+        <div class="kpi {% if k.tone %}{{ k.tone }}{% endif %}">
+          <div class="label">{{ k.label }}</div>
+          <div class="v">{{ k.val }}</div>
+          <div class="s">{{ k.sub }}</div>
         </div>
-        <div class="footnote">All figures in USD. Capacity and interest reserve health are computed against current draw schedules and underwriting assumptions; covenant tests not reflected. Distribution outside Ember Residential, its affiliates, and authorized partners is prohibited.</div>
+      {% endfor %}
+    </div>
+
+    <div class="panel">
+      <div class="ttl">
+        <span class="h">Capacity Stack</span>
+        <span class="s">DRAWN VS REMAINING · ALL FACILITIES</span>
       </div>
-      <div class="page-foot">
-        <span class="l"><span class="conf">Confidential</span></span>
-        <span class="c"><span class="dot"></span> Ember Finance &amp; Analytics · Loans &amp; Debt Schedules</span>
-        <span class="r mono">01 / 05</span>
+      {{ report.cap_stack_svg|safe }}
+    </div>
+
+    <div class="panel">
+      <div class="ttl">
+        <span class="h">Maturity Wall</span>
+        <span class="s">ORIGINATION → TERM · 2023 — 2029</span>
       </div>
+      <div class="matwall">{{ report.mat_wall_svg|safe }}</div>
     </div>
   </div>
 
-  {# ─────────────── PAGE 2 · PORTFOLIO OVERVIEW ─────────────── #}
-  <div class="page">
-    <div class="page-pad">
-      <div class="phead">
-        <h2>Portfolio <em>Overview</em></h2>
-        <div class="meta">{{ report.active_facilities }} ACTIVE FACILITIES · {{ report.committed_fmt }} CAPACITY · ANCHORED TO {{ report.period_label|upper }}</div>
-      </div>
-
-      <div class="kpi-band">
-        {% for k in report.kpis %}
-          <div class="kpi {% if k.tone %}{{ k.tone }}{% endif %}">
-            <div class="label">{{ k.label }}</div>
-            <div class="v">{{ k.val }}</div>
-            <div class="s">{{ k.sub }}</div>
-          </div>
-        {% endfor %}
-      </div>
-
-      <div style="display:flex;flex-direction:column;gap:10px;flex:1;min-height:0">
-        <div class="panel">
-          <div class="ttl"><div class="h">Capacity Stack</div><div class="s">DRAWN VS REMAINING · ALL FACILITIES</div></div>
-          {{ report.cap_stack_svg|safe }}
-        </div>
-        <div class="panel">
-          <div class="ttl"><div class="h">Maturity Wall</div><div class="s">ORIGINATION → TERM</div></div>
-          <div class="matwall">{{ report.mat_wall_svg|safe }}</div>
-        </div>
-      </div>
-
-      <div class="page-foot">
-        <span class="l"><span class="conf">Confidential</span></span>
-        <span class="c"><span class="dot"></span> Ember Finance &amp; Analytics · Loans &amp; Debt Schedules</span>
-        <span class="r mono">02 / 05</span>
-      </div>
-    </div>
+  <div class="page-foot">
+    <span class="l"><span class="conf">Confidential</span></span>
+    <span class="c"><span class="dot"></span>Ember Finance &amp; Analytics · Loans &amp; Debt Schedules</span>
+    <span class="r mono">02 / 05</span>
   </div>
+</div>
 
-  {# ─────────────── PAGE 3 · MPC LAND FACILITIES ─────────────── #}
-  <div class="page">
-    <div class="page-pad">
-      <div class="phead">
-        <h2>MPC Land <em>Facilities</em></h2>
-        <div class="meta">{{ report.mpc.loans|length }} ACTIVE · {{ report.mpc.totals.drawn_fmt }} DRAWN / {{ report.mpc.totals.loanAmount_fmt }} CAPACITY</div>
-      </div>
+{# ─────────────── PAGE 3 · MPC LAND FACILITIES ─────────────── #}
+<div class="page">
+  <div class="page-pad">
+    <div class="phead">
+      <span class="l"><h2>MPC Land Facilities</h2></span>
+      <span class="r"><span class="meta">{{ report.mpc.loans|length }} ACTIVE · {{ report.mpc.totals.drawn_fmt }} DRAWN / {{ report.mpc.totals.loanAmount_fmt }} CAPACITY</span></span>
+    </div>
 
-      <div class="cards cards-{{ report.mpc.loans|length }}">
-        {% for l in report.mpc.loans %}
+    <div class="cards">
+      {% for l in report.mpc.loans %}
+        <div class="lcell">
           {% with loan=l, kind='mpc' %}{% include "_partials/_loans_report_card.html" %}{% endwith %}
-        {% endfor %}
-      </div>
+        </div>
+      {% endfor %}
+    </div>
 
-      <div class="panel" style="flex:1;min-height:0;overflow:hidden">
-        <div class="ttl"><div class="h">Detail Table</div><div class="s">ALL FIELDS · MPC</div></div>
-        {% with loans_set=report.mpc, kind='mpc' %}{% include "_partials/_loans_report_table.html" %}{% endwith %}
-      </div>
-
-      <div class="page-foot">
-        <span class="l"><span class="conf">Confidential</span></span>
-        <span class="c"><span class="dot"></span> Ember Finance &amp; Analytics · Loans &amp; Debt Schedules</span>
-        <span class="r mono">03 / 05</span>
-      </div>
+    <div class="panel">
+      <div class="ttl"><span class="h">Detail Table</span><span class="s">ALL FIELDS · MPC</span></div>
+      {% with loans_set=report.mpc, kind='mpc' %}{% include "_partials/_loans_report_table.html" %}{% endwith %}
     </div>
   </div>
 
-  {# ─────────────── PAGE 4 · VERTICAL CONSTRUCTION LINES ─────────────── #}
-  <div class="page">
-    <div class="page-pad">
-      <div class="phead">
-        <h2>Vertical <em>Facilities</em></h2>
-        <div class="meta">{{ report.vert.loans|length }} ACTIVE · {{ report.vert.totals.drawn_fmt }} DRAWN / {{ report.vert.totals.loanAmount_fmt }} CAPACITY</div>
-      </div>
+  <div class="page-foot">
+    <span class="l"><span class="conf">Confidential</span></span>
+    <span class="c"><span class="dot"></span>Ember Finance &amp; Analytics · Loans &amp; Debt Schedules</span>
+    <span class="r mono">03 / 05</span>
+  </div>
+</div>
 
-      <div class="cards cards-{{ report.vert.loans|length }}">
-        {% for l in report.vert.loans %}
+{# ─────────────── PAGE 4 · VERTICAL FACILITIES ─────────────── #}
+<div class="page">
+  <div class="page-pad">
+    <div class="phead">
+      <span class="l"><h2>Vertical Facilities</h2></span>
+      <span class="r"><span class="meta">{{ report.vert.loans|length }} ACTIVE · {{ report.vert.totals.drawn_fmt }} DRAWN / {{ report.vert.totals.loanAmount_fmt }} CAPACITY</span></span>
+    </div>
+
+    <div class="cards">
+      {% for l in report.vert.loans %}
+        <div class="lcell">
           {% with loan=l, kind='vert' %}{% include "_partials/_loans_report_card.html" %}{% endwith %}
-        {% endfor %}
-      </div>
+        </div>
+      {% endfor %}
+    </div>
 
-      <div class="panel" style="flex:1;min-height:0;overflow:hidden">
-        <div class="ttl"><div class="h">Detail Table</div><div class="s">ALL FIELDS · VERTICAL</div></div>
-        {% with loans_set=report.vert, kind='vert' %}{% include "_partials/_loans_report_table.html" %}{% endwith %}
-      </div>
-
-      <div class="page-foot">
-        <span class="l"><span class="conf">Confidential</span></span>
-        <span class="c"><span class="dot"></span> Ember Finance &amp; Analytics · Loans &amp; Debt Schedules</span>
-        <span class="r mono">04 / 05</span>
-      </div>
+    <div class="panel">
+      <div class="ttl"><span class="h">Detail Table</span><span class="s">ALL FIELDS · VERTICAL</span></div>
+      {% with loans_set=report.vert, kind='vert' %}{% include "_partials/_loans_report_table.html" %}{% endwith %}
     </div>
   </div>
 
-  {# ─────────────── PAGE 5 · DEBT SCHEDULES ─────────────── #}
-  <div class="page">
-    <div class="page-pad">
-      <div class="phead">
-        <h2>Debt <em>Schedules</em></h2>
-        <div class="meta">NEXT 12 MONTHS · PAYMENTS VS COVERING REVENUE</div>
-      </div>
+  <div class="page-foot">
+    <span class="l"><span class="conf">Confidential</span></span>
+    <span class="c"><span class="dot"></span>Ember Finance &amp; Analytics · Loans &amp; Debt Schedules</span>
+    <span class="r mono">04 / 05</span>
+  </div>
+</div>
 
-      <div class="panel" style="margin-bottom:10px">
-        <div class="ttl"><div class="h">Cumulative Coverage Curve</div><div class="s">ALL PROJECTS COMBINED</div></div>
-        <div class="covcurve">{{ report.cov_curve_svg|safe }}</div>
-      </div>
+{# ─────────────── PAGE 5 · DEBT SCHEDULES ─────────────── #}
+<div class="page">
+  <div class="page-pad">
+    <div class="phead">
+      <span class="l"><h2>Debt Schedules</h2></span>
+      <span class="r"><span class="meta">NEXT 12 MONTHS · PAYMENTS VS COVERING REVENUE</span></span>
+    </div>
 
-      <div class="scheds" style="flex:1;min-height:0">
-        {% for sch in report.schedules %}
+    <div class="panel">
+      <div class="ttl"><span class="h">Cumulative Coverage Curve</span><span class="s">ALL PROJECTS COMBINED</span></div>
+      <div class="covcurve">{{ report.cov_curve_svg|safe }}</div>
+    </div>
+
+    <div class="scheds">
+      {% for sch in report.schedules %}
+        <div class="scell">
           <div class="scbox">
             <div class="scttl">
               <span class="h">{{ sch.project }}</span>
@@ -395,17 +728,16 @@
               </tbody>
             </table>
           </div>
-        {% endfor %}
-      </div>
-
-      <div class="page-foot">
-        <span class="l"><span class="conf">Confidential</span></span>
-        <span class="c"><span class="dot"></span> Ember Finance &amp; Analytics · Loans &amp; Debt Schedules</span>
-        <span class="r mono">05 / 05</span>
-      </div>
+        </div>
+      {% endfor %}
     </div>
   </div>
 
+  <div class="page-foot">
+    <span class="l"><span class="conf">Confidential</span></span>
+    <span class="c"><span class="dot"></span>Ember Finance &amp; Analytics · Loans &amp; Debt Schedules</span>
+    <span class="r mono">05 / 05</span>
+  </div>
 </div>
 
 </body>

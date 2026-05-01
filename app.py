@@ -4609,7 +4609,9 @@ def _loans_short_month_label(iso):
 
 
 def _loans_render_capacity_stack(loans):
-    """HTML (not SVG) — CSS-positioned bars are simpler for stacking."""
+    """HTML rows — uses display:table classes (.capstack-row) defined in
+    templates/loans_report.html so WeasyPrint paginates reliably.
+    """
     if not loans:
         return ""
     max_loan = max((l.get("loanAmount") or 0) for l in loans) or 1
@@ -4624,22 +4626,27 @@ def _loans_render_capacity_stack(loans):
             if ircls and ircls != "na" else ""
         )
         rows.append(f"""
-<div class="row">
-  <div class="nm">{l.get('community','')}<span class="ld">{l.get('lender','')}</span></div>
-  <div class="bar">
-    <div class="drawn" style="width:{drawn_pct:.2f}%"></div>
-    <div class="rem"   style="left:{drawn_pct:.2f}%;width:{rem_pct:.2f}%"></div>
-    <div class="lbl">{_loans_fmt_money_short(l.get('balance'))}</div>
-  </div>
-  <div class="util">{ir_dot}<span>{_loans_fmt_pct1(l.get('utilization'))}</span></div>
+<div class="capstack-row">
+  <span class="nm">
+    <span class="name">{l.get('community','')}</span>
+    <span class="ld">{l.get('lender','')}</span>
+  </span>
+  <span class="bar-cell">
+    <div class="bar">
+      <div class="drawn" style="width:{drawn_pct:.2f}%"></div>
+      <div class="rem"   style="left:{drawn_pct:.2f}%;width:{rem_pct:.2f}%"></div>
+      <div class="lbl">{_loans_fmt_money_short(l.get('balance'))}</div>
+    </div>
+  </span>
+  <span class="util">{ir_dot}{_loans_fmt_pct1(l.get('utilization'))}</span>
 </div>""")
     legend = """
-<div class="legend">
+<div class="capstack-legend">
   <div class="it"><span class="sw" style="background:var(--accent)"></span>Drawn</div>
   <div class="it"><span class="sw" style="background:var(--accent-soft);border:1px solid var(--accent)"></span>Remaining</div>
-  <div class="it" style="margin-left:auto">●&nbsp;IR&nbsp;health</div>
+  <div class="it right">● IR Health</div>
 </div>"""
-    return '<div class="capstack">' + "".join(rows) + legend + "</div>"
+    return "".join(rows) + legend
 
 
 def _loans_render_maturity_wall(mpc_loans, vert_loans, today, start_year=2023, end_year=2029):

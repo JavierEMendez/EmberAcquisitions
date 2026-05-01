@@ -1,47 +1,56 @@
-{# Loan card for the PDF report (compact variant of templates/_loans_card.html). #}
+{# Loan card for the PDF report. Layout uses display:table so WeasyPrint
+   paginates reliably (flex grids are flaky). 2×2 dial grid below the
+   balance gauge. #}
 <div class="lcard">
   <div class="stripe {{ loan.term_cls }}"></div>
   <div class="head">
     <div class="nm">{{ loan.community }}</div>
     <div class="meta">
-      <span>{{ loan.lender }}</span>
-      <span class="tag">{{ loan.recourse }} · {% if kind == 'vert' %}Vertical{% else %}Land{% endif %}</span>
+      <span class="l">{{ loan.lender }}</span>
+      <span class="r">{{ loan.recourse }} · {% if kind == 'vert' %}Vertical{% else %}Land{% endif %}</span>
     </div>
   </div>
   <div class="balance">
     <div class="v">{{ loan.balance_fmt }}</div>
-    <div class="of">of {{ loan.loanAmount_fmt }} committed</div>
+    <div class="of">of {{ loan.loanAmount_fmt }} capacity</div>
     <div class="gauge"><div style="width:{{ loan.utilization_pct }}%"></div></div>
-    <div class="gaugel"><span class="lbl">Utilization</span><span class="vv">{{ loan.utilization_fmt }}</span></div>
+    <div class="gaugel">
+      <span class="lbl">Utilization</span>
+      <span class="vv">{{ loan.utilization_fmt }}</span>
+    </div>
   </div>
   <div class="dials">
-    <div class="dial">
-      <div class="lbl">Today's Rate</div>
-      <div class="v">{{ loan.todayRate_fmt }}</div>
-      <div class="s">+{{ loan.indexSpread_fmt }} spread</div>
-    </div>
-    <div class="dial {{ loan.term_cls }}">
-      <div class="lbl">Term Ends</div>
-      <div class="v">{{ loan.termDate_short }}</div>
-      <div class="s {{ loan.term_cls }}">{{ loan.monthsRemaining_fmt }} months left</div>
-    </div>
-    {% if kind == 'mpc' %}
-      <div class="dial {{ loan.ir_cls }}">
-        <div class="lbl">IR Runway</div>
-        <div class="v">{{ loan.remMosIR_fmt }} mo</div>
-        <div class="s {{ loan.ir_cls }}">{{ loan.irHealth_fmt }} of term</div>
+    <div class="drow">
+      <div class="dcell">
+        <div class="lbl">Today's Rate</div>
+        <div class="v">{{ loan.todayRate_fmt }}</div>
+        <div class="s">+{{ loan.indexSpread_fmt }} spread</div>
       </div>
-    {% else %}
-      <div class="dial">
-        <div class="lbl">IR Runway</div>
-        <div class="v" style="color:#97a3b0">—</div>
-        <div class="s na">n/a · vertical line</div>
+      <div class="dcell {{ loan.term_cls }}">
+        <div class="lbl">Term Ends</div>
+        <div class="v">{{ loan.termDate_short }}</div>
+        <div class="s {{ loan.term_cls }}">{{ loan.monthsRemaining_fmt }} months left</div>
       </div>
-    {% endif %}
-    <div class="dial {{ loan.cap_cls }}">
-      <div class="lbl">Capacity Coverage</div>
-      <div class="v">{{ loan.capacityHealth_fmt }}</div>
-      <div class="s {{ loan.cap_cls }}">{{ loan.remaining_fmt }} remaining</div>
+    </div>
+    <div class="drow">
+      {% if kind == 'mpc' %}
+        <div class="dcell {{ loan.ir_cls }}">
+          <div class="lbl">IR Runway</div>
+          <div class="v">{{ loan.remMosIR_fmt }} mo</div>
+          <div class="s {{ loan.ir_cls }}">{{ loan.irHealth_fmt }} of term</div>
+        </div>
+      {% else %}
+        <div class="dcell">
+          <div class="lbl">IR Runway</div>
+          <div class="v" style="color:#97a3b0">—</div>
+          <div class="s na">n/a · vertical line</div>
+        </div>
+      {% endif %}
+      <div class="dcell {{ loan.cap_cls }}">
+        <div class="lbl">Capacity Coverage</div>
+        <div class="v">{{ loan.capacityHealth_fmt }}</div>
+        <div class="s {{ loan.cap_cls }}">{{ loan.remaining_fmt }} remaining</div>
+      </div>
     </div>
   </div>
 </div>
