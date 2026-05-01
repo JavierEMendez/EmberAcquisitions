@@ -637,7 +637,6 @@
           <label><input type="checkbox" id="new-pa-operations" checked>Operating Revenues</label>
           <label><input type="checkbox" id="new-pa-macro" checked>Macro Data</label>
           <label><input type="checkbox" id="new-pa-sales" checked>Community Sales</label>
-          <label><input type="checkbox" id="new-pa-reports" checked>Reports (PDF / Excel)</label>
         </div>
         <button class="btn-add-user" onclick="addUser()">Add User</button>
       </div>
@@ -804,7 +803,8 @@ const PAGE_LABELS = {
   operations:       'Operating Revenues',
   macro:            'Macro Data',
   sales:            'Community Sales',
-  reports:          'Reports (PDF / Excel)',
+  // 'reports' (binary PDF/Excel access) deliberately removed —
+  // superseded by the per-report Report Subscriptions modal.
 };
 async function refreshUserList() {
   const res = await fetch('/api/admin/users');
@@ -813,7 +813,7 @@ async function refreshUserList() {
   document.getElementById('user-list').innerHTML = users.length === 0
     ? '<div style="color:var(--eax-subtle);font-size:13px;">No users.</div>'
     : users.map(u => {
-      const pa = u.page_access || {mpc_underwriting:true, returns:true, loans:true, operations:true, macro:true, sales:true, reports:true};
+      const pa = u.page_access || {mpc_underwriting:true, returns:true, loans:true, operations:true, macro:true, sales:true};
       const checks = Object.entries(PAGE_LABELS).map(([k,label]) =>
         `<label><input type="checkbox" ${pa[k] ? 'checked' : ''} ${u.is_admin ? 'disabled' : ''}
           onchange="toggleAccess(${u.id},'${k}',this.checked)">${label}</label>`
@@ -849,7 +849,7 @@ async function toggleAccess(uid, page, enabled) {
   const users = await res.json();
   const user = users.find(u => u.id === uid);
   if (!user) return;
-  const pa = user.page_access || {mpc_underwriting:true, returns:true, loans:true, operations:true, macro:true, sales:true, reports:true};
+  const pa = user.page_access || {mpc_underwriting:true, returns:true, loans:true, operations:true, macro:true, sales:true};
   pa[page] = enabled;
   await fetch('/api/admin/users/' + uid + '/access', {
     method: 'PUT', headers: {'Content-Type':'application/json'},
@@ -867,7 +867,6 @@ async function addUser() {
     operations:       document.getElementById('new-pa-operations').checked,
     macro:            document.getElementById('new-pa-macro').checked,
     sales:            document.getElementById('new-pa-sales').checked,
-    reports:          document.getElementById('new-pa-reports').checked,
   };
   const email = document.getElementById('new-email').value.trim();
   if (!username || !password) { alert('Username and password required'); return; }
@@ -881,7 +880,7 @@ async function addUser() {
     document.getElementById('new-password').value = '';
     document.getElementById('new-email').value = '';
     document.getElementById('new-is-admin').checked = false;
-    ['mpc','returns','loans','operations','macro','sales','reports'].forEach(k=>document.getElementById('new-pa-'+k).checked=true);
+    ['mpc','returns','loans','operations','macro','sales'].forEach(k=>document.getElementById('new-pa-'+k).checked=true);
     await refreshUserList();
   } else { alert(d.error || 'Error creating user'); }
 }

@@ -7494,11 +7494,23 @@ def uw_data():
 def _start_scheduler():
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
+        # Pin to America/Chicago so the schedule shifts with DST (CST/CDT).
+        # zoneinfo is stdlib on Python 3.9+; falls back to pytz if not.
+        try:
+            from zoneinfo import ZoneInfo
+            tz = ZoneInfo("America/Chicago")
+        except ImportError:
+            import pytz
+            tz = pytz.timezone("America/Chicago")
         scheduler = BackgroundScheduler()
-        # Run on the 1st of every month at 8:00 AM UTC
-        scheduler.add_job(_send_monthly_emails, "cron", day=1, hour=8, minute=0)
+        # Run on the 1st of every month at 9:00 AM Central time.
+        scheduler.add_job(
+            _send_monthly_emails, "cron",
+            day=1, hour=9, minute=0,
+            timezone=tz,
+        )
         scheduler.start()
-        print("APScheduler started — monthly report job scheduled for 1st of each month at 08:00 UTC")
+        print("APScheduler started — monthly report job scheduled for 1st of each month at 09:00 America/Chicago")
     except Exception as e:
         print(f"Scheduler failed to start: {e}")
 
