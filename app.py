@@ -3359,6 +3359,39 @@ def loans_report():
     row = cur.fetchone(); cur.close(); conn.close()
     raw_data    = row["data"]        if row else None
     uploaded_at = row["uploaded_at"] if row else None
+
+    # Debug helper for diagnosing data-shape issues. Hit /loans?debug=1
+    # to get a JSON dump of (a) the raw DB row, (b) the enriched view
+    # context's per-loan capacityHealth fields. Admin-only.
+    if request.args.get("debug") == "1" and session.get("is_admin"):
+        view = _build_loans_view_context(raw_data, uploaded_at) or {}
+        diag = {
+            "uploaded_at": uploaded_at.isoformat() if hasattr(uploaded_at, "isoformat") else str(uploaded_at),
+            "raw_top_keys": list(raw_data.keys()) if isinstance(raw_data, dict) else None,
+            "raw_mpc_first_row": (raw_data.get("mpc_loans") or {}).get("rows", [{}])[:1] if isinstance(raw_data, dict) else None,
+            "raw_vert_first_row": (raw_data.get("vertical_loans") or {}).get("rows", [{}])[:1] if isinstance(raw_data, dict) else None,
+            "enriched_mpc": [
+                {
+                    "community":          l.get("community"),
+                    "capacityHealth_raw": l.get("capacityHealth"),
+                    "capacityHealth_fmt": l.get("capacityHealth_fmt"),
+                    "cap_cls":            l.get("cap_cls"),
+                    "irHealth_raw":       l.get("irHealth"),
+                    "irHealth_fmt":       l.get("irHealth_fmt"),
+                    "ir_cls":             l.get("ir_cls"),
+                } for l in (view.get("mpc", {}).get("loans") or [])
+            ],
+            "enriched_vert": [
+                {
+                    "community":          l.get("community"),
+                    "capacityHealth_raw": l.get("capacityHealth"),
+                    "capacityHealth_fmt": l.get("capacityHealth_fmt"),
+                    "cap_cls":            l.get("cap_cls"),
+                } for l in (view.get("vert", {}).get("loans") or [])
+            ],
+        }
+        return jsonify(diag)
+
     loans_ctx = _build_loans_view_context(raw_data, uploaded_at)
     return render_template(
         "loans.html",
@@ -4299,23 +4332,46 @@ def _loans_translate_legacy(raw):
         # Either already in new shape or unrecognized — return as-is.
         return raw
 
+    def _coerce_health(v):
+        """Robustly coerce an IR/Capacity Health cell value to a float ratio.
+
+        The legacy parser stores these as strings via _str(), so we get
+        e.g. "1.26", "0.85", or sometimes percentage-formatted text like
+        "126%" / "85%", a label like "Healthy", an empty cell ("" / None
+        / "—"), or a leftover formula string starting with "=" if the
+        workbook never cached its values. Normalize:
+
+          numeric         → use as-is
+          str "126%"      → strip "%", divide by 100 → 1.26
+          str "1.26"      → 1.26
+          str "=A1/B1"    → None (uncached formula; show as missing)
+          str label       → return label as-is (e.g. "Healthy")
+          empty / None    → None
+        """
+        if v is None: return None
+        if isinstance(v, (int, float)):
+            return float(v)
+        s = str(v).strip()
+        if s in ("", "—", "-"):
+            return None
+        if s.startswith("="):  # uncached formula
+            return None
+        is_pct = s.endswith("%")
+        cleaned = s.replace("%", "").replace("$", "").replace(",", "").strip()
+        try:
+            n = float(cleaned)
+        except (TypeError, ValueError):
+            return s  # opaque label — keep for display
+        return n / 100.0 if is_pct else n
+
     def _row_to_obj(row):
         """Map a header-keyed row dict to camelCase keys."""
         out = {}
         for k, v in (row or {}).items():
             new_key = _LOANS_HEADER_TO_KEY.get(k)
             if new_key:
-                # IR Health and Capacity Health were stored as strings in
-                # the legacy parser. Coerce to float where possible so
-                # the threshold-based color classes work; otherwise keep
-                # the raw label (e.g. "Healthy"/"Watch") so the user
-                # still sees what's in the spreadsheet.
                 if new_key in ("irHealth", "capacityHealth"):
-                    if v in (None, "", "—"):
-                        v = None
-                    else:
-                        try: v = float(v)
-                        except (TypeError, ValueError): pass  # keep label
+                    v = _coerce_health(v)
                 out[new_key] = v
         return out
 

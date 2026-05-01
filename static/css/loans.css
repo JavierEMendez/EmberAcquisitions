@@ -143,6 +143,7 @@
 .loans-dial.is-good { border-left-color: var(--good); }
 .loans-dial.is-warn { border-left-color: var(--warn); }
 .loans-dial.is-bad  { border-left-color: var(--bad); }
+.loans-dial.is-na   { border-left-color: var(--line-2); }
 .loans-dial-lbl { font-weight:600; font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:var(--subtle); }
 .loans-dial-val { font-family:var(--font-display); font-weight:700; font-size:16px; letter-spacing:-.01em; color:var(--ink); }
 .loans-dial-val.is-na { color:var(--subtle); }
