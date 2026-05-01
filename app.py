@@ -6572,7 +6572,7 @@ def _gen_new_pdf_report(rt, data, uploaded_at=None):
         returns         → templates/returns_report.html        (8-page)
         ember_capital   → templates/capital_report.html        (3-page)
         operations      → templates/operations_report.html     (2-page)
-        loans           → not yet redesigned, returns None     (legacy fallback)
+        loans           → templates/loans_report.html          (5-page)
     """
     try:
         from weasyprint import HTML  # noqa: F401  (probe import only)
@@ -6607,8 +6607,18 @@ def _gen_new_pdf_report(rt, data, uploaded_at=None):
                 return HTML(string=html, base_url=base_url,
                             url_fetcher=_weasyprint_local_fetcher).write_pdf()
 
-            # 'loans' (and any future rt without a redesigned report)
-            # falls through — caller will hit the legacy generator.
+            if rt == "loans":
+                from weasyprint import HTML
+                view_ctx = _build_loans_view_context(data, uploaded_at)
+                if view_ctx is None:
+                    return None
+                rpt_ctx = _build_loans_report_context(view_ctx, run_date=uploaded_at)
+                html = render_template("loans_report.html", **rpt_ctx)
+                return HTML(string=html, base_url=base_url,
+                            url_fetcher=_weasyprint_local_fetcher).write_pdf()
+
+            # Any future rt without a redesigned report — caller hits
+            # the legacy fpdf2 generator.
             return None
     except Exception as e:
         app.logger.warning("_gen_new_pdf_report(%s) failed: %s: %s",
@@ -6625,10 +6635,22 @@ def _send_monthly_emails(force=False):
     cur = conn.cursor()
 
     if not force:
-        cur.execute("SELECT id FROM report_sends WHERE period = %s", (period,))
-        if cur.fetchone():
+        # Atomically claim this period BEFORE sending. The UNIQUE
+        # constraint on report_sends.period means only one process can
+        # win — if Railway runs the cron in two worker instances at the
+        # same time (which happened on 2026-05-01 → duplicate emails),
+        # the second one's INSERT silently no-ops and we bail out here.
+        # The previous SELECT-then-INSERT-after pattern raced.
+        cur.execute(
+            "INSERT INTO report_sends (period) VALUES (%s) ON CONFLICT DO NOTHING",
+            (period,)
+        )
+        claimed = cur.rowcount
+        conn.commit()
+        if not claimed:
             cur.close(); conn.close()
-            return 0  # already sent this month
+            print(f"[Reports] Period {period} already claimed by another instance; skipping.", flush=True)
+            return 0
 
     # Fetch every user with an email + at least one subscription. We
     # check both:
@@ -6889,12 +6911,10 @@ def _send_monthly_emails(force=False):
     print(f"[Reports] Done — {sent_count} email(s) sent, "
           f"{len(diag) - sent_count} skipped/failed.", flush=True)
 
-    # Record successful send (skip if forced to allow re-testing)
-    if not force:
-        conn2 = get_db()
-        cur2 = conn2.cursor()
-        cur2.execute("INSERT INTO report_sends (period) VALUES (%s) ON CONFLICT DO NOTHING", (period,))
-        conn2.commit(); cur2.close(); conn2.close()
+    # NOTE: the period claim was inserted at the START of this function
+    # (atomic INSERT ... ON CONFLICT DO NOTHING). We no longer record
+    # the send a second time at the end — that double-write is what
+    # used to leave a window for duplicates when two workers raced.
 
     # Stash the per-recipient breakdown so the admin "Send Reports Now"
     # endpoint can surface it back to the UI.

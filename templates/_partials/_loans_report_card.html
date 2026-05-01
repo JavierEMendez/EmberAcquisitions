@@ -46,11 +46,19 @@
           <div class="s na">n/a · vertical line</div>
         </div>
       {% endif %}
-      <div class="dcell {{ loan.cap_cls }}">
-        <div class="lbl">Capacity Coverage</div>
-        <div class="v">{{ loan.capacityHealth_fmt }}</div>
-        <div class="s {{ loan.cap_cls }}">{{ loan.remaining_fmt }} remaining</div>
-      </div>
+      {% if kind == 'mpc' %}
+        <div class="dcell">
+          <div class="lbl">Monthly Burn</div>
+          <div class="v">{{ loan.monthlyBurn_fmt }}</div>
+          <div class="s">interest reserve draw</div>
+        </div>
+      {% else %}
+        <div class="dcell">
+          <div class="lbl">Monthly Burn</div>
+          <div class="v" style="color:#97a3b0">—</div>
+          <div class="s na">n/a · vertical line</div>
+        </div>
+      {% endif %}
     </div>
   </div>
 </div>

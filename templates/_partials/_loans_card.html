@@ -60,11 +60,19 @@
       </div>
     {% endif %}
 
-    {# Capacity coverage #}
-    <div class="loans-dial is-{{ loan.cap_cls }}">
-      <div class="loans-dial-lbl">Capacity Coverage</div>
-      <div class="loans-dial-val num">{{ loan.capacityHealth_fmt }}</div>
-      <div class="loans-dial-sub is-{{ loan.cap_cls }}">{{ loan.remaining_fmt }} remaining</div>
-    </div>
+    {# Monthly burn — MPC only (Vertical lines pay IR from cashflows) #}
+    {% if kind == 'mpc' %}
+      <div class="loans-dial">
+        <div class="loans-dial-lbl">Monthly Burn</div>
+        <div class="loans-dial-val num">{{ loan.monthlyBurn_fmt }}</div>
+        <div class="loans-dial-sub">interest reserve draw</div>
+      </div>
+    {% else %}
+      <div class="loans-dial">
+        <div class="loans-dial-lbl">Monthly Burn</div>
+        <div class="loans-dial-val num is-na">—</div>
+        <div class="loans-dial-sub is-na">n/a · vertical line</div>
+      </div>
+    {% endif %}
   </div>
 </div>
