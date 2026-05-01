@@ -12,8 +12,8 @@
 
 .ops-page {
   --paper: #FFFFFF;
-  --bg:    #F4ECDD;
-  --warm:  #F8F4EE;
+  --bg:    #F8F4EE; /* matches --eax-bg from theme.css (Returns + Capital pages) */
+  --warm:  #F1EBE1;
   --ink:   #08233B;
   --ink-2: #13344E;
   --muted: #5b6b7b;
@@ -37,9 +37,9 @@
   color: var(--ink); font-family: var(--font-sans);
 }
 .ops-page[data-theme="navy"] {
-  --paper: #0E1E2E;
-  --bg:    #08111B;
-  --warm:  #13283C;
+  --paper: #11324B;       /* matches --eax-surface in dark theme */
+  --bg:    #08233B;       /* matches --eax-bg in dark theme */
+  --warm:  #0D2B44;       /* matches --eax-bg-2 in dark theme */
   --ink:   #F4ECDD;
   --ink-2: #E0D6C2;
   --muted: #9DAEC0;
