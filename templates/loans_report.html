@@ -1,17 +1,18 @@
 {# ============================================================
    Ember · Loans & Debt — PDF report (5-page landscape, 11×8.5in).
-   Visual ground truth: _design_reference/Loans Report.html.
-   All SVGs are pre-rendered server-side (loans_report.py) because
+   Visual ground truth: ember-loans-report__claude-code-handoff/
+                        _design_reference/Loans Report.html.
+   All SVGs are pre-rendered server-side (app.py builders) because
    WeasyPrint can't run JS.
    ============================================================ #}
 <!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
-<title>Ember · Loans &amp; Debt Report</title>
+<title>Ember · Loans &amp; Debt Schedules</title>
 <style>
-  /* Brand fonts — read from disk by app.py's _weasyprint_local_fetcher.
-     Same pattern the Returns / Capital / Operations reports use. */
+  /* Brand fonts — served at /static/fonts/* and read off disk by
+     app.py's _weasyprint_local_fetcher (same as Returns/Capital/Ops). */
   @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-Bold.ttf") format("truetype"); font-weight: 700; }
   @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-CondensedBold.ttf") format("truetype"); font-weight: 800; font-stretch: condensed; }
   @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-Light.ttf") format("truetype"); font-weight: 300; }
@@ -59,7 +60,7 @@
   .cover .conf-stamp::before{content:"";width:6px;height:6px;background:var(--accent);border-radius:50%}
   .cover .mid{flex:1;display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:12px}
   .cover h1{font-family:var(--font-display);font-weight:700;font-size:84px;line-height:.94;letter-spacing:-.025em;color:var(--ink);max-width:9in;text-transform:uppercase}
-  .cover h1 em{font-style:normal;font-weight:300;color:var(--accent)}
+  .cover h1 em{font-style:normal;font-weight:700;color:var(--ink)}
   .cover .lede{font-size:14.5px;line-height:1.55;color:var(--muted);margin-top:28px;max-width:6.4in}
   .cover .bot{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:0;margin-top:36px;padding-top:22px;border-top:1px solid var(--line-2)}
   .cover .bot .col{padding-right:20px}
@@ -72,11 +73,11 @@
   /* PAGE HEAD */
   .phead{display:flex;justify-content:space-between;align-items:flex-end;padding-bottom:12px;border-bottom:1px solid var(--line-2);margin-bottom:14px}
   .phead h2{font-family:var(--font-display);font-weight:700;font-size:24px;letter-spacing:-.015em;line-height:1.04;text-transform:uppercase}
-  .phead h2 em{font-style:normal;font-weight:300;color:var(--accent);text-transform:none;letter-spacing:-.02em}
+  .phead h2 em{font-style:normal;font-weight:700;color:var(--ink);text-transform:uppercase;letter-spacing:-.015em}
   .phead .meta{font-family:var(--font-mono);font-size:9.5px;color:var(--subtle);letter-spacing:.06em;text-align:right}
 
   /* KPI band */
-  .kpi-band{display:grid;grid-template-columns:repeat(6,1fr);border:1px solid var(--line);margin-bottom:14px}
+  .kpi-band{display:grid;grid-template-columns:repeat(6,1fr);border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:14px}
   .kpi-band .kpi{padding:11px 12px;border-left:1px solid var(--line)}
   .kpi-band .kpi:first-child{border-left:none}
   .kpi .label{font-size:8.5px}
@@ -88,7 +89,7 @@
   .kpi .s{font-size:9px;color:var(--muted);margin-top:3px;line-height:1.3}
 
   /* Panel */
-  .panel{border:1px solid var(--line);padding:11px 13px 10px;display:flex;flex-direction:column}
+  .panel{border:1px solid var(--line);border-radius:8px;padding:11px 13px 10px;display:flex;flex-direction:column}
   .panel .ttl{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
   .panel .ttl .h{font-family:var(--font-display);font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.02em}
   .panel .ttl .s{font-size:9px;color:var(--subtle);font-family:var(--font-mono);letter-spacing:.04em}
@@ -111,12 +112,16 @@
   table.t .pill.warn .dot{background:var(--warn)}
   table.t .pill.bad{color:var(--bad);background:var(--bad-soft)}
   table.t .pill.bad .dot{background:var(--bad)}
+  table.t .pill.na{color:var(--subtle);background:rgba(151,163,176,0.10)}
+  table.t .pill.na .dot{background:var(--subtle)}
 
   /* Loan cards */
   .cards{display:grid;gap:10px;margin-bottom:12px}
   .cards.cards-4{grid-template-columns:repeat(4,1fr)}
+  .cards.cards-3{grid-template-columns:repeat(3,1fr)}
   .cards.cards-2{grid-template-columns:repeat(2,1fr)}
-  .lcard{border:1px solid var(--line);background:var(--paper);position:relative;overflow:hidden;display:flex;flex-direction:column}
+  .cards.cards-1{grid-template-columns:1fr}
+  .lcard{border:1px solid var(--line);border-radius:8px;background:var(--paper);position:relative;overflow:hidden;display:flex;flex-direction:column}
   .lcard .stripe{position:absolute;top:0;left:0;right:0;height:3px}
   .lcard .stripe.good{background:var(--good)}
   .lcard .stripe.warn{background:var(--warn)}
@@ -147,11 +152,11 @@
   .dial .s.na{color:var(--subtle)}
 
   /* Capacity stack */
-  .capstack{display:flex;flex-direction:column;gap:5px;font-size:9px}
-  .capstack .row{display:grid;grid-template-columns:130px 1fr 64px;gap:8px;align-items:center}
-  .capstack .row .nm{font-weight:600;color:var(--ink);font-size:9.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .capstack{display:flex;flex-direction:column;gap:6px;font-size:9px}
+  .capstack .row{display:grid;grid-template-columns:200px 1fr 90px;gap:12px;align-items:center}
+  .capstack .row .nm{font-weight:600;color:var(--ink);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .capstack .row .nm .ld{display:block;color:var(--subtle);font-family:var(--font-mono);font-size:8px;letter-spacing:.04em;font-weight:400;margin-top:1px}
-  .capstack .row .bar{height:18px;background:var(--warm);border-radius:2px;position:relative;overflow:hidden}
+  .capstack .row .bar{height:20px;background:var(--warm);border-radius:2px;position:relative;overflow:hidden}
   .capstack .row .bar .drawn{position:absolute;left:0;top:0;bottom:0;background:var(--accent)}
   .capstack .row .bar .rem{position:absolute;top:0;bottom:0;background:var(--accent-soft);border-left:1px solid var(--accent)}
   .capstack .row .bar .lbl{position:absolute;left:7px;top:0;bottom:0;display:flex;align-items:center;font-family:var(--font-mono);font-size:8.5px;color:#fff;font-weight:700;text-shadow:0 1px 2px rgba(0,0,0,.2)}
@@ -165,7 +170,7 @@
 
   /* Schedule grid */
   .scheds{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-  .scheds .scbox{border:1px solid var(--line);display:flex;flex-direction:column}
+  .scheds .scbox{border:1px solid var(--line);border-radius:8px;overflow:hidden;display:flex;flex-direction:column}
   .scheds .scbox .scttl{padding:8px 11px;background:var(--warm);border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:baseline}
   .scheds .scbox .scttl .h{font-family:var(--font-display);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.02em}
   .scheds .scbox .scttl .s{font-family:var(--font-mono);font-size:8.5px;color:var(--muted);letter-spacing:.04em}
@@ -213,7 +218,7 @@
       </div>
       <div class="mid">
         <div class="eyebrow">Ember Residential · Finance &amp; Analytics</div>
-        <h1 style="margin-top:14px">Loans<br/><em>&amp; Debt</em></h1>
+        <h1 style="margin-top:14px">Loans &amp;<br/><em>Debt Schedules</em></h1>
         <div class="lede">Status of every active credit facility — capacity, interest reserve runway, term countdown — and the next-12-month payment schedule for each project, paired with the revenue expected to cover it.</div>
         <div class="bot">
           <div class="col">
@@ -237,7 +242,7 @@
       </div>
       <div class="page-foot">
         <span class="l"><span class="conf">Confidential</span></span>
-        <span class="c"><span class="dot"></span> Ember Finance &amp; Analytics · Loans &amp; Debt Report</span>
+        <span class="c"><span class="dot"></span> Ember Finance &amp; Analytics · Loans &amp; Debt Schedules</span>
         <span class="r mono">01 / 05</span>
       </div>
     </div>
@@ -247,7 +252,7 @@
   <div class="page">
     <div class="page-pad">
       <div class="phead">
-        <h2>Portfolio<br/><em>Overview</em></h2>
+        <h2>Portfolio <em>Overview</em></h2>
         <div class="meta">{{ report.active_facilities }} ACTIVE FACILITIES · {{ report.committed_fmt }} CAPACITY · ANCHORED TO {{ report.period_label|upper }}</div>
       </div>
 
@@ -261,7 +266,7 @@
         {% endfor %}
       </div>
 
-      <div style="display:grid;grid-template-columns:1.05fr 1fr;gap:10px;flex:1;min-height:0">
+      <div style="display:flex;flex-direction:column;gap:10px;flex:1;min-height:0">
         <div class="panel">
           <div class="ttl"><div class="h">Capacity Stack</div><div class="s">DRAWN VS REMAINING · ALL FACILITIES</div></div>
           {{ report.cap_stack_svg|safe }}
@@ -274,7 +279,7 @@
 
       <div class="page-foot">
         <span class="l"><span class="conf">Confidential</span></span>
-        <span class="c"><span class="dot"></span> Ember Finance &amp; Analytics · Loans &amp; Debt</span>
+        <span class="c"><span class="dot"></span> Ember Finance &amp; Analytics · Loans &amp; Debt Schedules</span>
         <span class="r mono">02 / 05</span>
       </div>
     </div>
@@ -284,7 +289,7 @@
   <div class="page">
     <div class="page-pad">
       <div class="phead">
-        <h2>MPC Land<br/><em>Facilities</em></h2>
+        <h2>MPC Land <em>Facilities</em></h2>
         <div class="meta">{{ report.mpc.loans|length }} ACTIVE · {{ report.mpc.totals.drawn_fmt }} DRAWN / {{ report.mpc.totals.loanAmount_fmt }} CAPACITY</div>
       </div>
 
@@ -301,7 +306,7 @@
 
       <div class="page-foot">
         <span class="l"><span class="conf">Confidential</span></span>
-        <span class="c"><span class="dot"></span> Ember Finance &amp; Analytics · Loans &amp; Debt</span>
+        <span class="c"><span class="dot"></span> Ember Finance &amp; Analytics · Loans &amp; Debt Schedules</span>
         <span class="r mono">03 / 05</span>
       </div>
     </div>
@@ -311,7 +316,7 @@
   <div class="page">
     <div class="page-pad">
       <div class="phead">
-        <h2>Vertical<br/><em>Construction Lines</em></h2>
+        <h2>Vertical <em>Facilities</em></h2>
         <div class="meta">{{ report.vert.loans|length }} ACTIVE · {{ report.vert.totals.drawn_fmt }} DRAWN / {{ report.vert.totals.loanAmount_fmt }} CAPACITY</div>
       </div>
 
@@ -326,14 +331,9 @@
         {% with loans_set=report.vert, kind='vert' %}{% include "_partials/_loans_report_table.html" %}{% endwith %}
       </div>
 
-      <div style="margin-top:12px;padding:10px 12px;background:var(--warm);border-left:3px solid var(--accent);font-size:9.5px;line-height:1.55;color:var(--muted)">
-        <span style="font-weight:700;font-size:8.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink);display:block;margin-bottom:4px">Note</span>
-        Vertical construction lines do not carry interest reserves; interest is paid from project cashflows as homes deliver.
-      </div>
-
       <div class="page-foot">
         <span class="l"><span class="conf">Confidential</span></span>
-        <span class="c"><span class="dot"></span> Ember Finance &amp; Analytics · Loans &amp; Debt</span>
+        <span class="c"><span class="dot"></span> Ember Finance &amp; Analytics · Loans &amp; Debt Schedules</span>
         <span class="r mono">04 / 05</span>
       </div>
     </div>
@@ -343,7 +343,7 @@
   <div class="page">
     <div class="page-pad">
       <div class="phead">
-        <h2>Debt<br/><em>Schedules</em></h2>
+        <h2>Debt <em>Schedules</em></h2>
         <div class="meta">NEXT 12 MONTHS · PAYMENTS VS COVERING REVENUE</div>
       </div>
 
@@ -400,7 +400,7 @@
 
       <div class="page-foot">
         <span class="l"><span class="conf">Confidential</span></span>
-        <span class="c"><span class="dot"></span> Ember Finance &amp; Analytics · Loans &amp; Debt</span>
+        <span class="c"><span class="dot"></span> Ember Finance &amp; Analytics · Loans &amp; Debt Schedules</span>
         <span class="r mono">05 / 05</span>
       </div>
     </div>

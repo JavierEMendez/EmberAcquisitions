@@ -4643,6 +4643,12 @@ def _loans_render_capacity_stack(loans):
 
 
 def _loans_render_maturity_wall(mpc_loans, vert_loans, today, start_year=2023, end_year=2029):
+    """Origination → term timeline with today line and term-tone bars.
+
+    Sized to the new design ref: 900×variable, 30px row height, 18px bar
+    height, 120/18px paddings. The SVG fills its container via
+    `width:100%; height:auto` in the report stylesheet.
+    """
     all_loans = (
         [{**l, "kind": "MPC"} for l in mpc_loans] +
         [{**l, "kind": "VRT"} for l in vert_loans]
@@ -4651,8 +4657,8 @@ def _loans_render_maturity_wall(mpc_loans, vert_loans, today, start_year=2023, e
         return ""
     today_idx = _loans_month_idx(today.isoformat(), start_year)
     total = (end_year - start_year) * 12 or 1
-    W, ROW = 520, 22
-    PADL, PADR, PADT = 130, 10, 22
+    W, ROW = 900, 30
+    PADL, PADR, PADT = 120, 18, 22
     H = PADT + len(all_loans) * ROW + 18
     inner_w = W - PADL - PADR
     C = _LOANS_REPORT_COLORS
@@ -4666,7 +4672,7 @@ def _loans_render_maturity_wall(mpc_loans, vert_loans, today, start_year=2023, e
         dash = ' stroke-dasharray="2 3"' if i != 0 else ""
         parts.append(f'<line x1="{xx}" y1="{PADT-3}" x2="{xx}" y2="{H-14}" stroke="{C["line"]}"{dash}/>')
         parts.append(
-            f'<text x="{xx}" y="{PADT-8}" text-anchor="middle" font-size="7" '
+            f'<text x="{xx}" y="{PADT-8}" text-anchor="middle" font-size="8" '
             f'fill="{C["subtle"]}" font-family="JetBrains Mono" font-weight="700">'
             f'{start_year + i}</text>'
         )
@@ -4676,28 +4682,28 @@ def _loans_render_maturity_wall(mpc_loans, vert_loans, today, start_year=2023, e
         f'stroke="{C["accent"]}" stroke-width="1.5"/>'
     )
     parts.append(
-        f'<text x="{x(today_idx)}" y="{PADT-12}" text-anchor="middle" font-size="6.5" '
+        f'<text x="{x(today_idx)}" y="{PADT-12}" text-anchor="middle" font-size="7.5" '
         f'fill="{C["accent"]}" font-weight="700" font-family="Plus Jakarta Sans" '
         f'letter-spacing="1.4" style="text-transform:uppercase">Today</text>'
     )
     # Loan rows
     for i, l in enumerate(all_loans):
-        y = PADT + i * ROW + 4
+        y = PADT + i * ROW + 6
         try:
             x0 = x(_loans_month_idx(l.get("origination") or today.isoformat(), start_year))
             x1 = x(_loans_month_idx(l.get("termDate")    or today.isoformat(), start_year))
         except Exception:
             continue
-        bar_h = 14
+        bar_h = 18
         cls = _loans_term_class(l.get("monthsRemaining"))
         col = {"bad": C["bad"], "warn": C["warn"]}.get(cls, C["ink_2"])
         parts.append(
-            f'<text x="{PADL-6}" y="{y+9}" text-anchor="end" font-size="7.5" '
+            f'<text x="{PADL-8}" y="{y+10}" text-anchor="end" font-size="9" '
             f'fill="{C["ink"]}" font-family="Plus Jakarta Sans" font-weight="600">'
             f'{l.get("community","")}</text>'
         )
         parts.append(
-            f'<text x="{PADL-6}" y="{y+18}" text-anchor="end" font-size="6" '
+            f'<text x="{PADL-8}" y="{y+21}" text-anchor="end" font-size="7.5" '
             f'fill="{C["subtle"]}" font-family="JetBrains Mono">'
             f'{l.get("lender","")} · {l["kind"]}</text>'
         )
@@ -4715,22 +4721,22 @@ def _loans_render_maturity_wall(mpc_loans, vert_loans, today, start_year=2023, e
             )
         parts.append(f'<circle cx="{x1}" cy="{y+bar_h/2}" r="2.6" fill="{col}"/>')
         parts.append(
-            f'<text x="{x1+5}" y="{y+bar_h/2+2.5}" font-size="6.5" '
+            f'<text x="{x1+5}" y="{y+bar_h/2+3}" font-size="8" '
             f'fill="{col}" font-weight="700" font-family="JetBrains Mono">'
             f'{_loans_fmt_date_short(l.get("termDate"))}</text>'
         )
         parts.append(
-            f'<text x="{x0+4}" y="{y+9}" font-size="6.5" '
+            f'<text x="{x0+6}" y="{y+bar_h/2+3}" font-size="8" '
             f'fill="{C["ink"]}" font-family="JetBrains Mono" font-weight="700">'
             f'{_loans_fmt_money_short(l.get("balance"))}</text>'
         )
     parts.append(f'<g transform="translate({PADL},{H-6})">')
     for i, (cls, lbl) in enumerate([("bad", "&lt;12 mo"), ("warn", "12–18 mo"), ("ink_2", "&gt;18 mo")]):
-        ox = i * 90
+        ox = i * 94
         opacity = "0.65" if cls == "bad" else "0.35"
         parts.append(
             f'<rect x="{ox}" y="-5" width="9" height="6" fill="{C[cls]}" fill-opacity="{opacity}"/>'
-            f'<text x="{ox+13}" y="0" font-size="6" fill="{C["muted"]}" '
+            f'<text x="{ox+13}" y="0" font-size="6.5" fill="{C["muted"]}" '
             f'font-family="Plus Jakarta Sans" letter-spacing="1" '
             f'style="text-transform:uppercase">{lbl}</text>'
         )

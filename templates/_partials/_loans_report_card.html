@@ -10,7 +10,7 @@
   </div>
   <div class="balance">
     <div class="v">{{ loan.balance_fmt }}</div>
-    <div class="of">of {{ loan.loanAmount_fmt }} capacity</div>
+    <div class="of">of {{ loan.loanAmount_fmt }} committed</div>
     <div class="gauge"><div style="width:{{ loan.utilization_pct }}%"></div></div>
     <div class="gaugel"><span class="lbl">Utilization</span><span class="vv">{{ loan.utilization_fmt }}</span></div>
   </div>
