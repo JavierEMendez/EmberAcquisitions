@@ -4216,22 +4216,28 @@ def _loans_fmt_date_short(iso):
 # ---------------------------------------------------------------------------
 def _loans_term_class(months_remaining):
     if months_remaining is None: return "na"
-    if months_remaining < 12:    return "bad"
-    if months_remaining < 18:    return "warn"
+    try: m = float(months_remaining)
+    except (TypeError, ValueError): return "na"
+    if m < 12: return "bad"
+    if m < 18: return "warn"
     return "good"
 
 
 def _loans_ir_class(ir_health):
     if ir_health is None: return "na"
-    if ir_health < 0.5:   return "bad"
-    if ir_health < 0.75:  return "warn"
+    try: ih = float(ir_health)
+    except (TypeError, ValueError): return "na"
+    if ih < 0.5:  return "bad"
+    if ih < 0.75: return "warn"
     return "good"
 
 
 def _loans_cap_class(cap_health):
     if cap_health is None: return "na"
-    if cap_health < 1.0:   return "bad"
-    if cap_health < 1.1:   return "warn"
+    try: ch = float(cap_health)
+    except (TypeError, ValueError): return "na"
+    if ch < 1.0: return "bad"
+    if ch < 1.1: return "warn"
     return "good"
 
 
@@ -4300,10 +4306,16 @@ def _loans_translate_legacy(raw):
             new_key = _LOANS_HEADER_TO_KEY.get(k)
             if new_key:
                 # IR Health and Capacity Health were stored as strings in
-                # the legacy parser; coerce numerics where possible.
+                # the legacy parser. Coerce to float where possible so
+                # the threshold-based color classes work; otherwise keep
+                # the raw label (e.g. "Healthy"/"Watch") so the user
+                # still sees what's in the spreadsheet.
                 if new_key in ("irHealth", "capacityHealth"):
-                    try: v = float(v) if v not in (None, "", "—") else None
-                    except (TypeError, ValueError): v = None
+                    if v in (None, "", "—"):
+                        v = None
+                    else:
+                        try: v = float(v)
+                        except (TypeError, ValueError): pass  # keep label
                 out[new_key] = v
         return out
 
@@ -4316,27 +4328,58 @@ def _loans_translate_legacy(raw):
     # carry these, so we derive: outstanding = sum(balance), committed =
     # sum(loanAmount), weighted-avg-rate = balance-weighted, term-at-risk
     # count = how many have <12 months left.
-    all_loans = mpc_loans + vert_loans
-    total_outstanding = sum((l.get("balance") or 0) for l in all_loans)
-    total_committed   = sum((l.get("loanAmount") or 0) for l in all_loans)
-    total_remaining   = sum((l.get("remaining") or 0) for l in all_loans)
-    weighted_rate_num = sum((l.get("todayRate") or 0) * (l.get("balance") or 0) for l in all_loans)
-    weighted_rate     = (weighted_rate_num / total_outstanding) if total_outstanding else 0.0
-    monthly_burn      = sum((l.get("monthlyBurn") or 0) for l in mpc_loans)
-    term_expiring     = sum(1 for l in all_loans if (l.get("monthsRemaining") or 999) < 12)
-    ir_at_risk        = sum(1 for l in mpc_loans if (l.get("irHealth") or 999) < 0.5)
-    cap_at_risk       = sum(1 for l in all_loans if (l.get("capacityHealth") or 999) < 1.0)
+    def _f(v, default=0.0):
+        """Coerce a possibly-string field to float; non-numeric → default."""
+        if v is None: return default
+        try: return float(v)
+        except (TypeError, ValueError): return default
 
-    # Build a 12-month window starting at next month so the schedule
-    # tables on the report align with the live page header.
+    all_loans = mpc_loans + vert_loans
+    total_outstanding = sum(_f(l.get("balance"))    for l in all_loans)
+    total_committed   = sum(_f(l.get("loanAmount")) for l in all_loans)
+    total_remaining   = sum(_f(l.get("remaining"))  for l in all_loans)
+    weighted_rate_num = sum(_f(l.get("todayRate")) * _f(l.get("balance")) for l in all_loans)
+    weighted_rate     = (weighted_rate_num / total_outstanding) if total_outstanding else 0.0
+    monthly_burn      = sum(_f(l.get("monthlyBurn")) for l in mpc_loans)
+    # Risk counts: use a sentinel that DOESN'T trigger the threshold so
+    # missing/non-numeric values don't false-positive.
+    term_expiring = sum(1 for l in all_loans if _f(l.get("monthsRemaining"),  default=999) < 12)
+    ir_at_risk    = sum(1 for l in mpc_loans if _f(l.get("irHealth"),         default=999) < 0.5)
+    cap_at_risk   = sum(1 for l in all_loans if _f(l.get("capacityHealth"),   default=999) < 1.0)
+
+    # Translate debt-schedule shape: legacy parser uses snake_case keys
+    # (cumulative_revenues / cumulative_payments) but the renderers
+    # expect camelCase. Without this fix the cumulative-coverage row
+    # and the page-5 coverage curve silently render empty.
+    raw_scheds = raw.get("debt_schedules") or []
+    schedules = []
+    for s in raw_scheds:
+        s2 = dict(s)
+        if "cumulative_revenues" in s2 and "cumulativeRevenues" not in s2:
+            s2["cumulativeRevenues"] = s2["cumulative_revenues"]
+        if "cumulative_payments" in s2 and "cumulativePayments" not in s2:
+            s2["cumulativePayments"] = s2["cumulative_payments"]
+        schedules.append(s2)
+
+    # Use the *schedule's* months (parsed from row 57 of the spreadsheet)
+    # as the canonical month axis when present — that's what the
+    # cumulative arrays line up to. Falls back to a generated next-12-
+    # month list only when no schedule was uploaded.
     today = datetime.date.today().replace(day=1)
     months = []
-    y, m = today.year, today.month
-    for _ in range(12):
-        m += 1
-        if m > 12:
-            m = 1; y += 1
-        months.append(f"{y:04d}-{m:02d}")
+    if schedules and schedules[0].get("months"):
+        for d_iso in schedules[0]["months"]:
+            # _date_iso gave us full ISO strings; normalize to YYYY-MM.
+            s = str(d_iso)[:7]
+            if len(s) == 7 and s[4] == "-":
+                months.append(s)
+    if not months:
+        y, m = today.year, today.month
+        for _ in range(12):
+            m += 1
+            if m > 12:
+                m = 1; y += 1
+            months.append(f"{y:04d}-{m:02d}")
 
     return {
         "anchor": today.isoformat(),
@@ -4356,7 +4399,7 @@ def _loans_translate_legacy(raw):
         "mpcTotals":     mpc_tot,
         "verticalLoans": vert_loans,
         "verticalTotals": vert_tot,
-        "debtSchedules": raw.get("debt_schedules") or [],
+        "debtSchedules": schedules,
     }
 
 
@@ -4366,10 +4409,12 @@ def _loans_translate_legacy(raw):
 def _loans_enrich_loan(raw, kind):
     l = dict(raw)
     is_vert = kind == "vert"
-    l["loanAmount_fmt"] = _loans_fmt_money_short(l.get("loanAmount"))
-    l["drawn_fmt"]      = _loans_fmt_money_short(l.get("drawn"))
-    l["balance_fmt"]    = _loans_fmt_money_short(l.get("balance"))
-    l["remaining_fmt"]  = _loans_fmt_money_short(l.get("remaining"))
+    l["loanAmount_fmt"]    = _loans_fmt_money_short(l.get("loanAmount"))
+    l["drawn_fmt"]         = _loans_fmt_money_short(l.get("drawn"))
+    l["balance_fmt"]       = _loans_fmt_money_short(l.get("balance"))
+    l["remaining_fmt"]     = _loans_fmt_money_short(l.get("remaining"))
+    l["forecastedThruTerm_fmt"] = _loans_fmt_money_short(l.get("forecastedThruTerm"))
+    l["extensionCost_fmt"] = _loans_fmt_money_short(l.get("extensionCost")) if l.get("extensionCost") else "—"
     l["utilization_fmt"]   = _loans_fmt_pct1(l.get("utilization"))
     try:    l["utilization_pct"] = round(float(l.get("utilization") or 0) * 100, 1)
     except (TypeError, ValueError): l["utilization_pct"] = 0
@@ -4377,9 +4422,37 @@ def _loans_enrich_loan(raw, kind):
     try:    l["indexSpread_fmt"] = f"{float(l.get('indexSpread') or 0) * 100:.2f}%"
     except (TypeError, ValueError): l["indexSpread_fmt"] = "0.00%"
     l["termDate_short"]    = _loans_fmt_date_short(l.get("termDate"))
-    l["irHealth_fmt"]      = _loans_fmt_pct1(l.get("irHealth")) if not is_vert else "—"
-    l["remIR_fmt"]         = _loans_fmt_money_short(l.get("remIR")) if l.get("remIR") else "—"
-    l["monthlyBurn_fmt"]   = _loans_fmt_money_short(l.get("monthlyBurn")) if l.get("monthlyBurn") else "—"
+    l["origination_short"] = _loans_fmt_date_short(l.get("origination"))
+    # IR health: numeric → "41.0%"; text label → "Watch"/"Healthy" as-is.
+    if is_vert:
+        l["irHealth_fmt"] = "—"
+    else:
+        ih = l.get("irHealth")
+        if ih is None:
+            l["irHealth_fmt"] = "—"
+        elif isinstance(ih, (int, float)):
+            l["irHealth_fmt"] = _loans_fmt_pct1(ih)
+        else:
+            s = str(ih).strip()
+            try:
+                l["irHealth_fmt"] = _loans_fmt_pct1(float(s))
+            except (TypeError, ValueError):
+                l["irHealth_fmt"] = s if s else "—"
+    # MPC loans always display IR fields (even at $0 — that's a real
+    # signal that reserves are exhausted). Vertical lines genuinely
+    # don't carry an IR, so suppress those cells with an em-dash.
+    if is_vert:
+        l["remIR_fmt"]       = "—"
+        l["monthlyBurn_fmt"] = "—"
+        l["remMosIR_fmt"]    = "—"
+    else:
+        l["remIR_fmt"]       = _loans_fmt_money_short(l.get("remIR"))
+        l["monthlyBurn_fmt"] = _loans_fmt_money_short(l.get("monthlyBurn"))
+        try:
+            rm = l.get("remMosIR")
+            l["remMosIR_fmt"] = f"{float(rm):.1f}" if rm is not None else "—"
+        except (TypeError, ValueError):
+            l["remMosIR_fmt"] = "—"
 
     # Pre-format capacityHealth and monthsRemaining so the templates
     # don't crash on None (legacy parser sometimes stores `Capacity
@@ -4389,7 +4462,10 @@ def _loans_enrich_loan(raw, kind):
     try:
         l["capacityHealth_fmt"] = f"{float(ch):.2f}×" if ch is not None else "—"
     except (TypeError, ValueError):
-        l["capacityHealth_fmt"] = "—"
+        # Fall back to the raw string label so the user sees the
+        # spreadsheet's text rather than an unhelpful em-dash.
+        s = str(ch).strip() if ch is not None else ""
+        l["capacityHealth_fmt"] = s if s else "—"
     mr = l.get("monthsRemaining")
     try:
         l["monthsRemaining_fmt"] = f"{int(round(float(mr)))}" if mr is not None else "—"
@@ -4408,6 +4484,7 @@ def _loans_enrich_totals(raw, kind):
     t["drawn_fmt"]         = _loans_fmt_money_short(t.get("drawn"))
     t["balance_fmt"]       = _loans_fmt_money_short(t.get("balance"))
     t["remaining_fmt"]     = _loans_fmt_money_short(t.get("remaining"))
+    t["forecastedThruTerm_fmt"] = _loans_fmt_money_short(t.get("forecastedThruTerm"))
     t["utilization_fmt"]   = _loans_fmt_pct1(t.get("utilization"))
     t["todayRate_fmt"]     = _loans_fmt_pct(t.get("todayRate"), 2)
     t["remIR_fmt"]         = _loans_fmt_money_short(t.get("remIR")) if kind == "mpc" else "—"

@@ -28,7 +28,7 @@
     {% if kind == 'mpc' %}
       <div class="dial {{ loan.ir_cls }}">
         <div class="lbl">IR Runway</div>
-        <div class="v">{{ '%.1f'|format(loan.remMosIR) }} mo</div>
+        <div class="v">{{ loan.remMosIR_fmt }} mo</div>
         <div class="s {{ loan.ir_cls }}">{{ loan.irHealth_fmt }} of term</div>
       </div>
     {% else %}
