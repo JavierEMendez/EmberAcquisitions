@@ -50,7 +50,11 @@
   {% set groupW = 2 * barW + gap %}
   {% set pxPerK = plotH / ymax %}
 
-  <svg class="recycle-chart" viewBox="0 0 1000 200" preserveAspectRatio="none">
+  {# preserveAspectRatio defaults to "xMidYMid meet" — uniform scale, so
+     the bar geometry AND the text stay proportional regardless of the
+     container width. The previous "none" stretched the viewBox onto a
+     wider container and visibly distorted the axis labels. #}
+  <svg class="recycle-chart" viewBox="0 0 1000 200">
     {# Axis frame + grid #}
     <line x1="{{ xStart }}" y1="{{ yTop }}"  x2="{{ xStart }}" y2="{{ yBase }}" stroke="#08233B" stroke-opacity=".2"/>
     <line x1="{{ xStart }}" y1="{{ yBase }}" x2="{{ xEnd }}"   y2="{{ yBase }}" stroke="#08233B" stroke-opacity=".2"/>

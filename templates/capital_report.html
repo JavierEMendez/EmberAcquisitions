@@ -570,7 +570,11 @@
     margin: 0 8px 0 0; vertical-align: -2px;
   }
   .recycle-chart {
-    width: 100%; height: 180px; display: block;
+    /* Width fills the column, height comes from the 1000×200 viewBox
+       (uniform aspect) so axis labels stay proportional in the PDF
+       output. Forcing a fixed height + preserveAspectRatio="none"
+       used to stretch text non-uniformly. */
+    width: 100%; height: auto; display: block;
   }
   /* Axis labels match the rest of the report's typography — same
      Plus Jakarta Sans body font, same 10px size as the project / pipe
