@@ -61,25 +61,13 @@
     );
   }
 
-  // ── Theme toggle ───────────────────────────────────────────
-  var themeKey = "ember-theme";
-  var pageRoot = document.querySelector(".ops-page");
-  function applyTheme(t) {
-    if (t !== "paper" && t !== "navy") t = "paper";
-    pageRoot.setAttribute("data-theme", t);
-    try { localStorage.setItem(themeKey, t); } catch (e) {}
-  }
-  try {
-    var saved = localStorage.getItem(themeKey);
-    if (saved) applyTheme(saved);
-  } catch (e) {}
-  var toggle = document.querySelector("[data-theme-toggle]");
-  if (toggle) {
-    toggle.addEventListener("click", function () {
-      var cur = pageRoot.getAttribute("data-theme") || "paper";
-      applyTheme(cur === "paper" ? "navy" : "paper");
-    });
-  }
+  // ── Theme handling ─────────────────────────────────────────
+  // Removed — unified in templates/_partials/_account_modal.html, which
+  // syncs localStorage["ember-theme"] (dark/light) to .ops-page's
+  // data-theme (navy/paper) on DOMContentLoaded. The previous local
+  // handler here expected "navy"/"paper" in localStorage and was
+  // OVERWRITING the canonical "dark"/"light" value with "paper",
+  // resetting the theme on every other page.
 
   // ── Filter bar wiring ──────────────────────────────────────
   var bar = document.querySelector("[data-filter-bar]");

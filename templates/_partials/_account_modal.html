@@ -91,9 +91,22 @@
    without a manual re-toggle. #}
 <script>
 (function(){
+  // Accept the canonical 'dark'/'light' values AND legacy 'navy'/'paper'
+  // values that earlier per-page handlers (since removed) may have written.
+  // Users whose localStorage was clobbered to "navy" or "paper" by the old
+  // operations.js handler get translated back here.
   function getSavedTheme(){
-    return localStorage.getItem('ember-theme') === 'dark' ? 'dark' : 'light';
+    var t = localStorage.getItem('ember-theme');
+    if (t === 'dark' || t === 'navy') return 'dark';
+    return 'light';
   }
+  // One-shot normalization: rewrite any legacy value to canonical form so
+  // future reads don't have to keep translating.
+  (function normalize(){
+    var t = localStorage.getItem('ember-theme');
+    if (t === 'navy')  localStorage.setItem('ember-theme', 'dark');
+    else if (t === 'paper') localStorage.setItem('ember-theme', 'light');
+  })();
   function applyToInnerWrappers(theme){
     // Capital uses .cap-shell, Loans uses .loans-page, Ops uses .ops-page.
     // Their CSS scopes [data-theme="navy"] / [data-theme="paper"] tokens.

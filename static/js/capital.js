@@ -11,16 +11,11 @@
   const $  = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
-  // ── Theme — read the app-wide `ember-theme` key ────────────────
-  // Existing app stores 'light' or 'dark'; we map them to the cockpit's
-  // 'paper' / 'navy' palettes so a user's site-wide preference carries
-  // straight through to /capital without us building a second toggle.
-  const THEME_KEY = "ember-theme";
-  const applyTheme = (t) => document.body.setAttribute("data-theme", t === "navy" || t === "dark" ? "navy" : "paper");
-  applyTheme(localStorage.getItem(THEME_KEY) || "light");
-
-  window.setEmberTheme = (t) => { applyTheme(t); localStorage.setItem(THEME_KEY, t); };
-  window.addEventListener("theme:set", (e) => window.setEmberTheme(e.detail));
+  // ── Theme handling ──────────────────────────────────────────────
+  // Removed — unified in templates/_partials/_account_modal.html, which
+  // syncs localStorage["ember-theme"] (dark/light) to .cap-shell's
+  // data-theme (navy/paper) on DOMContentLoaded. The previous local
+  // handler set body[data-theme] which conflicted with the central one.
 
   // ── View toggle (pill segment) ──────────────────────────────
   const segBtns = $$(".seg-btn");
