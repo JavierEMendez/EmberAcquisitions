@@ -578,16 +578,20 @@
   }
   /* Axis labels match the rest of the report's typography — same
      Plus Jakarta Sans body font, same 10px size as the project / pipe
-     table cells and KPI sub-text, same muted fill. Tabular numerals
-     keep the column of dollar amounts vertically aligned. */
+     table cells and KPI sub-text, same muted fill.
+
+     Colors hardcoded (not var(--muted) / var(--ink)) — WeasyPrint
+     does not always resolve CSS custom properties on SVG `fill`
+     properties inside <text> elements, which was leaving the labels
+     rendered in default black at the renderer's default size. */
   .recycle-chart .axis-label {
-    font-family: var(--font-sans);
+    font-family: "Plus Jakarta Sans", system-ui, sans-serif;
     font-size: 10px;
     font-weight: 500;
-    fill: var(--muted);
+    fill: #5b6b7b;
     font-variant-numeric: tabular-nums;
   }
-  .recycle-chart .axis-label--current { font-weight: 700; fill: var(--ink); }
+  .recycle-chart .axis-label--current { font-weight: 700; fill: #08233B; }
 </style>
 </head>
 <body>

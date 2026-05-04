@@ -38,11 +38,11 @@
   {% set ymax = capital.recycle.y_axis_max %}
 
   {# Layout constants — keep in sync with CHANGELOG-v3.md geometry.
-     xStart bumped from 38 → 50 so y-axis labels like "50,000" have a
-     proper gutter without clipping the leading digits at narrow widths
-     (especially in the WeasyPrint PDF where the mono fallback was
-     wider than expected). #}
-  {% set xStart = 50 %}{% set xEnd = 990 %}
+     xStart bumped from 50 → 90 so y-axis labels like "50,000" rendered
+     in 10px Plus Jakarta Sans have enough left gutter — the wider sans
+     font was pushing the leading digit off the SVG's left edge and
+     clipping it (every label was rendering as "0,000"). #}
+  {% set xStart = 90 %}{% set xEnd = 990 %}
   {% set yTop = 4 %}{% set yBase = 170 %}
   {% set plotH = yBase - yTop %}
   {% set cellW = (xEnd - xStart) / n %}
