@@ -1207,6 +1207,11 @@ def _build_capital_view_context() -> dict:
     years_int = list(src.get("years", []) or [])
     years_str = [str(y) for y in years_int]
     cur_year_str = str(current_year)
+    # Monthly date headers from the new "Monthly Cashflows" block on
+    # the Consolidated Project Returns tab. ISO YYYY-MM-DD strings,
+    # one per monthly column. Empty list when the workbook predates
+    # the monthly block — to_date falls back to year-pro-rate then.
+    src_months = list(src.get("months", []) or [])
 
     # Pull project metrics into a clean per-project dict.
     raw_projects = src.get("projects", []) or []
@@ -1214,6 +1219,11 @@ def _build_capital_view_context() -> dict:
     returns_by_project = {}
     portfolio_lp_dist_yearly = [0.0] * len(years_str)
     portfolio_promote_yearly = [0.0] * len(years_str)
+    # Sum of per-project to_date (computed exactly from monthly arrays
+    # when the workbook ships a Monthly Cashflows block; pro-rated
+    # otherwise). Used by distributed_ytd_k below so the KPI band ties
+    # out to the Active Projects table column sum.
+    portfolio_distributed_ytd = 0.0
     eq_weighted_irr_num = 0.0
     eq_weighted_irr_den = 0.0
     total_lp_profit = 0.0
@@ -1234,6 +1244,9 @@ def _build_capital_view_context() -> dict:
             v = (by_label.get(label) or {}).get("yearly") or []
             n = len(years_str)
             return list((list(v) + [0] * max(0, n - len(v)))[:n])
+        def _m(label):
+            """Monthly array for the metric (parallel to top-level src['months'])."""
+            return list((by_label.get(label) or {}).get("monthly") or [])
 
         irr_dec  = _t("LP IRR", 0.0)
         irr_pct  = irr_dec * 100 if abs(irr_dec) <= 1.5 else irr_dec
@@ -1242,20 +1255,29 @@ def _build_capital_view_context() -> dict:
         promote  = _t("Promote", 0.0)
         contrib  = abs(_t("Total LP Contributions", 0.0))   # stored negative; equity is positive
         dist_y   = _y("Total LP Distributions")
+        dist_m   = _m("Total LP Distributions")
         prom_y   = _y("Promote")
 
-        # "To Date" = LP distributions received through the end of last
-        # month-roughly. The yearly arrays from the returns blob give us
-        # full-year totals only, so prior years are summed in full and
-        # the CURRENT year is pro-rated by ytd_fraction. Without the
-        # pro-rate, every project's to_date would jump by a full year of
-        # distributions on Jan 1 even though nothing has been paid yet.
-        idx_cur = years_int.index(current_year) if current_year in years_int else -1
-        if idx_cur >= 0:
-            cur_year_dist = dist_y[idx_cur] if idx_cur < len(dist_y) else 0.0
-            to_date = sum(dist_y[:idx_cur]) + cur_year_dist * ytd_fraction
+        # "To Date" — actual LP distributions received through the most
+        # recently completed month. Newer dashboard uploads carry a
+        # monthly distribution array per project (see report_parser's
+        # `months` key). When present we sum the months whose ISO date
+        # is on or before today, which is exact, not estimated.
+        #
+        # If the workbook predates the monthly block (no `months` /
+        # empty `monthly`), fall back to the prior approach: prior
+        # years summed in full + current year pro-rated by ytd_fraction.
+        if dist_m and src_months:
+            today_iso = today.date().isoformat()
+            cutoff = sum(1 for d in src_months if d <= today_iso)
+            to_date = sum(dist_m[:cutoff])
         else:
-            to_date = 0.0
+            idx_cur = years_int.index(current_year) if current_year in years_int else -1
+            if idx_cur >= 0:
+                cur_year_dist = dist_y[idx_cur] if idx_cur < len(dist_y) else 0.0
+                to_date = sum(dist_y[:idx_cur]) + cur_year_dist * ytd_fraction
+            else:
+                to_date = 0.0
 
         slug = _capital_slug(name)
         active.append({
@@ -1278,6 +1300,11 @@ def _build_capital_view_context() -> dict:
         for i in range(len(years_str)):
             portfolio_lp_dist_yearly[i] += dist_y[i] if i < len(dist_y) else 0
             portfolio_promote_yearly[i] += prom_y[i] if i < len(prom_y) else 0
+        # Sum the per-project to_date into a portfolio-level total so
+        # the "Distributed YTD" KPI ties out exactly to the column sum
+        # in the Active Projects table. (Replaces the year-pro-rate
+        # estimate previously used at distributed_ytd_k.)
+        portfolio_distributed_ytd += to_date
         if contrib:
             eq_weighted_irr_num += irr_pct * contrib
             eq_weighted_irr_den += contrib
@@ -1523,12 +1550,14 @@ def _build_capital_view_context() -> dict:
     weighted_irr = (sum(p["irr"] * p["land_price"] for p in pipeline) / pipeline_land_total
                     if pipeline_land_total else 0.0)
 
-    # ── Distributed YTD + To Be Distributed (next 18mo), pro-rated ─────
+    # ── Distributed YTD + To Be Distributed (next 18mo) ─────────────────
+    # Distributed YTD now equals the sum of per-project to_date values,
+    # which is exact when the workbook ships monthly arrays (it's the
+    # actual sum of monthly distributions ≤ today's date) and falls back
+    # to year-pro-rate otherwise. Either way the KPI ties out to the
+    # Active Projects table column sum without rounding drift.
     idx_cur = years_int.index(current_year) if current_year in years_int else -1
-    distributed_ytd_k = 0
-    if idx_cur >= 0:
-        cur_year_dist = portfolio_lp_dist_yearly[idx_cur]
-        distributed_ytd_k = int(round(cur_year_dist * ytd_fraction))
+    distributed_ytd_k = int(round(portfolio_distributed_ytd))
 
     # 18 months: remaining of current year + full next years until budget gone
     to_be_distributed_k = 0

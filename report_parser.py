@@ -57,6 +57,19 @@ def _row_yearly(ws, row: int, col_start: int = 7, col_end: int = 28,
             for c in range(col_start, col_end + 1)]
 
 
+def _row_monthly(ws, row: int, col_start: int, col_end: int,
+                 precision: int | None = 2) -> list:
+    """Read monthly values from a contiguous range of columns.
+
+    Used for the new "Monthly Cashflows" block on the Consolidated
+    Project Returns tab — one cell per month from `col_start`
+    (inclusive) through `col_end` (inclusive). Empty / non-numeric
+    cells return 0 so consumers can sum without checking for None.
+    """
+    return [_num(ws.cell(row=row, column=c).value, precision)
+            for c in range(col_start, col_end + 1)]
+
+
 # ---------------------------------------------------------------------------
 # Consolidated Project Returns
 # ---------------------------------------------------------------------------
@@ -78,7 +91,16 @@ _METRIC_OFFSETS = [
 
 
 def _parse_returns(ws) -> dict:
-    """Parse the 'Consolidated Project Returns' tab."""
+    """Parse the 'Consolidated Project Returns' tab.
+
+    Newer Ember dashboard uploads include a Monthly Cashflows block to
+    the right of the yearly grid (starting at column AD/30). When
+    present, we attach a `monthly` array to each metric (the same
+    row-offsets as the yearly block, just sourced from the monthly
+    columns) plus a top-level `months` array of ISO date strings so
+    consumers can compute "to date through today's month" without
+    pro-rating from yearly totals.
+    """
     title = _str(ws.cell(row=3, column=3).value)  # C3
     report_date = _date_iso(ws.cell(row=3, column=26).value)  # Z3
 
@@ -99,6 +121,32 @@ def _parse_returns(ws) -> dict:
             else:
                 years.append(0)
 
+    # Monthly date headers — read row 4 starting at col 30 (AD) until
+    # the first empty cell. Only ACTUAL date cells count; the project
+    # name string at col 30 is skipped. Empty list when this workbook
+    # predates the monthly block.
+    months: list[str] = []
+    monthly_col_start = 0
+    monthly_col_end   = 0
+    for c in range(30, ws.max_column + 1):
+        v = ws.cell(row=4, column=c).value
+        if v is None:
+            # Empty cell ends the run — but only after we've seen at
+            # least one date (skips a possible project-name header).
+            if months:
+                break
+            continue
+        if not isinstance(v, (datetime, date)):
+            # Non-date cell (e.g. project name at col 30) — skip until
+            # we find the first real date.
+            if months:
+                break
+            continue
+        if not months:
+            monthly_col_start = c
+        months.append(_date_iso(v))
+        monthly_col_end = c
+
     # --- Projects ---
     projects = []
     for start_row in _PROJECT_STARTS:
@@ -116,6 +164,12 @@ def _parse_returns(ws) -> dict:
                 metric["status"] = _num(ws.cell(row=r, column=4).value, 0)
             metric["total"] = _num(ws.cell(row=r, column=5).value, prec)
             metric["yearly"] = _row_yearly(ws, r, precision=prec)
+            # Monthly array — same row, sourced from the AD-onward block
+            # when this workbook ships one. Length matches `months`.
+            if monthly_col_start and monthly_col_end:
+                metric["monthly"] = _row_monthly(
+                    ws, r, monthly_col_start, monthly_col_end, precision=prec,
+                )
 
             metrics.append(metric)
 
@@ -142,6 +196,7 @@ def _parse_returns(ws) -> dict:
         "title": title or "Consolidated Ember Project Returns",
         "date": report_date,
         "years": years,
+        "months": months,    # ISO YYYY-MM-DD per monthly column; [] when the workbook has no monthly block
         "projects": projects,
         "summary": summary,
     }
