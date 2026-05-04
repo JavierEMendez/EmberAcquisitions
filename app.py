@@ -1342,9 +1342,26 @@ def _build_capital_view_context() -> dict:
     # Pre-load manual pipeline once for the recycle aggregation
     manual_for_recycle = list((manual_blob_for_recycle := _capital_load_manual_pipeline()).get("projects") or [])
 
+    # Pre-compute which monthly cells are realized (ended on or before
+    # today) vs forecast (in the future). Used to split actDLP for the
+    # current year — past years are 100% realized, future years are
+    # 100% forecast, and the bar for the CURRENT year is split month-
+    # by-month so the report draws a clean line at "today".
+    today_iso = today.date().isoformat()
+    monthly_idx_by_year: dict[int, dict] = {}
+    if src_months:
+        for _idx, _iso in enumerate(src_months):
+            try: _yr = int(str(_iso)[:4])
+            except (TypeError, ValueError): continue
+            slot = monthly_idx_by_year.setdefault(_yr, {"realized": [], "forecast": []})
+            if str(_iso) <= today_iso:
+                slot["realized"].append(_idx)
+            else:
+                slot["forecast"].append(_idx)
+
     recycle_rows = []
     for yr in recycle_years:
-        actC = actDLP = actDProm = pipC = pipD = 0.0
+        actC = actDLP_real = actDLP_fore = actDProm = pipC = 0.0
         # Active side — sum across the live returns projects, indexed by
         # the project's native year array (typically 2023-2036).
         if yr in years_int:
@@ -1355,30 +1372,55 @@ def _build_capital_view_context() -> dict:
                 by_label = {m.get("label"): m for m in (p.get("metrics") or [])}
                 contrib_y = (by_label.get("Total LP Contributions") or {}).get("yearly") or []
                 dist_y    = (by_label.get("Total LP Distributions") or {}).get("yearly") or []
+                dist_m    = (by_label.get("Total LP Distributions") or {}).get("monthly") or []
                 prom_y    = (by_label.get("Promote") or {}).get("yearly") or []
                 actC     += abs(float(contrib_y[i_yr])) if i_yr < len(contrib_y) else 0.0
-                actDLP   += float(dist_y[i_yr])        if i_yr < len(dist_y)    else 0.0
                 actDProm += float(prom_y[i_yr])        if i_yr < len(prom_y)    else 0.0
+                # Split the LP distribution into realized (≤ today) vs
+                # forecast (> today). Prefer monthly precision when the
+                # workbook ships a Monthly Cashflows block; otherwise
+                # fall back to a year-based split (past = realized, this
+                # year = ytd_fraction split, future = forecast).
+                year_total = float(dist_y[i_yr]) if i_yr < len(dist_y) else 0.0
+                slot = monthly_idx_by_year.get(yr) if dist_m else None
+                if slot:
+                    for mi in slot["realized"]:
+                        if mi < len(dist_m): actDLP_real += float(dist_m[mi] or 0)
+                    for mi in slot["forecast"]:
+                        if mi < len(dist_m): actDLP_fore += float(dist_m[mi] or 0)
+                elif yr < current_year:
+                    actDLP_real += year_total
+                elif yr > current_year:
+                    actDLP_fore += year_total
+                else:  # current year, no monthly data — pro-rate
+                    actDLP_real += year_total * ytd_fraction
+                    actDLP_fore += year_total * (1.0 - ytd_fraction)
 
-        # Pipeline side — sum the manual pipeline yearly arrays. Stored
-        # in raw $; convert to $K to match the active side.
+        # Pipeline side — only contributions; per partner feedback
+        # we no longer render the dashed-teal "Distributions · Pipeline"
+        # series. Pipeline distributions still flow through Capital's
+        # KPI roll-up (to_be_distributed etc.) — just not on this chart.
         for mp in manual_for_recycle:
             ystart = mp.get("years_start", _CAP_MANUAL_PIPELINE_YEAR_START)
             idx = yr - ystart
             mc = mp.get("contributions_yearly") or []
-            md = mp.get("distributions_yearly") or []
             if 0 <= idx < len(mc):
                 pipC += abs(float(mc[idx])) / 1000.0
-            if 0 <= idx < len(md):
-                pipD += float(md[idx]) / 1000.0
 
         recycle_rows.append({
-            "year":     yr,
-            "actC":     int(round(actC)),
-            "actDLP":   int(round(actDLP)),
-            "actDProm": int(round(actDProm)),
-            "pipC":     int(round(pipC)),
-            "pipD":     int(round(pipD)),
+            "year":           yr,
+            "actC":           int(round(actC)),
+            # Split LP distributions into two stack segments. actDLP is
+            # kept for any downstream consumer that just wants the
+            # combined total without caring about realization status.
+            "actDLP":         int(round(actDLP_real + actDLP_fore)),
+            "actDLP_real":    int(round(actDLP_real)),
+            "actDLP_fore":    int(round(actDLP_fore)),
+            "actDProm":       int(round(actDProm)),
+            "pipC":           int(round(pipC)),
+            # Pipeline distributions deliberately omitted from the chart
+            # (legacy `pipD: 0` for backwards compatibility).
+            "pipD":           0,
         })
 
     # Y-axis ceiling: round to next 10K above the tallest bar so the
@@ -1387,7 +1429,8 @@ def _build_capital_view_context() -> dict:
     max_bar = 0
     for r in recycle_rows:
         contrib_total = r["actC"] + r["pipC"]
-        dist_total    = r["actDLP"] + r["actDProm"] + r["pipD"]
+        # actDLP already = real + fore, no double-counting needed.
+        dist_total    = r["actDLP"] + r["actDProm"]
         max_bar = max(max_bar, contrib_total, dist_total)
     y_axis_max = max(50_000, int((max_bar // 10_000 + 1) * 10_000)) if max_bar else 50_000
 
@@ -1597,10 +1640,17 @@ def _build_capital_view_context() -> dict:
             # SVG inlines these so it renders correctly inside print PDFs
             # where CSS variables don't always resolve.
             "color_contrib":      "#F25929",   # active contributions (orange)
-            "color_dist_lp":      "#5E9E8C",   # active LP distributions (teal)
-            "color_dist_promote": "#C8A96E",   # active promote (gold)
-            "color_pipeline_contrib": "#F25929",  # dashed orange
-            "color_pipeline_dist":    "#5E9E8C",  # dashed teal
+            # LP distributions are split into two stack segments —
+            # realized (past) renders in the deeper teal, forecasted
+            # (future) in the lighter sage. Same hue family so they read
+            # as one logical series with a "this is what's been paid"
+            # demarcation visible at a glance.
+            "color_dist_lp":           "#5E9E8C",   # legacy alias = forecast color
+            "color_dist_lp_realized":  "#1F7A4D",   # realized — deep "good" green
+            "color_dist_lp_forecast":  "#5E9E8C",   # forecast — established teal
+            "color_dist_promote":      "#C8A96E",   # active promote (gold)
+            "color_pipeline_contrib":  "#F25929",   # dashed orange
+            "color_pipeline_dist":     "#5E9E8C",   # legacy — no longer rendered
         },
         "commitments": {"groups": commit_groups, "totals": commit_totals},
         "kpis": {

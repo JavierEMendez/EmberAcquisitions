@@ -3,24 +3,28 @@
 
    Expects: capital.recycle = {
        years:        [2021..2035],
-       rows:         [{year, actC, actDLP, actDProm, pipC, pipD}, ...],
+       rows:         [{year, actC, actDLP_real, actDLP_fore, actDProm,
+                       pipC, ...}, ...],
        y_axis_max:   int ($K),  # auto-scaled, 50K minimum
        current_year: int,
-       color_contrib / color_dist_lp / color_dist_promote /
-       color_pipeline_contrib / color_pipeline_dist:  hex strings
+       color_contrib / color_dist_lp_realized / color_dist_lp_forecast /
+       color_dist_promote / color_pipeline_contrib:  hex strings
    }
 
-   Geometry per CHANGELOG-v3.md:
-     viewBox  0 0 1000 200
-     chart    x = 38..990   y = 4..170
-     bars     barW = 18, gap = 4, groupW = 40
-     pxPerK   plotH / y_axis_max  (auto-scales when bars exceed 50K)
+   Distributions stack (bottom → top):
+     1. LP · Realized   (deeper green, paid through today)
+     2. LP · Forecasted (lighter teal, scheduled for the future)
+     3. Promote · Active (gold)
+
+   Pipeline distributions are deliberately not rendered — partner
+   feedback was that the dashed-teal "Distributions · Pipeline"
+   series cluttered the chart without adding signal.
    ───────────────────────────────────────────────────────────────── #}
 
 <header class="sec-head" style="margin-top: 32px;">
   <div class="eyebrow">Contributions · Distributions · Active &amp; Pipeline</div>
   <h2>Annual Capital Recycling &amp; Equity Investment</h2>
-  <p>{{ capital.recycle.rows[0].year }} – {{ capital.recycle.rows[-1].year }} · $ in 000s · Active solid · Pipeline dashed.</p>
+  <p>{{ capital.recycle.rows[0].year }} – {{ capital.recycle.rows[-1].year }} · $ in 000s · LP distributions split realized / forecasted at today's date.</p>
 </header>
 
 <div class="recycle-card">
@@ -28,9 +32,9 @@
     <span class="leg"><span class="sw"         style="background: {{ capital.recycle.color_contrib }};"></span>Contributions · Active</span>
     <span class="leg"><span class="sw outline" style="border-color: {{ capital.recycle.color_pipeline_contrib }};"></span>Contributions · Pipeline</span>
     <span class="leg sep"></span>
-    <span class="leg"><span class="sw"         style="background: {{ capital.recycle.color_dist_lp }};"></span>LP Distributions · Active</span>
+    <span class="leg"><span class="sw"         style="background: {{ capital.recycle.color_dist_lp_realized }};"></span>LP Distributions · Realized</span>
+    <span class="leg"><span class="sw"         style="background: {{ capital.recycle.color_dist_lp_forecast }};"></span>LP Distributions · Forecasted</span>
     <span class="leg"><span class="sw"         style="background: {{ capital.recycle.color_dist_promote }};"></span>Promote · Active</span>
-    <span class="leg"><span class="sw outline" style="border-color: {{ capital.recycle.color_pipeline_dist }};"></span>Distributions · Pipeline</span>
   </div>
 
   {% set rows = capital.recycle.rows %}
@@ -96,26 +100,27 @@
             stroke-dasharray="3 2"/>
       {% endif %}
 
-      {# Distributions bar (right): active LP base + active Promote stack + pipeline dashed top #}
-      {% set hLP = r.actDLP   * pxPerK %}
-      {% set hPR = r.actDProm * pxPerK %}
-      {% set hPD = r.pipD     * pxPerK %}
-      {% if hLP > 0 %}
-      <rect x="{{ '%.2f' | format(xD) }}" y="{{ '%.2f' | format(yBase - hLP) }}"
-            width="{{ barW }}" height="{{ '%.2f' | format(hLP) }}"
-            fill="{{ capital.recycle.color_dist_lp }}"/>
+      {# Distributions bar (right): LP-realized base + LP-forecast +
+         active Promote on top. Pipeline distributions intentionally
+         omitted (partner feedback). actDLP_real falls back to actDLP
+         when the workbook predates the realized/forecast split. #}
+      {% set hLPr = (r.actDLP_real if r.actDLP_real is defined else r.actDLP) * pxPerK %}
+      {% set hLPf = (r.actDLP_fore if r.actDLP_fore is defined else 0)        * pxPerK %}
+      {% set hPR  = r.actDProm * pxPerK %}
+      {% if hLPr > 0 %}
+      <rect x="{{ '%.2f' | format(xD) }}" y="{{ '%.2f' | format(yBase - hLPr) }}"
+            width="{{ barW }}" height="{{ '%.2f' | format(hLPr) }}"
+            fill="{{ capital.recycle.color_dist_lp_realized }}"/>
+      {% endif %}
+      {% if hLPf > 0 %}
+      <rect x="{{ '%.2f' | format(xD) }}" y="{{ '%.2f' | format(yBase - hLPr - hLPf) }}"
+            width="{{ barW }}" height="{{ '%.2f' | format(hLPf) }}"
+            fill="{{ capital.recycle.color_dist_lp_forecast }}"/>
       {% endif %}
       {% if hPR > 0 %}
-      <rect x="{{ '%.2f' | format(xD) }}" y="{{ '%.2f' | format(yBase - hLP - hPR) }}"
+      <rect x="{{ '%.2f' | format(xD) }}" y="{{ '%.2f' | format(yBase - hLPr - hLPf - hPR) }}"
             width="{{ barW }}" height="{{ '%.2f' | format(hPR) }}"
             fill="{{ capital.recycle.color_dist_promote }}"/>
-      {% endif %}
-      {% if hPD > 0 %}
-      <rect x="{{ '%.2f' | format(xD) }}" y="{{ '%.2f' | format(yBase - hLP - hPR - hPD) }}"
-            width="{{ barW }}" height="{{ '%.2f' | format(hPD) }}"
-            fill="rgba(94,158,140,0.10)"
-            stroke="{{ capital.recycle.color_pipeline_dist }}" stroke-width="1"
-            stroke-dasharray="3 2"/>
       {% endif %}
 
       {# X-axis label — current year is bold + dark, others muted #}
