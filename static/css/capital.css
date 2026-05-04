@@ -150,17 +150,20 @@
    we got when forcing height:240px with preserveAspectRatio="none". */
 .recycle-chart { width: 100%; height: auto; display: block; }
 /* Axis labels use the page's body sans (Plus Jakarta Sans) at 10px so
-   they match the other small labels on the Capital page (KPI labels,
-   pivot table headers, donut legend rows). The previous mono 8px was
-   visibly off — different family AND smaller than every other label. */
+   they match the other small labels on the Capital page. Light weight +
+   subtle grey keeps the labels reading as secondary chrome — the bars
+   are the data, the labels are the legend.
+   Color hardcoded (not var(--cap-subtle)) because the same partial is
+   reused in WeasyPrint, which doesn't reliably resolve CSS variables
+   on SVG fill attributes. */
 .recycle-chart .axis-label {
   font-family: "Plus Jakarta Sans", system-ui, sans-serif;
   font-size: 10px;
-  font-weight: 500;
-  fill: var(--cap-muted);
+  font-weight: 400;
+  fill: #97a3b0;
   font-variant-numeric: tabular-nums;
 }
-.recycle-chart .axis-label--current { font-weight: 700; fill: var(--cap-ink); }
+.recycle-chart .axis-label--current { font-weight: 700; fill: #08233B; }
 
 .cockpit .pie-card {
   margin-top: 22px;

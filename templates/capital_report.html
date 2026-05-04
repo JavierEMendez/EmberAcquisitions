@@ -576,19 +576,15 @@
        used to stretch text non-uniformly. */
     width: 100%; height: auto; display: block;
   }
-  /* Axis labels match the rest of the report's typography — same
-     Plus Jakarta Sans body font, same 10px size as the project / pipe
-     table cells and KPI sub-text, same muted fill.
-
-     Colors hardcoded (not var(--muted) / var(--ink)) — WeasyPrint
-     does not always resolve CSS custom properties on SVG `fill`
-     properties inside <text> elements, which was leaving the labels
-     rendered in default black at the renderer's default size. */
+  /* Axis labels — same Plus Jakarta Sans 10px regular + light subtle
+     grey as the page version. Colors hardcoded (not var(--muted) /
+     var(--ink)) because WeasyPrint doesn't reliably resolve CSS
+     custom properties on SVG fill attributes inside <text> elements. */
   .recycle-chart .axis-label {
     font-family: "Plus Jakarta Sans", system-ui, sans-serif;
     font-size: 10px;
-    font-weight: 500;
-    fill: #5b6b7b;
+    font-weight: 400;
+    fill: #97a3b0;
     font-variant-numeric: tabular-nums;
   }
   .recycle-chart .axis-label--current { font-weight: 700; fill: #08233B; }
