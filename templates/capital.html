@@ -384,7 +384,8 @@
             <div class="td right">
               {% if p.source == 'manual' %}
               <span class="row-actions">
-                <button type="button" class="row-action-btn js-pipeline-edit"   title="Edit"   aria-label="Edit project">✎</button>
+                <button type="button" class="row-action-btn js-pipeline-xlsx"  title="Update from Excel" aria-label="Update from Excel">↑</button>
+                <button type="button" class="row-action-btn js-pipeline-edit"  title="Edit"   aria-label="Edit project">✎</button>
                 <button type="button" class="row-action-btn danger js-pipeline-del" title="Delete" aria-label="Delete project">×</button>
               </span>
               {% endif %}
@@ -588,6 +589,21 @@
     <form id="pipeline-form" autocomplete="off">
       <div class="cap-modal-body">
         <input type="hidden" name="id" value=""/>
+
+        {# Import from Excel — lets the user drop in an underwriting workbook
+           (the "Returns" tab) and auto-fill IRR / EM / yearly cashflows. The
+           same parser drives the per-row "Update from Excel" button. #}
+        <div class="form-row" style="border:1px dashed var(--cap-line);border-radius:8px;padding:12px 14px;background:var(--cap-bg-2);">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:220px;">
+              <div style="font-weight:600;font-size:13px;color:var(--cap-ink);margin-bottom:2px;">Import from Excel</div>
+              <div style="font-size:11px;color:var(--cap-muted);">Upload the underwriting workbook's <strong>Returns</strong> tab — IRR, equity multiple, and yearly LP contributions/distributions will fill in below.</div>
+            </div>
+            <input type="file" id="pf-excel-file" accept=".xlsx,.xls" style="display:none;"/>
+            <button type="button" class="btn ghost" id="pf-excel-pick">Choose file…</button>
+            <span class="modal-status" id="pf-excel-status" style="font-size:11px;"></span>
+          </div>
+        </div>
 
         <div class="form-row">
           <label for="pf-name">Project Name</label>

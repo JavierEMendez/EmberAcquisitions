@@ -204,11 +204,62 @@
       if (e.key === "Escape" && !modal.hidden) close();
     });
 
-    // Edit / Delete buttons on each manual pipeline row
+    // ─── Excel import inside the Add/Edit modal ────────────────
+    const excelPick   = $("#pf-excel-pick", form);
+    const excelFile   = $("#pf-excel-file", form);
+    const excelStatus = $("#pf-excel-status", form);
+    const setExcelStatus = (msg, kind) => {
+      if (!excelStatus) return;
+      excelStatus.textContent = msg || "";
+      excelStatus.className = "modal-status" + (kind ? " " + kind : "");
+      excelStatus.style.fontSize = "11px";
+    };
+    excelPick?.addEventListener("click", () => excelFile?.click());
+    excelFile?.addEventListener("change", async (e) => {
+      const f = e.target.files?.[0];
+      if (!f) return;
+      setExcelStatus(`Parsing ${f.name}…`);
+      const fd = new FormData();
+      fd.append("file", f);
+      try {
+        const res = await fetch("/api/ember-capital/pipeline/parse-excel", {
+          method: "POST",
+          body: fd,
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+        // Fill IRR + EM
+        const irrInp = form.querySelector('[name="irr"]');
+        const emInp  = form.querySelector('[name="em"]');
+        if (irrInp) irrInp.value = data.irr ?? "";
+        if (emInp)  emInp.value  = data.em ?? "";
+        // Fill yearly arrays. Inputs are rendered in order matching pipeline_year_range.
+        const contribs = data.contributions_yearly || [];
+        const distribs = data.distributions_yearly || [];
+        $$('.cf-grid input[data-kind="contrib"]', form).forEach((inp, i) => {
+          inp.value = contribs[i] ? Math.abs(contribs[i]) : "";
+        });
+        $$('.cf-grid input[data-kind="dist"]', form).forEach((inp, i) => {
+          inp.value = distribs[i] ? Math.abs(distribs[i]) : "";
+        });
+        const oor = (data.out_of_range_years || []);
+        const oorMsg = oor.length ? ` (${oor.length} year${oor.length>1?"s":""} outside the pipeline window were skipped)` : "";
+        setExcelStatus(`Imported ${data.irr}% IRR, ${data.em}× EM${oorMsg}.`, "ok");
+      } catch (err) {
+        console.error("[capital] excel parse failed", err);
+        setExcelStatus("Couldn't parse — see console.", "error");
+      } finally {
+        // Allow re-uploading the same file later (browsers won't re-fire change).
+        e.target.value = "";
+      }
+    });
+
+    // Edit / Delete / Update-from-Excel buttons on each manual pipeline row
     document.addEventListener("click", (e) => {
       const editBtn = e.target.closest(".js-pipeline-edit");
       const delBtn  = e.target.closest(".js-pipeline-del");
-      if (!editBtn && !delBtn) return;
+      const xlsxBtn = e.target.closest(".js-pipeline-xlsx");
+      if (!editBtn && !delBtn && !xlsxBtn) return;
       const row = e.target.closest(".tr.grid-pipeline[data-manual-id]");
       if (!row) return;
       const manualId = row.dataset.manualId;
@@ -224,6 +275,57 @@
         fetch(`/api/ember-capital/pipeline/${encodeURIComponent(manualId)}`, { method: "DELETE" })
           .then(r => { if (!r.ok) throw new Error(r.status); window.location.reload(); })
           .catch(err => alert("Delete failed: " + err.message));
+      } else if (xlsxBtn) {
+        // Update an existing project's IRR / EM / yearly cashflows from a
+        // freshly-uploaded Returns tab. Identity fields (name, location,
+        // asset class) are preserved from the existing record.
+        try {
+          const existing = JSON.parse(row.dataset.form || "{}");
+          existing.id = manualId;
+          const picker = document.createElement("input");
+          picker.type = "file";
+          picker.accept = ".xlsx,.xls";
+          picker.style.display = "none";
+          document.body.appendChild(picker);
+          picker.addEventListener("change", async (evt) => {
+            const f = evt.target.files?.[0];
+            if (!f) { picker.remove(); return; }
+            const fd = new FormData();
+            fd.append("file", f);
+            try {
+              const res = await fetch("/api/ember-capital/pipeline/parse-excel", {
+                method: "POST", body: fd,
+              });
+              const data = await res.json();
+              if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+              const payload = {
+                name:                 existing.name        || "",
+                location:             existing.location    || "",
+                asset_class:          existing.asset_class || "mpc-hub",
+                irr:                  data.irr ?? 0,
+                em:                   data.em ?? 0,
+                contributions_yearly: (data.contributions_yearly || []).map(Math.abs),
+                distributions_yearly: (data.distributions_yearly || []).map(Math.abs),
+              };
+              const putRes = await fetch(
+                `/api/ember-capital/pipeline/${encodeURIComponent(manualId)}`,
+                { method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(payload) }
+              );
+              if (!putRes.ok) throw new Error(`Update failed: ${putRes.status}`);
+              window.location.reload();
+            } catch (err) {
+              console.error("[capital] update-from-excel failed", err);
+              alert("Update failed: " + err.message);
+            } finally {
+              picker.remove();
+            }
+          });
+          picker.click();
+        } catch (err) {
+          console.error("[capital] could not parse row data-form for xlsx update", err);
+        }
       }
     });
 

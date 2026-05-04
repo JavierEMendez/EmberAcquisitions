@@ -1725,7 +1725,7 @@ def update_project_asset_class(project_id):
 # them into $K before they hit the Pipeline table to match MPC rows.
 # ─────────────────────────────────────────────────────────────────────────────
 _CAP_MANUAL_PIPELINE_YEAR_START = 2024
-_CAP_MANUAL_PIPELINE_YEAR_END   = 2039  # inclusive
+_CAP_MANUAL_PIPELINE_YEAR_END   = 2045  # inclusive — matches the years axis used by /api/ember-capital
 _CAP_MANUAL_PIPELINE_N_YEARS    = _CAP_MANUAL_PIPELINE_YEAR_END - _CAP_MANUAL_PIPELINE_YEAR_START + 1
 
 
@@ -1903,6 +1903,161 @@ def ember_capital_manual_pipeline_one(pid):
     _capital_save_manual_pipeline({"projects": projects})
     _capital_save_asset_class(cleaned["name"], cleaned["asset_class"])
     return jsonify({"ok": True, "project": cleaned})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pipeline Excel import — parse a project's underwriting "Returns" tab and
+# pull out the LP-level summary (IRR, equity multiple, yearly contributions
+# and distributions) so it can prefill the Add Pipeline modal or replace the
+# numeric fields of an existing pipeline row.
+#
+# Field map (per the underwriting workbook layout — see _design_reference for
+# Mllican Returns Tab.xlsx):
+#   D26  Total LP Contributions ($)         used as a sanity-check total
+#   D25  Total LP Distributions ($)         used as a sanity-check total
+#   D28  LP IRR (decimal, e.g. 0.1362)
+#   D29  LP Equity Multiple (e.g. 2.55)
+#   F19→ month index 0..N
+#   F20→ year per column (2026, 2027, ...)
+#   F25→ monthly LP distributions
+#   F26→ monthly LP contributions
+# ─────────────────────────────────────────────────────────────────────────────
+def _parse_returns_excel_for_pipeline(file_bytes: bytes) -> dict:
+    """Read an underwriting workbook's Returns tab and return a dict shaped
+    for the pipeline form / API:
+
+        {"irr": 13.62, "em": 2.55,
+         "contributions_yearly": [...N_YEARS floats...],
+         "distributions_yearly": [...N_YEARS floats...],
+         "totals": {"contrib": 33618766, "dist": 85663163},
+         "year_range": [2026, 2041]}
+
+    On failure returns {"error": "..."}.
+    """
+    import openpyxl as _opx
+    import io as _io
+    from collections import defaultdict as _dd
+
+    try:
+        wb = _opx.load_workbook(_io.BytesIO(file_bytes), data_only=True, read_only=False)
+    except Exception as e:
+        return {"error": f"Could not open workbook: {type(e).__name__}: {e}"}
+
+    # Find the right sheet — the one whose D19 cell contains "Analysis Period".
+    # The underwriting workbook sometimes ships with extra tabs, so don't
+    # blindly take the first one.
+    ws = None
+    for name in wb.sheetnames:
+        try:
+            label = wb[name].cell(row=19, column=4).value
+            if isinstance(label, str) and "analysis period" in label.lower():
+                ws = wb[name]
+                break
+        except Exception:
+            continue
+    if ws is None:
+        # Fall back to a sheet named "Returns" if it exists, else first sheet.
+        for name in wb.sheetnames:
+            if name.strip().lower() == "returns":
+                ws = wb[name]
+                break
+        if ws is None:
+            ws = wb[wb.sheetnames[0]]
+
+    def _f(v):
+        if v is None: return 0.0
+        try: return float(v)
+        except (TypeError, ValueError): return 0.0
+
+    # ── Headline metrics ──
+    total_contrib = _f(ws.cell(row=26, column=4).value)
+    total_dist    = _f(ws.cell(row=25, column=4).value)
+    irr_raw       = ws.cell(row=28, column=4).value     # decimal
+    em_raw        = ws.cell(row=29, column=4).value
+
+    try:
+        irr_pct = round(float(irr_raw) * 100, 2) if irr_raw not in (None, "", "N/A") else 0.0
+    except (TypeError, ValueError):
+        irr_pct = 0.0
+    try:
+        em = round(float(em_raw), 2) if em_raw not in (None, "", "N/A") else 0.0
+    except (TypeError, ValueError):
+        em = 0.0
+
+    # ── Yearly buckets ──
+    by_year_contrib: dict = _dd(float)
+    by_year_dist:    dict = _dd(float)
+    seen_years = set()
+
+    # Walk columns F (=6) onward until we run out of data on row 20 (year row).
+    last_col = ws.max_column or 6
+    for c in range(6, last_col + 1):
+        yv = ws.cell(row=20, column=c).value
+        if yv is None:
+            # Stop at the first fully-empty year cell so we don't pick up
+            # trailing Excel calc tail columns. But check if there's any
+            # cashflow value here too — if not, break.
+            if (ws.cell(row=25, column=c).value in (None, 0) and
+                ws.cell(row=26, column=c).value in (None, 0)):
+                break
+            continue
+        try:
+            yi = int(yv)
+        except (TypeError, ValueError):
+            continue
+        seen_years.add(yi)
+        by_year_contrib[yi] += _f(ws.cell(row=26, column=c).value)
+        by_year_dist[yi]    += _f(ws.cell(row=25, column=c).value)
+
+    if not seen_years:
+        return {"error": "No yearly cashflow rows found — verify this is a Returns tab."}
+
+    # Build N_YEARS-long arrays anchored at the pipeline window.
+    contributions = [0.0] * _CAP_MANUAL_PIPELINE_N_YEARS
+    distributions = [0.0] * _CAP_MANUAL_PIPELINE_N_YEARS
+    for y, v in by_year_contrib.items():
+        idx = y - _CAP_MANUAL_PIPELINE_YEAR_START
+        if 0 <= idx < _CAP_MANUAL_PIPELINE_N_YEARS:
+            contributions[idx] = round(v, 2)
+    for y, v in by_year_dist.items():
+        idx = y - _CAP_MANUAL_PIPELINE_YEAR_START
+        if 0 <= idx < _CAP_MANUAL_PIPELINE_N_YEARS:
+            distributions[idx] = round(v, 2)
+
+    out_of_range = sorted([y for y in seen_years if not (
+        _CAP_MANUAL_PIPELINE_YEAR_START <= y <= _CAP_MANUAL_PIPELINE_YEAR_END
+    )])
+
+    return {
+        "irr": irr_pct,
+        "em":  em,
+        "contributions_yearly": contributions,
+        "distributions_yearly": distributions,
+        "totals": {"contrib": round(total_contrib, 2), "dist": round(total_dist, 2)},
+        "year_range": [min(seen_years), max(seen_years)] if seen_years else [None, None],
+        "out_of_range_years": out_of_range,
+    }
+
+
+@app.route("/api/ember-capital/pipeline/parse-excel", methods=["POST"])
+@login_required
+def ember_capital_pipeline_parse_excel():
+    """Parse an uploaded underwriting workbook's Returns tab and return the
+    extracted LP fields for the pipeline form. Does NOT save anything — the
+    caller (Add modal or per-row "Update from Excel") decides whether/how
+    to persist via POST/PUT to /api/ember-capital/pipeline.
+    """
+    file = request.files.get("file")
+    if not file:
+        return jsonify({"error": "No file uploaded"}), 400
+    try:
+        data = file.read()
+    except Exception as e:
+        return jsonify({"error": f"Could not read upload: {e}"}), 400
+    parsed = _parse_returns_excel_for_pipeline(data)
+    if parsed.get("error"):
+        return jsonify(parsed), 400
+    return jsonify(parsed)
 
 
 @app.route("/api/ember-capital/excel", methods=["GET"])
