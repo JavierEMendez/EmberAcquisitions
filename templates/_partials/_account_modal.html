@@ -2,10 +2,21 @@
    Account Settings modal — shared across every dashboard page.
    Drop in once near the bottom of <body>:
        {% include "_partials/_account_modal.html" %}
-   Pairs with the JS handlers (openAcct, closeAcct, applyTheme,
-   saveAcctPw, saveReportSettings) which each page already defines
-   in its own <script> block. CSS lives in static/theme.css under
-   the .acct-* class group.
+
+   This partial is now SELF-CONTAINED: it ships the modal markup
+   AND the JS handlers (openAcct / closeAcct / applyTheme /
+   saveAcctPw / saveReportSettings) at the bottom. Pages no longer
+   need to define those globals themselves — including the partial
+   makes the Account button work and the theme toggle persist
+   across navigation.
+
+   For the no-flash <head> bootstrap that sets <html data-theme>
+   from localStorage before CSS resolves, see the inline snippet
+   each page puts in <head>:
+       <script>(function(){var t=localStorage.getItem('ember-theme');
+         document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
+
+   CSS lives in static/theme.css under the .acct-* class group.
    ============================================================ #}
 <div id="acct-modal" class="acct-modal">
   <div class="acct-box">
@@ -63,3 +74,174 @@
     </div>
   </div>
 </div>
+
+{# ─── Account + Theme JS (shared across every page that includes this partial) ───
+   Defined globals (each guarded so pages that already have them — home.html,
+   returns.html — keep their existing definitions and we don't double-wire):
+     applyTheme(theme)        flips html[data-theme] + every inner wrapper
+                              (.cap-shell / .loans-page / .ops-page) and
+                              persists to localStorage["ember-theme"].
+     openAcct(), closeAcct()  modal show / hide.
+     saveAcctPw()             PUT /api/account/password.
+     saveReportSettings()     PUT /api/account/report-settings.
+     _updateThemeButtons()    sync the Paper / Navy pill .is-active state.
+   On DOMContentLoaded the script also pushes the saved theme onto every
+   inner page wrapper present in the DOM, so navigating from Home (where
+   the user picked Navy) to Capital / Loans / Operations carries the look
+   without a manual re-toggle. #}
+<script>
+(function(){
+  function getSavedTheme(){
+    return localStorage.getItem('ember-theme') === 'dark' ? 'dark' : 'light';
+  }
+  function applyToInnerWrappers(theme){
+    // Capital uses .cap-shell, Loans uses .loans-page, Ops uses .ops-page.
+    // Their CSS scopes [data-theme="navy"] / [data-theme="paper"] tokens.
+    var v = (theme === 'dark') ? 'navy' : 'paper';
+    document.querySelectorAll('.cap-shell, .loans-page, .ops-page').forEach(function(el){
+      el.setAttribute('data-theme', v);
+    });
+  }
+  function updateThemeButtons(){
+    var dark = getSavedTheme() === 'dark';
+    var b1 = document.getElementById('theme-btn-dark');
+    var b2 = document.getElementById('theme-btn-light');
+    if (b1) b1.classList.toggle('is-active', dark);
+    if (b2) b2.classList.toggle('is-active', !dark);
+  }
+
+  // Apply saved theme to inner wrappers as soon as the DOM is parsed.
+  function bootInner(){ applyToInnerWrappers(getSavedTheme()); updateThemeButtons(); }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootInner);
+  } else {
+    bootInner();
+  }
+
+  if (typeof window.applyTheme !== 'function') {
+    window.applyTheme = function(theme){
+      var norm = (theme === 'dark') ? 'dark' : 'light';
+      localStorage.setItem('ember-theme', norm);
+      document.documentElement.dataset.theme = norm;
+      applyToInnerWrappers(norm);
+      updateThemeButtons();
+    };
+  } else {
+    // Wrap an existing applyTheme so we ALSO sync inner wrappers.
+    var _orig = window.applyTheme;
+    window.applyTheme = function(theme){
+      _orig(theme);
+      applyToInnerWrappers(getSavedTheme());
+    };
+  }
+  if (typeof window._updateThemeButtons !== 'function') {
+    window._updateThemeButtons = updateThemeButtons;
+  }
+
+  if (typeof window.openAcct !== 'function') {
+    window.openAcct = async function(){
+      var m = document.getElementById('acct-modal');
+      if (!m) return;
+      m.classList.add('open');
+      updateThemeButtons();
+      ['acct-cur-pw','acct-new-pw','acct-conf-pw'].forEach(function(id){
+        var el = document.getElementById(id); if (el) el.value = '';
+      });
+      ['acct-msg','acct-report-msg'].forEach(function(id){
+        var el = document.getElementById(id);
+        if (el) { el.style.display = 'none'; el.textContent = ''; }
+      });
+      try {
+        var res = await fetch('/api/account');
+        var d = await res.json();
+        var em = document.getElementById('acct-email');
+        if (em) em.textContent = d.email || '—';
+        var optIn = document.getElementById('acct-report-optin');
+        if (optIn) optIn.checked = !!d.report_opt_in;
+        var fmtId = (d.report_format === 'excel') ? 'acct-fmt-excel' : 'acct-fmt-pdf';
+        var fmtEl = document.getElementById(fmtId);
+        if (fmtEl) fmtEl.checked = true;
+        var fr = document.getElementById('acct-format-row');
+        if (fr) fr.style.display = d.report_opt_in ? 'block' : 'none';
+      } catch (e) { /* offline/auth — leave fields blank */ }
+    };
+  }
+
+  if (typeof window.closeAcct !== 'function') {
+    window.closeAcct = function(){
+      var m = document.getElementById('acct-modal');
+      if (m) m.classList.remove('open');
+    };
+  }
+
+  if (typeof window.saveAcctPw !== 'function') {
+    window.saveAcctPw = async function(){
+      var cur = document.getElementById('acct-cur-pw').value;
+      var nw  = document.getElementById('acct-new-pw').value;
+      var cf  = document.getElementById('acct-conf-pw').value;
+      var msg = document.getElementById('acct-msg');
+      function show(t, ok){
+        msg.textContent = t;
+        msg.style.color = ok ? '#5e9e8c' : '#e07a3e';
+        msg.style.display = 'block';
+      }
+      if (!cur || !nw || !cf) { show('All fields are required.', false); return; }
+      if (nw !== cf) { show('New passwords do not match.', false); return; }
+      try {
+        var res = await fetch('/api/account/password', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ current_password: cur, new_password: nw }),
+        });
+        var d = await res.json();
+        if (d.ok) { show('Password updated.', true); setTimeout(window.closeAcct, 1500); }
+        else show(d.error || 'Failed to update password.', false);
+      } catch (e) { show('Network error.', false); }
+    };
+  }
+
+  if (typeof window.saveReportSettings !== 'function') {
+    window.saveReportSettings = async function(){
+      var optIn = document.getElementById('acct-report-optin').checked;
+      var fmt   = (document.querySelector('input[name="acct-report-fmt"]:checked') || {}).value || 'pdf';
+      var msg   = document.getElementById('acct-report-msg');
+      try {
+        var res = await fetch('/api/account/report-settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ report_opt_in: optIn, report_format: fmt }),
+        });
+        var d = await res.json();
+        msg.style.display = 'block';
+        if (d.ok) { msg.textContent = 'Preferences saved.'; msg.style.color = '#5e9e8c'; }
+        else      { msg.textContent = d.error || 'Failed to save.'; msg.style.color = '#e07a3e'; }
+      } catch (e) {
+        msg.style.display = 'block';
+        msg.textContent = 'Network error.';
+        msg.style.color = '#e07a3e';
+      }
+    };
+  }
+
+  // Click-outside-to-close (only attach once even if the partial is included
+  // somewhere that already has its own listener — the inner check makes the
+  // duplicate handler a no-op).
+  var modal = document.getElementById('acct-modal');
+  if (modal && !modal.dataset.acctWired) {
+    modal.dataset.acctWired = '1';
+    modal.addEventListener('click', function(e){
+      if (e.target === modal) window.closeAcct();
+    });
+  }
+
+  // Tie format-row visibility to the opt-in checkbox.
+  var optIn = document.getElementById('acct-report-optin');
+  if (optIn && !optIn.dataset.acctWired) {
+    optIn.dataset.acctWired = '1';
+    optIn.addEventListener('change', function(){
+      var fr = document.getElementById('acct-format-row');
+      if (fr) fr.style.display = this.checked ? 'block' : 'none';
+    });
+  }
+})();
+</script>

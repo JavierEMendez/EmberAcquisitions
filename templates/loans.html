@@ -16,6 +16,8 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="/static/theme.css"/>
 <link rel="stylesheet" href="/static/css/loans.css"/>
+{# No-flash theme bootstrap — read localStorage before any CSS resolves. #}
+<script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 <style>
   /* App shell (sidebar + main) — matches capital.html / operations.html. */
   *{box-sizing:border-box;margin:0;padding:0}
@@ -139,6 +141,9 @@
       <p>Upload the Ember Dashboard Excel from the home page (the "Loan Capacities &amp; DS" tab feeds this view).</p>
     </div>
   {% else %}
+    {# data-theme is set on DOMContentLoaded by the script in
+       _partials/_account_modal.html based on localStorage. We default to
+       "paper" inline so SSR'd HTML still renders sensibly without JS. #}
     <div class="loans-page" data-theme="paper">
       <main class="loans-main">
         <header class="loans-topbar">
@@ -272,6 +277,9 @@
 {% if loans %}
 <script src="/static/js/loans.js" defer></script>
 {% endif %}
+
+{# Account modal + theme handlers — Account button in sidebar foot calls openAcct(). #}
+{% include "_partials/_account_modal.html" %}
 
 </body>
 </html>

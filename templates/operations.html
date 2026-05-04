@@ -16,6 +16,8 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="/static/theme.css"/>
 <link rel="stylesheet" href="/static/css/operations.css"/>
+{# No-flash theme bootstrap — read localStorage before any CSS resolves. #}
+<script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 <style>
   /* App shell (sidebar + main) — matches capital.html / portfolio.html so
      /operations sits inside the same chrome the rest of the app uses. */
@@ -223,6 +225,9 @@
 <script id="ops-data" type="application/json">{{ ops.client_json|safe }}</script>
 <script src="/static/js/operations.js" defer></script>
 {% endif %}
+
+{# Account modal + theme handlers — Account button in sidebar foot calls openAcct(). #}
+{% include "_partials/_account_modal.html" %}
 
 </body>
 </html>

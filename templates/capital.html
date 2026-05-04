@@ -22,6 +22,11 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="/static/theme.css"/>
 <link rel="stylesheet" href="/static/css/capital.css"/>
+{# No-flash theme bootstrap — read localStorage before any CSS resolves so
+   the sidebar (theme.css tokens) renders in the right palette immediately.
+   The inner .cap-shell wrapper gets its data-theme synced by the JS in
+   _partials/_account_modal.html on DOMContentLoaded. #}
+<script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 <style>
   /* App shell (sidebar + main) — copied from the rest of the site so
      /capital nests inside the same chrome the user already navigates. */
@@ -671,6 +676,9 @@
   };
 </script>
 <script src="/static/js/capital.js" defer></script>
+
+{# Account modal + theme handlers (Account button in sidebar foot calls openAcct). #}
+{% include "_partials/_account_modal.html" %}
 
 </body>
 </html>
