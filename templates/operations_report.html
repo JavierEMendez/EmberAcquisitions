@@ -80,6 +80,7 @@
     left: 0.55in; right: 0.55in;
     bottom: 1.0in;
   }
+  .cover .title-block .eyebrow { margin-bottom: 14px; }
   .cover h1 {
     font-family: var(--font-display);
     font-weight: 700;
@@ -89,9 +90,7 @@
     color: var(--ink);
     text-transform: uppercase;
   }
-  /* Matches Loans report: emphasis word same weight + ink color as
-     the rest of the title for one solid dark-navy headline. */
-  .cover h1 em { font-style: normal; font-weight: 700; color: var(--ink); }
+  .cover h1 em { font-style: normal; font-weight: 700; color: var(--accent); }
   .cover .lede {
     margin-top: 18px;
     font-size: 14px;
@@ -211,6 +210,7 @@
   {# Title block — anchored at bottom:1.0in to leave a deliberate
      swath of empty space above (matches Capital cover). #}
   <div class="title-block">
+    <div class="eyebrow">Ember Residential · Finance &amp; Analytics</div>
     <h1>Operating <em>Cashflows</em></h1>
     <p class="lede">
       Forward forecast of operating revenue across active Ember communities.
