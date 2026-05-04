@@ -1230,14 +1230,20 @@ def _build_capital_view_context() -> dict:
     #     YTD" KPI on page 2 of the report.
     portfolio_distributed_ltd          = 0.0
     portfolio_distributed_ytd_current  = 0.0
-    # Pre-compute the monthly-array indices that fall in the current
-    # year and on/before today. We re-use this set for every project
-    # below so we don't keep re-walking the months list.
+    portfolio_to_be_distributed_18mo   = 0.0  # next 18 months after today
+    # Pre-compute reusable monthly-array index sets. Walk src_months
+    # once instead of per-project.
+    #   cur_year_indices  — current year, on/before today (YTD bucket)
+    #   next_18mo_indices — first 18 months strictly after today
     today_iso = today.date().isoformat()
     cur_year_indices = [
         mi for mi, iso in enumerate(src_months)
         if str(iso)[:4] == cur_year_str and str(iso) <= today_iso
     ]
+    next_18mo_indices = [
+        mi for mi, iso in enumerate(src_months)
+        if str(iso) > today_iso
+    ][:18]
     eq_weighted_irr_num = 0.0
     eq_weighted_irr_den = 0.0
     total_lp_profit = 0.0
@@ -1271,6 +1277,7 @@ def _build_capital_view_context() -> dict:
         dist_y   = _y("Total LP Distributions")
         dist_m   = _m("Total LP Distributions")
         prom_y   = _y("Promote")
+        prom_m   = _m("Promote")
 
         # "To Date" (per-project column) — life-to-date LP distributions
         # received through the most recently completed month. Sum of
@@ -1289,6 +1296,20 @@ def _build_capital_view_context() -> dict:
                 for mi in cur_year_indices
                 if mi < len(dist_m)
             )
+            # Forecast for the next 18 months after today — LP +
+            # Promote summed at month granularity over the same
+            # 18-cell window. Drives the "To Be Distributed" KPI.
+            next18_lp = sum(
+                float(dist_m[mi] or 0)
+                for mi in next_18mo_indices
+                if mi < len(dist_m)
+            )
+            next18_pr = sum(
+                float(prom_m[mi] or 0)
+                for mi in next_18mo_indices
+                if mi < len(prom_m)
+            )
+            next_18mo_total = next18_lp + next18_pr
         else:
             idx_cur = years_int.index(current_year) if current_year in years_int else -1
             if idx_cur >= 0:
@@ -1298,6 +1319,10 @@ def _build_capital_view_context() -> dict:
             else:
                 to_date = 0.0
                 ytd_current = 0.0
+            # No monthly arrays — accumulator stays 0 here; the loop
+            # below (years_int slice × month_window) handles the
+            # legacy year-pro-rate fall-back at the portfolio level.
+            next_18mo_total = 0.0
 
         slug = _capital_slug(name)
         active.append({
@@ -1320,10 +1345,13 @@ def _build_capital_view_context() -> dict:
         for i in range(len(years_str)):
             portfolio_lp_dist_yearly[i] += dist_y[i] if i < len(dist_y) else 0
             portfolio_promote_yearly[i] += prom_y[i] if i < len(prom_y) else 0
-        # Two roll-ups: life-to-date for the Active Projects column,
-        # current-year-YTD for the Distributed YTD KPI.
+        # Three roll-ups, all summed across active projects:
+        #   life-to-date  → Active Projects column
+        #   current-year-YTD → Distributed YTD KPI
+        #   next-18mo forecast → To Be Distributed KPI
         portfolio_distributed_ltd         += to_date
         portfolio_distributed_ytd_current += ytd_current
+        portfolio_to_be_distributed_18mo  += next_18mo_total
         if contrib:
             eq_weighted_irr_num += irr_pct * contrib
             eq_weighted_irr_den += contrib
@@ -1622,20 +1650,28 @@ def _build_capital_view_context() -> dict:
     idx_cur = years_int.index(current_year) if current_year in years_int else -1
     distributed_ytd_k = int(round(portfolio_distributed_ytd_current))
 
-    # 18 months: remaining of current year + full next years until budget gone
-    to_be_distributed_k = 0
-    if idx_cur >= 0:
-        remaining = 18.0
-        # Total recycled = LP rec + Promote rec at current settings
-        for j in range(idx_cur, len(years_int)):
-            if remaining <= 0:
-                break
-            ld = portfolio_lp_dist_yearly[j]
-            pd = portfolio_promote_yearly[j]
-            month_window = months_left_this_year if j == idx_cur else 12
-            use = min(remaining, month_window)
-            to_be_distributed_k += int(round((ld + pd) * (use / 12.0)))
-            remaining -= use
+    # 18 months — sum of LP + Promote distributions scheduled for the
+    # 18 months strictly AFTER today, computed at month granularity
+    # when the workbook ships a Monthly Cashflows block. No more
+    # year-pro-rate guessing; "next 18 months" is exactly that.
+    if src_months and portfolio_to_be_distributed_18mo > 0:
+        to_be_distributed_k = int(round(portfolio_to_be_distributed_18mo))
+    else:
+        # Legacy fallback: year-pro-rate when the workbook predates
+        # the monthly block. Remaining-of-current-year + full next
+        # years × 12mo until the 18-month budget is exhausted.
+        to_be_distributed_k = 0
+        if idx_cur >= 0:
+            remaining = 18.0
+            for j in range(idx_cur, len(years_int)):
+                if remaining <= 0:
+                    break
+                ld = portfolio_lp_dist_yearly[j]
+                pd = portfolio_promote_yearly[j]
+                month_window = months_left_this_year if j == idx_cur else 12
+                use = min(remaining, month_window)
+                to_be_distributed_k += int(round((ld + pd) * (use / 12.0)))
+                remaining -= use
 
     quarter = (today.month - 1) // 3 + 1
     pipeline_year_range = list(range(_CAP_MANUAL_PIPELINE_YEAR_START,
