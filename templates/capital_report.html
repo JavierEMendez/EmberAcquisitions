@@ -923,7 +923,7 @@
             <th class="left">Project</th>
             <th class="left"></th>
             <th class="left">Address</th>
-            <th>Land Price</th>
+            <th>Forecasted Equity</th>
             <th>Duration</th>
             <th>Gross Margin</th>
             <th>IRR</th>
@@ -932,32 +932,35 @@
           </tr>
         </thead>
         <tbody>
-          {% set _pa = namespace(land=0, irr_w=0) %}
+          {# `eq` accumulator replaces the old `land` total. Weighted IRR
+             also uses forecasted equity so the bottom-row average reflects
+             capital exposure instead of land price. #}
+          {% set _pa = namespace(eq=0, irr_w=0) %}
           {% for p in capital.pipeline %}
             {% set ac = (capital.asset_classes | selectattr('id','equalto',p.asset_class) | list | first) or capital.asset_classes[0] %}
             <tr>
               <td class="left">{{ p.name }}</td>
               <td class="left"><span class="class-pill"><span class="dot" style="background: {{ ac.color }};"></span>{{ ac.label }}</span></td>
               <td class="left muted">{{ p.address or '—' }}</td>
-              <td>{{ fmt_money(p.land_price) }}</td>
+              <td>{{ fmt_money(p.forecasted_equity) }}</td>
               <td class="muted">{{ fmt_months(p.duration) }}</td>
               <td>{% if p.source == 'manual' %}—{% else %}{{ fmt_pct_dec(p.gross_margin) }}{% endif %}</td>
               <td class="accent">{{ fmt_pct(p.irr) }}</td>
               <td>{{ fmt_em(p.em) }}</td>
               <td class="subtle">{{ p.updated }}</td>
             </tr>
-            {% set _pa.land  = _pa.land + p.land_price %}
-            {% set _pa.irr_w = _pa.irr_w + (p.irr * p.land_price) %}
+            {% set _pa.eq    = _pa.eq + p.forecasted_equity %}
+            {% set _pa.irr_w = _pa.irr_w + (p.irr * p.forecasted_equity) %}
           {% endfor %}
           {% if capital.pipeline %}
           <tr class="total-row">
             <td class="left">Pipeline Total · {{ capital.pipeline | length }} projects</td>
             <td class="left"></td>
             <td class="left"></td>
-            <td>{{ fmt_money(_pa.land) }}</td>
+            <td>{{ fmt_money(_pa.eq) }}</td>
             <td></td>
             <td></td>
-            <td class="accent">{{ fmt_pct(_pa.irr_w / _pa.land if _pa.land else 0) }}</td>
+            <td class="accent">{{ fmt_pct(_pa.irr_w / _pa.eq if _pa.eq else 0) }}</td>
             <td></td>
             <td></td>
           </tr>

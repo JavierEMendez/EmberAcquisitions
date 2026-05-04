@@ -1388,6 +1388,22 @@ def _build_capital_view_context() -> dict:
     """)
     pipeline_rows = cur.fetchall() or []
     pipeline = []
+
+    # Build a name→LP-equity map from the returns blob so MPC pipeline
+    # rows can show forecasted equity (sum of |LP contributions|, in $K)
+    # alongside land price. Manual rows compute their own from the
+    # contributions_yearly array. Falls back to land_cost_k when no
+    # match is found in the returns blob.
+    equity_by_name = {}
+    for _rp in raw_projects:
+        _name = (_rp.get("name") or "").strip()
+        if not _name:
+            continue
+        _by_label = {m.get("label"): m for m in (_rp.get("metrics") or [])}
+        _v = (_by_label.get("Total LP Contributions") or {}).get("total")
+        try: equity_by_name[_name] = int(round(abs(float(_v or 0))))  # already $K in returns blob
+        except (TypeError, ValueError): pass
+
     for r in pipeline_rows:
         out = r.get("outputs") or {}
         inp = r.get("inputs")  or {}
@@ -1408,12 +1424,19 @@ def _build_capital_view_context() -> dict:
         # No EM in our outputs schema — rough proxy: 1 + gross_margin.
         em_val = round(1 + gm, 2) if gm else 1.0
         pid = f"proj_{r['id']}"
+        proj_name = r.get("name") or f"Project {r['id']}"
+        # Forecasted equity = LP capital commitment forecast for this
+        # project. Pulled from the returns blob when we have a match by
+        # name; otherwise fall back to land_cost_k so the column never
+        # shows blank.
+        forecasted_equity_k = equity_by_name.get(proj_name, land_cost_k)
         pipeline.append({
             "id":           pid,
-            "name":         r.get("name") or f"Project {r['id']}",
+            "name":         proj_name,
             "address":      r.get("address") or "",
-            "asset_class":  _class_for(r.get("name") or ""),
+            "asset_class":  _class_for(proj_name),
             "land_price":   land_cost_k,
+            "forecasted_equity": forecasted_equity_k,
             "duration":     dur_months,
             "gross_margin": gm,
             "irr":          round(irr_pct, 1),
@@ -1463,6 +1486,9 @@ def _build_capital_view_context() -> dict:
             "address":      mp.get("location", ""),
             "asset_class":  _class_for(mp.get("name") or "") or mp.get("asset_class", "mpc-hub"),
             "land_price":   land_k,
+            # Manual rows store LP contributions directly via the modal
+            # / Excel import — that IS the forecasted equity.
+            "forecasted_equity": land_k,
             "duration":     dur_months,
             "gross_margin": 0.0,
             "irr":          float(mp.get("irr") or 0),
