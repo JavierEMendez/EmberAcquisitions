@@ -55,7 +55,9 @@
   .cover .conf-stamp::before { content:""; width:6px; height:6px; background:var(--accent); border-radius:50%; }
   .cover .mid { flex:1; display:flex; flex-direction:column; justify-content:flex-end; padding-bottom:12px; }
   .cover h1 { font-family:var(--font-display); font-weight:700; font-size:84px; line-height:.94; letter-spacing:-.025em; max-width:9in; text-transform:uppercase; }
-  .cover h1 em { font-style:normal; font-weight:300; color:var(--accent); }
+  /* Matches Loans report: emphasis word same weight + ink color as
+     the rest of the title for one solid dark-navy headline. */
+  .cover h1 em { font-style:normal; font-weight:700; color:var(--ink); }
   .cover .lede { font-size:14.5px; line-height:1.55; color:var(--muted); margin-top:28px; max-width:6.4in; }
   .cover .bot { display:grid; grid-template-columns:1fr 1fr 1fr; margin-top:36px; padding-top:22px; border-top:1px solid var(--line-2); }
   .cover .bot .col { padding-right:24px; }
@@ -135,7 +137,9 @@
       <span class="conf-stamp">Confidential · Internal</span>
     </div>
     <div class="mid">
-      <div class="eyebrow">Ember Residential · Finance &amp; Analytics</div>
+      {# Eyebrow removed for cross-report consistency — Loans cover
+         sets the standard: solid all-ink headline, no orange chrome
+         above. #}
       <h1 style="margin-top:14px">Operating<br/><em>Cashflows</em></h1>
       <div class="lede">
         Forward forecast of operating revenue across active Ember communities.

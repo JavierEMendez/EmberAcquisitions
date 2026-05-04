@@ -178,8 +178,10 @@
     text-transform: uppercase;
   }
   .cover h1 em {
+    /* Matches Loans report: emphasis word styled like the rest of the
+       title (ink, weight 700) for one solid dark-navy headline. */
     font-style: normal;
-    color: var(--accent);
+    color: var(--ink);
     font-weight: 700;
   }
   .cover .lede {
@@ -777,7 +779,8 @@
   </div>
 
   <div class="title-block">
-    <div class="eyebrow">{{ period_label }} · Project Returns Report</div>
+    {# Eyebrow removed for cross-report consistency — Loans cover sets
+       the standard: solid all-ink headline, no orange chrome above. #}
     <h1>Consolidated <em>Project Returns.</em></h1>
     <p class="lede">{{ cover_lede }}</p>
     <div class="rule"></div>
