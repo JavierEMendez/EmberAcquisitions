@@ -1219,11 +1219,25 @@ def _build_capital_view_context() -> dict:
     returns_by_project = {}
     portfolio_lp_dist_yearly = [0.0] * len(years_str)
     portfolio_promote_yearly = [0.0] * len(years_str)
-    # Sum of per-project to_date (computed exactly from monthly arrays
-    # when the workbook ships a Monthly Cashflows block; pro-rated
-    # otherwise). Used by distributed_ytd_k below so the KPI band ties
-    # out to the Active Projects table column sum.
-    portfolio_distributed_ytd = 0.0
+    # Two distinct distribution roll-ups, both fed from per-project
+    # monthly arrays (with year-pro-rate fallback when the workbook
+    # predates the monthly block):
+    #   - portfolio_distributed_ltd: every distribution from project
+    #     inception through today. Drives the per-project "To Date"
+    #     column on the Active Projects table (column = sum of this).
+    #   - portfolio_distributed_ytd_current: current calendar year
+    #     only, Jan 1 → today. Drives the bottom-right "Distributed
+    #     YTD" KPI on page 2 of the report.
+    portfolio_distributed_ltd          = 0.0
+    portfolio_distributed_ytd_current  = 0.0
+    # Pre-compute the monthly-array indices that fall in the current
+    # year and on/before today. We re-use this set for every project
+    # below so we don't keep re-walking the months list.
+    today_iso = today.date().isoformat()
+    cur_year_indices = [
+        mi for mi, iso in enumerate(src_months)
+        if str(iso)[:4] == cur_year_str and str(iso) <= today_iso
+    ]
     eq_weighted_irr_num = 0.0
     eq_weighted_irr_den = 0.0
     total_lp_profit = 0.0
@@ -1258,26 +1272,32 @@ def _build_capital_view_context() -> dict:
         dist_m   = _m("Total LP Distributions")
         prom_y   = _y("Promote")
 
-        # "To Date" — actual LP distributions received through the most
-        # recently completed month. Newer dashboard uploads carry a
-        # monthly distribution array per project (see report_parser's
-        # `months` key). When present we sum the months whose ISO date
-        # is on or before today, which is exact, not estimated.
-        #
-        # If the workbook predates the monthly block (no `months` /
-        # empty `monthly`), fall back to the prior approach: prior
-        # years summed in full + current year pro-rated by ytd_fraction.
+        # "To Date" (per-project column) — life-to-date LP distributions
+        # received through the most recently completed month. Sum of
+        # every monthly cell whose ISO date is on/before today when
+        # the workbook ships a Monthly Cashflows block; falls back to
+        # prior years summed + current year × ytd_fraction otherwise.
         if dist_m and src_months:
-            today_iso = today.date().isoformat()
-            cutoff = sum(1 for d in src_months if d <= today_iso)
+            cutoff = sum(1 for d in src_months if str(d) <= today_iso)
             to_date = sum(dist_m[:cutoff])
+            # Current-year YTD = sum of just this calendar year's
+            # months that are on/before today. Drives the
+            # "Distributed YTD" KPI on page 2 (separate concept from
+            # the column above, which is life-to-date).
+            ytd_current = sum(
+                float(dist_m[mi] or 0)
+                for mi in cur_year_indices
+                if mi < len(dist_m)
+            )
         else:
             idx_cur = years_int.index(current_year) if current_year in years_int else -1
             if idx_cur >= 0:
                 cur_year_dist = dist_y[idx_cur] if idx_cur < len(dist_y) else 0.0
                 to_date = sum(dist_y[:idx_cur]) + cur_year_dist * ytd_fraction
+                ytd_current = cur_year_dist * ytd_fraction
             else:
                 to_date = 0.0
+                ytd_current = 0.0
 
         slug = _capital_slug(name)
         active.append({
@@ -1300,11 +1320,10 @@ def _build_capital_view_context() -> dict:
         for i in range(len(years_str)):
             portfolio_lp_dist_yearly[i] += dist_y[i] if i < len(dist_y) else 0
             portfolio_promote_yearly[i] += prom_y[i] if i < len(prom_y) else 0
-        # Sum the per-project to_date into a portfolio-level total so
-        # the "Distributed YTD" KPI ties out exactly to the column sum
-        # in the Active Projects table. (Replaces the year-pro-rate
-        # estimate previously used at distributed_ytd_k.)
-        portfolio_distributed_ytd += to_date
+        # Two roll-ups: life-to-date for the Active Projects column,
+        # current-year-YTD for the Distributed YTD KPI.
+        portfolio_distributed_ltd         += to_date
+        portfolio_distributed_ytd_current += ytd_current
         if contrib:
             eq_weighted_irr_num += irr_pct * contrib
             eq_weighted_irr_den += contrib
@@ -1594,13 +1613,14 @@ def _build_capital_view_context() -> dict:
                     if pipeline_land_total else 0.0)
 
     # ── Distributed YTD + To Be Distributed (next 18mo) ─────────────────
-    # Distributed YTD now equals the sum of per-project to_date values,
-    # which is exact when the workbook ships monthly arrays (it's the
-    # actual sum of monthly distributions ≤ today's date) and falls back
-    # to year-pro-rate otherwise. Either way the KPI ties out to the
-    # Active Projects table column sum without rounding drift.
+    # KPI is current-year YTD only — Jan 1 of the current year through
+    # today. Computed exactly from the monthly distribution arrays when
+    # the workbook ships them, year-pro-rated otherwise. The Active
+    # Projects table's per-project To Date column is a SEPARATE
+    # life-to-date sum (see portfolio_distributed_ltd above) — keep
+    # those two figures distinct, they answer different questions.
     idx_cur = years_int.index(current_year) if current_year in years_int else -1
-    distributed_ytd_k = int(round(portfolio_distributed_ytd))
+    distributed_ytd_k = int(round(portfolio_distributed_ytd_current))
 
     # 18 months: remaining of current year + full next years until budget gone
     to_be_distributed_k = 0
