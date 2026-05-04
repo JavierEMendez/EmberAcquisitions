@@ -4047,7 +4047,11 @@ def _ops_normalize(raw, anchor):
             elif len(arr) > 18:
                 arr = arr[:18]
             monthly[p][c] = [float(v or 0) for v in arr]
-    return {"anchor": anchor, "projects": list(projects), "monthly": monthly}
+    out = {"anchor": anchor, "projects": list(projects), "monthly": monthly}
+    history = raw.get("history")
+    if isinstance(history, dict):
+        out["history"] = {str(k): float(v or 0) for k, v in history.items()}
+    return out
 
 
 def _ops_month_dates(anchor):
@@ -4174,10 +4178,21 @@ def _ops_translate_legacy(raw):
                 values.append(month_map.get(f"{yr:04d}-{mo:02d}", 0.0))
             monthly_out[p][c] = values
 
+    # Full-history monthly grand totals (sum across projects/cats per
+    # YYYY-MM). The chart window only carries 3 months of past data, so
+    # KPIs needing a wider lookback (Trailing 12 Months, Realized YTD
+    # past April, FY actuals) read from this dict instead.
+    history = {}
+    for cats in by_pc.values():
+        for ym_map in cats.values():
+            for ym, v in ym_map.items():
+                history[ym] = history.get(ym, 0.0) + v
+
     return {
         "anchor":   anchor.isoformat(),
         "projects": project_order,
         "monthly":  monthly_out,
+        "history":  history,
     }
 
 
@@ -4185,27 +4200,73 @@ def _ops_fmtM(v):
     return f"${v / 1_000_000:.2f}M"
 
 
-def _ops_kpis(monthly, projects, anchor):
+def _ops_kpis(monthly, projects, anchor, history=None):
     grand = [0.0] * 18
     for p in projects:
         for c in _OPS_CATS:
             for i, v in enumerate(monthly[p][c]):
                 grand[i] += v
-    fy_year      = anchor.year
-    realized_ytd = sum(grand[3 - anchor.month + 1 : 4]) if anchor.month <= 4 else sum(grand[max(0, 4 - anchor.month) : 4])
-    fy_total     = realized_ytd + sum(grand[4 : 4 + (12 - anchor.month)])
-    trailing12   = sum(grand[0:4])
-    next12       = sum(grand[3 : 15])
+    fy_year = anchor.year
+
+    def _shift(year, month, off):
+        idx = (month - 1) + off
+        return year + (idx // 12), (idx % 12) + 1
+
+    def _hist_sum(start_y, start_m, n):
+        if not history:
+            return None
+        total = 0.0
+        for k in range(n):
+            y, m = _shift(start_y, start_m, k)
+            total += history.get(f"{y:04d}-{m:02d}", 0.0)
+        return total
+
+    # Realized YTD: Jan..anchor of fy_year. The window only holds 3 past
+    # months, so once we're past April the history dict is the only way
+    # to get an accurate Jan-onward total.
+    ytd_hist = _hist_sum(fy_year, 1, anchor.month)
+    if ytd_hist is not None:
+        realized_ytd = ytd_hist
+    else:
+        realized_ytd = (
+            sum(grand[3 - anchor.month + 1 : 4]) if anchor.month <= 4
+            else sum(grand[max(0, 4 - anchor.month) : 4])
+        )
+
+    # FY total: realized YTD + remaining months of fy_year from forecast window.
+    fy_total = realized_ytd + sum(grand[4 : 4 + (12 - anchor.month)])
+
+    # Trailing 12: 12 months ending at anchor (inclusive).
+    t_y, t_m = _shift(fy_year, anchor.month, -11)
+    trailing12_hist = _hist_sum(t_y, t_m, 12)
+    if trailing12_hist is not None:
+        trailing12 = trailing12_hist
+        trailing12_sub = (
+            f"{_OPS_MONTHS_SHORT[t_m - 1]} {t_y} – "
+            f"{_OPS_MONTHS_SHORT[anchor.month - 1]} {fy_year}"
+        )
+    else:
+        trailing12 = sum(grand[0:4])
+        trailing12_sub = "(window proxy — 4 past months)"
+
+    # Next 12: month after anchor through 12 months later.
+    next12 = sum(grand[4 : 16])
+    n_start_y, n_start_m = _shift(fy_year, anchor.month, 1)
+    n_end_y,   n_end_m   = _shift(fy_year, anchor.month, 12)
+    next12_sub = (
+        f"{_OPS_MONTHS_SHORT[n_start_m - 1]} {n_start_y} – "
+        f"{_OPS_MONTHS_SHORT[n_end_m - 1]} {n_end_y}"
+    )
+
     return [
         {"label": f"FY {fy_year} Forecast", "val": _ops_fmtM(fy_total),
          "sub": "across all projects"},
         {"label": "Realized YTD", "val": _ops_fmtM(realized_ytd),
          "sub": f"Jan – {_OPS_MONTHS_SHORT[anchor.month - 1]} {fy_year}"},
         {"label": "Trailing 12 Months", "val": _ops_fmtM(trailing12),
-         "sub": "(window proxy — 4 past months)"},
+         "sub": trailing12_sub},
         {"label": "Expected Next 12 Months", "val": _ops_fmtM(next12),
-         "sub": f"{_OPS_MONTHS_SHORT[anchor.month % 12]} {fy_year} – "
-                f"{_OPS_MONTHS_SHORT[(anchor.month - 1) % 12]} {fy_year + 1}"},
+         "sub": next12_sub},
     ]
 
 
@@ -4293,7 +4354,7 @@ def _build_operations_view_context(raw_data, uploaded_at):
         for i, v in enumerate(by_cat[c]):
             grand[i] += v
 
-    kpis = _ops_kpis(monthly, projects, anchor)
+    kpis = _ops_kpis(monthly, projects, anchor, history=data.get("history"))
 
     default_from, default_to = 0, 17
     window_months = month_dates[default_from : default_to + 1]
