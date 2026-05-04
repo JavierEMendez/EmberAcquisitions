@@ -146,7 +146,17 @@
   align-self: center;
 }
 .recycle-chart { width: 100%; height: 240px; display: block; }
-.recycle-chart .axis-label { font-family: ui-monospace, "JetBrains Mono", monospace; font-size: 8px; fill: var(--cap-subtle); font-variant-numeric: tabular-nums; }
+/* Axis labels use the page's body sans (Plus Jakarta Sans) at 10px so
+   they match the other small labels on the Capital page (KPI labels,
+   pivot table headers, donut legend rows). The previous mono 8px was
+   visibly off — different family AND smaller than every other label. */
+.recycle-chart .axis-label {
+  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 500;
+  fill: var(--cap-muted);
+  font-variant-numeric: tabular-nums;
+}
 .recycle-chart .axis-label--current { font-weight: 700; fill: var(--cap-ink); }
 
 .cockpit .pie-card {
