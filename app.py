@@ -4479,36 +4479,31 @@ def _loans_enrich_loan(raw, kind):
     except (TypeError, ValueError): l["indexSpread_fmt"] = "0.00%"
     l["termDate_short"]    = _loans_fmt_date_short(l.get("termDate"))
     l["origination_short"] = _loans_fmt_date_short(l.get("origination"))
-    # IR health: numeric → "41.0%"; text label → "Watch"/"Healthy" as-is.
-    if is_vert:
+    # IR + monthly-burn fields: ALWAYS compute from raw data, regardless
+    # of whether the loan is MPC or vertical. The report's per-template
+    # rendering may still suppress these for vertical lines (e.g. via
+    # the {% if kind == 'mpc' %} branches in _loans_report_card.html),
+    # but the page card surfaces whatever is in the spreadsheet so
+    # zeros / partial fills are visible to the partner.
+    ih = l.get("irHealth")
+    if ih is None:
         l["irHealth_fmt"] = "—"
+    elif isinstance(ih, (int, float)):
+        l["irHealth_fmt"] = _loans_fmt_pct1(ih)
     else:
-        ih = l.get("irHealth")
-        if ih is None:
-            l["irHealth_fmt"] = "—"
-        elif isinstance(ih, (int, float)):
-            l["irHealth_fmt"] = _loans_fmt_pct1(ih)
-        else:
-            s = str(ih).strip()
-            try:
-                l["irHealth_fmt"] = _loans_fmt_pct1(float(s))
-            except (TypeError, ValueError):
-                l["irHealth_fmt"] = s if s else "—"
-    # MPC loans always display IR fields (even at $0 — that's a real
-    # signal that reserves are exhausted). Vertical lines genuinely
-    # don't carry an IR, so suppress those cells with an em-dash.
-    if is_vert:
-        l["remIR_fmt"]       = "—"
-        l["monthlyBurn_fmt"] = "—"
-        l["remMosIR_fmt"]    = "—"
-    else:
-        l["remIR_fmt"]       = _loans_fmt_money_short(l.get("remIR"))
-        l["monthlyBurn_fmt"] = _loans_fmt_money_short(l.get("monthlyBurn"))
+        s = str(ih).strip()
         try:
-            rm = l.get("remMosIR")
-            l["remMosIR_fmt"] = f"{float(rm):.1f}" if rm is not None else "—"
+            l["irHealth_fmt"] = _loans_fmt_pct1(float(s))
         except (TypeError, ValueError):
-            l["remMosIR_fmt"] = "—"
+            l["irHealth_fmt"] = s if s else "—"
+
+    l["remIR_fmt"]       = _loans_fmt_money_short(l.get("remIR"))
+    l["monthlyBurn_fmt"] = _loans_fmt_money_short(l.get("monthlyBurn"))
+    try:
+        rm = l.get("remMosIR")
+        l["remMosIR_fmt"] = f"{float(rm):.1f}" if rm is not None else "—"
+    except (TypeError, ValueError):
+        l["remMosIR_fmt"] = "—"
 
     # Pre-format capacityHealth and monthsRemaining so the templates
     # don't crash on None (legacy parser sometimes stores `Capacity
