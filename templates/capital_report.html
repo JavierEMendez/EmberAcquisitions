@@ -515,12 +515,15 @@
     display: inline-block;
   }
 
-  /* Recycle chart inherits styles from the partial via re-declaration. */
+  /* Recycle chart inherits styles from the partial via re-declaration.
+     Tighter top/bottom padding (vs the live page) — page 3 is dense and
+     the card sits last on the page, so every reclaimed pixel keeps the
+     bars from getting visually compressed against the page footer. */
   .recycle-card {
     background: #fff;
     border: 1px solid var(--line);
     border-radius: 8px;
-    padding: 14px 18px 10px;
+    padding: 10px 18px 8px;
     margin-top: 14px;
   }
   .sec-head { margin: 8px 0 12px; }
@@ -570,19 +573,22 @@
     margin: 0 8px 0 0; vertical-align: -2px;
   }
   .recycle-chart {
-    /* Width fills the column, height comes from the 1000×200 viewBox
-       (uniform aspect) so axis labels stay proportional in the PDF
-       output. Forcing a fixed height + preserveAspectRatio="none"
-       used to stretch text non-uniformly. */
-    width: 100%; height: auto; display: block;
+    /* Width fills the column, height auto from the 1000×175 viewBox so
+       axis labels stay proportional. max-height pins the chart to a
+       known ceiling — page 3 is dense (sec-row + KPI band + pipeline
+       table + chart + footer in 7.1in) and we'd rather the chart shrink
+       gracefully than push past page-pad and crowd the page footer. */
+    width: 100%; height: auto; max-height: 1.75in; display: block;
   }
-  /* Axis labels — same Plus Jakarta Sans 10px regular + light subtle
+  /* Axis labels — same Plus Jakarta Sans 9px regular + light subtle
      grey as the page version. Colors hardcoded (not var(--muted) /
      var(--ink)) because WeasyPrint doesn't reliably resolve CSS
-     custom properties on SVG fill attributes inside <text> elements. */
+     custom properties on SVG fill attributes inside <text> elements;
+     the partial also sets font-size/fill as element attributes for
+     belt-and-suspenders. */
   .recycle-chart .axis-label {
     font-family: "Plus Jakarta Sans", system-ui, sans-serif;
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 400;
     fill: #97a3b0;
     font-variant-numeric: tabular-nums;
