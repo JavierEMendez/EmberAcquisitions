@@ -48,24 +48,93 @@
   .eyebrow { font-family:var(--font-eyebrow); font-weight:500; font-size:9.5px; letter-spacing:.24em; text-transform:uppercase; color:var(--accent); }
   .label   { font-family:var(--font-sans); font-weight:600; font-size:9px; letter-spacing:.16em; text-transform:uppercase; color:var(--subtle); }
 
-  /* COVER */
-  .cover .top { display:flex; justify-content:space-between; align-items:flex-start; }
-  .cover-mark { width:38px; height:38px; }
-  .cover .conf-stamp { font-family:var(--font-mono); font-size:9.5px; letter-spacing:.18em; text-transform:uppercase; color:var(--ink-2); padding:6px 12px; border:1px solid var(--line-2); border-radius:999px; display:inline-flex; gap:8px; align-items:center; }
-  .cover .conf-stamp::before { content:""; width:6px; height:6px; background:var(--accent); border-radius:50%; }
-  .cover .mid { flex:1; display:flex; flex-direction:column; justify-content:flex-end; padding-bottom:12px; }
-  .cover h1 { font-family:var(--font-display); font-weight:700; font-size:84px; line-height:.94; letter-spacing:-.025em; max-width:9in; text-transform:uppercase; }
+  /* COVER — mirrors capital_report.html cover layout for cross-report
+     consistency: absolutely-positioned top-row at top, absolutely-
+     positioned title-block anchored at bottom:1.0in, big empty space
+     between. Same 96px h1, same period-strip styling, same footnote. */
+  .cover { color: var(--ink); }
+  .cover .top-row {
+    position: absolute;
+    top: 0.55in; left: 0.55in; right: 0.55in;
+    display: table; table-layout: fixed; width: calc(100% - 1.10in);
+  }
+  .cover .top-row .l, .cover .top-row .r {
+    display: table-cell; vertical-align: top;
+  }
+  .cover .top-row .r { text-align: right; }
+  .cover-mark { width: 38px; height: 38px; }
+  .cover .conf-stamp {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--font-mono); font-size: 9.5px;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--ink-2);
+    padding: 6px 14px; border: 1px solid var(--line-2); border-radius: 999px;
+  }
+  .cover .conf-stamp::before {
+    content: ""; width: 6px; height: 6px;
+    background: var(--accent); border-radius: 50%;
+    display: inline-block;
+  }
+  .cover .title-block {
+    position: absolute;
+    left: 0.55in; right: 0.55in;
+    bottom: 1.0in;
+  }
+  .cover h1 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 96px;
+    line-height: 0.96;
+    letter-spacing: -0.025em;
+    color: var(--ink);
+    text-transform: uppercase;
+  }
   /* Matches Loans report: emphasis word same weight + ink color as
      the rest of the title for one solid dark-navy headline. */
-  .cover h1 em { font-style:normal; font-weight:700; color:var(--ink); }
-  .cover .lede { font-size:14.5px; line-height:1.55; color:var(--muted); margin-top:28px; max-width:6.4in; }
-  .cover .bot { display:grid; grid-template-columns:1fr 1fr 1fr; margin-top:36px; padding-top:22px; border-top:1px solid var(--line-2); }
-  .cover .bot .col { padding-right:24px; }
-  .cover .bot .col + .col { padding-left:24px; border-left:1px solid var(--line); }
-  .cover .bot .col .label { margin-bottom:8px; }
-  .cover .bot .col .val { font-family:var(--font-display); font-weight:700; font-size:16px; text-transform:uppercase; }
-  .cover .bot .col .val.mono { font-family:var(--font-mono); font-weight:500; font-size:12.5px; letter-spacing:.04em; text-transform:none; }
-  .cover .footnote { font-size:9.5px; line-height:1.5; color:var(--subtle); max-width:6.4in; padding-top:10px; }
+  .cover h1 em { font-style: normal; font-weight: 700; color: var(--ink); }
+  .cover .lede {
+    margin-top: 18px;
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--muted);
+    max-width: 7in;
+  }
+  .cover .rule { margin: 18px 0 14px; height: 1px; background: var(--line-2); }
+  .cover .period-strip { display: table; table-layout: fixed; width: 100%; }
+  .cover .period-strip .col {
+    display: table-cell; vertical-align: top;
+    padding-right: 24px;
+  }
+  .cover .period-strip .col .label-up { margin-bottom: 6px; }
+  .cover .period-strip .col .val {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--ink);
+    letter-spacing: 0.01em;
+    text-transform: uppercase;
+  }
+  .cover .period-strip .col .val.mono {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+  }
+  .cover .footnote {
+    margin-top: 16px;
+    font-size: 9.5px;
+    line-height: 1.55;
+    color: var(--subtle);
+    max-width: 8in;
+  }
+  .label-up {
+    font-family: var(--font-eyebrow);
+    font-weight: 500;
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--subtle);
+  }
 
   /* SHARED HEAD */
   .phead { display:flex; justify-content:space-between; align-items:flex-end; padding-bottom:12px; border-bottom:1px solid var(--line-2); margin-bottom:14px; }
@@ -117,10 +186,11 @@
 </head>
 <body>
 
-{# ─── PAGE 1 · COVER ─── #}
+{# ─── PAGE 1 · COVER ─── (mirrors capital_report.html cover layout) #}
 <div class="page cover">
-  <div class="page-pad">
-    <div class="top">
+  {# Top row — logo left, confidential pill right, anchored at top:0.55in. #}
+  <div class="top-row">
+    <span class="l">
       <svg class="cover-mark" viewBox="0 0 36 36" fill="none">
         <g fill="#F25929">
           <rect x="3"  y="14" width="2.5" height="14" rx="1.2"/>
@@ -134,39 +204,41 @@
           <rect x="28" y="6"  width="2.5" height="20" rx="1.2"/>
         </g>
       </svg>
-      <span class="conf-stamp">Confidential · Internal</span>
-    </div>
-    <div class="mid">
-      {# Eyebrow removed for cross-report consistency — Loans cover
-         sets the standard: solid all-ink headline, no orange chrome
-         above. #}
-      <h1 style="margin-top:14px">Operating<br/><em>Cashflows</em></h1>
-      <div class="lede">
-        Forward forecast of operating revenue across active Ember communities.
-        {{ rpt.cat_count }} fee categories rolled up by month over the next twelve months —
-        anchored to the current period.
+    </span>
+    <span class="r"><span class="conf-stamp">Confidential · Internal</span></span>
+  </div>
+
+  {# Title block — anchored at bottom:1.0in to leave a deliberate
+     swath of empty space above (matches Capital cover). #}
+  <div class="title-block">
+    <h1>Operating <em>Cashflows</em></h1>
+    <p class="lede">
+      Forward forecast of operating revenue across active Ember communities.
+      {{ rpt.cat_count }} fee categories rolled up by month over the next twelve months —
+      anchored to the current period.
+    </p>
+    <div class="rule"></div>
+    <div class="period-strip">
+      <div class="col">
+        <div class="label-up">Period</div>
+        <div class="val">{{ rpt.period_label }}</div>
       </div>
-      <div class="bot">
-        <div class="col">
-          <div class="label">Period</div>
-          <div class="val">{{ rpt.period_label }}</div>
-        </div>
-        <div class="col">
-          <div class="label">Active Projects</div>
-          <div class="val">{{ rpt.project_count }} — {{ rpt.cat_count }} Fee Categories</div>
-        </div>
-        <div class="col">
-          <div class="label">Generated</div>
-          <div class="val mono">{{ rpt.generated_iso }}</div>
-        </div>
+      <div class="col">
+        <div class="label-up">Active Projects</div>
+        <div class="val">{{ rpt.project_count }} — {{ rpt.cat_count }} Fee Categories</div>
       </div>
-      <div class="footnote">All figures in USD ($000s unless noted). Forward-looking forecasts based on current contracts, lot delivery schedules, and underwriting assumptions; subject to change. Distribution outside Ember Residential, its affiliates, and authorized partners is prohibited.</div>
+      <div class="col">
+        <div class="label-up">Generated</div>
+        <div class="val mono">{{ rpt.generated_iso }}</div>
+      </div>
     </div>
-    <div class="page-foot">
-      <span class="l"><span class="conf">Confidential</span></span>
-      <span class="c"><span class="dot"></span> Ember Finance &amp; Analytics · Operations Report</span>
-      <span class="r mono">01 / 02</span>
-    </div>
+    <p class="footnote">All figures in USD ($000s unless noted). Forward-looking forecasts based on current contracts, lot delivery schedules, and underwriting assumptions; subject to change. Distribution outside Ember Residential, its affiliates, and authorized partners is prohibited.</p>
+  </div>
+
+  <div class="page-foot">
+    <span class="l"><span class="conf">Confidential</span></span>
+    <span class="c"><span class="dot"></span> Ember Finance &amp; Analytics · Operations Report</span>
+    <span class="r mono">01 / 02</span>
   </div>
 </div>
 
