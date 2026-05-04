@@ -601,8 +601,10 @@ def build_context(data: dict[str, Any], run_date: datetime,
     horizon_year = int(years[-1])
     start_year   = int(years[0])
 
-    # Page count: cover + summary + N project pages + appendix
-    total_pages = 2 + max(1, len(project_pages)) + 1 if projects else 3
+    # Page count: cover + summary + N project pages.
+    # (The previous appendix / definitions page was dropped per partner
+    # feedback; total_pages no longer includes it.)
+    total_pages = 2 + max(1, len(project_pages)) if projects else 2
 
     return {
         # Header / chrome
