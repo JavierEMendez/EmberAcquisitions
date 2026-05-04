@@ -1244,8 +1244,18 @@ def _build_capital_view_context() -> dict:
         dist_y   = _y("Total LP Distributions")
         prom_y   = _y("Promote")
 
+        # "To Date" = LP distributions received through the end of last
+        # month-roughly. The yearly arrays from the returns blob give us
+        # full-year totals only, so prior years are summed in full and
+        # the CURRENT year is pro-rated by ytd_fraction. Without the
+        # pro-rate, every project's to_date would jump by a full year of
+        # distributions on Jan 1 even though nothing has been paid yet.
         idx_cur = years_int.index(current_year) if current_year in years_int else -1
-        to_date = sum(dist_y[: idx_cur + 1]) if idx_cur >= 0 else 0.0
+        if idx_cur >= 0:
+            cur_year_dist = dist_y[idx_cur] if idx_cur < len(dist_y) else 0.0
+            to_date = sum(dist_y[:idx_cur]) + cur_year_dist * ytd_fraction
+        else:
+            to_date = 0.0
 
         slug = _capital_slug(name)
         active.append({
