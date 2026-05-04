@@ -666,7 +666,11 @@
       </div>
       <div class="col">
         <div class="label-up">Active Projects</div>
-        <div class="val">{{ capital.kpis.active_count }} — {{ fmt_money(capital.kpis.total_equity) }} Equity</div>
+        <div class="val">{{ capital.kpis.active_count }}</div>
+      </div>
+      <div class="col">
+        <div class="label-up">Total Equity</div>
+        <div class="val">{{ fmt_money(capital.kpis.total_equity) }}</div>
       </div>
       <div class="col">
         <div class="label-up">Generated</div>
@@ -700,12 +704,15 @@
       <div class="kpi accent">
         <div class="l">Total Equity Invested</div>
         <div class="v">{{ fmt_money(capital.kpis.total_equity) }}</div>
-        <div class="s">LP + Promote</div>
+        <div class="s">LP</div>
       </div>
       <div class="kpi">
-        <div class="l">Total Commitments</div>
+        <div class="l">Committed Equity</div>
         <div class="v">{{ fmt_money(capital.kpis.total_committed) }}</div>
-        <div class="s"><span class="acc">{{ fmt_money_raw(ct.total_allocated) }}</span> allocated · <span class="acc">{{ fmt_money_raw(ct.available) }}</span> open</div>
+        {# Allocated vs Unallocated split — stacked on two lines so each
+           figure has its own row instead of running together inline. #}
+        <div class="s"><span class="acc">{{ fmt_money_raw(ct.total_allocated) }}</span> allocated</div>
+        <div class="s"><span class="acc">{{ fmt_money_raw(ct.available) }}</span> Unallocated</div>
       </div>
       <div class="kpi">
         <div class="l">Forecasted LP Profit</div>
@@ -843,9 +850,9 @@
           </div>
           <div class="dist-pair">
             <div class="cell">
-              <div class="lbl">Distributed YTD</div>
+              <div class="lbl">Distributed To Date</div>
               <div class="val">{{ fmt_money(capital.kpis.distributed_ytd) }}</div>
-              <div class="sub">{{ capital.kpis.ytd_label }}</div>
+              <div class="sub">Through {{ capital.generated_date }}</div>
             </div>
             <div class="cell accent">
               <div class="lbl">To Be Distributed</div>
