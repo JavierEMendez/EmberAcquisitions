@@ -1284,45 +1284,97 @@ def _build_capital_view_context() -> dict:
         # every monthly cell whose ISO date is on/before today when
         # the workbook ships a Monthly Cashflows block; falls back to
         # prior years summed + current year × ytd_fraction otherwise.
-        if dist_m and src_months:
+        # Some workbook uploads have buggy monthly cells (rows shifted,
+        # spurious values). When sum(monthly) doesn't tie to the yearly
+        # total within tolerance, fall back to yearly. We compute this
+        # check per-metric per-project so e.g. Mid Main's broken Promote
+        # row falls back while Hawthorne's clean rows keep using
+        # exact monthly precision.
+        def _monthly_reliable(metric):
+            mlist = (metric or {}).get("monthly") or []
+            if not mlist or not src_months:
+                return False
+            try: total = float(metric.get("total") or 0)
+            except (TypeError, ValueError): return False
+            try: sm = sum(float(v or 0) for v in mlist)
+            except (TypeError, ValueError): return False
+            tol = max(0.5, abs(total) * 0.001)  # $0.5K or 0.1% of total
+            return abs(sm - total) <= tol
+
+        dist_metric = by_label.get("Total LP Distributions") or {}
+        prom_metric = by_label.get("Promote") or {}
+        dist_reliable = _monthly_reliable(dist_metric)
+        prom_reliable = _monthly_reliable(prom_metric)
+        idx_cur = years_int.index(current_year) if current_year in years_int else -1
+
+        # ── To Date (life-to-date through today) ─────────────────────
+        if dist_reliable:
             cutoff = sum(1 for d in src_months if str(d) <= today_iso)
             to_date = sum(dist_m[:cutoff])
-            # Current-year YTD = sum of just this calendar year's
-            # months that are on/before today. Drives the
-            # "Distributed YTD" KPI on page 2 (separate concept from
-            # the column above, which is life-to-date).
+        elif idx_cur >= 0:
+            # Fallback: prior years summed; current year treated as
+            # all-future (conservative — broken monthly means we don't
+            # know what's been paid yet, so don't double-count).
+            to_date = sum(dist_y[:idx_cur])
+        else:
+            to_date = 0.0
+
+        # ── YTD (current calendar year, Jan 1 → today) ──────────────
+        if dist_reliable:
             ytd_current = sum(
                 float(dist_m[mi] or 0)
                 for mi in cur_year_indices
                 if mi < len(dist_m)
             )
-            # Forecast for the next 18 months after today — LP +
-            # Promote summed at month granularity over the same
-            # 18-cell window. Drives the "To Be Distributed" KPI.
+        else:
+            # No monthly precision → conservative 0 for the current
+            # year (we don't know how much of the yearly amount has
+            # already been paid out).
+            ytd_current = 0.0
+
+        # ── To Be Distributed — LP next 18mo ────────────────────────
+        if dist_reliable:
             next18_lp = sum(
                 float(dist_m[mi] or 0)
                 for mi in next_18mo_indices
                 if mi < len(dist_m)
             )
+        else:
+            # Yearly fallback. The current year is treated as
+            # all-future (matches the conservative YTD=0 above), and
+            # subsequent years are pro-rated by how many of their
+            # months fall inside the 18-month window.
+            next18_lp = 0.0
+            if idx_cur >= 0:
+                if idx_cur < len(dist_y):
+                    next18_lp += float(dist_y[idx_cur])
+                for j in range(idx_cur + 1, len(years_int)):
+                    months_to_start = (years_int[j] - current_year) * 12 - months_elapsed
+                    if months_to_start >= 18:
+                        break
+                    fraction = min(12.0, 18.0 - months_to_start) / 12.0
+                    next18_lp += float(dist_y[j] if j < len(dist_y) else 0) * fraction
+
+        # ── To Be Distributed — Promote next 18mo ───────────────────
+        if prom_reliable:
             next18_pr = sum(
                 float(prom_m[mi] or 0)
                 for mi in next_18mo_indices
                 if mi < len(prom_m)
             )
-            next_18mo_total = next18_lp + next18_pr
         else:
-            idx_cur = years_int.index(current_year) if current_year in years_int else -1
+            next18_pr = 0.0
             if idx_cur >= 0:
-                cur_year_dist = dist_y[idx_cur] if idx_cur < len(dist_y) else 0.0
-                to_date = sum(dist_y[:idx_cur]) + cur_year_dist * ytd_fraction
-                ytd_current = cur_year_dist * ytd_fraction
-            else:
-                to_date = 0.0
-                ytd_current = 0.0
-            # No monthly arrays — accumulator stays 0 here; the loop
-            # below (years_int slice × month_window) handles the
-            # legacy year-pro-rate fall-back at the portfolio level.
-            next_18mo_total = 0.0
+                if idx_cur < len(prom_y):
+                    next18_pr += float(prom_y[idx_cur])
+                for j in range(idx_cur + 1, len(years_int)):
+                    months_to_start = (years_int[j] - current_year) * 12 - months_elapsed
+                    if months_to_start >= 18:
+                        break
+                    fraction = min(12.0, 18.0 - months_to_start) / 12.0
+                    next18_pr += float(prom_y[j] if j < len(prom_y) else 0) * fraction
+
+        next_18mo_total = next18_lp + next18_pr
 
         slug = _capital_slug(name)
         active.append({
