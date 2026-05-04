@@ -158,7 +158,7 @@
    on SVG fill attributes. */
 .recycle-chart .axis-label {
   font-family: "Plus Jakarta Sans", system-ui, sans-serif;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 400;
   fill: #97a3b0;
   font-variant-numeric: tabular-nums;

@@ -41,16 +41,16 @@
   {% set n = rows | length %}
   {% set ymax = capital.recycle.y_axis_max %}
 
-  {# Layout constants — keep in sync with CHANGELOG-v3.md geometry.
-     xStart bumped from 50 → 90 so y-axis labels like "50,000" rendered
-     in 10px Plus Jakarta Sans have enough left gutter — the wider sans
-     font was pushing the leading digit off the SVG's left edge and
-     clipping it (every label was rendering as "0,000").
-     yTop bumped from 4 → 14 so the topmost gridline label has room to
-     render above the gridline without its glyph caps being clipped by
-     the SVG's top edge (default overflow:hidden). #}
-  {% set xStart = 90 %}{% set xEnd = 990 %}
-  {% set yTop = 14 %}{% set yBase = 170 %}
+  {# Layout constants — geometry shared with the report PDF version.
+     xStart sits at 60: y-axis labels now use "60K" / "48K" form (the
+     header already says "$ in 000s" so the K suffix is consistent),
+     making the gutter 30 user-units narrower than the old "60,000"
+     spelling and giving back room for the bars.
+     yTop=10 keeps the topmost gridline label clear of the SVG edge.
+     viewBox is 1000×175 — a flatter aspect so the card stays compact
+     enough to never crowd the page footer on PDF page 3. #}
+  {% set xStart = 60 %}{% set xEnd = 990 %}
+  {% set yTop = 10 %}{% set yBase = 148 %}
   {% set plotH = yBase - yTop %}
   {% set cellW = (xEnd - xStart) / n %}
   {% set barW = 18 %}{% set gap = 4 %}
@@ -59,9 +59,10 @@
 
   {# preserveAspectRatio defaults to "xMidYMid meet" — uniform scale, so
      the bar geometry AND the text stay proportional regardless of the
-     container width. The previous "none" stretched the viewBox onto a
-     wider container and visibly distorted the axis labels. #}
-  <svg class="recycle-chart" viewBox="0 0 1000 200">
+     container width. Explicit font-size and fill on every <text>
+     because WeasyPrint can't be fully trusted to apply CSS class rules
+     to SVG text inside a PDF render. #}
+  <svg class="recycle-chart" viewBox="0 0 1000 175">
     {# Axis frame + grid #}
     <line x1="{{ xStart }}" y1="{{ yTop }}"  x2="{{ xStart }}" y2="{{ yBase }}" stroke="#08233B" stroke-opacity=".2"/>
     <line x1="{{ xStart }}" y1="{{ yBase }}" x2="{{ xEnd }}"   y2="{{ yBase }}" stroke="#08233B" stroke-opacity=".2"/>
@@ -73,9 +74,9 @@
             x2="{{ xEnd }}"   y2="{{ '%.2f' | format(y) }}"
             stroke="#08233B" stroke-opacity=".07"/>
       <text x="{{ xStart - 4 }}" y="{{ '%.2f' | format(y + 3) }}"
-            text-anchor="end" class="axis-label">{{ '{:,.0f}'.format(v) }}</text>
+            text-anchor="end" class="axis-label" font-size="9" fill="#97a3b0">{{ '{:,.0f}'.format(v / 1000) }}K</text>
     {% endfor %}
-    <text x="{{ xStart - 4 }}" y="{{ yBase + 3 }}" text-anchor="end" class="axis-label">0</text>
+    <text x="{{ xStart - 4 }}" y="{{ yBase + 3 }}" text-anchor="end" class="axis-label" font-size="9" fill="#97a3b0">0</text>
 
     {# Bars — one pair per year #}
     {% for r in rows %}
@@ -123,11 +124,16 @@
             fill="{{ capital.recycle.color_dist_promote }}"/>
       {% endif %}
 
-      {# X-axis label — current year is bold + dark, others muted #}
-      <text x="{{ '%.2f' | format(xM) }}" y="{{ yBase + 13 }}" text-anchor="middle"
-            class="axis-label{{ ' axis-label--current' if r.year == capital.recycle.current_year else '' }}">
-        {{ r.year }}
-      </text>
+      {# X-axis label — current year is bold + dark, others muted.
+         Explicit font-size + fill mirror the y-axis labels so the two
+         axes render at identical weight in WeasyPrint output. #}
+      {% if r.year == capital.recycle.current_year %}
+      <text x="{{ '%.2f' | format(xM) }}" y="{{ yBase + 12 }}" text-anchor="middle"
+            class="axis-label axis-label--current" font-size="9" font-weight="700" fill="#08233B">{{ r.year }}</text>
+      {% else %}
+      <text x="{{ '%.2f' | format(xM) }}" y="{{ yBase + 12 }}" text-anchor="middle"
+            class="axis-label" font-size="9" fill="#97a3b0">{{ r.year }}</text>
+      {% endif %}
     {% endfor %}
   </svg>
 </div>
