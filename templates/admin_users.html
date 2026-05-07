@@ -342,5 +342,8 @@ async function sendReportsNow() {
 refreshUserList();
 </script>
 {% endif %}
+{# Account Settings modal — required so the Account chip in
+   _sidebar_foot.html has a working openAcct() handler. #}
+{% include "_partials/_account_modal.html" %}
 </body>
 </html>

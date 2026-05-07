@@ -202,10 +202,12 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
       Ember Capital
     </a>
     {% endif %}
+    {% if page_access.get('sales', true) %}
     <a href="/sales" class="sidebar-item active">
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l3-3 4 4 5-6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Community Sales
     </a>
+    {% endif %}
 
     {% if page_access.get('verticals', true) %}
     <a href="/verticals" class="sidebar-item">
@@ -214,7 +216,6 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
     </a>
     {% endif %}
 
-</div>
     <a href="#exec" class="sidebar-item" data-tab="exec">
       <span class="tab-accent"></span>
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l3-3 4 4 5-6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
