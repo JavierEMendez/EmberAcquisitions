@@ -1408,106 +1408,38 @@
     <span>The Shops at Grand Prairie</span>
   </div>
 
-  <!-- Signed-in user + account controls. Filled in at runtime from /api/me.
-       The avatar circle is initials in a deterministic brand-aligned color
-       so each teammate's tile reads instantly without a real photo. -->
-  <div class="vs-account" id="vs-account" style="margin-top:auto; padding:14px 22px 8px; border-top:1px solid var(--eax-line); font-family:'Plus Jakarta Sans', sans-serif; font-size:11px; color:var(--eax-muted); display:none;">
-    <div style="font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:var(--eax-subtle); font-size:9.5px; margin-bottom:8px;">Signed in</div>
-    <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
-      <div id="vs-account-avatar" aria-hidden="true"
-           style="flex:0 0 auto; width:32px; height:32px; border-radius:50%; background:var(--ember-orange); color:#fff; display:flex; align-items:center; justify-content:center; font-family:'Plus Jakarta Sans', sans-serif; font-weight:700; font-size:13px; letter-spacing:0.02em; box-shadow:0 1px 2px rgba(8,35,59,.10);">—</div>
-      <div style="min-width:0; flex:1;">
-        <div style="color:var(--eax-ink); font-weight:600; font-size:12.5px; line-height:1.2; word-break:break-word;" id="vs-account-name">—</div>
-        <div style="color:var(--eax-subtle); font-size:10.5px; line-height:1.2; margin-top:2px; word-break:break-all;" id="vs-account-email"></div>
-      </div>
-    </div>
-    <div style="display:flex; gap:6px;">
-      <a href="/home" style="flex:1; padding:6px 8px; border-radius:6px; border:1px solid var(--eax-line-2); color:var(--eax-muted); text-decoration:none; text-align:center; font-weight:600; font-size:11px;">Password</a>
-      <button type="button" id="vs-account-logout" style="flex:1; padding:6px 8px; border-radius:6px; border:1px solid var(--eax-line-2); background:transparent; color:var(--eax-muted); cursor:pointer; font-weight:600; font-size:11px;">Sign out</button>
-    </div>
-  </div>
-
-  <!-- Admin controls (password-protected comment editing) — moved to
-       the bottom of the sidebar so the verticals list stays compact
-       and the comment-editor controls are out of the way until needed.
-       ID hooks unchanged; JS in the dashboard wires them up by id. -->
+  <!-- Edit-comments dock at the bottom of the sidebar. Visibility is
+       gated by /api/verticals/me → canEditComments (set per-user from
+       /admin/users via page_access.verticals_comment). The "Reset
+       editor password" button and the standalone account block from
+       the legacy Node-auth design have been removed — Ember's outer
+       chrome owns identity + sign-out, and the comment editor no
+       longer uses a separate password. -->
   <div class="lh-admin-dock" id="lh-admin-dock">
     <button type="button" class="lh-admin-main"   id="lh-admin-edit">Edit comments</button>
     <button type="button" class="lh-admin-save"   id="lh-admin-save">Save &amp; lock</button>
     <button type="button" class="lh-admin-cancel" id="lh-admin-cancel">Cancel</button>
-    <button type="button" class="lh-admin-link"   id="lh-admin-reset" title="Reset the comment-editor password (separate from your sign-in)">Reset editor password</button>
   </div>
-
-  <div class="vs-footer">v1.0 · Portfolio Ops</div>
 </aside>
 
 <script>
-// Populate the sidebar account block from /api/me. Quiet failure → keep
-// hidden; every authenticated request after this point will re-attempt.
+// Probe Ember session to gate the Edit-comments dock. canEditComments
+// is the per-user flag managed from /admin/users (page_access.
+// verticals_comment); the PUT endpoint enforces server-side too — this
+// just hides the affordance for users who can't act on it. A missing
+// or failed probe leaves the dock visible (matches the server's
+// default-true policy, so a transient network hiccup never blocks
+// legitimate edits).
 (function () {
-  // Brand-aligned palette for the avatar circle. We hash the email so each
-  // teammate gets the same color every session, and the same color across
-  // browsers — useful when several people are on at once.
-  var AVATAR_COLORS = [
-    '#F25929',  // ember orange
-    '#13344E',  // ember blue
-    '#1F7A4D',  // success green
-    '#D98A00',  // warning amber
-    '#A8330D',  // deep ember
-    '#1D4569',  // mid blue
-    '#7B5BB0',  // muted violet (rounding out the palette)
-  ];
-  function colorFor(seed) {
-    var s = String(seed || '');
-    var h = 0;
-    for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-    return AVATAR_COLORS[h % AVATAR_COLORS.length];
-  }
-  function initialFor(displayName, email) {
-    var src = (displayName || email || '').trim();
-    if (!src) return '·';
-    return src.charAt(0).toUpperCase();
-  }
-
-  // Probe Ember session: drives the in-iframe sidebar account block AND
-  // gates the Edit-comments dock. canEditComments is the per-user flag
-  // managed from /admin/users (page_access.verticals_comment); the PUT
-  // endpoint enforces server-side too — this just hides the affordance
-  // for users who can't act on it.
   fetch('/api/verticals/me', { headers: { 'Accept': 'application/json' } })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (j) {
-      if (!j) return;
-      // Hide the Edit-comments dock unless the user has permission. The
-      // dock is shown by default (CSS) so a missing/failed probe leaves
-      // the legacy behavior in place — same defensive default as the
-      // backend (page_access.verticals_comment defaults true).
-      if (j.canEditComments === false) {
+      if (j && j.canEditComments === false) {
         var dock = document.getElementById('lh-admin-dock');
         if (dock) dock.style.display = 'none';
       }
-      // Account block — silently hide if we don't have a usable name.
-      var displayName = j.displayName || j.username;
-      if (!displayName) return;
-      var box     = document.getElementById('vs-account');
-      var name    = document.getElementById('vs-account-name');
-      var emailEl = document.getElementById('vs-account-email');
-      var avatar  = document.getElementById('vs-account-avatar');
-      if (!box || !name) return;
-      name.textContent = displayName;
-      if (emailEl) emailEl.textContent = j.username || '';
-      if (avatar) {
-        avatar.textContent = initialFor(displayName, j.username);
-        avatar.style.background = colorFor((j.username || displayName).toLowerCase());
-      }
-      box.style.display = '';
     })
     .catch(function () { /* silent */ });
-
-  var btn = document.getElementById('vs-account-logout');
-  if (btn) btn.addEventListener('click', function () {
-    location.href = '/logout';
-  });
 })();
 </script>
 
@@ -6003,7 +5935,11 @@ renderUnits('all');
     exitEditMode();
     if (confirm('Discard unsaved comment changes?')) location.reload();
   });
-  document.getElementById('lh-admin-reset').addEventListener('click', resetPassword);
+  // lh-admin-reset removed alongside the standalone-password flow;
+  // guard the bind so the wiring keeps working if the element is
+  // re-introduced later.
+  var resetBtn = document.getElementById('lh-admin-reset');
+  if (resetBtn) resetBtn.addEventListener('click', resetPassword);
 
   // --- On load: restore overrides (server-first when online) -
   restoreOverrides();
