@@ -935,58 +935,11 @@ def vd_get_units():
     cur.close(); conn.close()
     return jsonify({"hasData": bool(rows), "vertical": v, "units": rows})
 
-@app.route("/api/verticals/units/<addr>", methods=["PUT"])
-@login_required
-@admin_required
-def vd_put_unit(addr):
-    v = _vd_vertical()
-    if not v:
-        return jsonify({"error": "Unknown vertical"}), 400
-    body = request.get_json(silent=True) or {}
-    status = body.get("status")
-    if not status:
-        return jsonify({"error": "status required"}), 400
-    conn = get_db(); cur = conn.cursor()
-    cur.execute("""
-        UPDATE vd_units SET status = %s, updated_at = NOW()
-        WHERE addr = %s AND vertical = %s
-        RETURNING addr, status, updated_at
-    """, (_vd_normalize_status(status), addr, v))
-    row = cur.fetchone()
-    conn.commit(); cur.close(); conn.close()
-    if not row:
-        return jsonify({"error": "Unit not found"}), 404
-    return jsonify({"success": True, "unit": dict(row)})
-
-@app.route("/api/verticals/occupancy", methods=["GET"])
-@login_required
-def vd_occupancy():
-    v = _vd_vertical()
-    if not v:
-        return jsonify({"error": "Unknown vertical"}), 400
-    conn = get_db(); cur = conn.cursor()
-    cur.execute("SELECT status, COUNT(*) AS count FROM vd_units WHERE vertical = %s GROUP BY status", (v,))
-    counts, total = {}, 0
-    for r in cur.fetchall():
-        n = int(r["count"])
-        counts[r["status"]] = n
-        total += n
-    cur.close(); conn.close()
-    occupied  = counts.get("Tenant Occupied", 0)
-    leased    = counts.get("Leased", 0)
-    renewal   = counts.get("Renewal", 0)
-    model     = counts.get("Model", 0)
-    turned    = counts.get("Turned", 0)
-    leased_or_occ = occupied + leased + renewal + model
-    return jsonify({
-        "vertical": v, "total": total, "counts": counts,
-        "occupiedPct":  round(100 * occupied      / total, 1) if total else 0,
-        "leasedPct":    round(100 * leased_or_occ / total, 1) if total else 0,
-        "availablePct": round(100 * turned        / total, 1) if total else 0,
-    })
-
-# ── JSONB tab stores (noi, leasing-pace, traffic, rents, phase-rollup, psr) ──
+# ── JSONB tab stores (psr) ──────────────────────────────────────
 # Single GET (latest snapshot) + POST (DELETE-then-INSERT replace) per vertical.
+# The other tab tables (noi, leasing-pace, traffic, rents, phase-rollup)
+# are written by /api/verticals/upload and read internally by the
+# snapshot endpoint — they don't need standalone HTTP routes.
 def _vd_jsonb_get(table):
     v = _vd_vertical()
     if not v:
@@ -1029,13 +982,11 @@ def _vd_jsonb_post(table):
     finally:
         cur.close(); conn.close()
 
-# Generic JSONB endpoints — write requires admin.
+# Generic JSONB endpoint — write requires admin. Only psr_data has a
+# direct HTTP route since the TGP page reads/writes the PSR blob
+# inline; the other tab tables are populated by /api/verticals/upload
+# and read internally by /api/verticals/snapshot.
 for _path, _table in [
-    ("/api/verticals/noi",          "vd_noi_data"),
-    ("/api/verticals/leasing-pace", "vd_leasing_pace_data"),
-    ("/api/verticals/traffic",      "vd_traffic_data"),
-    ("/api/verticals/rents",        "vd_rents_data"),
-    ("/api/verticals/phase-rollup", "vd_phase_rollup_data"),
     ("/api/verticals/psr",          "vd_psr_data"),
 ]:
     # Bind table name in default arg to avoid late-binding closure bug.
@@ -3148,10 +3099,12 @@ def portfolio_page():
         "mpc_underwriting": True, "returns": True, "loans": True,
         "operations": True, "portfolio": True, "reports": True,
     }
-    if not session.get("is_admin"):
-        # Re-resolve from DB so a stale session doesn't bypass an admin
-        # toggle that just landed.
-        pa = pa or {}
+    # Mirror the redirect-on-no-access pattern used by every other
+    # dashboard (/returns, /loans, /operations, /macro, /sales,
+    # /verticals). Sidebar already hides the link when access is
+    # revoked, but URL access was open until this guard landed.
+    if not session.get("is_admin") and not pa.get("portfolio", True):
+        return redirect(url_for("home"))
     pa.setdefault("portfolio", True)
     pa.setdefault("reports",   True)
 
