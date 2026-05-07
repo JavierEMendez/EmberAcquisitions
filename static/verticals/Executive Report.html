@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ember — Executive Reporting</title>
+  <link rel="stylesheet" href="ember-tokens.css" />
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-sans);
+      /* Match the dashboard's warm-paper canvas so the hub feels like the
+         same surface, not a separate white page. */
+      background: var(--paper);
+      color: var(--ember-blue);
+      -webkit-font-smoothing: antialiased;
+    }
+    .hub {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 56px 48px 80px;
+    }
+    .hub-eyebrow {
+      font-family: var(--font-sans);
+      font-weight: 700;
+      font-size: 11px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--ember-orange);
+      margin-bottom: 20px;
+    }
+    .hub-title {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 56px;
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      color: var(--ember-blue);
+      max-width: 780px;
+      margin: 0 0 18px;
+    }
+    .hub-subhead {
+      font-family: var(--font-sans);
+      font-weight: 400;
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--gray-700);
+      max-width: 700px;
+      margin: 0 0 36px;
+    }
+
+    /* Portfolio card — matches the dashboard's white surface w/ subtle
+       border + soft elevation, not the dark navy from the original mock. */
+    .portfolio-card {
+      background: #fff;
+      color: var(--ember-blue);
+      border: 1px solid var(--gray-200);
+      border-radius: 18px;
+      padding: 32px 36px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 32px;
+      box-shadow: 0 8px 24px rgba(8,35,59,0.06);
+    }
+    .portfolio-card .meta { flex: 1; }
+    .portfolio-card .meta h2 {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 26px;
+      letter-spacing: -0.01em;
+      color: var(--ember-blue);
+      margin: 0 0 8px;
+    }
+    .portfolio-card .meta p {
+      font-family: var(--font-sans);
+      font-size: 14px;
+      line-height: 1.55;
+      color: var(--gray-700);
+      margin: 0;
+      max-width: 520px;
+    }
+    .portfolio-card .actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .portfolio-card .bars {
+      width: 56px; height: 56px;
+      flex-shrink: 0;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 11px 22px;
+      border-radius: 999px;
+      font-family: var(--font-sans);
+      font-weight: 600;
+      font-size: 13px;
+      border: 1.5px solid transparent;
+      cursor: pointer;
+      transition: all .14s var(--ease-standard);
+      white-space: nowrap;
+      text-decoration: none;
+    }
+    .btn.primary {
+      background: var(--ember-orange);
+      color: #fff;
+      box-shadow: 0 0 0 1px rgba(242,89,41,.18), 0 6px 18px rgba(242,89,41,.28);
+    }
+    .btn.primary:hover { background: var(--ember-orange-600); }
+    .btn.ghost {
+      background: transparent;
+      color: var(--ember-blue);
+      border-color: var(--gray-300);
+    }
+    .btn.ghost:hover { background: var(--paper-2); border-color: var(--ember-blue); }
+    .btn.outline {
+      background: #fff;
+      color: var(--ember-blue);
+      border-color: var(--gray-300);
+    }
+    .btn.outline:hover { border-color: var(--ember-blue); }
+
+    /* Per-project section */
+    .section-label {
+      font-family: var(--font-sans);
+      font-weight: 700;
+      font-size: 11px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--gray-500);
+      margin: 56px 0 20px;
+    }
+    .project-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 22px;
+    }
+    @media (max-width: 1000px) { .project-grid { grid-template-columns: 1fr; } }
+
+    .project-card {
+      background: #fff;
+      border: 1px solid var(--gray-200);
+      border-radius: 16px;
+      padding: 22px 22px 22px;
+      display: flex;
+      flex-direction: column;
+      transition: box-shadow .15s var(--ease-standard), transform .15s var(--ease-standard);
+    }
+    .project-card:hover {
+      box-shadow: 0 12px 30px rgba(8,35,59,0.10);
+      transform: translateY(-1px);
+    }
+    .project-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .project-name {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 18px;
+      letter-spacing: -0.01em;
+      color: var(--ember-blue);
+      margin: 0;
+    }
+    .badge {
+      font-family: var(--font-sans);
+      font-weight: 600;
+      font-size: 9.5px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--gray-300);
+      color: var(--gray-700);
+      background: #fff;
+      white-space: nowrap;
+    }
+    .project-hero {
+      width: 100%;
+      aspect-ratio: 16 / 8.5;
+      object-fit: cover;
+      border-radius: 12px;
+      margin-bottom: 14px;
+      background: var(--gray-100);
+    }
+    .project-desc {
+      font-family: var(--font-sans);
+      font-size: 13px;
+      line-height: 1.55;
+      color: var(--gray-700);
+      margin: 0 0 18px;
+      min-height: 40px;
+    }
+    .project-divider {
+      height: 1px;
+      background: var(--gray-200);
+      margin: 4px 0 16px;
+    }
+    .project-kpi {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .project-kpi .num {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 30px;
+      letter-spacing: -0.02em;
+      color: var(--ember-blue);
+      line-height: 1;
+    }
+    .project-kpi .label {
+      font-family: var(--font-sans);
+      font-weight: 600;
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--gray-700);
+    }
+    .project-meta {
+      font-family: var(--font-sans);
+      font-size: 11px;
+      color: var(--gray-500);
+      margin: 0 0 14px;
+    }
+    .project-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: auto;
+    }
+    .project-actions .btn { flex: 0 0 auto; }
+    .project-actions .btn.primary { padding: 10px 18px; }
+    .project-actions .btn.outline { padding: 10px 18px; }
+
+    /* Loading + error states */
+    .num.is-loading { color: var(--gray-300); }
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--ember-blue);
+      color: #fff;
+      padding: 12px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      box-shadow: var(--shadow-lg);
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity .2s, transform .2s;
+      pointer-events: none;
+      z-index: 100;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+
+    @media (max-width: 720px) {
+      .hub { padding: 32px 22px 56px; }
+      .hub-title { font-size: 36px; }
+      .portfolio-card { flex-direction: column; align-items: flex-start; padding: 24px; }
+      .portfolio-card .actions { flex-wrap: wrap; }
+    }
+  </style>
+</head>
+<body>
+  <main class="hub">
+    <div class="hub-eyebrow">Executive Reporting</div>
+    <h1 class="hub-title">Generate the latest portfolio report.</h1>
+    <p class="hub-subhead">Pull the freshest leasing, sales, and development data from the dashboard and produce a print-ready PDF for management — branded, consistent, and always current.</p>
+
+    <!-- PORTFOLIO CARD -->
+    <section class="portfolio-card">
+      <div class="meta">
+        <h2>Portfolio report</h2>
+        <p>All three projects in one document.</p>
+      </div>
+      <div class="actions">
+        <a class="btn primary" id="btn-portfolio-print" href="Executive%20Report%20Render.html?vertical=portfolio&autoprint=1" target="_blank" rel="noopener">Generate &amp; print</a>
+        <a class="btn ghost" id="btn-portfolio-preview" href="Executive%20Report%20Render.html?vertical=portfolio">Preview</a>
+        <svg class="bars" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="1"  y="9"  width="3" height="6"  rx="1.2" fill="#F25929"/>
+          <rect x="6"  y="5"  width="3" height="14" rx="1.2" fill="#F25929"/>
+          <rect x="11" y="2"  width="3" height="20" rx="1.2" fill="#F25929"/>
+          <rect x="16" y="6"  width="3" height="12" rx="1.2" fill="#F25929"/>
+          <rect x="21" y="10" width="3" height="4"  rx="1.2" fill="#F25929"/>
+        </svg>
+      </div>
+    </section>
+
+    <!-- PER-PROJECT REPORTS -->
+    <div class="section-label">Per-project reports</div>
+    <div class="project-grid">
+
+      <!-- LIGHTHAVEN -->
+      <article class="project-card" data-vertical="lighthaven">
+        <div class="project-head">
+          <h3 class="project-name">LightHaven District West</h3>
+          <span class="badge">Built to Rent</span>
+        </div>
+        <img class="project-hero" src="assets/lh-pool-clubhouse.jpg" alt="LightHaven pool and clubhouse" loading="lazy">
+        <p class="project-desc">Lease-up &amp; operations — occupancy, leasing pace, NOI, rents, traffic, commentary.</p>
+        <div class="project-divider"></div>
+        <div class="project-kpi">
+          <span class="num is-loading" data-kpi="lh-num">—</span>
+          <span class="label" data-kpi="lh-label">loading…</span>
+        </div>
+        <div class="project-meta" data-kpi="lh-meta">Updated — · Master Leasing &amp; Ops Tracker</div>
+        <div class="project-actions">
+          <a class="btn primary" href="Executive%20Report%20Render.html?vertical=lighthaven&autoprint=1" target="_blank" rel="noopener">Generate PDF</a>
+          <a class="btn outline" href="Executive%20Report%20Render.html?vertical=lighthaven">Preview</a>
+        </div>
+      </article>
+
+      <!-- HAWTHORNE -->
+      <article class="project-card" data-vertical="hawthorne">
+        <div class="project-head">
+          <h3 class="project-name">The Hawthorne</h3>
+          <span class="badge">For-Sale Condo</span>
+        </div>
+        <img class="project-hero" src="assets/hw-pool.jpg" alt="The Hawthorne pool deck" loading="lazy">
+        <p class="project-desc">Sales pace &amp; revenue — KPI tiles, stacking plan, sales by month, floorplan rollup, proforma.</p>
+        <div class="project-divider"></div>
+        <div class="project-kpi">
+          <span class="num is-loading" data-kpi="hw-num">—</span>
+          <span class="label" data-kpi="hw-label">loading…</span>
+        </div>
+        <div class="project-meta" data-kpi="hw-meta">Updated — · Spaceform + Budget &amp; Proforma</div>
+        <div class="project-actions">
+          <a class="btn primary" href="Executive%20Report%20Render.html?vertical=hawthorne&autoprint=1" target="_blank" rel="noopener">Generate PDF</a>
+          <a class="btn outline" href="Executive%20Report%20Render.html?vertical=hawthorne">Preview</a>
+        </div>
+      </article>
+
+      <!-- TGP -->
+      <article class="project-card" data-vertical="tgp">
+        <div class="project-head">
+          <h3 class="project-name">Shops at Grand Prairie</h3>
+          <span class="badge">Retail Development</span>
+        </div>
+        <img class="project-hero" src="assets/tgp-aerial.jpg" alt="Shops at Grand Prairie aerial" loading="lazy">
+        <p class="project-desc">Development PSR — overview, full budget, schedule, GMP &amp; risk, lease-up, action items.</p>
+        <div class="project-divider"></div>
+        <div class="project-kpi">
+          <span class="num is-loading" data-kpi="tgp-num">—</span>
+          <span class="label" data-kpi="tgp-label">loading…</span>
+        </div>
+        <div class="project-meta" data-kpi="tgp-meta">Updated — · TGP Development PSR</div>
+        <div class="project-actions">
+          <a class="btn primary" href="Executive%20Report%20Render.html?vertical=tgp&autoprint=1" target="_blank" rel="noopener">Generate PDF</a>
+          <a class="btn outline" href="Executive%20Report%20Render.html?vertical=tgp">Preview</a>
+        </div>
+      </article>
+
+    </div>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    window.EMBER_API_BASE = window.EMBER_API_BASE || "";
+  </script>
+  <script src="data.js?v=9"></script>
+  <script>
+    (function () {
+      const $ = (sel, root = document) => root.querySelector(sel);
+      const fmtPct = n => (Number(n) || 0).toFixed(1) + '%';
+      const fmtNum = n => Math.round(Number(n) || 0).toLocaleString();
+      const fmtUsdM = n => '$' + (Number(n) / 1_000_000).toFixed(1) + 'M';
+      const fmtDateMed = iso => {
+        if (!iso) return '—';
+        const d = new Date(iso);
+        if (isNaN(d)) return iso;
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      };
+
+      function setKPI(prefix, num, label, meta) {
+        const numEl   = document.querySelector(`[data-kpi="${prefix}-num"]`);
+        const labelEl = document.querySelector(`[data-kpi="${prefix}-label"]`);
+        const metaEl  = document.querySelector(`[data-kpi="${prefix}-meta"]`);
+        if (numEl)   { numEl.textContent = num;   numEl.classList.remove('is-loading'); }
+        if (labelEl) { labelEl.textContent = label; }
+        if (metaEl)  { metaEl.textContent = meta; }
+      }
+
+      // ---------- LightHaven ----------
+      function renderLightHaven(d) {
+        const occ = d && d.occupancy;
+        if (!occ) return setKPI('lh', '—', 'no data uploaded', 'Updated — · Master Leasing & Ops Tracker');
+        const num = fmtPct(occ.leasedPct);
+        const label = `LEASED · ${fmtNum(occ.total)} UNITS`;
+        const dateStr = fmtDateMed(d.lastImport && d.lastImport.lastImportAt);
+        const file = (d.lastImport && d.lastImport.sourceFile) || 'Master Leasing & Ops Tracker';
+        setKPI('lh', num, label, `Updated ${dateStr} · ${file}`);
+      }
+
+      // ---------- Hawthorne ----------
+      function renderHawthorne(d) {
+        const s = d && d.sales;
+        if (!s) return setKPI('hw', '—', 'no data uploaded', 'Updated — · Spaceform + Budget & Proforma');
+        const num = fmtNum(s.closed.actual);
+        const label = `CLOSED OF ${fmtNum(s.total.budget || s.total.actual)} · ${fmtNum(s.soldNotClosed.actual)} SNC`;
+        const dateStr = fmtDateMed(d.lastImport && d.lastImport.lastImportAt);
+        const file = (d.lastImport && d.lastImport.sourceFile) || 'Spaceform + Budget & Proforma';
+        setKPI('hw', num, label, `Updated ${dateStr} · ${file}`);
+      }
+
+      // ---------- TGP ----------
+      function renderTgp(d) {
+        const psr = d && d.psr;
+        if (!psr) return setKPI('tgp', '—', 'no data uploaded', 'Updated — · TGP Development PSR');
+        const pct = (psr.leaseUp && psr.leaseUp.preLeasedPct) || 0;
+        const totalBudget = (psr.overview && psr.overview.totalBudget) || 0;
+        const num = pct + '%';
+        const label = `PRE-LEASED · ${fmtUsdM(totalBudget)} BUDGET`;
+        const dateStr = fmtDateMed(d.lastImport && d.lastImport.lastImportAt);
+        const file = (d.lastImport && d.lastImport.sourceFile) || 'TGP Development PSR';
+        setKPI('tgp', num, label, `Updated ${dateStr} · ${file}`);
+      }
+
+      // Fetch all three in parallel
+      Promise.all([
+        window.EmberData.loadLightHaven(),
+        window.EmberData.loadHawthorne(),
+        window.EmberData.loadTgp(),
+      ]).then(([lh, hw, tgp]) => {
+        try { renderLightHaven(lh); } catch (e) { console.error('lh hub render', e); }
+        try { renderHawthorne(hw); } catch (e) { console.error('hw hub render', e); }
+        try { renderTgp(tgp); } catch (e) { console.error('tgp hub render', e); }
+      }).catch(err => {
+        console.error('hub load failed', err);
+      });
+    })();
+  </script>
+</body>
+</html>

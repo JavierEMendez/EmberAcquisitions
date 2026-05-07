@@ -167,7 +167,99 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS activity_log_user_ts ON activity_log (user_id, ts DESC);
         CREATE INDEX IF NOT EXISTS activity_log_ts ON activity_log (ts DESC);
+
+        -- ── Vertical Dashboard ──────────────────────────────────────
+        -- Ported from the standalone Node/Express service; every table
+        -- carries a `vertical` discriminator (lighthaven / hawthorne /
+        -- tgp) so a single set of tables handles all properties.
+        CREATE TABLE IF NOT EXISTS vd_units (
+          id SERIAL PRIMARY KEY,
+          vertical TEXT NOT NULL DEFAULT 'lighthaven',
+          addr TEXT NOT NULL,
+          unit_num TEXT,
+          floorplan TEXT,
+          type TEXT,
+          bed TEXT,
+          sf INTEGER,
+          phase INTEGER,
+          status TEXT,
+          grid_row INTEGER,
+          grid_col INTEGER,
+          tenant_name TEXT,
+          lease_executed_date DATE,
+          move_in_date DATE,
+          move_out_date DATE,
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS vd_units_vertical_idx ON vd_units(vertical);
+        CREATE INDEX IF NOT EXISTS vd_units_status_idx   ON vd_units(status);
+        CREATE INDEX IF NOT EXISTS vd_units_phase_idx    ON vd_units(phase);
+
+        CREATE TABLE IF NOT EXISTS vd_noi_data (
+          id SERIAL PRIMARY KEY, vertical TEXT NOT NULL DEFAULT 'lighthaven',
+          data JSONB NOT NULL, updated_by TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS vd_noi_vertical_idx ON vd_noi_data(vertical);
+
+        CREATE TABLE IF NOT EXISTS vd_leasing_pace_data (
+          id SERIAL PRIMARY KEY, vertical TEXT NOT NULL DEFAULT 'lighthaven',
+          data JSONB NOT NULL, updated_by TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS vd_leasing_pace_vertical_idx ON vd_leasing_pace_data(vertical);
+
+        CREATE TABLE IF NOT EXISTS vd_traffic_data (
+          id SERIAL PRIMARY KEY, vertical TEXT NOT NULL DEFAULT 'lighthaven',
+          data JSONB NOT NULL, updated_by TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS vd_traffic_vertical_idx ON vd_traffic_data(vertical);
+
+        CREATE TABLE IF NOT EXISTS vd_rents_data (
+          id SERIAL PRIMARY KEY, vertical TEXT NOT NULL DEFAULT 'lighthaven',
+          data JSONB NOT NULL, updated_by TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS vd_rents_vertical_idx ON vd_rents_data(vertical);
+
+        CREATE TABLE IF NOT EXISTS vd_phase_rollup_data (
+          id SERIAL PRIMARY KEY, vertical TEXT NOT NULL DEFAULT 'lighthaven',
+          data JSONB NOT NULL, updated_by TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS vd_phase_rollup_vertical_idx ON vd_phase_rollup_data(vertical);
+
+        CREATE TABLE IF NOT EXISTS vd_psr_data (
+          id SERIAL PRIMARY KEY, vertical TEXT NOT NULL DEFAULT 'lighthaven',
+          data JSONB NOT NULL, updated_by TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS vd_psr_vertical_idx ON vd_psr_data(vertical);
+
+        CREATE TABLE IF NOT EXISTS vd_hawthorne_data (
+          id SERIAL PRIMARY KEY, vertical TEXT NOT NULL DEFAULT 'lighthaven',
+          data JSONB NOT NULL, updated_by TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS vd_hawthorne_vertical_idx ON vd_hawthorne_data(vertical);
+
+        CREATE TABLE IF NOT EXISTS vd_comments (
+          vertical TEXT NOT NULL DEFAULT 'lighthaven',
+          section_key TEXT NOT NULL,
+          body TEXT NOT NULL DEFAULT '',
+          updated_by TEXT,
+          updated_at TIMESTAMPTZ DEFAULT NOW(),
+          PRIMARY KEY (vertical, section_key)
+        );
+
+        CREATE TABLE IF NOT EXISTS vd_imports (
+          id SERIAL PRIMARY KEY,
+          vertical TEXT NOT NULL DEFAULT 'lighthaven',
+          source_file TEXT,
+          imported_by TEXT,
+          payload JSONB,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS vd_imports_vertical_idx ON vd_imports(vertical);
     """)
+    # Backfill `verticals` page_access for existing users so the new
+    # dashboard is visible by default — same convention used for
+    # portfolio / macro / sales when those shipped.
+    cur.execute("UPDATE users SET page_access = page_access || '{\"verticals\": true}'::jsonb WHERE page_access->>'verticals' IS NULL")
     # Backfill portfolio access for existing users
     cur.execute("UPDATE users SET page_access = page_access || '{\"portfolio\": true}'::jsonb WHERE page_access->>'portfolio' IS NULL")
     cur.execute("UPDATE users SET page_access = page_access || '{\"macro\": true}'::jsonb WHERE page_access->>'macro' IS NULL")
@@ -780,6 +872,867 @@ def recalculate(pid):
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True, "outputs": outputs})
 
+# ─── VERTICAL DASHBOARD ──────────────────────────────────────────────────────
+# Multi-property leasing/operations dashboard ported from a standalone
+# Node/Express service (csaldierna1-bot/Vertical-Dashboard). The frontend
+# is a static SPA living in static/verticals/; these routes serve the
+# JSON it consumes. Schema lives in init_db() under `vd_*` tables.
+#
+# Conventions kept from the Node implementation:
+#   - Every read/write is scoped by ?vertical=<slug>; KNOWN_VERTICALS
+#     gatekeeps the slugs.
+#   - Tab snapshots (noi, leasing pace, etc.) use a DELETE-then-INSERT
+#     pattern so each vertical has exactly one current row per table.
+#   - Status normalization: 'UNRELEASED' → 'AVAILABLE' (legacy data).
+#
+# Auth: write endpoints require admin (replaces the Node app's
+# X-API-Key shim); read endpoints require login. Hawthorne POST is the
+# one exception — its UI uploads the master xlsx in-browser, so any
+# logged-in user can write to it (mirrors Node behavior).
+
+_VD_KNOWN_VERTICALS = ('lighthaven', 'hawthorne', 'tgp')
+
+def _vd_vertical(req=None):
+    """Pull `vertical` from request args or JSON body. Returns None if
+    missing/invalid so the caller can 400."""
+    if req is None:
+        req = request
+    v = (req.args.get("vertical")
+         or (req.get_json(silent=True) or {}).get("vertical")
+         or "lighthaven")
+    v = str(v).lower()
+    return v if v in _VD_KNOWN_VERTICALS else None
+
+def _vd_normalize_status(s):
+    """Mirror server.js normalizeStatus: collapse legacy UNRELEASED → AVAILABLE."""
+    if not s:
+        return s
+    return "AVAILABLE" if str(s).upper() == "UNRELEASED" else s
+
+def _vd_pct(n, d):
+    return round((n / d) * 1000) / 10 if d else 0
+
+# ── UNITS ────────────────────────────────────────────────────────────
+@app.route("/api/verticals/units", methods=["GET"])
+@login_required
+def vd_get_units():
+    v = _vd_vertical()
+    if not v:
+        return jsonify({"error": "Unknown vertical"}), 400
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("""
+        SELECT addr, unit_num AS num, floorplan AS fp, type, bed, sf, phase, status,
+               grid_row, grid_col,
+               tenant_name, lease_executed_date, move_in_date, move_out_date, updated_at
+        FROM vd_units WHERE vertical = %s ORDER BY phase, addr
+    """, (v,))
+    rows = [dict(r) for r in cur.fetchall()]
+    cur.close(); conn.close()
+    return jsonify({"hasData": bool(rows), "vertical": v, "units": rows})
+
+@app.route("/api/verticals/units/<addr>", methods=["PUT"])
+@login_required
+@admin_required
+def vd_put_unit(addr):
+    v = _vd_vertical()
+    if not v:
+        return jsonify({"error": "Unknown vertical"}), 400
+    body = request.get_json(silent=True) or {}
+    status = body.get("status")
+    if not status:
+        return jsonify({"error": "status required"}), 400
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("""
+        UPDATE vd_units SET status = %s, updated_at = NOW()
+        WHERE addr = %s AND vertical = %s
+        RETURNING addr, status, updated_at
+    """, (_vd_normalize_status(status), addr, v))
+    row = cur.fetchone()
+    conn.commit(); cur.close(); conn.close()
+    if not row:
+        return jsonify({"error": "Unit not found"}), 404
+    return jsonify({"success": True, "unit": dict(row)})
+
+@app.route("/api/verticals/occupancy", methods=["GET"])
+@login_required
+def vd_occupancy():
+    v = _vd_vertical()
+    if not v:
+        return jsonify({"error": "Unknown vertical"}), 400
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT status, COUNT(*) AS count FROM vd_units WHERE vertical = %s GROUP BY status", (v,))
+    counts, total = {}, 0
+    for r in cur.fetchall():
+        n = int(r["count"])
+        counts[r["status"]] = n
+        total += n
+    cur.close(); conn.close()
+    occupied  = counts.get("Tenant Occupied", 0)
+    leased    = counts.get("Leased", 0)
+    renewal   = counts.get("Renewal", 0)
+    model     = counts.get("Model", 0)
+    turned    = counts.get("Turned", 0)
+    leased_or_occ = occupied + leased + renewal + model
+    return jsonify({
+        "vertical": v, "total": total, "counts": counts,
+        "occupiedPct":  round(100 * occupied      / total, 1) if total else 0,
+        "leasedPct":    round(100 * leased_or_occ / total, 1) if total else 0,
+        "availablePct": round(100 * turned        / total, 1) if total else 0,
+    })
+
+# ── JSONB tab stores (noi, leasing-pace, traffic, rents, phase-rollup, psr) ──
+# Single GET (latest snapshot) + POST (DELETE-then-INSERT replace) per vertical.
+def _vd_jsonb_get(table):
+    v = _vd_vertical()
+    if not v:
+        return jsonify({"error": "Unknown vertical"}), 400
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        f"SELECT data, updated_by, created_at FROM {table} "
+        "WHERE vertical = %s ORDER BY created_at DESC LIMIT 1",
+        (v,)
+    )
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    if not row:
+        return jsonify({"hasData": False, "vertical": v})
+    return jsonify({"hasData": True, "vertical": v, **dict(row)})
+
+def _vd_jsonb_post(table):
+    v = _vd_vertical()
+    if not v:
+        return jsonify({"error": "Unknown vertical"}), 400
+    body = request.get_json(silent=True) or {}
+    data = body.get("data")
+    if not isinstance(data, dict):
+        return jsonify({"error": "Missing data object"}), 400
+    updated_by = body.get("updatedBy") or session.get("username") or "anonymous"
+    conn = get_db(); cur = conn.cursor()
+    try:
+        cur.execute(f"DELETE FROM {table} WHERE vertical = %s", (v,))
+        cur.execute(
+            f"INSERT INTO {table} (vertical, data, updated_by) VALUES (%s, %s, %s) "
+            "RETURNING id, updated_by, created_at",
+            (v, json.dumps(data), updated_by)
+        )
+        rec = dict(cur.fetchone())
+        conn.commit()
+        return jsonify({"success": True, "vertical": v, "record": rec})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": f"Failed to save {table}", "detail": str(e)}), 500
+    finally:
+        cur.close(); conn.close()
+
+# Generic JSONB endpoints — write requires admin.
+for _path, _table in [
+    ("/api/verticals/noi",          "vd_noi_data"),
+    ("/api/verticals/leasing-pace", "vd_leasing_pace_data"),
+    ("/api/verticals/traffic",      "vd_traffic_data"),
+    ("/api/verticals/rents",        "vd_rents_data"),
+    ("/api/verticals/phase-rollup", "vd_phase_rollup_data"),
+    ("/api/verticals/psr",          "vd_psr_data"),
+]:
+    # Bind table name in default arg to avoid late-binding closure bug.
+    def _vd_get(table=_table): return _vd_jsonb_get(table)
+    def _vd_post(table=_table):
+        if not session.get("is_admin"):
+            return jsonify({"error": "Admin required"}), 403
+        return _vd_jsonb_post(table)
+    _vd_get.__name__  = f"vd_get_{_table}"
+    _vd_post.__name__ = f"vd_post_{_table}"
+    app.add_url_rule(_path, view_func=login_required(_vd_get),  methods=["GET"])
+    app.add_url_rule(_path, view_func=login_required(_vd_post), methods=["POST"])
+
+# ── HAWTHORNE (public POST in original — kept for parity, login-only here) ──
+@app.route("/api/verticals/hawthorne", methods=["GET"])
+@login_required
+def vd_get_hawthorne():
+    return _vd_jsonb_get("vd_hawthorne_data")
+
+@app.route("/api/verticals/hawthorne", methods=["POST"])
+@login_required
+def vd_post_hawthorne():
+    # Mirrors the Node app's quirk: any logged-in user can update the
+    # Hawthorne master xlsx blob — the in-browser UI is what writes.
+    return _vd_jsonb_post("vd_hawthorne_data")
+
+# ── PSR raw xlsx round-trip ──
+# Node app wrote raw bytes to public/tgp_psr_template.xlsx so the next
+# download is byte-identical. We do the same against static/verticals/.
+_VD_PSR_RAW_FILES = {"tgp": "tgp_psr_template.xlsx"}
+
+@app.route("/api/verticals/psr/raw", methods=["POST"])
+@login_required
+@admin_required
+def vd_post_psr_raw():
+    v = _vd_vertical()
+    if not v:
+        return jsonify({"error": "Unknown vertical"}), 400
+    filename = _VD_PSR_RAW_FILES.get(v)
+    if not filename:
+        return jsonify({"error": f"No PSR raw slot for vertical: {v}"}), 404
+    raw = request.get_data()
+    if not raw:
+        return jsonify({"error": "No body bytes received"}), 400
+    dest = os.path.join(os.path.dirname(__file__), "static", "verticals", filename)
+    try:
+        with open(dest, "wb") as f:
+            f.write(raw)
+    except Exception as e:
+        return jsonify({"error": f"Save failed: {e}"}), 500
+    return jsonify({"success": True, "vertical": v, "bytes": len(raw), "filename": filename})
+
+# ── COMMENTS (vertical, section_key) composite-PK upsert ──
+@app.route("/api/verticals/comments", methods=["GET"])
+@login_required
+def vd_get_comments():
+    v = _vd_vertical()
+    if not v:
+        return jsonify({"error": "Unknown vertical"}), 400
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "SELECT section_key, body, updated_by, updated_at FROM vd_comments WHERE vertical = %s",
+        (v,)
+    )
+    out = {}
+    for r in cur.fetchall():
+        out[r["section_key"]] = dict(r)
+    cur.close(); conn.close()
+    return jsonify(out)
+
+@app.route("/api/verticals/comments/<key>", methods=["GET"])
+@login_required
+def vd_get_comment(key):
+    v = _vd_vertical()
+    if not v:
+        return jsonify({"error": "Unknown vertical"}), 400
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "SELECT section_key, body, updated_by, updated_at FROM vd_comments "
+        "WHERE vertical = %s AND section_key = %s",
+        (v, key)
+    )
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    if not row:
+        return jsonify({"section_key": key, "body": "", "updated_at": None})
+    return jsonify(dict(row))
+
+@app.route("/api/verticals/comments/<key>", methods=["PUT"])
+@login_required
+def vd_put_comment(key):
+    v = _vd_vertical()
+    if not v:
+        return jsonify({"error": "Unknown vertical"}), 400
+    body = request.get_json(silent=True) or {}
+    text = body.get("body")
+    if not isinstance(text, str):
+        return jsonify({"error": "body (string) required"}), 400
+    updated_by = body.get("updatedBy") or session.get("username") or "anonymous"
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO vd_comments (vertical, section_key, body, updated_by, updated_at)
+        VALUES (%s, %s, %s, %s, NOW())
+        ON CONFLICT (vertical, section_key) DO UPDATE
+          SET body = EXCLUDED.body,
+              updated_by = EXCLUDED.updated_by,
+              updated_at = NOW()
+        RETURNING vertical, section_key, body, updated_by, updated_at
+    """, (v, key, text, updated_by))
+    row = dict(cur.fetchone())
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"success": True, "comment": row})
+
+# ── BULK UPLOAD (called by update_dashboard.py) ──
+@app.route("/api/verticals/upload", methods=["POST"])
+@login_required
+@admin_required
+def vd_post_upload():
+    v = _vd_vertical()
+    if not v:
+        return jsonify({"error": "Unknown vertical"}), 400
+    body = request.get_json(silent=True) or {}
+    units      = body.get("units")
+    source     = body.get("sourceFile")
+    imported_by = body.get("importedBy") or session.get("username") or "uploader"
+    conn = get_db(); cur = conn.cursor()
+    try:
+        if isinstance(units, list):
+            cur.execute("DELETE FROM vd_units WHERE vertical = %s", (v,))
+            for u in units:
+                cur.execute("""
+                    INSERT INTO vd_units
+                      (vertical, addr, unit_num, floorplan, type, bed, sf, phase, status,
+                       grid_row, grid_col, tenant_name,
+                       lease_executed_date, move_in_date, move_out_date)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (
+                    v, u.get("addr"), u.get("num"), u.get("fp"), u.get("type"),
+                    u.get("bed"), u.get("sf"), u.get("phase"),
+                    _vd_normalize_status(u.get("status")),
+                    u.get("grid_row"), u.get("grid_col"), u.get("tenant_name"),
+                    u.get("lease_executed_date"), u.get("move_in_date"), u.get("move_out_date"),
+                ))
+        jsonb_puts = [
+            ("vd_noi_data",          body.get("noi")),
+            ("vd_leasing_pace_data", body.get("leasingPace")),
+            ("vd_traffic_data",      body.get("traffic")),
+            ("vd_rents_data",        body.get("rents")),
+            ("vd_phase_rollup_data", body.get("phaseRollup")),
+            ("vd_psr_data",          body.get("psr")),
+        ]
+        tabs_updated = []
+        for tbl, payload in jsonb_puts:
+            if payload is None:
+                continue
+            cur.execute(f"DELETE FROM {tbl} WHERE vertical = %s", (v,))
+            cur.execute(
+                f"INSERT INTO {tbl} (vertical, data, updated_by) VALUES (%s, %s, %s)",
+                (v, json.dumps(payload), imported_by)
+            )
+            tabs_updated.append(tbl)
+        cur.execute(
+            "INSERT INTO vd_imports (vertical, source_file, imported_by, payload) "
+            "VALUES (%s, %s, %s, %s)",
+            (v, source, imported_by, json.dumps(body))
+        )
+        conn.commit()
+        return jsonify({
+            "success": True, "vertical": v,
+            "unitsImported": len(units) if isinstance(units, list) else 0,
+            "tabsUpdated": tabs_updated,
+        })
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": "Upload failed", "detail": str(e)}), 500
+    finally:
+        cur.close(); conn.close()
+
+@app.route("/api/verticals/last-import", methods=["GET"])
+@login_required
+def vd_last_import():
+    v = _vd_vertical()
+    if not v:
+        return jsonify({"error": "Unknown vertical"}), 400
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "SELECT created_at, source_file FROM vd_imports WHERE vertical = %s "
+        "ORDER BY created_at DESC LIMIT 1",
+        (v,)
+    )
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    if not row:
+        return jsonify({"vertical": v, "lastImportAt": None, "sourceFile": None})
+    return jsonify({"vertical": v, "lastImportAt": row["created_at"].isoformat() if row["created_at"] else None,
+                    "sourceFile": row["source_file"]})
+
+@app.route("/api/verticals/imports", methods=["GET"])
+@login_required
+@admin_required
+def vd_imports_history():
+    v = _vd_vertical()
+    if not v:
+        return jsonify({"error": "Unknown vertical"}), 400
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "SELECT id, source_file, imported_by, created_at FROM vd_imports "
+        "WHERE vertical = %s ORDER BY created_at DESC LIMIT 25",
+        (v,)
+    )
+    rows = []
+    for r in cur.fetchall():
+        d = dict(r)
+        if d.get("created_at"):
+            d["created_at"] = d["created_at"].isoformat()
+        rows.append(d)
+    cur.close(); conn.close()
+    return jsonify({"vertical": v, "imports": rows})
+
+# ── SNAPSHOT ────────────────────────────────────────────────────────
+# Server-side derivation of every number the Executive Report consumes.
+# Mirrors the per-vertical functions in server.js (lightHavenSnapshot /
+# hawthorneSnapshot / tgpSnapshot) — kept faithful to those because the
+# frontend report templates already speak this exact shape.
+
+def _vd_fetch_comments_map(vertical):
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "SELECT section_key, body, updated_by, updated_at FROM vd_comments WHERE vertical = %s",
+        (vertical,)
+    )
+    out = {}
+    for r in cur.fetchall():
+        out[r["section_key"]] = {
+            "body": r.get("body") or "",
+            "updatedBy": r.get("updated_by"),
+            "updatedAt": r["updated_at"].isoformat() if r.get("updated_at") else None,
+        }
+    cur.close(); conn.close()
+    return out
+
+def _vd_lighthaven_snapshot():
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "SELECT created_at, source_file FROM vd_imports WHERE vertical = 'lighthaven' "
+        "ORDER BY created_at DESC LIMIT 1"
+    )
+    last = cur.fetchone()
+    cur.execute("""
+        SELECT addr, unit_num AS num, floorplan AS fp, type, bed, sf, phase, status,
+               tenant_name, lease_executed_date, move_in_date, move_out_date
+        FROM vd_units WHERE vertical = 'lighthaven' ORDER BY phase, addr
+    """)
+    units = [dict(r) for r in cur.fetchall()]
+    if not last and not units:
+        cur.close(); conn.close()
+        return {"vertical": "lighthaven", "hasData": False,
+                "generatedAt": None, "sourceFile": None, "data": None}
+
+    counts = {}
+    for u in units:
+        k = u.get("status") or "AVAILABLE"
+        counts[k] = counts.get(k, 0) + 1
+    total = len(units)
+    occupied = counts.get("Tenant Occupied", 0) + counts.get("Renewal", 0)
+    leased   = occupied + counts.get("Leased", 0) + counts.get("Model", 0)
+    occupancy = {
+        "total": total, "counts": counts,
+        "occupiedPct":  _vd_pct(occupied, total),
+        "leasedPct":    _vd_pct(leased, total),
+        "availablePct": _vd_pct(counts.get("AVAILABLE", 0), total),
+    }
+
+    LEASED_STATUSES = {"Tenant Occupied", "Leased", "Renewal", "Model"}
+    fp_map = {}
+    for u in units:
+        key = u.get("fp") or "Unknown"
+        row = fp_map.setdefault(key, {"byPhase": {}, "total": 0, "leased": 0})
+        ph = u.get("phase") or 0
+        row["byPhase"][ph] = row["byPhase"].get(ph, 0) + 1
+        row["total"] += 1
+        if u.get("status") in LEASED_STATUSES:
+            row["leased"] += 1
+    phase_rollup = sorted([
+        {"fp": fp, "byPhase": r["byPhase"], "total": r["total"], "leased": r["leased"],
+         "pct": _vd_pct(r["leased"], r["total"])}
+        for fp, r in fp_map.items()
+    ], key=lambda x: x["fp"])
+
+    def _latest_jsonb(table):
+        cur.execute(
+            f"SELECT data FROM {table} WHERE vertical = 'lighthaven' "
+            "ORDER BY created_at DESC LIMIT 1"
+        )
+        row = cur.fetchone()
+        return row["data"] if row else None
+    leasing_pace = _latest_jsonb("vd_leasing_pace_data")
+    noi          = _latest_jsonb("vd_noi_data")
+    rents        = _latest_jsonb("vd_rents_data")
+    traffic      = _latest_jsonb("vd_traffic_data")
+    cur.close(); conn.close()
+
+    # Synthesize leasing_pace from lease_executed_date if no JSONB record exists.
+    if not leasing_pace:
+        today = datetime.date.today()
+        months_lp, month_keys = [], []
+        for i in range(11, -1, -1):
+            m = today.month - i
+            y = today.year + (m - 1) // 12
+            mm = ((m - 1) % 12) + 1
+            d = datetime.date(y, mm, 1)
+            months_lp.append(d.strftime("%b"))
+            month_keys.append(f"{y:04d}-{mm:02d}")
+        monthly = [0] * len(month_keys)
+        prior = 0
+        for u in units:
+            led = u.get("lease_executed_date")
+            if not led:
+                continue
+            k = str(led)[:7]
+            if k in month_keys:
+                monthly[month_keys.index(k)] += 1
+            elif k < month_keys[0]:
+                prior += 1
+        cum = prior
+        actual_series = []
+        for n in monthly:
+            cum += n
+            actual_series.append(cum)
+        target_budget = max(round(len(units) * 0.85), cum)
+        budget_series = [round(target_budget * (i + 1) / len(months_lp))
+                         for i in range(len(months_lp))]
+        leasing_pace = {"months": months_lp, "budget": budget_series, "actual": actual_series}
+
+    comments = _vd_fetch_comments_map("lighthaven")
+    return {
+        "vertical": "lighthaven", "hasData": True,
+        "generatedAt": last["created_at"].isoformat() if last and last.get("created_at") else None,
+        "sourceFile":  last["source_file"] if last else None,
+        "data": {
+            "units": units, "occupancy": occupancy, "phaseRollup": phase_rollup,
+            "leasingPace": leasing_pace or {"months": [], "budget": [], "actual": []},
+            "noi":         noi         or {"year": datetime.date.today().year,
+                                            "months": [], "budget": [], "forecast": []},
+            "rents":       rents       or {"byFloorplan": {}},
+            "traffic":     traffic     or {"weeks": [], "visitors": [], "leads": [], "sources": {}},
+            "comments":    comments,
+        },
+    }
+
+def _vd_hawthorne_snapshot():
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "SELECT data, created_at FROM vd_hawthorne_data WHERE vertical = 'hawthorne' "
+        "ORDER BY created_at DESC LIMIT 1"
+    )
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    if not row:
+        return {"vertical": "hawthorne", "hasData": False,
+                "generatedAt": None, "sourceFile": None, "data": None}
+    blob = row.get("data") or {}
+    units = blob.get("units") or []
+    bp = blob.get("bp") or {}
+    as_of = blob.get("savedAt") or row["created_at"].isoformat()
+    as_of_date = str(as_of)[:10]
+
+    def categorize(u):
+        if u.get("status") == "SOLD":
+            cd = u.get("closingDate")
+            if not cd:
+                return "snc"
+            return "closed" if str(cd)[:10] <= as_of_date else "snc"
+        return "avail"
+
+    def unit_dollar(u, c):
+        if c in ("closed", "snc"):
+            return u.get("purchasePrice") or u.get("listPrice") or 0
+        return u.get("listPrice") or 0
+
+    total = closed = avail = snc = 0
+    closed_dollar = 0
+    closed_price_sum = 0; closed_price_n = 0
+    for u in units:
+        total += 1
+        c = categorize(u); d = unit_dollar(u, c)
+        if c == "closed":
+            closed += 1; closed_dollar += d
+            cp = u.get("purchasePrice") or u.get("listPrice") or 0
+            if cp > 0:
+                closed_price_sum += cp; closed_price_n += 1
+        elif c == "snc":
+            snc += 1
+        else:
+            avail += 1
+
+    t = bp.get("targets") or {}
+    def t_count(k): return ((t.get(k) or {}).get("count")) or 0
+    sales = {
+        "total":         {"actual": total,  "budget": t_count("total") or total},
+        "closed":        {"actual": closed, "budget": t_count("closed")},
+        "available":     {"actual": avail,  "budget": t_count("available")},
+        "soldNotClosed": {"actual": snc,    "budget": t_count("soldNotClosed")},
+        "avgPrice": {
+            "actual": round(closed_price_sum / closed_price_n) if closed_price_n else 0,
+            "budget": round((t.get("closed") or {}).get("dollar", 0) /
+                            ((t.get("closed") or {}).get("count") or 1))
+                      if (t.get("closed") or {}).get("count") else 0,
+        },
+        "gci": {
+            "actual": closed_dollar / 1e6,
+            "budget": ((bp.get("budget") or {}).get("totalSales", 0)) / 1e6,
+        },
+    }
+
+    floor_map = {}
+    for u in units:
+        lvl = u.get("level") or 1
+        floor_map.setdefault(lvl, []).append(u)
+    stacking = []
+    for lvl in sorted(floor_map.keys(), reverse=True):
+        units_on_floor = sorted(floor_map[lvl], key=lambda u: str(u.get("title") or ""))
+        stacking.append([categorize(u) for u in units_on_floor])
+
+    months, month_keys = [], []
+    try:
+        as_of_d = datetime.date.fromisoformat(as_of_date)
+    except Exception:
+        as_of_d = datetime.date.today()
+    for i in range(11, -1, -1):
+        m = as_of_d.month - i
+        y = as_of_d.year + (m - 1) // 12
+        mm = ((m - 1) % 12) + 1
+        months.append(datetime.date(y, mm, 1).strftime("%b"))
+        month_keys.append(f"{y:04d}-{mm:02d}")
+    closed_by_month = [0] * 12
+    snc_by_month    = [0] * 12
+    for u in units:
+        if u.get("status") != "SOLD" or not u.get("closingDate"):
+            continue
+        cd = str(u["closingDate"])[:10]
+        k = cd[:7]
+        if k not in month_keys:
+            continue
+        idx = month_keys.index(k)
+        if cd <= as_of_date:
+            closed_by_month[idx] += 1
+        else:
+            snc_by_month[idx] += 1
+    sales_by_month = {"months": months, "closed": closed_by_month, "snc": snc_by_month}
+
+    fp_map = {}
+    for u in units:
+        key = u.get("fp") or "Unknown"
+        r = fp_map.setdefault(key, {"fp": key, "total": 0, "closed": 0, "snc": 0,
+                                     "available": 0, "_priceSum": 0, "_priceN": 0})
+        r["total"] += 1
+        c = categorize(u)
+        if c == "closed":
+            r["closed"] += 1
+            p = u.get("purchasePrice") or u.get("listPrice") or 0
+            if p > 0:
+                r["_priceSum"] += p; r["_priceN"] += 1
+        elif c == "snc":
+            r["snc"] += 1
+        else:
+            r["available"] += 1
+    floorplans = sorted([
+        {"fp": r["fp"], "total": r["total"], "closed": r["closed"], "snc": r["snc"],
+         "available": r["available"],
+         "avgPrice": round(r["_priceSum"] / r["_priceN"]) if r["_priceN"] else 0}
+        for r in fp_map.values()
+    ], key=lambda x: x["fp"])
+
+    bg = bp.get("budget") or {}; pf = bp.get("proforma") or {}
+    proforma = [
+        {"line": "Gross Sales Revenue",
+         "budget":   bg.get("totalSales", 0) / 1e6,
+         "actual":   closed_dollar / 1e6,
+         "forecast": (pf.get("totalSales") or bg.get("totalSales", 0)) / 1e6},
+        {"line": "Avg Revenue / Unit",
+         "budget":   bg.get("revenuePerUnit", 0) / 1e6,
+         "actual":   ((closed_price_sum / closed_price_n) if closed_price_n else 0) / 1e6,
+         "forecast": pf.get("revenuePerUnit", 0) / 1e6},
+        {"line": "Revenue per SF",
+         "budget":   bg.get("revenuePerSF", 0) / 1e3,
+         "actual":   0,
+         "forecast": pf.get("revenuePerSF", 0) / 1e3},
+    ]
+
+    comments = _vd_fetch_comments_map("hawthorne")
+    return {
+        "vertical": "hawthorne", "hasData": True,
+        "generatedAt": row["created_at"].isoformat() if row.get("created_at") else None,
+        "sourceFile":  blob.get("sourceFile"),
+        "data": {"sales": sales, "stacking": stacking, "salesByMonth": sales_by_month,
+                  "floorplans": floorplans, "proforma": proforma, "comments": comments},
+    }
+
+def _vd_tgp_snapshot():
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "SELECT data, created_at FROM vd_psr_data WHERE vertical = 'tgp' "
+        "ORDER BY created_at DESC LIMIT 1"
+    )
+    row = cur.fetchone()
+    cur.execute(
+        "SELECT created_at, source_file FROM vd_imports WHERE vertical = 'tgp' "
+        "ORDER BY created_at DESC LIMIT 1"
+    )
+    last = cur.fetchone()
+    cur.close(); conn.close()
+    if not row:
+        return {"vertical": "tgp", "hasData": False, "generatedAt": None,
+                "sourceFile": None, "data": None}
+    raw = row.get("data") or {}
+    comments = _vd_fetch_comments_map("tgp")
+
+    import re as _re
+    def status_color(s):
+        if not s:
+            return "gray"
+        t = str(s).lower()
+        if _re.search(r"complete|done|on track|ahead|favorable", t): return "green"
+        if _re.search(r"at risk|behind|delay|weather|amber|caution|slip", t): return "amber"
+        if _re.search(r"critical|red|over|breach|missed", t): return "red"
+        if _re.search(r"in progress|active|started", t): return "blue"
+        return "gray"
+
+    metrics = raw.get("metrics") or {}
+    budget_total = ((raw.get("budget") or {}).get("total")) or {}
+    overview = {
+        "totalBudget": budget_total.get("adjusted") or budget_total.get("total") or 0,
+        "nrsf":        metrics.get("rentableSF", 0),
+        "padAcres":    metrics.get("padSitesAcres", 0),
+        "costPerNrsf": metrics.get("costPerNRSF", 0),
+        "costPerAcre": metrics.get("costPerAcre", 0),
+        "status":      raw.get("overallStatus") or "—",
+        "statusColor": status_color(raw.get("overallStatus")),
+    }
+
+    i = raw.get("info") or {}
+    info = [x for x in [
+        {"k": "Project Name", "v": i.get("projectName") or "—"},
+        {"k": "Project Type", "v": i.get("projectType") or "—"},
+        {"k": "Address",      "v": i.get("address")     or "—"},
+        {"k": "City / State", "v": i.get("cityState")   or "—"},
+        {"k": "MUD",          "v": i.get("mud")         or "—"},
+        {"k": "Structure",    "v": i.get("structure")   or "—"},
+    ] if x["v"] != "—"]
+    tm = raw.get("team") or {}
+    team = [x for x in [
+        {"role": "Ember Lead",     "name": tm.get("emberLead")     or "—"},
+        {"role": "Developer Lead", "name": tm.get("developerLead") or "—"},
+        {"role": "GC",             "name": tm.get("gc")            or "—"},
+        {"role": "Architect",      "name": tm.get("architect")     or "—"},
+        {"role": "Civil Engineer", "name": tm.get("civilEng")      or "—"},
+    ] if x["name"] != "—"]
+
+    def pct_norm(v):
+        v = v or 0
+        return round(v * (1 if v > 1 else 100))
+    budget = []
+    for l in ((raw.get("budget") or {}).get("lines") or []):
+        budget.append({
+            "line":    l.get("item"),
+            "retail":  l.get("retail") or 0,
+            "pads":    l.get("pad") or 0,
+            "realloc": l.get("reallocations") or 0,
+            "spent":   l.get("spent") or 0,
+            "balance": l.get("balanceToFinish") or 0,
+            "pct":     pct_norm(l.get("pctComplete")),
+        })
+
+    all_schedule = [{
+        "milestone": m.get("milestone"),
+        "target":    m.get("target"),
+        "actual":    m.get("actual"),
+        "variance":  m.get("variance") or 0,
+        "status":    status_color(m.get("status")),
+        "note":      m.get("notes") or m.get("status") or "—",
+        "group":     m.get("group") or "main",
+    } for m in (raw.get("schedule") or [])]
+    schedule           = [{k: v for k, v in m.items() if k != "group"}
+                          for m in all_schedule if m["group"] == "main"]
+    leasing_milestones = [{k: v for k, v in m.items() if k != "group"}
+                          for m in all_schedule if m["group"] == "leasing"]
+
+    gmp_total = ((raw.get("gmp") or {}).get("total")) or {}
+    co_rows   = ((raw.get("changeOrders") or {}).get("rows")) or []
+    gmp = {
+        "gmpDate": None,
+        "gmpAmount": gmp_total.get("adjustedGMP") or gmp_total.get("originalGMP") or 0,
+        "buyoutVariance": (gmp_total.get("committed") or 0) - (gmp_total.get("adjustedGMP") or 0),
+        "buyoutPct": pct_norm(gmp_total.get("pctBoughtOut")),
+        "contingencyOpening": 0,
+        "contingencyUsed": (raw.get("changeOrders") or {}).get("total") or 0,
+        "contingencyProjected": 0,
+        "changeOrders": [{
+            "num": str(co.get("co")) if co.get("co") is not None else "",
+            "desc": co.get("description") or "",
+            "amount": co.get("amount") or 0,
+            "status": "Approved" if _re.match(r"(?i)^(y|approved|yes)", str(co.get("approved") or "")) else "In Review",
+        } for co in co_rows],
+    }
+
+    lu_rows = ((raw.get("leaseUp") or {}).get("rows")) or []
+    is_executed = lambda s: bool(_re.match(r"(?i)^(executed|lease executed|signed)", str(s or "")))
+    is_loi      = lambda s: bool(_re.search(r"(?i)(loi|negot|in negotiation|in review)", str(s or "")))
+    tenants = [{
+        "tenant": t.get("tenant") or "—",
+        "sf": t.get("sf") or 0,
+        "type": t.get("suite") or "Inline",
+        "status": t.get("status") or "—",
+        "pct": "green" if is_executed(t.get("status")) else
+               ("amber" if is_loi(t.get("status")) else "gray"),
+    } for t in lu_rows]
+    pre_leased_sf = sum((t.get("sf") or 0) for t in lu_rows if is_executed(t.get("status")))
+    nrsf = metrics.get("rentableSF", 0)
+    lease_up = {
+        "nrsf": nrsf,
+        "preLeasedSf": pre_leased_sf,
+        "preLeasedPct": round((pre_leased_sf / nrsf) * 100) if nrsf > 0 else 0,
+        "tenants": tenants,
+    }
+
+    def fmt_md(iso):
+        if not iso:
+            return "—"
+        try:
+            d = datetime.date.fromisoformat(str(iso)[:10])
+            return d.strftime("%b %-d") if hasattr(d, "strftime") else str(iso)
+        except Exception:
+            return str(iso)
+    action_items = [{
+        "item":     a.get("item") or a.get("details") or "—",
+        "owner":    "—",
+        "due":      fmt_md(a.get("target")),
+        "priority": a.get("priority") or "Med",
+    } for a in (raw.get("actions") or [])]
+    issues = [{
+        "issue":    it.get("issue") or "—",
+        "impact":   it.get("impact") or "—",
+        "severity": status_color(it.get("impact")),
+    } for it in (raw.get("issues") or [])]
+
+    exec_summary = (comments.get("executive_summary") or {}).get("body") or ""
+
+    return {
+        "vertical": "tgp", "hasData": True,
+        "generatedAt": (last["created_at"].isoformat() if last and last.get("created_at")
+                        else (row["created_at"].isoformat() if row.get("created_at") else None)),
+        "sourceFile":  last["source_file"] if last else None,
+        "data": {
+            "psr": {
+                "overview": overview, "info": info, "team": team,
+                "executiveSummary": exec_summary,
+                "budget": budget, "schedule": schedule, "leasingMilestones": leasing_milestones,
+                "gmp": gmp, "leaseUp": lease_up,
+                "actionItems": action_items, "issues": issues,
+            },
+            "comments": comments,
+        },
+    }
+
+@app.route("/api/verticals/snapshot", methods=["GET"])
+@login_required
+def vd_snapshot():
+    v = _vd_vertical()
+    if not v:
+        return jsonify({"error": "Unknown vertical"}), 400
+    try:
+        if v == "lighthaven":
+            return jsonify(_vd_lighthaven_snapshot())
+        if v == "hawthorne":
+            return jsonify(_vd_hawthorne_snapshot())
+        if v == "tgp":
+            return jsonify(_vd_tgp_snapshot())
+    except Exception as e:
+        app.logger.exception("vd_snapshot failed")
+        return jsonify({"error": "Failed to build snapshot", "detail": str(e)}), 500
+    return jsonify({"error": "Unsupported vertical"}), 400
+
+# ── PAGE ROUTE ──────────────────────────────────────────────────────
+# Renders the wrapped dashboard. Sub-section navigation lives inside
+# the page (left pane = verticals), mirroring the project-returns flow.
+@app.route("/verticals")
+@login_required
+def vd_page():
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("verticals", True):
+        return redirect(url_for("home"))
+    if session.get("is_admin"):
+        pa = {**pa, "verticals": True}
+    return render_template(
+        "verticals.html",
+        username=session.get("username"),
+        display_name=session.get("display_name", session.get("username")),
+        is_admin=session.get("is_admin"),
+        page_access=pa,
+    )
+
 # ─── ADMIN: TEAM ACTIVITY DASHBOARD ───────────────────────────────────────────
 # Friendly labels for the paths the dashboard surfaces. Anything not in
 # this map falls back to the raw path so unknown routes (admin pages,
@@ -1066,7 +2019,7 @@ def create_user():
     page_access = data.get("page_access", {
         "mpc_underwriting": True, "returns": True, "loans": True,
         "operations": True, "macro": True, "sales": True,
-        "portfolio": True, "reports": True,
+        "portfolio": True, "reports": True, "verticals": True,
     })
     if not username or not password:
         return jsonify({"error": "Username and password required"}), 400
