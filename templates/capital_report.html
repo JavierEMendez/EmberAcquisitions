@@ -513,7 +513,11 @@
   table.pipe-table tr.total-row td.accent { color: var(--accent); }
   table.pipe-table .class-pill {
     display: inline-flex; align-items: center; gap: 5px;
-    font-size: 10px; color: var(--ink);
+    /* Match the row's 11px so the pill's baseline lines up with the
+       project name + address text in adjacent cells. The previous
+       10px was a hair smaller and read as visually low against
+       larger surrounding text. */
+    font-size: 11px; color: var(--ink);
   }
   table.pipe-table .class-pill .dot {
     width: 7px; height: 7px; border-radius: 999px;
