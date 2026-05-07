@@ -202,6 +202,13 @@
     </a>
     {% endif %}
 
+
+    {% if page_access.get('verticals', true) %}
+    <a href="/verticals" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      Vertical Dashboard
+    </a>
+    {% endif %}
     {% if data %}
     <div class="sidebar-section">Sections</div>
     <a href="#sec-kpis" class="nav-link" onclick="event.preventDefault();document.getElementById('sec-kpis').scrollIntoView({behavior:'smooth',block:'start'})">

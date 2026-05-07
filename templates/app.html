@@ -472,6 +472,13 @@ tr.pod-inactive input { pointer-events: none; }
     </a>
     {% endif %}
 
+
+    {% if page_access.get('verticals', true) %}
+    <a href="/verticals" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      Vertical Dashboard
+    </a>
+    {% endif %}
     <div class="sidebar-section">Navigation</div>
     <div class="sidebar-item" onclick="navTo('dashboard')" id="nav-dashboard">
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>

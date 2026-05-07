@@ -207,7 +207,14 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
       Community Sales
     </a>
 
-    <div class="sidebar-section">Views</div>
+    {% if page_access.get('verticals', true) %}
+    <a href="/verticals" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      Vertical Dashboard
+    </a>
+    {% endif %}
+
+</div>
     <a href="#exec" class="sidebar-item" data-tab="exec">
       <span class="tab-accent"></span>
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l3-3 4 4 5-6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
