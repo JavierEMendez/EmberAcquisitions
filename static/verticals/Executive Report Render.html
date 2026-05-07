@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ember — Executive Report</title>
+  <link rel="stylesheet" href="ember-tokens.css" />
+  <link rel="stylesheet" href="report.css" />
+</head>
+<body>
+  <div class="toolbar no-print">
+    <a id="back-link" href="Executive%20Report.html" class="secondary" style="text-decoration:none; padding:8px 14px; border-radius:8px; border:1px solid var(--border); color:var(--fg); font-weight:600; font-size:13px;">← Back to hub</a>
+    <select id="view-select" aria-label="Report view">
+      <option value="portfolio">Portfolio (all 3 projects)</option>
+      <option value="lighthaven">LightHaven District West</option>
+      <option value="hawthorne">The Hawthorne</option>
+      <option value="tgp">Shops at Grand Prairie</option>
+    </select>
+    <button id="refresh-btn" class="secondary" type="button">Refresh data</button>
+    <button id="print-btn" type="button">Save as PDF</button>
+  </div>
+
+  <div id="loading" class="loading-banner">Loading latest data…</div>
+
+  <main id="report-root"></main>
+
+  <script>
+    // Hosted alongside the dashboard so relative API paths hit the same backend.
+    window.EMBER_API_BASE = window.EMBER_API_BASE || "";
+  </script>
+  <script src="data.js?v=9"></script>
+  <script src="render.js?v=9"></script>
+  <script>
+    (function () {
+      const root = document.getElementById('report-root');
+      const select = document.getElementById('view-select');
+      const refresh = document.getElementById('refresh-btn');
+      const printBtn = document.getElementById('print-btn');
+      const loading = document.getElementById('loading');
+
+      const params = new URLSearchParams(location.search);
+      const initialView = params.get('vertical') || params.get('view') || 'portfolio';
+      const autoPrint = params.get('autoprint') === '1';
+      if (['portfolio','lighthaven','hawthorne','tgp'].includes(initialView)) {
+        select.value = initialView;
+      }
+
+      async function render() {
+        loading.classList.remove('hidden');
+        loading.textContent = 'Loading latest data…';
+        try {
+          await window.EmberReport.renderReport(root, select.value);
+          loading.classList.add('hidden');
+        } catch (e) {
+          // Live data failed — re-render from MOCK by temporarily disabling
+          // the live fetch so the report ALWAYS shows something.
+          console.error('[Report] live render failed, falling back to demo:', e);
+          window.__EMBER_FORCE_MOCK__ = true;
+          try {
+            await window.EmberReport.renderReport(root, select.value);
+            loading.textContent = 'Showing fallback data — live source unreachable';
+            setTimeout(() => loading.classList.add('hidden'), 2400);
+          } catch (e2) {
+            console.error('[Report] mock render also failed:', e2);
+            loading.textContent = 'Report failed to render — see console';
+          }
+          window.__EMBER_FORCE_MOCK__ = false;
+        }
+      }
+
+      select.addEventListener('change', () => {
+        const url = new URL(location.href);
+        url.searchParams.set('vertical', select.value);
+        history.replaceState(null, '', url);
+        render();
+      });
+      refresh.addEventListener('click', render);
+      printBtn.addEventListener('click', () => window.print());
+
+      render().then(() => {
+        if (autoPrint) setTimeout(() => window.print(), 600);
+      });
+    })();
+  </script>
+</body>
+</html>
