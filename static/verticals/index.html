@@ -960,7 +960,7 @@
 
   /* Collapsed sidebar — slim icon rail */
   body.vs-collapsed .vsidebar { width: 68px; }
-  body.vs-collapsed .vsidebar .vs-brand { padding: 18px 0 6px; justify-content: center; }
+  body.vs-collapsed .vsidebar .vs-title { padding: 18px 0; text-align: center; font-size: 11px; }
   body.vs-collapsed .vsidebar .vs-logo {
     max-width: 36px; object-fit: cover; object-position: 0 0;
     /* crop the wordmark off so only the bars mark shows */
@@ -985,23 +985,16 @@
     color: inherit;
   }
   body.vs-collapsed .vsidebar .vs-item.active::before { left: 4px; }
-  .vsidebar .vs-brand {
-    padding: 22px 22px 10px;
-    display:flex; align-items:center;
-  }
-  /* Single brand asset: /ember-logo.png (mark + wordmark together). */
-  .vsidebar .vs-logo {
-    display:block;
-    width: 100%; max-width: 180px; height: auto;
-    /* keep crisp on hi-DPI screens */
-    image-rendering: -webkit-optimize-contrast;
-  }
-  .vsidebar .vs-subtitle {
-    padding: 4px 22px 18px;
+  /* Sidebar title — replaced the original logo + orange "Vertical
+     Projects" eyebrow. Outer EmberApps chrome already shows the brand
+     and the active dashboard, so we just need a quiet, dark heading
+     that matches the Capital page title's weight and ink color. */
+  .vsidebar .vs-title {
+    padding: 24px 22px 18px;
     font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-    font-size: 10px; font-weight: 700;
-    letter-spacing: .22em; text-transform: uppercase;
-    color: var(--eax-accent);
+    font-size: 19px; font-weight: 700;
+    letter-spacing: -0.01em; line-height: 1.15;
+    color: var(--eax-ink-2);
   }
   .vsidebar .vs-divider {
     height: 1px; background: var(--eax-line); margin: 0 22px;
@@ -1393,13 +1386,11 @@
     </svg>
   </button>
 
-  <!-- Ember brand mark — uses the canonical logo asset at
-       /ember-logo.png (drop the brand PNG into public/). The image
-       includes the wordmark, so we don't render a separate <span>. -->
-  <div class="vs-brand">
-    <img class="vs-logo" src="ember-logo.png?v=3" alt="Ember" />
-  </div>
-  <div class="vs-subtitle">Vertical Projects</div>
+  <!-- Quiet sidebar title — outer EmberApps chrome already shows the
+       brand and the active "Vertical Dashboard" entry, so this header
+       is just a single dark heading matching the Capital page title's
+       weight and ink. -->
+  <div class="vs-title">Ember Vertical</div>
   <div class="vs-divider" aria-hidden="true"></div>
   <div class="vs-label">Portfolio</div>
   <!-- TEMPORARILY HIDDEN: under construction. Remove style="display:none" to
@@ -1415,15 +1406,6 @@
   </div>
   <div class="vs-item" data-vertical="tgp" data-label="The Shops at Grand Prairie" data-initial="G">
     <span>The Shops at Grand Prairie</span>
-  </div>
-
-  <!-- Admin controls (password-protected comment editing) — wired in the
-       script block below; ID hooks unchanged so JS keeps working. -->
-  <div class="lh-admin-dock" id="lh-admin-dock">
-    <button type="button" class="lh-admin-main"   id="lh-admin-edit">Edit comments</button>
-    <button type="button" class="lh-admin-save"   id="lh-admin-save">Save &amp; lock</button>
-    <button type="button" class="lh-admin-cancel" id="lh-admin-cancel">Cancel</button>
-    <button type="button" class="lh-admin-link"   id="lh-admin-reset" title="Reset the comment-editor password (separate from your sign-in)">Reset editor password</button>
   </div>
 
   <!-- Signed-in user + account controls. Filled in at runtime from /api/me.
@@ -1443,6 +1425,17 @@
       <a href="/home" style="flex:1; padding:6px 8px; border-radius:6px; border:1px solid var(--eax-line-2); color:var(--eax-muted); text-decoration:none; text-align:center; font-weight:600; font-size:11px;">Password</a>
       <button type="button" id="vs-account-logout" style="flex:1; padding:6px 8px; border-radius:6px; border:1px solid var(--eax-line-2); background:transparent; color:var(--eax-muted); cursor:pointer; font-weight:600; font-size:11px;">Sign out</button>
     </div>
+  </div>
+
+  <!-- Admin controls (password-protected comment editing) — moved to
+       the bottom of the sidebar so the verticals list stays compact
+       and the comment-editor controls are out of the way until needed.
+       ID hooks unchanged; JS in the dashboard wires them up by id. -->
+  <div class="lh-admin-dock" id="lh-admin-dock">
+    <button type="button" class="lh-admin-main"   id="lh-admin-edit">Edit comments</button>
+    <button type="button" class="lh-admin-save"   id="lh-admin-save">Save &amp; lock</button>
+    <button type="button" class="lh-admin-cancel" id="lh-admin-cancel">Cancel</button>
+    <button type="button" class="lh-admin-link"   id="lh-admin-reset" title="Reset the comment-editor password (separate from your sign-in)">Reset editor password</button>
   </div>
 
   <div class="vs-footer">v1.0 · Portfolio Ops</div>
