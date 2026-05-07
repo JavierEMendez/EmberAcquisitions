@@ -460,8 +460,13 @@
   .pcard .right {
     display: table-cell; vertical-align: top;
   }
-  .pcard .left  { width: 62%; padding-right: 26px; }
-  .pcard .right { width: 38%; }
+  /* 72/28 split — gives the modeled-returns table enough horizontal
+     room to fit 7-digit cumulative cashflow values on the longest
+     projects (Grand Prairie / Vintage 2022 has 16 year columns) without
+     truncation. The chart on the right shrinks ~25% but stays readable;
+     the table is the source of truth, the chart is illustrative. */
+  .pcard .left  { width: 72%; padding-right: 22px; }
+  .pcard .right { width: 28%; }
 
   /* Project header — name on the left, vintage chip on the far right */
   .pcard .ph-head {
