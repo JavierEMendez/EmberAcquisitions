@@ -5903,9 +5903,14 @@ renderUnits('all');
   }
 
   // --- Wire up dock buttons ---------------------------------
-  document.getElementById('lh-admin-edit').addEventListener('click', async () => {
-    const ok = await promptUnlock();
-    if (ok) enterEditMode();
+  // Edit goes straight into edit mode now. Permission is enforced two
+  // ways: the dock is hidden client-side for users without
+  // page_access.verticals_comment (see /api/verticals/me probe up top),
+  // and PUT /api/verticals/comments/<key> returns 403 server-side. The
+  // legacy promptUnlock() password modal duplicated that gating with a
+  // shared admin password — redundant now that Ember sessions own auth.
+  document.getElementById('lh-admin-edit').addEventListener('click', () => {
+    enterEditMode();
   });
   document.getElementById('lh-admin-save').addEventListener('click', async () => {
     const btn = document.getElementById('lh-admin-save');
