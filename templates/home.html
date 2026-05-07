@@ -866,7 +866,25 @@ async function pollMacroStatus() {
       const d = await res.json();
       if (d.running) { status.textContent = 'Pulling data from APIs… (this takes ~10 min)'; status.style.color = 'var(--eax-muted)'; }
       else if (d.last_error) { status.textContent = 'Error: ' + d.last_error.slice(0, 80); status.style.color = 'var(--eax-bad)'; btn.disabled = false; clearInterval(_refreshPoller); }
-      else if (d.last_finished) { status.textContent = 'Done! Data stored ' + (d.last_data_stored || ''); status.style.color = 'var(--eax-good)'; btn.disabled = false; clearInterval(_refreshPoller); }
+      else if (d.last_finished) {
+        // last_data_stored_iso is a UTC ISO string from /api/macro-status;
+        // format in the viewer's local timezone here, not the server's.
+        const iso = d.last_data_stored_iso;
+        let when = '';
+        if (iso) {
+          const dt = new Date(iso);
+          if (!isNaN(dt)) {
+            when = dt.toLocaleString(undefined, {
+              month: 'short', day: 'numeric', year: 'numeric',
+              hour: '2-digit', minute: '2-digit', hour12: false
+            });
+          }
+        }
+        status.textContent = 'Done! Data stored ' + when;
+        status.style.color = 'var(--eax-good)';
+        btn.disabled = false;
+        clearInterval(_refreshPoller);
+      }
     } catch (e) {}
   }, 8000);
 }

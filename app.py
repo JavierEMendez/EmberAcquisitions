@@ -975,10 +975,15 @@ def admin_activity():
         agg = by_user.get(u["user_id"]) or {}
         last_seen = agg.get("last_seen")
         if last_seen:
-            # naive UTC -> local date string. We're going for "Mar 5, 14:32"
-            # readability not microsecond accuracy.
-            last_seen_label = last_seen.strftime("%b %-d, %H:%M") if hasattr(last_seen, "strftime") else str(last_seen)
+            # Send the raw UTC ISO timestamp. The template wraps it in a
+            # <time datetime="..."> element and JS rewrites the visible
+            # text to the viewer's local timezone — Postgres TIMESTAMPTZ
+            # already returns tz-aware datetimes so .isoformat() includes
+            # the offset.
+            last_seen_iso   = last_seen.isoformat() if hasattr(last_seen, "isoformat") else None
+            last_seen_label = last_seen.strftime("%b %-d, %H:%M UTC") if hasattr(last_seen, "strftime") else str(last_seen)
         else:
+            last_seen_iso   = None
             last_seen_label = "Never"
         spark_map = spark_by_user.get(u["user_id"], {})
         spark_values = [spark_map.get(d, 0) for d in days]
@@ -987,12 +992,13 @@ def admin_activity():
         top3_labels = [{"label": _activity_label(p), "n": n} for p, n in top3]
         display = (f"{u['first_name']} {u['last_name']}".strip()) or u["username"]
         rows.append({
-            "user_id":     u["user_id"],
-            "username":    u["username"],
-            "display":     display,
-            "is_admin":    u["is_admin"],
-            "last_seen":   last_seen_label,
-            "logins_7d":   int(agg.get("logins_7d") or 0),
+            "user_id":       u["user_id"],
+            "username":      u["username"],
+            "display":       display,
+            "is_admin":      u["is_admin"],
+            "last_seen":     last_seen_label,
+            "last_seen_iso": last_seen_iso,
+            "logins_7d":     int(agg.get("logins_7d") or 0),
             "logins_30d":  int(agg.get("logins_30d") or 0),
             "views_7d":    int(agg.get("views_7d") or 0),
             "views_30d":   int(agg.get("views_30d") or 0),
@@ -1016,6 +1022,9 @@ def admin_activity():
     ]
 
     pa = session.get("page_access") or {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
+    # Send generated_at as a UTC ISO string; the template formats it for
+    # the viewer's locale via the shared <time datetime="..."> JS.
+    generated_at_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
     return render_template(
         "admin_activity.html",
         forbidden=False,
@@ -1025,7 +1034,7 @@ def admin_activity():
         display_name=session.get("display_name", session.get("username")),
         is_admin=True,
         page_access=pa,
-        generated_at=datetime.datetime.now().strftime("%b %-d, %Y · %H:%M"),
+        generated_at_iso=generated_at_iso,
     )
 
 # ─── ADMIN API ────────────────────────────────────────────────────────────────
@@ -7990,8 +7999,18 @@ def macro_status():
     conn = get_db(); cur = conn.cursor()
     cur.execute("SELECT uploaded_at FROM reports WHERE report_type = 'macro' ORDER BY uploaded_at DESC LIMIT 1")
     row = cur.fetchone(); cur.close(); conn.close()
-    last_data = row["uploaded_at"].strftime("%B %d, %Y %H:%M UTC") if row else None
-    return jsonify({**_refresh_state, "last_data_stored": last_data})
+    # Return ISO 8601 with timezone offset so the home-page status JS can
+    # format the timestamp in the viewer's local timezone instead of the
+    # server's. uploaded_at is a naive UTC timestamp from Postgres → tag
+    # it tz-aware before isoformat() so the offset is explicit.
+    if row and row["uploaded_at"]:
+        ts = row["uploaded_at"]
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=datetime.timezone.utc)
+        last_data_iso = ts.isoformat()
+    else:
+        last_data_iso = None
+    return jsonify({**_refresh_state, "last_data_stored_iso": last_data_iso})
 
 
 @app.route("/api/refresh-macro", methods=["POST"])
