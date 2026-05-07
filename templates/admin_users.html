@@ -166,6 +166,7 @@
             <label><input type="checkbox" id="new-pa-macro" checked>Macro Data</label>
             <label><input type="checkbox" id="new-pa-sales" checked>Community Sales</label>
             <label><input type="checkbox" id="new-pa-verticals" checked>Vertical Dashboard</label>
+            <label><input type="checkbox" id="new-pa-verticals-comment" checked>Vertical Dashboard (Comments)</label>
           </div>
           <button class="btn-add-user" onclick="addUser()">Add User</button>
         </div>
@@ -177,13 +178,14 @@
 {% if not forbidden %}
 <script>
 const PAGE_LABELS = {
-  mpc_underwriting: 'MPC Underwriting',
-  returns:          'Project Returns',
-  loans:            'Loans & Debt',
-  operations:       'Operating Revenues',
-  macro:            'Macro Data',
-  sales:            'Community Sales',
-  verticals:        'Vertical Dashboard',
+  mpc_underwriting:  'MPC Underwriting',
+  returns:           'Project Returns',
+  loans:             'Loans & Debt',
+  operations:        'Operating Revenues',
+  macro:             'Macro Data',
+  sales:             'Community Sales',
+  verticals:         'Vertical Dashboard',
+  verticals_comment: 'Vertical Dashboard (Comments)',
 };
 
 async function refreshUserList() {
@@ -245,13 +247,14 @@ async function addUser() {
   const password = document.getElementById('new-password').value;
   const is_admin = document.getElementById('new-is-admin').checked;
   const page_access = {
-    mpc_underwriting: document.getElementById('new-pa-mpc').checked,
-    returns:          document.getElementById('new-pa-returns').checked,
-    loans:            document.getElementById('new-pa-loans').checked,
-    operations:       document.getElementById('new-pa-operations').checked,
-    macro:            document.getElementById('new-pa-macro').checked,
-    sales:            document.getElementById('new-pa-sales').checked,
-    verticals:        document.getElementById('new-pa-verticals').checked,
+    mpc_underwriting:  document.getElementById('new-pa-mpc').checked,
+    returns:           document.getElementById('new-pa-returns').checked,
+    loans:             document.getElementById('new-pa-loans').checked,
+    operations:        document.getElementById('new-pa-operations').checked,
+    macro:             document.getElementById('new-pa-macro').checked,
+    sales:             document.getElementById('new-pa-sales').checked,
+    verticals:         document.getElementById('new-pa-verticals').checked,
+    verticals_comment: document.getElementById('new-pa-verticals-comment').checked,
   };
   const email = document.getElementById('new-email').value.trim();
   if (!username || !password) { alert('Username and password required'); return; }
@@ -265,7 +268,7 @@ async function addUser() {
     document.getElementById('new-password').value = '';
     document.getElementById('new-email').value = '';
     document.getElementById('new-is-admin').checked = false;
-    ['mpc','returns','loans','operations','macro','sales','verticals'].forEach(k=>document.getElementById('new-pa-'+k).checked=true);
+    ['mpc','returns','loans','operations','macro','sales','verticals','verticals-comment'].forEach(k=>document.getElementById('new-pa-'+k).checked=true);
     await refreshUserList();
   } else { alert(d.error || 'Error creating user'); }
 }
