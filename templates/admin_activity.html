@@ -118,7 +118,7 @@
       <p class="pg-sub">
         Per-user roll-up of sign-ins and dashboard page views. Activity older than 12 months is purged automatically.
       </p>
-      <div class="pg-meta">Generated · {{ generated_at }}</div>
+      <div class="pg-meta">Generated · <time datetime="{{ generated_at_iso }}" data-fmt="long">{{ generated_at_iso }}</time></div>
 
       <div class="kpi-band">
         {% for k in kpis %}
@@ -163,10 +163,10 @@
                 </div>
               </td>
               <td>
-                {% if r.last_seen == 'Never' %}
-                  <span class="last-seen-never">Never</span>
+                {% if r.last_seen_iso %}
+                  <time datetime="{{ r.last_seen_iso }}" data-fmt="short">{{ r.last_seen }}</time>
                 {% else %}
-                  {{ r.last_seen }}
+                  <span class="last-seen-never">Never</span>
                 {% endif %}
               </td>
               <td class="num">{{ r.logins_7d }}</td>
@@ -193,5 +193,29 @@
     {% endif %}
   </div>
 </div>
+<script>
+/* Localize every <time datetime="ISO"> element on the page to the
+   viewer's timezone. Server sends UTC ISO strings (Postgres TIMESTAMPTZ
+   →.isoformat() with offset); the browser is the only thing that knows
+   what timezone the viewer is sitting in. data-fmt="short" → "May 7,
+   09:14"; data-fmt="long" → "May 7, 2026 · 09:14". */
+(function () {
+  const SHORT = { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false };
+  const LONG  = { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false };
+  document.querySelectorAll('time[datetime]').forEach(el => {
+    const d = new Date(el.dateTime);
+    if (isNaN(d)) return;
+    const opts = el.dataset.fmt === 'long' ? LONG : SHORT;
+    let s = d.toLocaleString(undefined, opts);
+    // Browsers vary: en-US gives "May 7, 09:14", others give "May 7,
+    // 2026, 09:14". Strip the optional second comma so the long form
+    // reads "May 7, 2026 · 09:14" with a clean middle dot.
+    if (el.dataset.fmt === 'long') {
+      s = s.replace(/,\s*(\d{2}:\d{2})$/, ' · $1');
+    }
+    el.textContent = s;
+  });
+})();
+</script>
 </body>
 </html>
