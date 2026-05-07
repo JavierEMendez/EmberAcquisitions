@@ -369,7 +369,6 @@
     .vsidebar,
     .tabs,
     .lh-admin-dock,
-    .lh-pw-modal,
     .topbar .date-tag,
     .topbar-pdf-btn,
     .vs-modal-backdrop,
@@ -970,7 +969,6 @@
   body.vs-collapsed .vsidebar .vs-divider,
   body.vs-collapsed .vsidebar .vs-label,
   body.vs-collapsed .vsidebar .vs-soon,
-  body.vs-collapsed .vsidebar .vs-footer,
   body.vs-collapsed .vsidebar .lh-admin-dock { display: none; }
   body.vs-collapsed .vsidebar .vs-item {
     margin: 4px 10px; padding: 0; height: 40px;
@@ -1059,14 +1057,6 @@
     background: rgba(217,138,0,.14); color: var(--eax-warn);
     letter-spacing: .12em; text-transform: uppercase;
   }
-  .vsidebar .vs-footer {
-    margin-top: auto; padding: 16px 22px;
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 10px; letter-spacing: .06em;
-    color: var(--eax-subtle);
-    border-top: 1px solid var(--eax-line);
-  }
-
   /* Discrete data-source label, bottom-right of viewport. Low-contrast,
      small font, hover lifts to readable so it stays auditable but doesn't
      compete with content. Hidden in print and on narrow screens. */
@@ -1119,8 +1109,7 @@
     .vsidebar .vs-logo { max-width: 110px; }
     .vsidebar .vs-subtitle,
     .vsidebar .vs-divider,
-    .vsidebar .vs-label,
-    .vsidebar .vs-footer { display:none; }
+    .vsidebar .vs-label { display:none; }
     .vsidebar .vs-item {
       margin: 0 4px; padding: 8px 12px; font-size: 12px;
       border-radius: 6px;
@@ -1184,53 +1173,12 @@
     color: #fff;
     border-color: #d94414;
   }
-  .lh-admin-dock .lh-admin-link {
-    background: transparent; border: none; padding: 4px 0 0;
-    color: var(--eax-subtle); font-size: .65rem; font-weight: 500;
-    text-decoration: underline; text-underline-offset: 2px;
-    text-align: left;
-  }
-  .lh-admin-dock .lh-admin-link:hover {
-    color: var(--eax-muted); background: transparent; border: none;
-  }
-  /* Footer sits flush below the dock — no extra top margin needed when dock is present. */
-  .vsidebar .lh-admin-dock + .vs-footer {
-    margin-top: 0;
-    border-top: none;
-    padding-top: 4px;
-  }
   @media (max-width: 900px) {
     .lh-admin-dock { display: none; }
   }
   body.lh-editing .lh-admin-dock .lh-admin-main { display: none; }
   body:not(.lh-editing) .lh-admin-dock .lh-admin-save,
   body:not(.lh-editing) .lh-admin-dock .lh-admin-cancel { display: none; }
-
-  .lh-pw-modal {
-    position: fixed; inset: 0; background: rgba(0,21,34,.55); z-index: 9500;
-    display: none; align-items: center; justify-content: center;
-    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-  }
-  .lh-pw-modal.show { display: flex; }
-  .lh-pw-card {
-    background: #fff; border-radius: 12px; padding: 22px 24px; min-width: 320px; max-width: 380px;
-    box-shadow: 0 20px 50px rgba(0,0,0,.35);
-  }
-  .lh-pw-card h3 { margin: 0 0 6px; color: #003552; font-size: 1.05rem; }
-  .lh-pw-card p { margin: 0 0 14px; color: #4a5568; font-size: .85rem; line-height: 1.45; }
-  .lh-pw-card input {
-    width: 100%; padding: 10px 12px; border: 1px solid #cdd5db; border-radius: 8px;
-    font-size: .92rem; margin-bottom: 10px; box-sizing: border-box;
-  }
-  .lh-pw-card input:focus { outline: 2px solid #E55500; border-color: #E55500; }
-  .lh-pw-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
-  .lh-pw-actions button {
-    padding: 8px 14px; border-radius: 8px; border: none; cursor: pointer;
-    font-weight: 600; font-size: .85rem;
-  }
-  .lh-pw-actions .lh-pw-ok { background: #E55500; color: #fff; }
-  .lh-pw-actions .lh-pw-cancel { background: #eef1f4; color: #003552; }
-  .lh-pw-error { color: #c0392b; font-size: .8rem; margin-top: -4px; margin-bottom: 8px; min-height: 1em; }
 
   /* ── HAWTHORNE — Sales Dashboard ─────────────────────────── */
   .hw-kpi-strip {
@@ -5010,13 +4958,11 @@ renderUnits('all');
     if (stagedBoot && stagedBoot.leasingPace) applyLeasingPace(stagedBoot.leasingPace);
   } catch(_) {}
 
-  // The API key is pulled from sessionStorage; if missing we silently skip
-  // so local previews never error out.
+  // Auth via Ember session cookie (same-origin); admin gating
+  // happens server-side in /api/verticals/upload.
   async function autoPushToServer() {
     const isHttp = (location.protocol === 'http:' || location.protocol === 'https:');
     if (!isHttp) return;
-    const key = sessionStorage.getItem('lh_api_key');
-    if (!key) return; // wired separately by the comment-edit flow
     const staged = loadStaged();
     const units = (window.LH_units && window.LH_units.getUnits()) || (typeof unitData !== 'undefined' ? unitData : []);
     const payload = {
@@ -5033,7 +4979,7 @@ renderUnits('all');
     try {
       await fetch('/api/verticals/upload?vertical=lighthaven', {
         method: 'POST',
-        headers: { 'Content-Type':'application/json', 'X-API-Key': key },
+        headers: { 'Content-Type':'application/json' },
         body: JSON.stringify(payload),
       });
     } catch(_) { /* silent — the per-card status already reflects the upload */ }
@@ -5574,78 +5520,31 @@ renderUnits('all');
 </script>
 
 <!-- ============================================================ -->
-<!-- ADMIN: PASSWORD-PROTECTED COMMENT EDITING                   -->
-<!-- The .lh-admin-dock with the action buttons lives inside the   -->
-<!-- sidebar (above the version footer); only the password prompt -->
-<!-- modal stays here, since it must overlay the whole page.       -->
+<!-- ADMIN: COMMENT EDITING                                        -->
+<!-- Dock buttons live in the sidebar (.lh-admin-dock above the    -->
+<!-- version footer). The legacy ADMIN_PASSWORD prompt modal that  -->
+<!-- used to overlay the page is gone — permission is now driven   -->
+<!-- by page_access.verticals_comment from /admin/users.           -->
 <!-- ============================================================ -->
-<div class="lh-pw-modal" id="lh-pw-modal">
-  <div class="lh-pw-card">
-    <h3 id="lh-pw-title">Enter admin password</h3>
-    <p id="lh-pw-msg">Type the password to unlock comment editing.</p>
-    <input type="password" id="lh-pw-1" autocomplete="new-password" placeholder="Password">
-    <input type="password" id="lh-pw-2" autocomplete="new-password" placeholder="Confirm password" style="display:none;">
-    <div class="lh-pw-error" id="lh-pw-err"></div>
-    <div class="lh-pw-actions">
-      <button type="button" class="lh-pw-cancel" id="lh-pw-cancel-btn">Cancel</button>
-      <button type="button" class="lh-pw-ok"     id="lh-pw-ok-btn">Unlock</button>
-    </div>
-  </div>
-</div>
 
 <script>
 (function adminEdit() {
-  // ── Storage keys ────────────────────────────────────────────
-  const PW_KEY         = 'lh_admin_pw_hash';     // local SHA-256 fallback (file:// only)
-  const UNLOCK_KEY     = 'lh_admin_unlocked';    // session flag (cleared on tab close)
-  const COMMENTS_KEY   = 'lh_comments_v1';       // local cache of { key: html } when offline
-  const API_KEY_STORE  = 'lh_api_key';           // API key in sessionStorage (also used by autoPushToServer + unit-edit popovers)
-  const VERTICAL       = 'lighthaven';
+  // ── Storage keys + scope ────────────────────────────────────
+  // Permission is the Ember session + page_access.verticals_comment;
+  // the legacy local-SHA-256 / API-key gates that used to live here
+  // are gone. COMMENTS_KEY caches the latest server snapshot so an
+  // offline reload still shows the most recent edits.
+  const COMMENTS_KEY = 'lh_comments_v1';
+  const VERTICAL     = 'lighthaven';
+  const IS_ONLINE    = (location.protocol === 'http:' || location.protocol === 'https:');
 
-  // Online = real backend (Railway / localhost dev).
-  // Offline = file:// preview, where the comment API doesn't exist.
-  const IS_ONLINE = (location.protocol === 'http:' || location.protocol === 'https:');
-
-  // --- Hashing (Web Crypto, no library) — only used in offline mode
-  async function sha256(text) {
-    const buf = new TextEncoder().encode(text);
-    const hash = await crypto.subtle.digest('SHA-256', buf);
-    return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,'0')).join('');
-  }
-
-  // --- Local-mode persistence (offline fallback) -------------
+  // --- Local-mode persistence (offline cache) -----------------
   function loadCommentsLocal() {
     try { return JSON.parse(localStorage.getItem(COMMENTS_KEY) || '{}'); }
     catch(_) { return {}; }
   }
   function saveCommentsLocal(obj) {
     try { localStorage.setItem(COMMENTS_KEY, JSON.stringify(obj)); } catch(_) {}
-  }
-  function isUnlocked() { return sessionStorage.getItem(UNLOCK_KEY) === '1'; }
-  function setUnlocked(v) {
-    if (v) sessionStorage.setItem(UNLOCK_KEY, '1');
-    else   sessionStorage.removeItem(UNLOCK_KEY);
-  }
-
-  // --- Server-mode helpers -----------------------------------
-  function getApiKey()      { return sessionStorage.getItem(API_KEY_STORE); }
-  function setApiKey(k)     { if (k) sessionStorage.setItem(API_KEY_STORE, k); }
-  function clearApiKey()    { sessionStorage.removeItem(API_KEY_STORE); }
-
-  // Verify an API key by calling a key-gated endpoint that doesn't mutate.
-  // /api/verticals/imports requires X-API-Key — 200/304 = good, 401 = bad, 503 = server has no key set.
-  async function verifyApiKey(key) {
-    try {
-      const r = await fetch('/api/verticals/imports?vertical=' + encodeURIComponent(VERTICAL), {
-        headers: { 'X-API-Key': key },
-      });
-      if (r.ok) return { ok: true };
-      if (r.status === 401) return { ok: false, reason: 'wrong' };
-      if (r.status === 503) return { ok: false, reason: 'no-server-key' };
-      return { ok: false, reason: 'http-' + r.status };
-    } catch (err) {
-      return { ok: false, reason: 'network' };
-    }
   }
 
   // GET all comments for this vertical from the server.
@@ -5664,13 +5563,16 @@ renderUnits('all');
   }
 
   // PUT a single comment to the server. Returns { ok, status }.
+  // Auth is the Ember session cookie — same-origin, sent automatically;
+  // page_access.verticals_comment is enforced server-side in
+  // _vd_can_edit_comments(). The legacy X-API-Key gate (and the
+  // no-key short-circuit it required) was a Node-era artifact that
+  // PR #12 left behind, breaking saves entirely.
   async function putServerComment(key, body) {
-    const apiKey = getApiKey();
-    if (!apiKey) return { ok: false, status: 0, reason: 'no-key' };
     try {
       const r = await fetch('/api/verticals/comments/' + encodeURIComponent(key) + '?vertical=' + encodeURIComponent(VERTICAL), {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ body, updatedBy: 'dashboard_ui' }),
       });
       return { ok: r.ok, status: r.status };
@@ -5696,131 +5598,6 @@ renderUnits('all');
         el.innerHTML = overrides[k];
       }
     });
-  }
-
-  // --- Modal helper ------------------------------------------
-  const modal   = document.getElementById('lh-pw-modal');
-  const titleEl = document.getElementById('lh-pw-title');
-  const msgEl   = document.getElementById('lh-pw-msg');
-  const in1     = document.getElementById('lh-pw-1');
-  const in2     = document.getElementById('lh-pw-2');
-  const errEl   = document.getElementById('lh-pw-err');
-  const okBtn   = document.getElementById('lh-pw-ok-btn');
-  const cxlBtn  = document.getElementById('lh-pw-cancel-btn');
-
-  let modalResolve = null;
-  function openModal(opts) {
-    titleEl.textContent = opts.title;
-    msgEl.textContent   = opts.message;
-    in1.value = ''; in2.value = ''; errEl.textContent = '';
-    in1.placeholder = opts.placeholder1 || 'Password';
-    in2.placeholder = opts.placeholder2 || 'Confirm password';
-    in2.style.display = opts.confirm ? '' : 'none';
-    okBtn.textContent = opts.okLabel || 'OK';
-    modal.classList.add('show');
-    setTimeout(() => in1.focus(), 30);
-    return new Promise(res => { modalResolve = res; });
-  }
-  function closeModal(result) {
-    modal.classList.remove('show');
-    if (modalResolve) { const r = modalResolve; modalResolve = null; r(result); }
-  }
-  cxlBtn.addEventListener('click', () => closeModal(null));
-  modal.addEventListener('click', e => { if (e.target === modal) closeModal(null); });
-  [in1, in2].forEach(inp => {
-    inp.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); okBtn.click(); }
-      if (e.key === 'Escape') { e.preventDefault(); closeModal(null); }
-    });
-  });
-  okBtn.addEventListener('click', () => {
-    const v1 = in1.value;
-    const v2 = in2.value;
-    if (!v1) { errEl.textContent = 'Password cannot be empty.'; return; }
-    if (in2.style.display !== 'none' && v1 !== v2) {
-      errEl.textContent = 'Passwords do not match.'; return;
-    }
-    closeModal({ pw: v1 });
-  });
-
-  // ─────────────────────────────────────────────────────────────
-  // OFFLINE MODE (file://) — local SHA-256 password + localStorage
-  // ─────────────────────────────────────────────────────────────
-  async function promptSetPasswordOffline() {
-    const r = await openModal({
-      title: 'Set admin password (local)',
-      message: 'You\'re running the dashboard offline (file://). Set a local password — it\'s stored in this browser only. Once you deploy to Railway, the server\'s API_KEY becomes the shared password for everyone.',
-      confirm: true,
-      placeholder1: 'New password',
-      placeholder2: 'Confirm new password',
-      okLabel: 'Set password',
-    });
-    if (!r) return false;
-    const hash = await sha256(r.pw);
-    localStorage.setItem(PW_KEY, hash);
-    setUnlocked(true);
-    return true;
-  }
-
-  async function promptUnlockOffline() {
-    const stored = localStorage.getItem(PW_KEY);
-    if (!stored) return promptSetPasswordOffline();
-    if (isUnlocked()) return true;
-
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const r = await openModal({
-        title: attempt === 0 ? 'Enter admin password' : 'Wrong password — try again',
-        message: 'Type your local admin password to unlock comment editing for this tab.',
-        confirm: false,
-        placeholder1: 'Password',
-        okLabel: 'Unlock',
-      });
-      if (!r) return false;
-      const hash = await sha256(r.pw);
-      if (hash === stored) { setUnlocked(true); return true; }
-    }
-    alert('Wrong password.');
-    return false;
-  }
-
-  // ─────────────────────────────────────────────────────────────
-  // ONLINE MODE (http/https) — verify against server's API_KEY
-  // ─────────────────────────────────────────────────────────────
-  async function promptUnlockOnline() {
-    // Already have a verified key in this session?
-    if (isUnlocked() && getApiKey()) return true;
-
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const r = await openModal({
-        title: attempt === 0 ? 'Enter admin password' : 'Wrong password — try again',
-        message: 'Type the shared admin password (the ADMIN_PASSWORD set on the server) to unlock comment editing.',
-        confirm: false,
-        placeholder1: 'Password',
-        okLabel: 'Unlock',
-      });
-      if (!r) return false;
-      const v = await verifyApiKey(r.pw);
-      if (v.ok) {
-        setApiKey(r.pw);
-        setUnlocked(true);
-        return true;
-      }
-      if (v.reason === 'no-server-key') {
-        alert('The server has no admin password configured yet. Set the ADMIN_PASSWORD env var in Railway and reload.');
-        return false;
-      }
-      if (v.reason === 'network') {
-        alert('Could not reach the server. Check your connection and try again.');
-        return false;
-      }
-      // wrong password — loop and try again
-    }
-    alert('Wrong password.');
-    return false;
-  }
-
-  async function promptUnlock() {
-    return IS_ONLINE ? promptUnlockOnline() : promptUnlockOffline();
   }
 
   // --- Edit mode ---------------------------------------------
@@ -5874,41 +5651,19 @@ renderUnits('all');
     if (fresh) saveCommentsLocal(fresh);
 
     if (failures.length) {
-      const wrongKey = failures.some(f => f.status === 401);
-      if (wrongKey) {
-        // Force re-auth next time
-        clearApiKey();
-        setUnlocked(false);
-      }
+      // 401/403 from PUT means the user no longer has the
+      // verticals_comment permission. Surface the count so the save
+      // handler's existing alert reports it.
       return { ok: false, mode: 'server', failures };
     }
     return { ok: true, mode: 'server', saved: changed.length };
   }
 
-  // --- Reset password ---------------------------------------
-  async function resetPassword() {
-    if (IS_ONLINE) {
-      if (!confirm('This clears the password from this tab. To change the actual shared password, update the ADMIN_PASSWORD env var on Railway and redeploy. Continue?')) return;
-      clearApiKey();
-      setUnlocked(false);
-      exitEditMode();
-      alert('Locked. The server\'s ADMIN_PASSWORD is unchanged — change it in Railway to rotate the real password.');
-    } else {
-      if (!confirm('Reset the local admin password? You will be asked to set a new one on the next edit.')) return;
-      localStorage.removeItem(PW_KEY);
-      setUnlocked(false);
-      exitEditMode();
-      alert('Local password cleared.');
-    }
-  }
-
   // --- Wire up dock buttons ---------------------------------
-  // Edit goes straight into edit mode now. Permission is enforced two
-  // ways: the dock is hidden client-side for users without
+  // Edit goes straight into edit mode. Permission is enforced two ways:
+  // the dock is hidden client-side for users without
   // page_access.verticals_comment (see /api/verticals/me probe up top),
-  // and PUT /api/verticals/comments/<key> returns 403 server-side. The
-  // legacy promptUnlock() password modal duplicated that gating with a
-  // shared admin password — redundant now that Ember sessions own auth.
+  // and PUT /api/verticals/comments/<key> returns 403 server-side.
   document.getElementById('lh-admin-edit').addEventListener('click', () => {
     enterEditMode();
   });
@@ -5921,7 +5676,6 @@ renderUnits('all');
       const r = await saveAllEdits();
       if (r.ok) {
         exitEditMode();
-        setUnlocked(false); // re-prompt next time for safety
         if (r.mode === 'server' && r.saved > 0) {
           btn.textContent = '✓ Saved to server';
         } else if (r.mode === 'server') {
@@ -5940,11 +5694,6 @@ renderUnits('all');
     exitEditMode();
     if (confirm('Discard unsaved comment changes?')) location.reload();
   });
-  // lh-admin-reset removed alongside the standalone-password flow;
-  // guard the bind so the wiring keeps working if the element is
-  // re-introduced later.
-  var resetBtn = document.getElementById('lh-admin-reset');
-  if (resetBtn) resetBtn.addEventListener('click', resetPassword);
 
   // --- On load: restore overrides (server-first when online) -
   restoreOverrides();
@@ -7911,15 +7660,11 @@ renderUnits('all');
 
   async function pushPSRtoServer(parsed, sourceFile) {
     if (!IS_ONLINE) return { success:true, offline:true };
-    const apiKey = sessionStorage.getItem('lh_api_key');
-    if (!apiKey) {
-      // No key — keep the in-memory dashboard updated but skip server save.
-      return { success:false, reason:'no-key' };
-    }
+    // Auth via Ember session cookie; admin-required enforced server-side.
     try {
       const res = await fetch('/api/verticals/upload?vertical=tgp', {
         method: 'POST',
-        headers: { 'Content-Type':'application/json', 'X-API-Key': apiKey },
+        headers: { 'Content-Type':'application/json' },
         body: JSON.stringify({
           sourceFile: sourceFile || null,
           importedBy: 'browser',
@@ -7949,16 +7694,12 @@ renderUnits('all');
   // /tgp_psr_template.xlsx always reflects the most recent upload.
   async function pushPSRRawBytesToServer(file) {
     if (!IS_ONLINE) return { success:false, reason:'offline' };
-    const apiKey = sessionStorage.getItem('lh_api_key');
-    if (!apiKey) return { success:false, reason:'no-key' };
+    // Auth via Ember session cookie; admin-required enforced server-side.
     try {
       const buf = await file.arrayBuffer();
       const res = await fetch('/api/verticals/psr/raw?vertical=tgp', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          'X-API-Key': apiKey,
-        },
+        headers: { 'Content-Type': 'application/octet-stream' },
         body: buf,
       });
       if (!res.ok) return { success:false, reason:'http-' + res.status };
