@@ -488,6 +488,11 @@
   table.pipe-table td {
     padding: 8px 10px;
     text-align: right;
+    /* Center every cell vertically so the smaller-font Type pill
+       (10px vs 11-12px in the rest of the row) doesn't baseline-drift
+       above the project name + address. Without this, mixed font
+       sizes across columns produce visible vertical misalignment. */
+    vertical-align: middle;
     color: var(--ink);
     font-variant-numeric: tabular-nums;
     border-bottom: 1px solid var(--line);
@@ -934,7 +939,7 @@
         <thead>
           <tr>
             <th class="left">Project</th>
-            <th class="left"></th>
+            <th class="left">Type</th>
             <th class="left">Address</th>
             <th>Equity</th>
             <th>Duration</th>
