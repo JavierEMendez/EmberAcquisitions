@@ -8584,24 +8584,32 @@ def _send_monthly_emails(force=False, recipient_ids=None):
         n_reports = len(accessible)
         files_label = f"{n_reports} file" + ("" if n_reports == 1 else "s")
 
-        # Manage Delivery link target — points at /home; recipients sign
-        # in and open the Account modal to manage their preferences.
-        manage_url = (os.environ.get("PUBLIC_URL", "").rstrip("/") or "") + "/home"
+        # Manage Delivery link target — must be an ABSOLUTE URL since
+        # /home as a relative href is meaningless inside an email
+        # client. Try PUBLIC_URL (admin override) first, then Railway's
+        # auto-set RAILWAY_PUBLIC_DOMAIN. If neither is set we still
+        # ship something clickable; the link just won't resolve until
+        # one of those env vars is configured.
+        public_url = (os.environ.get("PUBLIC_URL")
+                      or os.environ.get("RAILWAY_PUBLIC_DOMAIN")
+                      or "").strip()
+        if public_url and not public_url.startswith(("http://", "https://")):
+            public_url = "https://" + public_url
+        public_url = public_url.rstrip("/")
+        manage_url = (public_url + "/home") if public_url else "/home"
 
         # Bars motif — 5 vertical bars echoing the Ember mark. Heights:
         # 72/44/60/36/56; first 4 orange, last semi-transparent white.
-        # Outlook ignores positioned <span>s so this drops gracefully to
-        # nothing — acceptable per the README.
-        bars_motif = (
-            '<div style="position:absolute;top:0;right:32px;display:inline-block;font-size:0;line-height:0;">'
-            + "".join(
-                f'<span style="display:inline-block;width:6px;height:{h}px;'
-                f'background:{c};border-radius:0 0 999px 999px;margin-left:6px;'
-                f'vertical-align:top;"></span>'
-                for h, c in zip([72, 44, 60, 36, 56],
-                                ["#F25929", "#F25929", "#F25929", "#F25929", "rgba(255,255,255,0.35)"])
-            )
-            + '</div>'
+        # Rendered as inline-block <span>s inside a right-aligned table
+        # cell — earlier `position:absolute` got stripped by Gmail and
+        # the bars fell back to inline flow on the LEFT of the eyebrow.
+        bars_motif = "".join(
+            f'<span style="display:inline-block;width:6px;height:{h}px;'
+            f'background:{c};border-radius:0 0 999px 999px;'
+            f'vertical-align:top;{("margin-left:6px;" if i else "")}font-size:0;line-height:0;"></span>'
+            for i, (h, c) in enumerate(zip(
+                [72, 44, 60, 36, 56],
+                ["#F25929", "#F25929", "#F25929", "#F25929", "rgba(255,255,255,0.35)"]))
         )
 
         logo_img = ('<img src="cid:ember_logo" alt="Ember" height="22" '
@@ -8620,16 +8628,26 @@ def _send_monthly_emails(force=False, recipient_ids=None):
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F8F4EE;padding:32px 16px;">
   <tr><td align="center">
     <table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="max-width:640px;background:#FFFFFF;border-radius:16px;overflow:hidden;box-shadow:0 2px 4px rgba(8,35,59,.06),0 1px 2px rgba(8,35,59,.04);">
-      <!-- HEADER -->
-      <tr><td style="background:#08233B;padding:36px 40px 32px;color:#FFFFFF;position:relative;">
-        {bars_motif}
-        <div style="font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-weight:600;font-size:12px;letter-spacing:0.20em;color:#F25929;text-transform:uppercase;margin-bottom:14px;">EMBER FINANCE &amp; ANALYTICS</div>
-        <h1 style="margin:0 0 6px;font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-weight:800;font-size:34px;line-height:1.05;letter-spacing:-0.02em;color:#FFFFFF;">Ember Monthly Reports</h1>
-        <div style="font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-size:14px;line-height:1.5;color:rgba(255,255,255,0.72);max-width:44ch;">Delivered on the first of each month.</div>
-        <div style="display:inline-block;background:#FFFFFF;padding:8px 14px;border-radius:999px;box-shadow:0 2px 4px rgba(8,35,59,.10);margin-top:22px;">
-          <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#F25929;vertical-align:middle;margin-right:8px;"></span>
-          <span style="font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-weight:700;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:#13344E;vertical-align:middle;">{period_label}</span>
-        </div>
+      <!-- HEADER -- 2-column inner table so the bars motif sits in the
+           top-right cell (valign=top, no top padding) while the text
+           content fills the left cell with normal header padding. The
+           outer header td has padding:0 so the dark-blue background
+           still extends edge-to-edge. -->
+      <tr><td style="background:#08233B;padding:0;color:#FFFFFF;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td valign="top" style="padding:36px 0 32px 40px;">
+              <div style="font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-weight:600;font-size:12px;letter-spacing:0.20em;color:#F25929;text-transform:uppercase;margin-bottom:14px;">EMBER FINANCE &amp; ANALYTICS</div>
+              <h1 style="margin:0 0 6px;font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-weight:800;font-size:34px;line-height:1.05;letter-spacing:-0.02em;color:#FFFFFF;">Ember Monthly Reports</h1>
+              <div style="font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-size:14px;line-height:1.5;color:rgba(255,255,255,0.72);max-width:44ch;">Delivered on the first of each month.</div>
+              <div style="display:inline-block;background:#FFFFFF;padding:8px 14px;border-radius:999px;box-shadow:0 2px 4px rgba(8,35,59,.10);margin-top:22px;">
+                <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#F25929;vertical-align:middle;margin-right:8px;"></span>
+                <span style="font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-weight:700;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:#13344E;vertical-align:middle;">{period_label}</span>
+              </div>
+            </td>
+            <td valign="top" align="right" width="110" style="padding:0 32px 0 0;font-size:0;line-height:0;">{bars_motif}</td>
+          </tr>
+        </table>
       </td></tr>
 
       <!-- BODY -->
