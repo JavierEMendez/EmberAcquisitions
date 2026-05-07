@@ -1720,16 +1720,20 @@ def vd_page():
 # this map falls back to the raw path so unknown routes (admin pages,
 # nested views) still render a readable row.
 _ACTIVITY_PATH_LABELS = {
-    "/":              "MPC Underwriting",
-    "/home":          "Home",
-    "/returns":       "Project Returns",
-    "/loans":         "Loans & Debt",
-    "/operations":    "Operating Revenues",
-    "/ember-capital": "Ember Capital",
-    "/macro":         "Macro Data",
-    "/sales":         "Community Sales",
-    "/portfolio":     "Portfolio",
-    "/admin/activity":"Team Activity",
+    "/":               "MPC Underwriting",
+    "/home":           "Home",
+    "/returns":        "Project Returns",
+    "/loans":          "Loans & Debt",
+    "/operations":     "Operating Revenues",
+    "/ember-capital":  "Ember Capital",
+    "/capital":        "Ember Capital",
+    "/portfolio":      "Ember Capital",
+    "/macro":          "Macro Dashboard",
+    "/sales":          "Community Sales",
+    "/verticals":      "Vertical Dashboard",
+    "/admin/activity": "Team Activity",
+    "/admin/users":    "Manage Team",
+    "/admin/reports":  "Report Subscriptions",
 }
 
 def _activity_label(path):
@@ -8486,8 +8490,12 @@ def _send_monthly_emails(force=False, recipient_ids=None):
     diag = []
 
     # Load logo once
+    # Email footer wordmark — the design-handoff blue wordmark, attached
+    # via CID so it embeds reliably in every client (CID is widely
+    # supported and avoids data-URI volume limits).
     logo_b64 = ""
-    logo_path = os.path.join(os.path.dirname(__file__), "static", "ember_logo.png")
+    logo_path = os.path.join(os.path.dirname(__file__),
+                              "static", "img", "ember_logo_blue_wordmark.png")
     if os.path.exists(logo_path):
         with open(logo_path, "rb") as f:
             logo_b64 = base64.b64encode(f.read()).decode()
@@ -8538,41 +8546,127 @@ def _send_monthly_emails(force=False, recipient_ids=None):
                          "status": "skipped", "reason": reason})
             continue
 
-        # Build the inline list for the email body, showing the per-report
-        # format ("[PDF]" or "[EXCEL]") next to each title.
-        report_list_items = "".join(
-            f'<li style="margin:4px 0">{label} '
-            f'<span style="color:#8b95a8;font-size:12px">({user_subs[rt].upper()})</span></li>'
-            for rt, label in accessible.items()
+        # First name only for the greeting per the design handoff. Fall
+        # back to the first token of display_name (handles "Javier Mendez"
+        # → "Javier"), then to display_name itself, then to "there".
+        greet_name = (fn or (display_name.split()[0] if display_name else "")
+                         or display_name or "there")
+
+        # Period label for header pill + lede (e.g. "May 2026"). Issue
+        # number intentionally dropped — we don't track issues; the
+        # design-handoff README marks it optional.
+        period_label = now.strftime("%B %Y")
+
+        # Reports list rows — index + title + tinted file-type pill.
+        report_rows = []
+        for i, (rt, label) in enumerate(accessible.items(), start=1):
+            fmt = user_subs[rt]
+            if fmt == "excel":
+                pill_bg, pill_fg, pill_text = "#E2F1EA", "#1F7A4D", "EXCEL"
+            else:  # pdf (default)
+                pill_bg, pill_fg, pill_text = "#FEEEE7", "#A8330D", "PDF"
+            border = "" if i == len(accessible) else "border-bottom:1px solid rgba(8,35,59,0.08);"
+            row_label = label.replace("&", "&amp;")
+            report_rows.append(f"""
+      <tr><td style="padding:16px 0;{border}">
+        <table cellpadding="0" cellspacing="0" border="0" width="100%" role="presentation">
+          <tr>
+            <td width="28" style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:11px;color:#939598;letter-spacing:0.04em;vertical-align:middle;">{i:02d}</td>
+            <td style="font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-weight:600;font-size:15px;color:#13344E;line-height:1.35;letter-spacing:-0.005em;vertical-align:middle;padding:0 8px;">{row_label}</td>
+            <td align="right" style="vertical-align:middle;">
+              <span style="display:inline-block;padding:4px 10px;border-radius:999px;background:{pill_bg};color:{pill_fg};font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-weight:700;font-size:10px;letter-spacing:0.10em;text-transform:uppercase;">{pill_text}</span>
+            </td>
+          </tr>
+        </table>
+      </td></tr>""")
+        report_rows_html = "".join(report_rows)
+
+        n_reports = len(accessible)
+        files_label = f"{n_reports} file" + ("" if n_reports == 1 else "s")
+
+        # Manage Delivery link target — points at /home; recipients sign
+        # in and open the Account modal to manage their preferences.
+        manage_url = (os.environ.get("PUBLIC_URL", "").rstrip("/") or "") + "/home"
+
+        # Bars motif — 5 vertical bars echoing the Ember mark. Heights:
+        # 72/44/60/36/56; first 4 orange, last semi-transparent white.
+        # Outlook ignores positioned <span>s so this drops gracefully to
+        # nothing — acceptable per the README.
+        bars_motif = (
+            '<div style="position:absolute;top:0;right:32px;display:inline-block;font-size:0;line-height:0;">'
+            + "".join(
+                f'<span style="display:inline-block;width:6px;height:{h}px;'
+                f'background:{c};border-radius:0 0 999px 999px;margin-left:6px;'
+                f'vertical-align:top;"></span>'
+                for h, c in zip([72, 44, 60, 36, 56],
+                                ["#F25929", "#F25929", "#F25929", "#F25929", "rgba(255,255,255,0.35)"])
+            )
+            + '</div>'
         )
+
+        logo_img = ('<img src="cid:ember_logo" alt="Ember" height="22" '
+                    'style="display:block;margin:0 auto 10px;height:22px;border:0;">'
+                    if logo_b64 else "")
 
         html_body = f"""<!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"></head>
-<body style="margin:0;padding:0;background:#f4f6f9;font-family:'Helvetica Neue',Arial,sans-serif">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9;padding:32px 0">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ember Monthly Reports — {period_label}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+</head>
+<body style="margin:0;padding:0;background:#F8F4EE;font-family:'Plus Jakarta Sans',system-ui,-apple-system,'Segoe UI',sans-serif;color:#13344E;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F8F4EE;padding:32px 16px;">
   <tr><td align="center">
-    <table width="580" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)">
-      <tr><td style="background:#1a2535;padding:28px 36px">
-        <p style="margin:0;font-size:22px;font-weight:700;color:#c8a96e;letter-spacing:.04em">EMBER</p>
-        <p style="margin:4px 0 0;font-size:11px;color:#8b95a8;letter-spacing:.08em;text-transform:uppercase">Finance &amp; Analytics</p>
+    <table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="max-width:640px;background:#FFFFFF;border-radius:16px;overflow:hidden;box-shadow:0 2px 4px rgba(8,35,59,.06),0 1px 2px rgba(8,35,59,.04);">
+      <!-- HEADER -->
+      <tr><td style="background:#08233B;padding:36px 40px 32px;color:#FFFFFF;position:relative;">
+        {bars_motif}
+        <div style="font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-weight:600;font-size:12px;letter-spacing:0.20em;color:#F25929;text-transform:uppercase;margin-bottom:14px;">EMBER FINANCE &amp; ANALYTICS</div>
+        <h1 style="margin:0 0 6px;font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-weight:800;font-size:34px;line-height:1.05;letter-spacing:-0.02em;color:#FFFFFF;">Ember Monthly Reports</h1>
+        <div style="font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-size:14px;line-height:1.5;color:rgba(255,255,255,0.72);max-width:44ch;">Delivered on the first of each month.</div>
+        <div style="display:inline-block;background:#FFFFFF;padding:8px 14px;border-radius:999px;box-shadow:0 2px 4px rgba(8,35,59,.10);margin-top:22px;">
+          <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#F25929;vertical-align:middle;margin-right:8px;"></span>
+          <span style="font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-weight:700;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:#13344E;vertical-align:middle;">{period_label}</span>
+        </div>
       </td></tr>
-      <tr><td style="padding:32px 36px">
-        <p style="margin:0 0 16px;font-size:15px;color:#1a2535">Hello {display_name},</p>
-        <p style="margin:0 0 16px;font-size:14px;color:#4a5568;line-height:1.6">
-          Please find your <strong>{now.strftime('%B %Y')}</strong> Ember reports attached below.
-        </p>
-        <p style="margin:0 0 8px;font-size:13px;color:#8b95a8;text-transform:uppercase;letter-spacing:.06em">Reports included</p>
-        <ul style="margin:0 0 24px;padding-left:20px;font-size:14px;color:#1a2535;line-height:1.8">
-          {report_list_items}
-        </ul>
-        <p style="margin:0;font-size:12px;color:#a0aec0;line-height:1.6">
-          These reports are generated automatically on the 1st of each month.
-        </p>
+
+      <!-- BODY -->
+      <tr><td style="padding:40px 40px 8px;background:#FFFFFF;">
+        <div style="font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-weight:700;font-size:22px;line-height:1.25;letter-spacing:-0.01em;color:#13344E;margin-bottom:14px;">Hello {greet_name},</div>
+        <div style="font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-size:16px;line-height:1.65;color:#58595B;max-width:56ch;margin-bottom:32px;">Your <strong style="color:#13344E;font-weight:700;">{period_label}</strong> reports are attached below.</div>
+
+        <!-- Reports header row -->
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-bottom:1px solid rgba(8,35,59,0.12);padding-bottom:12px;margin-bottom:8px;">
+          <tr>
+            <td style="font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-weight:700;font-size:11px;letter-spacing:0.20em;text-transform:uppercase;color:#F25929;padding-bottom:12px;">Reports included</td>
+            <td align="right" style="font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-weight:500;font-size:12px;color:#939598;padding-bottom:12px;">{files_label}</td>
+          </tr>
+        </table>
+
+        <!-- Reports list -->
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:32px;">{report_rows_html}
+        </table>
+
+        <!-- Note callout -->
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F8F4EE;border-radius:12px;">
+          <tr>
+            <td width="30" style="padding:14px 0 14px 18px;vertical-align:top;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F25929" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><circle cx="12" cy="12" r="10"/><path d="M12 8v.01M11 12h1v4h1"/></svg>
+            </td>
+            <td style="padding:14px 18px 14px 12px;font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-size:13px;line-height:1.5;color:#58595B;">Generated on the 1st of each month. Reply to this email if a number looks wrong — we'd rather hear about it early.</td>
+          </tr>
+        </table>
+
+        <div style="height:32px;line-height:32px;font-size:0;">&nbsp;</div>
       </td></tr>
-      <tr><td style="background:#f8f9fb;border-top:1px solid #e8edf3;padding:20px 36px;text-align:center">
-        {'<img src="cid:ember_logo" width="120" style="display:block;margin:0 auto 12px" alt="Ember Logo">' if logo_b64 else ''}
-        <p style="margin:0;font-size:12px;color:#8b95a8">Ember Finance &amp; Analytics Team</p>
+
+      <!-- FOOTER -->
+      <tr><td style="background:#F8F4EE;border-top:1px solid rgba(8,35,59,0.08);padding:28px 40px 32px;text-align:center;">
+        {logo_img}
+        <div style="font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-weight:600;font-size:13px;letter-spacing:-0.005em;color:#13344E;">Ember Finance &amp; Analytics Team</div>
+        <div style="font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-size:12px;color:#939598;margin-top:6px;">Sent from the EmberApps platform <span style="color:#D1D3D4;margin:0 6px;">·</span> <a href="{manage_url}" style="color:#A8330D;font-weight:600;text-decoration:none;">Manage delivery</a></div>
       </td></tr>
     </table>
   </td></tr>
@@ -8580,14 +8674,19 @@ def _send_monthly_emails(force=False, recipient_ids=None):
 </body>
 </html>"""
 
-        plain_body = (
-            f"Hello {display_name},\n\n"
-            f"Please find your {now.strftime('%B %Y')} Ember reports attached below.\n\n"
-            "Reports included:\n" +
-            "".join(f"  • {label} ({user_subs[rt].upper()})\n" for rt, label in accessible.items()) +
-            "\nThese reports are generated automatically on the 1st of each month.\n\n"
-            "Ember Finance & Analytics Team"
-        )
+        plain_lines = [f"Hello {greet_name},", "",
+                       f"Your {period_label} reports are attached below.", "",
+                       "REPORTS INCLUDED:"]
+        for i, (rt, label) in enumerate(accessible.items(), start=1):
+            plain_lines.append(f"  {i:02d}. {label} ({user_subs[rt].upper()})")
+        plain_lines.extend([
+            "",
+            "Generated on the 1st of each month. Reply to this email if a number looks wrong — we'd rather hear about it early.",
+            "",
+            "Ember Finance & Analytics Team",
+            f"Sent from the EmberApps platform · Manage delivery: {manage_url}",
+        ])
+        plain_body = "\n".join(plain_lines)
 
         message = Mail(
             from_email=from_addr,
