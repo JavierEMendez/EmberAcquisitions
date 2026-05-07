@@ -1469,21 +1469,36 @@
     return src.charAt(0).toUpperCase();
   }
 
-  fetch('/api/me', { headers: { 'Accept': 'application/json' } })
+  // Probe Ember session: drives the in-iframe sidebar account block AND
+  // gates the Edit-comments dock. canEditComments is the per-user flag
+  // managed from /admin/users (page_access.verticals_comment); the PUT
+  // endpoint enforces server-side too — this just hides the affordance
+  // for users who can't act on it.
+  fetch('/api/verticals/me', { headers: { 'Accept': 'application/json' } })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (j) {
-      if (!j || !j.email) return;
+      if (!j) return;
+      // Hide the Edit-comments dock unless the user has permission. The
+      // dock is shown by default (CSS) so a missing/failed probe leaves
+      // the legacy behavior in place — same defensive default as the
+      // backend (page_access.verticals_comment defaults true).
+      if (j.canEditComments === false) {
+        var dock = document.getElementById('lh-admin-dock');
+        if (dock) dock.style.display = 'none';
+      }
+      // Account block — silently hide if we don't have a usable name.
+      var displayName = j.displayName || j.username;
+      if (!displayName) return;
       var box     = document.getElementById('vs-account');
       var name    = document.getElementById('vs-account-name');
       var emailEl = document.getElementById('vs-account-email');
       var avatar  = document.getElementById('vs-account-avatar');
       if (!box || !name) return;
-      name.textContent = j.displayName || j.email;
-      name.title = j.email;
-      if (emailEl) emailEl.textContent = j.email;
+      name.textContent = displayName;
+      if (emailEl) emailEl.textContent = j.username || '';
       if (avatar) {
-        avatar.textContent = initialFor(j.displayName, j.email);
-        avatar.style.background = colorFor(j.email.toLowerCase());
+        avatar.textContent = initialFor(displayName, j.username);
+        avatar.style.background = colorFor((j.username || displayName).toLowerCase());
       }
       box.style.display = '';
     })

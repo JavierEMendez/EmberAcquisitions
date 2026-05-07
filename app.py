@@ -260,6 +260,11 @@ def init_db():
     # dashboard is visible by default — same convention used for
     # portfolio / macro / sales when those shipped.
     cur.execute("UPDATE users SET page_access = page_access || '{\"verticals\": true}'::jsonb WHERE page_access->>'verticals' IS NULL")
+    # Per-user "can edit comments on the Vertical Dashboard" flag.
+    # Default true to match the legacy behavior (anyone with verticals
+    # access could edit, gated only by a shared admin password). Admins
+    # always get edit rights server-side regardless of this flag.
+    cur.execute("UPDATE users SET page_access = page_access || '{\"verticals_comment\": true}'::jsonb WHERE page_access->>'verticals_comment' IS NULL")
     # Backfill portfolio access for existing users
     cur.execute("UPDATE users SET page_access = page_access || '{\"portfolio\": true}'::jsonb WHERE page_access->>'portfolio' IS NULL")
     cur.execute("UPDATE users SET page_access = page_access || '{\"macro\": true}'::jsonb WHERE page_access->>'macro' IS NULL")
@@ -1119,9 +1124,35 @@ def vd_get_comment(key):
         return jsonify({"section_key": key, "body": "", "updated_at": None})
     return jsonify(dict(row))
 
+def _vd_can_edit_comments():
+    """Server-side gate for vertical comment writes. Admin overrides;
+    otherwise the user must hold page_access.verticals_comment. Default
+    true on the flag so existing accounts (backfilled in init_db) keep
+    the legacy behavior."""
+    if session.get("is_admin"):
+        return True
+    pa = session.get("page_access") or {}
+    return bool(pa.get("verticals_comment", True))
+
+@app.route("/api/verticals/me", methods=["GET"])
+@login_required
+def vd_me():
+    """Lightweight permission probe used by the Vertical Dashboard SPA
+    on load to decide whether to show the Edit-comments dock. The
+    dashboard itself enforces nothing — the server gates writes — but
+    hiding affordances the user can't act on keeps the UI clean."""
+    return jsonify({
+        "username":          session.get("username"),
+        "displayName":       session.get("display_name") or session.get("username"),
+        "isAdmin":           bool(session.get("is_admin")),
+        "canEditComments":   _vd_can_edit_comments(),
+    })
+
 @app.route("/api/verticals/comments/<key>", methods=["PUT"])
 @login_required
 def vd_put_comment(key):
+    if not _vd_can_edit_comments():
+        return jsonify({"error": "Comment editing not permitted for this user"}), 403
     v = _vd_vertical()
     if not v:
         return jsonify({"error": "Unknown vertical"}), 400
@@ -2020,6 +2051,7 @@ def create_user():
         "mpc_underwriting": True, "returns": True, "loans": True,
         "operations": True, "macro": True, "sales": True,
         "portfolio": True, "reports": True, "verticals": True,
+        "verticals_comment": True,
     })
     if not username or not password:
         return jsonify({"error": "Username and password required"}), 400
