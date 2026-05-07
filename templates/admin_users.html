@@ -1,0 +1,340 @@
+{# ============================================================
+   Ember · Manage Team (admin) — page template.
+   Replaces the legacy #admin-modal that used to live in home.html.
+   Shell + visual language match /admin/activity. JS is inline at
+   the bottom — same pattern as the rest of the app.
+   ============================================================ #}
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Manage Team · Ember Residential</title>
+<link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="/static/theme.css"/>
+<script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
+<style>
+  /* ── Shell (same as admin_activity / operations) ── */
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;}
+  body{background:var(--eax-bg);color:var(--eax-ink);font-family:'Plus Jakarta Sans',system-ui,sans-serif;overflow:hidden;}
+  #app{display:flex;height:100vh;overflow:hidden;}
+  #sidebar{width:240px;background:var(--eax-bg-2);border-right:1px solid var(--eax-line);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;}
+  .sidebar-logo{padding:16px 18px 14px;border-bottom:1px solid var(--eax-line)}
+  .logo-img{width:100%;max-width:160px;height:auto;display:block;margin:0 auto}
+  img.logo-light{display:none;}
+  [data-theme="light"] img.logo-dark{display:none;}
+  [data-theme="light"] img.logo-light{display:block;margin:0 auto;}
+  .logo-sub{font-size:10px;color:var(--eax-subtle);letter-spacing:0.2em;text-transform:uppercase;margin-top:8px;text-align:center;font-weight:700}
+  .sidebar-section{padding:8px 16px 4px;font-size:9px;line-height:1.2;color:var(--eax-subtle);letter-spacing:0.22em;text-transform:uppercase;margin-top:8px;font-weight:700}
+  .sidebar-item{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;border-radius:8px;margin:1px 8px;transition:all .15s;color:var(--eax-muted);font-size:13px;line-height:1.2;text-decoration:none;font-weight:500}
+  .sidebar-item:hover{background:var(--eax-accent-soft);color:var(--eax-ink);text-decoration:none}
+  .sidebar-item.active{background:var(--eax-surface);color:var(--eax-ink);font-weight:600;border:1px solid var(--eax-line);position:relative}
+  .sidebar-item.active::before{content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:2px;background:var(--eax-accent);border-radius:2px}
+  .sidebar-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0}
+  .sidebar-item.active .icon{opacity:1;color:var(--eax-accent)}
+  #main-content{flex:1;overflow:auto;min-width:0;padding:32px 36px 60px;}
+
+  /* ── Page header ── */
+  .pg-eyebrow{font-size:10px;letter-spacing:0.24em;color:var(--eax-accent);font-weight:600;text-transform:uppercase;margin-bottom:6px;}
+  .pg-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:300;font-size:30px;letter-spacing:-0.01em;color:var(--eax-ink-2);margin-bottom:6px;}
+  .pg-sub{font-size:13px;color:var(--eax-muted);max-width:760px;line-height:1.55;}
+
+  /* ── Two-column layout: user list (wide) + add form (narrow). ── */
+  .users-grid{
+    display:grid;grid-template-columns:1fr 380px;gap:24px;
+    margin-top:24px;align-items:start;
+  }
+  @media(max-width:1100px){.users-grid{grid-template-columns:1fr;}}
+
+  .panel{
+    background:var(--eax-surface);border:1px solid var(--eax-line);
+    border-radius:10px;padding:18px 20px 16px;
+  }
+  .panel-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px;}
+  .panel-h{font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;font-size:13px;color:var(--eax-ink-2);letter-spacing:0.04em;text-transform:uppercase;}
+  .panel-s{font-size:10.5px;color:var(--eax-subtle);font-family:'JetBrains Mono',ui-monospace,monospace;letter-spacing:0.06em;}
+
+  /* ── User-row card (migrated from .admin-box modal styles). ── */
+  .user-row{display:flex;flex-direction:column;gap:6px;padding:14px 0;border-bottom:1px solid var(--eax-line-2);}
+  .user-row:last-child{border-bottom:none;}
+  .user-row .uname{font-size:13px;color:var(--eax-ink);font-weight:500;flex:1;display:flex;align-items:center;gap:8px;}
+  .user-row .badge{font-size:10px;background:var(--eax-accent-soft);color:var(--eax-accent);border:1px solid rgba(242,89,41,.25);border-radius:4px;padding:2px 6px;}
+  .btn-del-user{background:none;border:none;color:var(--eax-subtle);cursor:pointer;font-size:18px;padding:2px 6px;border-radius:4px;}
+  .btn-del-user:hover{color:var(--eax-bad);}
+  .user-access{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;font-size:11px;color:var(--eax-muted);}
+  .user-access label{display:flex;align-items:center;gap:4px;cursor:pointer;}
+
+  /* ── Add-user form (right column). ── */
+  .add-user-form h4{font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:var(--eax-subtle);margin-bottom:14px;font-weight:700;}
+  .add-user-form .form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}
+  .add-user-form input[type=text],
+  .add-user-form input[type=password],
+  .add-user-form input[type=email]{
+    padding:8px 12px;background:var(--eax-bg);border:1px solid var(--eax-line-2);
+    border-radius:6px;color:var(--eax-ink);font-family:inherit;font-size:13px;outline:none;
+    width:100%;
+  }
+  .add-user-form input:focus{border-color:var(--eax-accent);}
+  .add-user-form .form-email{margin-bottom:8px;}
+  .add-user-form .form-admin{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--eax-muted);margin-bottom:8px;cursor:pointer;}
+  .add-user-form .form-pa-label{font-size:10px;color:var(--eax-subtle);margin-bottom:4px;letter-spacing:0.18em;text-transform:uppercase;font-weight:700;}
+  .btn-add-user{background:var(--eax-accent);color:var(--eax-accent-fg);border:none;border-radius:6px;padding:8px 18px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;}
+  .btn-add-user:hover{opacity:.92;}
+
+  /* ── Report-testing block ── */
+  .report-test{
+    background:var(--eax-bg);border:1px solid var(--eax-line);border-radius:10px;
+    padding:14px 16px;margin-top:14px;
+  }
+  .report-test-h{font-size:11px;color:var(--eax-subtle);text-transform:uppercase;letter-spacing:0.18em;font-weight:700;margin-bottom:10px;}
+  .report-test-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .admin-btn{
+    display:inline-flex;align-items:center;gap:6px;
+    background:transparent;border:1px solid var(--eax-line-2);color:var(--eax-muted);
+    padding:6px 12px;border-radius:8px;font-size:11px;font-family:inherit;cursor:pointer;
+    transition:all .15s;
+  }
+  .admin-btn:hover{border-color:var(--eax-accent);color:var(--eax-accent);}
+  .upload-status{font-size:11px;color:var(--eax-good);}
+
+  /* ── Forbidden state. ── */
+  .forbidden{
+    max-width:520px;margin:120px auto;text-align:center;padding:32px;
+    background:var(--eax-surface);border:1px solid var(--eax-line);border-radius:12px;
+  }
+  .forbidden h2{font-weight:500;font-size:18px;color:var(--eax-ink-2);margin-bottom:8px;}
+  .forbidden p{font-size:13px;color:var(--eax-muted);line-height:1.5;}
+  .forbidden a{color:var(--eax-accent);text-decoration:none;font-weight:600;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  {% set admin_subtitle = "Manage Team" %}
+  {% set admin_active   = "users" %}
+  {% include "_partials/_admin_sidebar.html" %}
+
+  <div id="main-content">
+    {% if forbidden %}
+      <div class="forbidden">
+        <h2>Admin access required</h2>
+        <p>The Manage Team page is only available to admin users. <a href="/home">Back to home</a>.</p>
+      </div>
+    {% else %}
+      <div class="pg-eyebrow">Administrative</div>
+      <h1 class="pg-title">Manage Team</h1>
+      <p class="pg-sub">
+        Add or remove team members, set per-page access, manage admin privileges, and trigger an out-of-band report send for testing.
+      </p>
+
+      <div class="users-grid">
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-h">Team Members</div>
+            <div class="panel-s" id="user-count">—</div>
+          </div>
+          <div id="user-list" style="padding:8px 0;text-align:center;color:var(--eax-subtle);font-size:12px;">Loading…</div>
+
+          <div class="report-test">
+            <div class="report-test-h">Report Testing</div>
+            <div class="report-test-row">
+              <button onclick="sendReportsNow()" class="admin-btn">Send Reports Now</button>
+              <span id="send-reports-status" class="upload-status"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel add-user-form">
+          <h4>Add Team Member</h4>
+          <div class="form-row">
+            <input type="text" id="new-username" placeholder="Username">
+            <input type="password" id="new-password" placeholder="Password">
+          </div>
+          <input type="email" id="new-email" placeholder="Email address (optional)" class="form-email">
+          <label class="form-admin">
+            <input type="checkbox" id="new-is-admin"> Grant admin access
+          </label>
+          <div class="form-pa-label">Page Access</div>
+          <div class="user-access" style="margin-bottom:12px;">
+            <label><input type="checkbox" id="new-pa-mpc" checked>MPC Underwriting</label>
+            <label><input type="checkbox" id="new-pa-returns" checked>Project Returns</label>
+            <label><input type="checkbox" id="new-pa-loans" checked>Loans &amp; Debt</label>
+            <label><input type="checkbox" id="new-pa-operations" checked>Operating Revenues</label>
+            <label><input type="checkbox" id="new-pa-macro" checked>Macro Data</label>
+            <label><input type="checkbox" id="new-pa-sales" checked>Community Sales</label>
+          </div>
+          <button class="btn-add-user" onclick="addUser()">Add User</button>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if not forbidden %}
+<script>
+const PAGE_LABELS = {
+  mpc_underwriting: 'MPC Underwriting',
+  returns:          'Project Returns',
+  loans:            'Loans & Debt',
+  operations:       'Operating Revenues',
+  macro:            'Macro Data',
+  sales:            'Community Sales',
+};
+
+async function refreshUserList() {
+  const res = await fetch('/api/admin/users');
+  if (!res.ok) return;
+  const users = await res.json();
+  document.getElementById('user-count').textContent =
+    users.length + ' team member' + (users.length === 1 ? '' : 's');
+  document.getElementById('user-list').innerHTML = users.length === 0
+    ? '<div style="color:var(--eax-subtle);font-size:13px;">No users.</div>'
+    : users.map(u => {
+      const pa = u.page_access || {mpc_underwriting:true, returns:true, loans:true, operations:true, macro:true, sales:true};
+      const checks = Object.entries(PAGE_LABELS).map(([k,label]) =>
+        `<label><input type="checkbox" ${pa[k] ? 'checked' : ''} ${u.is_admin ? 'disabled' : ''}
+          onchange="toggleAccess(${u.id},'${k}',this.checked)">${label}</label>`
+      ).join('');
+      const optInBadge = u.report_opt_in
+        ? `<span class="badge">Reports ${(u.report_format||'pdf').toUpperCase()}</span>`
+        : `<span class="badge" style="background:transparent;color:var(--eax-subtle);border-color:var(--eax-line);">No Reports</span>`;
+      const btnStyle = `background:transparent;border:1px solid var(--eax-line-2);color:var(--eax-muted);border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;white-space:nowrap;font-family:inherit;transition:all .15s;`;
+      return `<div class="user-row">
+        <div style="display:flex;align-items:center;gap:8px;width:100%;">
+          <div class="uname">${u.username} ${u.is_admin ? '<span class="badge">Admin</span>' : ''} ${optInBadge}</div>
+          <button class="btn-del-user" onclick="deleteUser(${u.id},'${u.username}')" title="Remove">&times;</button>
+        </div>
+        <div style="display:flex;gap:6px;width:100%;">
+          <input type="text" id="fname-${u.id}" value="${u.first_name || ''}" placeholder="First name"
+            style="flex:1;background:var(--eax-bg);border:1px solid var(--eax-line-2);color:var(--eax-ink);border-radius:6px;padding:6px 9px;font-size:12px;font-family:inherit;outline:none;">
+          <input type="text" id="lname-${u.id}" value="${u.last_name || ''}" placeholder="Last name"
+            style="flex:1;background:var(--eax-bg);border:1px solid var(--eax-line-2);color:var(--eax-ink);border-radius:6px;padding:6px 9px;font-size:12px;font-family:inherit;outline:none;">
+          <button onclick="saveName(${u.id})" style="${btnStyle}" onmouseover="this.style.borderColor='var(--eax-good)';this.style.color='var(--eax-good)';" onmouseout="this.style.borderColor='var(--eax-line-2)';this.style.color='var(--eax-muted)';">Name</button>
+        </div>
+        <div style="display:flex;gap:6px;width:100%;">
+          <input type="email" id="email-${u.id}" value="${u.email || ''}" placeholder="Email address"
+            style="flex:1;background:var(--eax-bg);border:1px solid var(--eax-line-2);color:var(--eax-ink);border-radius:6px;padding:6px 9px;font-size:12px;font-family:inherit;outline:none;">
+          <button onclick="saveEmail(${u.id})" style="${btnStyle}" onmouseover="this.style.borderColor='var(--eax-accent)';this.style.color='var(--eax-accent)';" onmouseout="this.style.borderColor='var(--eax-line-2)';this.style.color='var(--eax-muted)';">Email</button>
+        </div>
+        ${u.is_admin ? '' : `<div class="user-access">${checks}</div>`}
+      </div>`;
+    }).join('');
+}
+
+async function toggleAccess(uid, page, enabled) {
+  const res = await fetch('/api/admin/users');
+  if (!res.ok) return;
+  const users = await res.json();
+  const user = users.find(u => u.id === uid);
+  if (!user) return;
+  const pa = user.page_access || {mpc_underwriting:true, returns:true, loans:true, operations:true, macro:true, sales:true};
+  pa[page] = enabled;
+  await fetch('/api/admin/users/' + uid + '/access', {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({page_access: pa})
+  });
+}
+
+async function addUser() {
+  const username = document.getElementById('new-username').value.trim();
+  const password = document.getElementById('new-password').value;
+  const is_admin = document.getElementById('new-is-admin').checked;
+  const page_access = {
+    mpc_underwriting: document.getElementById('new-pa-mpc').checked,
+    returns:          document.getElementById('new-pa-returns').checked,
+    loans:            document.getElementById('new-pa-loans').checked,
+    operations:       document.getElementById('new-pa-operations').checked,
+    macro:            document.getElementById('new-pa-macro').checked,
+    sales:            document.getElementById('new-pa-sales').checked,
+  };
+  const email = document.getElementById('new-email').value.trim();
+  if (!username || !password) { alert('Username and password required'); return; }
+  const res = await fetch('/api/admin/users', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({username, password, email, is_admin, page_access})
+  });
+  const d = await res.json();
+  if (res.ok) {
+    document.getElementById('new-username').value = '';
+    document.getElementById('new-password').value = '';
+    document.getElementById('new-email').value = '';
+    document.getElementById('new-is-admin').checked = false;
+    ['mpc','returns','loans','operations','macro','sales'].forEach(k=>document.getElementById('new-pa-'+k).checked=true);
+    await refreshUserList();
+  } else { alert(d.error || 'Error creating user'); }
+}
+
+async function saveName(uid) {
+  const first_name = document.getElementById('fname-' + uid).value.trim();
+  const last_name  = document.getElementById('lname-' + uid).value.trim();
+  await fetch('/api/admin/users/' + uid + '/name', {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({first_name, last_name})
+  });
+}
+
+async function saveEmail(uid) {
+  const email = document.getElementById('email-' + uid).value.trim();
+  await fetch('/api/admin/users/' + uid + '/email', {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({email})
+  });
+}
+
+async function deleteUser(id, name) {
+  if (!confirm('Remove user "' + name + '"?')) return;
+  const res = await fetch('/api/admin/users/' + id, {method:'DELETE'});
+  if (res.ok) await refreshUserList();
+  else alert('Error removing user');
+}
+
+async function sendReportsNow() {
+  const status = document.getElementById('send-reports-status');
+  status.textContent = 'Sending… (this can take a minute)';
+  status.style.color = 'var(--eax-muted)';
+  try {
+    const res = await fetch('/api/admin/send-reports-now', {method:'POST'});
+    const d = await res.json();
+    if (!d.ok) {
+      status.textContent = d.error || 'Error';
+      status.style.color = 'var(--eax-bad)';
+      return;
+    }
+    const count = d.count || 0;
+    const diag  = Array.isArray(d.diag) ? d.diag : [];
+    const sent     = diag.filter(x => x.status === 'sent');
+    const skipped  = diag.filter(x => x.status !== 'sent');
+
+    let summary = `Sent to ${count} recipient${count !== 1 ? 's' : ''}.`;
+    if (skipped.length) summary += ` ${skipped.length} skipped.`;
+    let detail = '<div style="margin-top:10px;padding:10px 12px;background:var(--eax-bg);border:1px solid var(--eax-line);border-radius:6px;font-size:11px;line-height:1.6;color:var(--eax-ink);">';
+    if (sent.length) {
+      detail += '<div style="font-weight:700;color:var(--eax-good);margin-bottom:4px;">Sent</div>';
+      sent.forEach(x => {
+        detail += `<div>· ${x.user} <span style="color:var(--eax-subtle)">&lt;${x.email}&gt;</span> — ${(x.reports || []).join(', ') || '(no attachments)'}</div>`;
+      });
+    }
+    if (skipped.length) {
+      detail += '<div style="font-weight:700;color:var(--eax-bad);margin:6px 0 4px;">Skipped / Failed</div>';
+      skipped.forEach(x => {
+        detail += `<div>· ${x.user} <span style="color:var(--eax-subtle)">&lt;${x.email}&gt;</span> — ${x.reason || x.status}</div>`;
+      });
+    }
+    detail += '</div>';
+    status.innerHTML = `<span style="color:var(--eax-good);font-weight:600">${summary}</span>${detail}`;
+    status.style.color = '';
+  } catch(e) {
+    status.textContent = 'Request failed: ' + (e && e.message || e);
+    status.style.color = 'var(--eax-bad)';
+  }
+}
+
+// Load on page open.
+refreshUserList();
+</script>
+{% endif %}
+</body>
+</html>

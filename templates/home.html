@@ -229,13 +229,6 @@
     box-shadow:var(--eax-shadow-card);
   }
   .dash-card.disabled{opacity:0.5;cursor:default;pointer-events:none;}
-  /* Reset <button> defaults so a button.dash-card looks identical to an
-     anchor.dash-card. Used in the Administrative section where Manage
-     and Reports open modals (action) rather than navigate (link). */
-  button.dash-card{
-    font-family:inherit;font-size:inherit;text-align:left;
-    background:var(--eax-bg-2);cursor:pointer;width:100%;
-  }
   .dash-card-top{
     display:flex;align-items:center;justify-content:space-between;
     margin-bottom:10px;
@@ -345,28 +338,12 @@
   .acct-box .save-btn.ghost{background:transparent;color:var(--eax-muted);border:1px solid var(--eax-line-2);box-shadow:none;}
   .acct-box .save-btn.ghost:hover{border-color:var(--eax-accent);color:var(--eax-accent);transform:none;box-shadow:none;}
 
-  /* ---------- Admin modal (preserved) ---------- */
-  .admin-modal{display:none;position:fixed;inset:0;z-index:2000;background:rgba(8,35,59,.65);align-items:center;justify-content:center;}
-  .admin-modal.open{display:flex;}
-  .admin-box{background:var(--eax-surface);border:1px solid var(--eax-line);border-radius:14px;width:520px;max-width:95vw;max-height:88vh;overflow-y:auto;box-shadow:var(--eax-shadow-card);}
-  .admin-header{padding:20px 24px;border-bottom:1px solid var(--eax-line);display:flex;align-items:center;justify-content:space-between;}
-  .admin-header h3{font-family:'Plus Jakarta Sans',sans-serif;font-size:15px;font-weight:700;color:var(--eax-ink-2);}
-  .admin-body{padding:20px 24px;}
-  .user-row{display:flex;flex-direction:column;gap:6px;padding:10px 0;border-bottom:1px solid var(--eax-line);}
-  .user-row:last-child{border-bottom:none;}
-  .user-row .uname{font-size:13px;color:var(--eax-ink);font-weight:500;flex:1;display:flex;align-items:center;gap:8px;}
-  .user-row .badge{font-size:10px;background:var(--eax-accent-soft);color:var(--eax-accent);border:1px solid rgba(242,89,41,.25);border-radius:4px;padding:2px 6px;}
-  .add-user-form{background:var(--eax-bg);border:1px solid var(--eax-line);border-radius:10px;padding:16px;margin-top:16px;}
-  .add-user-form h4{font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:var(--eax-subtle);margin-bottom:14px;font-weight:700;}
-  .form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}
-  .form-row input{padding:8px 12px;background:var(--eax-surface);border:1px solid var(--eax-line-2);border-radius:6px;color:var(--eax-ink);font-family:inherit;font-size:13px;outline:none;}
-  .form-row input:focus{border-color:var(--eax-accent);}
-  .btn-add-user{background:var(--eax-accent);color:var(--eax-accent-fg);border:none;border-radius:6px;padding:8px 18px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;}
-  .btn-add-user:hover{opacity:.92;}
-  .btn-del-user{background:none;border:none;color:var(--eax-subtle);cursor:pointer;font-size:18px;padding:2px 6px;border-radius:4px;}
-  .btn-del-user:hover{color:var(--eax-bad);}
-  .user-access{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;font-size:11px;color:var(--eax-muted);}
-  .user-access label{display:flex;align-items:center;gap:4px;cursor:pointer;}
+  /* The legacy admin modal styles (.admin-modal / .admin-box / .user-row /
+     .add-user-form / .btn-add-user / .btn-del-user / .user-access) used
+     to live here. Removed when Manage Team and Report Subscriptions
+     became their own pages — now scoped to admin_users.html /
+     admin_reports.html. The Project Library modal (right below) still
+     uses its own .acct-modal-derived styles. */
 
   /* ---------- Project Library modal (admin-only) ---------- */
   .pl-list{display:flex;flex-direction:column;gap:0;max-height:60vh;overflow-y:auto;}
@@ -557,7 +534,7 @@
     <div class="section-counter">03 / 03</div>
   </div>
   <div class="dash-grid">
-    <button class="dash-card" type="button" onclick="openAdmin()">
+    <a class="dash-card" href="/admin/users">
       <div class="dash-card-top">
         <span class="dash-eyebrow">Admin</span>
         <span class="dash-deco">
@@ -572,9 +549,9 @@
           <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </span>
       </div>
-    </button>
+    </a>
 
-    <button class="dash-card" type="button" onclick="openReports()">
+    <a class="dash-card" href="/admin/reports">
       <div class="dash-card-top">
         <span class="dash-eyebrow">Admin</span>
         <span class="dash-deco">
@@ -589,7 +566,7 @@
           <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </span>
       </div>
-    </button>
+    </a>
 
     <a class="dash-card" href="/admin/activity">
       <div class="dash-card-top">
@@ -670,310 +647,17 @@
   </div>
 </div>
 
-{# ============================================================
-   Admin (Team Management) modal — preserved markup + JS.
-   ============================================================ #}
-<div id="admin-modal" class="admin-modal">
-  <div class="admin-box">
-    <div class="admin-header">
-      <h3>Team Management</h3>
-      <button onclick="closeAdmin()" style="background:none;border:none;color:var(--eax-subtle);font-size:22px;cursor:pointer;">&times;</button>
-    </div>
-    <div class="admin-body">
-      <div id="user-list" style="padding:24px 0;text-align:center;">{{ motion.loader('md', 'Loading users') }}</div>
-      <div style="margin-top:8px;padding-top:16px;border-top:1px solid var(--eax-line);">
-        <div style="font-size:11px;color:var(--eax-subtle);text-transform:uppercase;letter-spacing:0.18em;margin-bottom:8px;font-weight:700;">Report Testing</div>
-        <div style="display:flex;align-items:center;gap:10px;">
-          <button onclick="sendReportsNow()" class="admin-btn">Send Reports Now</button>
-          <span id="send-reports-status" style="font-size:11px;color:var(--eax-good);"></span>
-        </div>
-      </div>
-      <div class="add-user-form">
-        <h4>Add Team Member</h4>
-        <div class="form-row">
-          <input type="text" id="new-username" placeholder="Username">
-          <input type="password" id="new-password" placeholder="Password">
-        </div>
-        <input type="email" id="new-email" placeholder="Email address (optional)" style="width:100%;margin-bottom:8px;padding:8px 12px;background:var(--eax-surface);border:1px solid var(--eax-line-2);border-radius:6px;color:var(--eax-ink);font-family:inherit;font-size:13px;outline:none;">
-        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--eax-muted);margin-bottom:8px;cursor:pointer;">
-          <input type="checkbox" id="new-is-admin"> Grant admin access
-        </label>
-        <div style="font-size:10px;color:var(--eax-subtle);margin-bottom:4px;letter-spacing:0.18em;text-transform:uppercase;font-weight:700;">Page Access</div>
-        <div class="user-access" style="margin-bottom:12px;">
-          <label><input type="checkbox" id="new-pa-mpc" checked>MPC Underwriting</label>
-          <label><input type="checkbox" id="new-pa-returns" checked>Project Returns</label>
-          <label><input type="checkbox" id="new-pa-loans" checked>Loans &amp; Debt</label>
-          <label><input type="checkbox" id="new-pa-operations" checked>Operating Revenues</label>
-          <label><input type="checkbox" id="new-pa-macro" checked>Macro Data</label>
-          <label><input type="checkbox" id="new-pa-sales" checked>Community Sales</label>
-        </div>
-        <button class="btn-add-user" onclick="addUser()">Add User</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-{# ============================================================
-   Reports management modal — admin-only.
-   Per-team-member × per-report dropdown {None / PDF / Excel} grid.
-   Saves on change to PUT /api/admin/users/<id>/reports.
-   ============================================================ #}
-<div id="reports-modal" class="admin-modal">
-  <div class="admin-box" style="width:880px;max-width:calc(100vw - 32px);">
-    <div class="admin-header">
-      <h3>Report Subscriptions</h3>
-      <button onclick="closeReports()" style="background:none;border:none;color:var(--eax-subtle);font-size:22px;cursor:pointer;">&times;</button>
-    </div>
-    <div class="admin-body">
-      <p style="font-size:12px;color:var(--eax-muted);margin:0 0 14px;line-height:1.5;">
-        Set which reports each team member receives in their monthly email — and in what format.
-        Choose "—" to opt them out of a specific report. Changes save automatically.
-      </p>
-      <div class="reports-table-wrap" style="border:1px solid var(--eax-line);border-radius:8px;overflow:hidden;">
-        {# Table-layout: fixed + percentage widths so the columns share the
-           modal width evenly without horizontal overflow. The 4 report
-           columns each get a consistent slice; the Team Member column
-           takes whatever's left. #}
-        <table id="reports-table" style="width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;">
-          <colgroup>
-            <col style="width:auto;"/>
-            <col style="width:90px;"/>
-            <col style="width:90px;"/>
-            <col style="width:90px;"/>
-            <col style="width:90px;"/>
-          </colgroup>
-          <thead>
-            <tr style="background:var(--eax-bg-2);">
-              <th style="padding:10px 14px;text-align:left;font-size:10px;color:var(--eax-subtle);letter-spacing:0.14em;text-transform:uppercase;font-weight:700;border-bottom:1px solid var(--eax-line);">Team Member</th>
-              <th style="padding:10px 6px;text-align:center;font-size:10px;color:var(--eax-subtle);letter-spacing:0.10em;text-transform:uppercase;font-weight:700;border-bottom:1px solid var(--eax-line);" title="Project Returns">Returns</th>
-              <th style="padding:10px 6px;text-align:center;font-size:10px;color:var(--eax-subtle);letter-spacing:0.10em;text-transform:uppercase;font-weight:700;border-bottom:1px solid var(--eax-line);" title="Ember Capital">Capital</th>
-              <th style="padding:10px 6px;text-align:center;font-size:10px;color:var(--eax-subtle);letter-spacing:0.10em;text-transform:uppercase;font-weight:700;border-bottom:1px solid var(--eax-line);" title="Operating Cashflows">Operations</th>
-              <th style="padding:10px 6px;text-align:center;font-size:10px;color:var(--eax-subtle);letter-spacing:0.10em;text-transform:uppercase;font-weight:700;border-bottom:1px solid var(--eax-line);" title="Loans &amp; Debt">Loans</th>
-            </tr>
-          </thead>
-          <tbody id="reports-tbody">
-            <tr><td colspan="5" style="padding:24px;text-align:center;color:var(--eax-subtle);font-size:12px;">Loading…</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--eax-line);font-size:11px;color:var(--eax-subtle);">
-        Subscriptions feed the monthly report email job. A user with no subscriptions stays on the team but receives no report email.
-      </div>
-    </div>
-  </div>
-</div>
+{# Legacy Team Management and Report Subscriptions modals used to live
+   here. They became full pages — see /admin/users (admin_users.html)
+   and /admin/reports (admin_reports.html). Cards in the Administrative
+   section above link to those pages directly. #}
 
 <script>
-async function openAdmin() {
-  document.getElementById('admin-modal').classList.add('open');
-  await refreshUserList();
-}
-
-/* ── Reports management ─────────────────────────────────────── */
-const REPORT_KEYS   = ['returns', 'ember_capital', 'operations', 'loans'];
-const REPORT_LABELS = {returns:'Project Returns', ember_capital:'Ember Capital', operations:'Operating Cashflows', loans:'Loans & Debt'};
-
-async function openReports() {
-  document.getElementById('reports-modal').classList.add('open');
-  await refreshReportsTable();
-}
-function closeReports() {
-  document.getElementById('reports-modal').classList.remove('open');
-}
-
-async function refreshReportsTable() {
-  const tbody = document.getElementById('reports-tbody');
-  try {
-    const res = await fetch('/api/admin/users');
-    const users = await res.json();
-    if (!Array.isArray(users) || users.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:var(--eax-subtle);font-size:12px;">No team members.</td></tr>';
-      return;
-    }
-    // Compact select that fits the 90px column without overflow
-    const selectStyle = 'background:var(--eax-surface);border:1px solid var(--eax-line-2);color:var(--eax-ink);border-radius:6px;padding:5px 4px 5px 8px;font-size:11px;font-family:inherit;cursor:pointer;outline:none;width:78px;text-transform:uppercase;font-weight:600;letter-spacing:0.04em;';
-    tbody.innerHTML = users.map(u => {
-      const fn = (u.first_name || '').trim();
-      const ln = (u.last_name  || '').trim();
-      const display = `${fn} ${ln}`.trim() || u.username;
-      const subs = u.report_subscriptions || {};
-      const cells = REPORT_KEYS.map(k => {
-        const v = subs[k] || '';
-        const opts = ['', 'pdf', 'excel'].map(o => {
-          const sel = o === v ? ' selected' : '';
-          const label = o === '' ? '—' : o.toUpperCase();
-          return `<option value="${o}"${sel}>${label}</option>`;
-        }).join('');
-        return `<td style="padding:8px 6px;text-align:center;border-bottom:1px solid var(--eax-line);">
-          <select style="${selectStyle}" data-uid="${u.id}" data-report="${k}" onchange="saveReportSub(this)">${opts}</select>
-        </td>`;
-      }).join('');
-      // Subscription count rendered as a tiny pill inline next to the
-      // user's name — saves a whole column in the table.
-      const subCount = Object.values(subs).filter(Boolean).length;
-      const pillBg = subCount === 0 ? 'var(--eax-bg-2)' : 'rgba(31, 122, 77, 0.14)';
-      const pillFg = subCount === 0 ? 'var(--eax-subtle)' : 'var(--eax-good)';
-      const pillText = subCount === 0 ? 'NONE' : `${subCount}`;
-      const pill = `<span class="rsub-pill" id="rsub-status-${u.id}" data-count="${subCount}" style="display:inline-block;margin-left:8px;padding:1px 8px;border-radius:999px;background:${pillBg};color:${pillFg};font-size:9.5px;font-weight:700;letter-spacing:0.08em;vertical-align:1px;">${pillText}</span>`;
-      return `<tr id="rsub-row-${u.id}">
-        <td style="padding:10px 14px;border-bottom:1px solid var(--eax-line);overflow:hidden;text-overflow:ellipsis;">
-          <div style="font-weight:600;color:var(--eax-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${display}${u.is_admin ? ' <span class="badge">Admin</span>' : ''}${pill}</div>
-          <div style="font-size:10.5px;color:var(--eax-subtle);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${u.email || 'no email on file'}</div>
-        </td>
-        ${cells}
-      </tr>`;
-    }).join('');
-  } catch (err) {
-    console.error('refreshReportsTable failed', err);
-    tbody.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:var(--eax-leave,#c56028);">Failed to load users.</td></tr>';
-  }
-}
-
-async function saveReportSub(selectEl) {
-  const uid = selectEl.dataset.uid;
-  const reportKey = selectEl.dataset.report;
-  // Collect the full row's current state and PUT all of it (replace-all).
-  const row = document.getElementById('rsub-row-' + uid);
-  const subs = {};
-  row.querySelectorAll('select[data-report]').forEach(s => {
-    if (s.value) subs[s.dataset.report] = s.value;
-  });
-  selectEl.disabled = true;
-  try {
-    const res = await fetch(`/api/admin/users/${uid}/reports`, {
-      method: 'PUT',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({subscriptions: subs}),
-    });
-    if (!res.ok) throw new Error('save failed: ' + res.status);
-    // Update the inline subscription-count pill
-    const subCount = Object.keys(subs).length;
-    const pillEl = document.getElementById('rsub-status-' + uid);
-    if (pillEl) {
-      pillEl.dataset.count = subCount;
-      pillEl.textContent   = subCount === 0 ? 'NONE' : `${subCount}`;
-      pillEl.style.background = subCount === 0 ? 'var(--eax-bg-2)' : 'rgba(31, 122, 77, 0.14)';
-      pillEl.style.color      = subCount === 0 ? 'var(--eax-subtle)' : 'var(--eax-good)';
-    }
-  } catch (err) {
-    console.error(err);
-    alert('Could not save subscription. Try again.');
-  } finally {
-    selectEl.disabled = false;
-  }
-}
-function closeAdmin() {
-  document.getElementById('admin-modal').classList.remove('open');
-}
-const PAGE_LABELS = {
-  mpc_underwriting: 'MPC Underwriting',
-  returns:          'Project Returns',
-  loans:            'Loans & Debt',
-  operations:       'Operating Revenues',
-  macro:            'Macro Data',
-  sales:            'Community Sales',
-  // 'reports' (binary PDF/Excel access) deliberately removed —
-  // superseded by the per-report Report Subscriptions modal.
-};
-async function refreshUserList() {
-  const res = await fetch('/api/admin/users');
-  if (!res.ok) return;
-  const users = await res.json();
-  document.getElementById('user-list').innerHTML = users.length === 0
-    ? '<div style="color:var(--eax-subtle);font-size:13px;">No users.</div>'
-    : users.map(u => {
-      const pa = u.page_access || {mpc_underwriting:true, returns:true, loans:true, operations:true, macro:true, sales:true};
-      const checks = Object.entries(PAGE_LABELS).map(([k,label]) =>
-        `<label><input type="checkbox" ${pa[k] ? 'checked' : ''} ${u.is_admin ? 'disabled' : ''}
-          onchange="toggleAccess(${u.id},'${k}',this.checked)">${label}</label>`
-      ).join('');
-      const optInBadge = u.report_opt_in
-        ? `<span class="badge">Reports ${(u.report_format||'pdf').toUpperCase()}</span>`
-        : `<span class="badge" style="background:transparent;color:var(--eax-subtle);border-color:var(--eax-line);">No Reports</span>`;
-      const btnStyle = `background:transparent;border:1px solid var(--eax-line-2);color:var(--eax-muted);border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;white-space:nowrap;font-family:inherit;transition:all .15s;`;
-      return `<div class="user-row">
-        <div style="display:flex;align-items:center;gap:8px;width:100%;">
-          <div class="uname">${u.username} ${u.is_admin ? '<span class="badge">Admin</span>' : ''} ${optInBadge}</div>
-          <button class="btn-del-user" onclick="deleteUser(${u.id},'${u.username}')" title="Remove">&times;</button>
-        </div>
-        <div style="display:flex;gap:6px;width:100%;">
-          <input type="text" id="fname-${u.id}" value="${u.first_name || ''}" placeholder="First name"
-            style="flex:1;background:var(--eax-bg);border:1px solid var(--eax-line-2);color:var(--eax-ink);border-radius:6px;padding:6px 9px;font-size:12px;font-family:inherit;outline:none;">
-          <input type="text" id="lname-${u.id}" value="${u.last_name || ''}" placeholder="Last name"
-            style="flex:1;background:var(--eax-bg);border:1px solid var(--eax-line-2);color:var(--eax-ink);border-radius:6px;padding:6px 9px;font-size:12px;font-family:inherit;outline:none;">
-          <button onclick="saveName(${u.id})" style="${btnStyle}" onmouseover="this.style.borderColor='var(--eax-good)';this.style.color='var(--eax-good)';" onmouseout="this.style.borderColor='var(--eax-line-2)';this.style.color='var(--eax-muted)';">Name</button>
-        </div>
-        <div style="display:flex;gap:6px;width:100%;">
-          <input type="email" id="email-${u.id}" value="${u.email || ''}" placeholder="Email address"
-            style="flex:1;background:var(--eax-bg);border:1px solid var(--eax-line-2);color:var(--eax-ink);border-radius:6px;padding:6px 9px;font-size:12px;font-family:inherit;outline:none;">
-          <button onclick="saveEmail(${u.id})" style="${btnStyle}" onmouseover="this.style.borderColor='var(--eax-accent)';this.style.color='var(--eax-accent)';" onmouseout="this.style.borderColor='var(--eax-line-2)';this.style.color='var(--eax-muted)';">Email</button>
-        </div>
-        ${u.is_admin ? '' : `<div class="user-access">${checks}</div>`}
-      </div>`;
-    }).join('');
-}
-async function toggleAccess(uid, page, enabled) {
-  const res = await fetch('/api/admin/users');
-  if (!res.ok) return;
-  const users = await res.json();
-  const user = users.find(u => u.id === uid);
-  if (!user) return;
-  const pa = user.page_access || {mpc_underwriting:true, returns:true, loans:true, operations:true, macro:true, sales:true};
-  pa[page] = enabled;
-  await fetch('/api/admin/users/' + uid + '/access', {
-    method: 'PUT', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({page_access: pa})
-  });
-}
-async function addUser() {
-  const username = document.getElementById('new-username').value.trim();
-  const password = document.getElementById('new-password').value;
-  const is_admin = document.getElementById('new-is-admin').checked;
-  const page_access = {
-    mpc_underwriting: document.getElementById('new-pa-mpc').checked,
-    returns:          document.getElementById('new-pa-returns').checked,
-    loans:            document.getElementById('new-pa-loans').checked,
-    operations:       document.getElementById('new-pa-operations').checked,
-    macro:            document.getElementById('new-pa-macro').checked,
-    sales:            document.getElementById('new-pa-sales').checked,
-  };
-  const email = document.getElementById('new-email').value.trim();
-  if (!username || !password) { alert('Username and password required'); return; }
-  const res = await fetch('/api/admin/users', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({username, password, email, is_admin, page_access})
-  });
-  const d = await res.json();
-  if (res.ok) {
-    document.getElementById('new-username').value = '';
-    document.getElementById('new-password').value = '';
-    document.getElementById('new-email').value = '';
-    document.getElementById('new-is-admin').checked = false;
-    ['mpc','returns','loans','operations','macro','sales'].forEach(k=>document.getElementById('new-pa-'+k).checked=true);
-    await refreshUserList();
-  } else { alert(d.error || 'Error creating user'); }
-}
-async function saveName(uid) {
-  const first_name = document.getElementById('fname-' + uid).value.trim();
-  const last_name = document.getElementById('lname-' + uid).value.trim();
-  await fetch('/api/admin/users/' + uid + '/name', {
-    method: 'PUT', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({first_name, last_name})
-  });
-}
-async function saveEmail(uid) {
-  const email = document.getElementById('email-' + uid).value.trim();
-  await fetch('/api/admin/users/' + uid + '/email', {
-    method: 'PUT', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({email})
-  });
-}
-async function deleteUser(id, name) {
-  if (!confirm('Remove user "' + name + '"?')) return;
-  const res = await fetch('/api/admin/users/' + id, {method:'DELETE'});
-  if (res.ok) await refreshUserList();
-  else alert('Error removing user');
-}
+/* The Team Management and Report Subscriptions JS used to live here.
+   Both moved into their dedicated page templates when those modals
+   became /admin/users and /admin/reports — see admin_users.html and
+   admin_reports.html. Project Library and Account modals retain
+   their JS in this file. */
 
 /* ─────────── Project Library (image + metadata uploader) ─────────── */
 
@@ -1269,49 +953,8 @@ async function saveReportSettings() {
   if (d.ok) { msg.textContent='Preferences saved.'; msg.style.color='var(--eax-good)'; }
   else      { msg.textContent=d.error||'Failed to save.'; msg.style.color='var(--eax-bad)'; }
 }
-async function sendReportsNow() {
-  const status = document.getElementById('send-reports-status');
-  status.textContent = 'Sending… (this can take a minute)';
-  status.style.color = 'var(--eax-muted)';
-  try {
-    const res = await fetch('/api/admin/send-reports-now', {method:'POST'});
-    const d = await res.json();
-    if (!d.ok) {
-      status.textContent = d.error || 'Error';
-      status.style.color = 'var(--eax-bad)';
-      return;
-    }
-    const count = d.count || 0;
-    const diag  = Array.isArray(d.diag) ? d.diag : [];
-    const sent     = diag.filter(x => x.status === 'sent');
-    const skipped  = diag.filter(x => x.status !== 'sent');
-
-    let summary = `Sent to ${count} recipient${count !== 1 ? 's' : ''}.`;
-    if (skipped.length) {
-      summary += ` ${skipped.length} skipped.`;
-    }
-    // Per-recipient detail panel — clearer than digging through Railway logs
-    let detail = '<div style="margin-top:10px;padding:10px 12px;background:var(--eax-bg);border:1px solid var(--eax-line);border-radius:6px;font-size:11px;line-height:1.6;color:var(--eax-ink);">';
-    if (sent.length) {
-      detail += '<div style="font-weight:700;color:var(--eax-good);margin-bottom:4px;">Sent</div>';
-      sent.forEach(x => {
-        detail += `<div>· ${x.user} <span style="color:var(--eax-subtle)">&lt;${x.email}&gt;</span> — ${(x.reports || []).join(', ') || '(no attachments)'}</div>`;
-      });
-    }
-    if (skipped.length) {
-      detail += '<div style="font-weight:700;color:var(--eax-bad);margin:6px 0 4px;">Skipped / Failed</div>';
-      skipped.forEach(x => {
-        detail += `<div>· ${x.user} <span style="color:var(--eax-subtle)">&lt;${x.email}&gt;</span> — ${x.reason || x.status}</div>`;
-      });
-    }
-    detail += '</div>';
-    status.innerHTML = `<span style="color:var(--eax-good);font-weight:600">${summary}</span>${detail}`;
-    status.style.color = '';
-  } catch(e) {
-    status.textContent = 'Request failed: ' + (e && e.message || e);
-    status.style.color = 'var(--eax-bad)';
-  }
-}
+/* sendReportsNow moved to admin_users.html alongside the rest of the
+   team-management JS. */
 </script>
 </body>
 </html>
