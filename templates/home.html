@@ -229,6 +229,13 @@
     box-shadow:var(--eax-shadow-card);
   }
   .dash-card.disabled{opacity:0.5;cursor:default;pointer-events:none;}
+  /* Reset <button> defaults so a button.dash-card looks identical to an
+     anchor.dash-card. Used in the Administrative section where Manage
+     and Reports open modals (action) rather than navigate (link). */
+  button.dash-card{
+    font-family:inherit;font-size:inherit;text-align:left;
+    background:var(--eax-bg-2);cursor:pointer;width:100%;
+  }
   .dash-card-top{
     display:flex;align-items:center;justify-content:space-between;
     margin-bottom:10px;
@@ -431,18 +438,13 @@
   <div class="topbar-right">
     <span id="topbar-date">—</span>
     <span class="topbar-divider"></span>
+    {# Library stays in the topbar — it's a project-data utility distinct
+       from the admin functions (Manage / Reports / Team Activity) which
+       have moved to the Administrative section below the Dashboards. #}
     {% if is_admin %}
     <button class="admin-btn" onclick="openProjectLibrary()" title="Per-project images and metadata for the returns PDF">
       <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" stroke-width="1.8"/><path d="M3 16l5-5 4 4 3-3 6 6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9" cy="9" r="1.5" stroke-width="1.8"/></svg>
       Library
-    </button>
-    <button class="admin-btn" onclick="openAdmin()" title="Manage users">
-      <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2m22-4l-4.5 4.5M18 13l4.5-4.5M15 3a4 4 0 110 8 4 4 0 010-8z" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      Manage
-    </button>
-    <button class="admin-btn" onclick="openReports()" title="Manage report subscriptions per team member">
-      <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 17v-6h13M9 17H4a1 1 0 01-1-1V8a1 1 0 011-1h5m0 10h13m-7-7v6m-3-3h6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      Reports
     </button>
     {% endif %}
     <button class="user-chip" onclick="openAcct()" aria-label="Account settings">
@@ -542,6 +544,72 @@
     {% endfor %}
   </div>
 </section>
+
+{# ───────── Administrative (admin-only) ─────────
+   Sits below the Dashboards section. Hosts what used to live in the
+   topbar (Manage Team, Reports) plus the new Team Activity dashboard.
+   Cards reuse the .dash-card visual language so the section feels like
+   a peer of the dashboards, just for admin functions. #}
+{% if is_admin %}
+<section class="section">
+  <div class="section-head">
+    <div class="section-eyebrow">Administrative</div>
+    <div class="section-counter">03 / 03</div>
+  </div>
+  <div class="dash-grid">
+    <button class="dash-card" type="button" onclick="openAdmin()">
+      <div class="dash-card-top">
+        <span class="dash-eyebrow">Admin</span>
+        <span class="dash-deco">
+          <svg width="22" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2m13-9a4 4 0 110-8 4 4 0 010 8zm9 9v-2a4 4 0 00-3-3.87m-4-12a4 4 0 010 7.75" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+      </div>
+      <div class="dash-title">Manage Team</div>
+      <div class="dash-desc">Add or remove team members, set page access, manage admin privileges.</div>
+      <div class="dash-foot">
+        <span class="dash-upd">USERS &amp; ACCESS</span>
+        <span class="dash-open">Open
+          <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+      </div>
+    </button>
+
+    <button class="dash-card" type="button" onclick="openReports()">
+      <div class="dash-card-top">
+        <span class="dash-eyebrow">Admin</span>
+        <span class="dash-deco">
+          <svg width="22" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 17v-6h13M9 17H4a1 1 0 01-1-1V8a1 1 0 011-1h5m0 10h13m-7-7v6m-3-3h6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+      </div>
+      <div class="dash-title">Report Subscriptions</div>
+      <div class="dash-desc">Choose which monthly reports each team member receives by email, in PDF or Excel.</div>
+      <div class="dash-foot">
+        <span class="dash-upd">PER-USER DELIVERY</span>
+        <span class="dash-open">Open
+          <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+      </div>
+    </button>
+
+    <a class="dash-card" href="/admin/activity">
+      <div class="dash-card-top">
+        <span class="dash-eyebrow">Admin</span>
+        <span class="dash-deco">
+          <svg width="22" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l3-3 4 4 5-6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+      </div>
+      <div class="dash-title">Team Activity</div>
+      <div class="dash-desc">See who's signing in and which dashboards they actually use, with a 14-day trend per team member.</div>
+      <div class="dash-foot">
+        <span class="dash-upd">SIGN-INS &amp; PAGE VIEWS</span>
+        <span class="dash-open">Open
+          <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+      </div>
+    </a>
+  </div>
+</section>
+{% endif %}
 
 {# ───────── Admin utilities (admin-only) ───────── #}
 {% if is_admin %}

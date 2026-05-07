@@ -64,6 +64,22 @@ def _do_macro_refresh():
 # Schedule: 1st of every month at 02:00 UTC
 _scheduler = BackgroundScheduler(daemon=True)
 _scheduler.add_job(_do_macro_refresh, CronTrigger(day=1, hour=2, minute=0), id="macro_monthly")
+
+def _purge_old_activity():
+    """Delete activity_log rows older than 12 months. Runs daily.
+    Bounded retention keeps the table small (small team × ~50 page
+    views/day = a few hundred thousand rows max) and matches the
+    privacy intent of internal-only analytics."""
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM activity_log WHERE ts < NOW() - INTERVAL '12 months'")
+        conn.commit()
+        cur.close(); conn.close()
+    except Exception as e:
+        print(f"[activity_purge] ERROR: {e}", flush=True)
+
+_scheduler.add_job(_purge_old_activity, CronTrigger(hour=3, minute=15), id="activity_retention_daily")
 _scheduler.start()
 
 # Auto-initialize DB on first request
@@ -135,6 +151,22 @@ def init_db():
             uploaded_by INTEGER REFERENCES users(id),
             uploaded_at TIMESTAMP DEFAULT NOW()
         );
+        -- Per-user activity ledger powering the admin Team Activity
+        -- dashboard. Captures successful logins, logouts, and page views
+        -- (no IPs, no user agents — internal-team usage analytics only).
+        -- Username is denormalized so the dashboard keeps working even
+        -- if a user is renamed or deleted later. Retention is 12 months,
+        -- enforced by a daily cleanup job in the BackgroundScheduler.
+        CREATE TABLE IF NOT EXISTS activity_log (
+            id BIGSERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            username TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            path TEXT,
+            ts TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS activity_log_user_ts ON activity_log (user_id, ts DESC);
+        CREATE INDEX IF NOT EXISTS activity_log_ts ON activity_log (ts DESC);
     """)
     # Backfill portfolio access for existing users
     cur.execute("UPDATE users SET page_access = page_access || '{\"portfolio\": true}'::jsonb WHERE page_access->>'portfolio' IS NULL")
@@ -190,6 +222,62 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated
 
+# ─── ACTIVITY TRACKING ────────────────────────────────────────────────────────
+# Page-view + login/logout capture for the admin Team Activity dashboard.
+# Per spec: user-level only (no IPs, no user agents), 12-month retention.
+
+# Path prefixes that should NEVER be logged: static assets, AJAX/JSON
+# endpoints, healthchecks, internal Flask routes. Everything that's a
+# real "I am looking at this dashboard" page view falls through to the
+# logger.
+_ACTIVITY_DENY_PREFIXES = (
+    "/static/", "/api/", "/health", "/favicon",
+    "/login", "/logout",  # captured explicitly so we record success only
+)
+# File extensions that indicate downloads / asset fetches rather than
+# page views. We still log the visit to the page that triggered the
+# download — the download URL itself is noise.
+_ACTIVITY_DENY_SUFFIXES = (".json", ".css", ".js", ".ico", ".png", ".svg",
+                            ".jpg", ".jpeg", ".gif", ".woff", ".woff2", ".map")
+
+def _log_activity(event_type, path=None, user_id=None, username=None):
+    """Insert one row into activity_log. Swallows all errors — logging
+    failure must never break a real request."""
+    try:
+        uid = user_id if user_id is not None else session.get("user_id")
+        uname = username or session.get("username")
+        if not uid or not uname:
+            return
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO activity_log (user_id, username, event_type, path) "
+            "VALUES (%s, %s, %s, %s)",
+            (uid, uname, event_type, path)
+        )
+        conn.commit()
+        cur.close(); conn.close()
+    except Exception as e:
+        # Don't let a logging hiccup take down a page load.
+        print(f"[activity] log failed ({event_type}): {e}", flush=True)
+
+@app.before_request
+def _capture_page_view():
+    """Log GET requests to authenticated dashboard pages. Login and
+    logout are captured by their own handlers; POSTs and AJAX traffic
+    are intentionally ignored to keep the log focused on 'who looked at
+    what'."""
+    if request.method != "GET":
+        return
+    if not session.get("user_id"):
+        return
+    p = request.path or ""
+    if p.startswith(_ACTIVITY_DENY_PREFIXES):
+        return
+    if p.endswith(_ACTIVITY_DENY_SUFFIXES):
+        return
+    _log_activity("page_view", path=p)
+
 # ─── AUTH ROUTES ─────────────────────────────────────────────────────────────
 @app.route("/health")
 def health():
@@ -214,12 +302,19 @@ def login():
             fn = (user.get("first_name") or "").strip()
             ln = (user.get("last_name") or "").strip()
             session["display_name"] = f"{fn} {ln}".strip() or user["username"]
+            _log_activity("login", user_id=user["id"], username=user["username"])
             return redirect(url_for("home"))
         error = "Invalid username or password."
     return render_template("login.html", error=error)
 
 @app.route("/logout")
 def logout():
+    # Read identity off the session before clearing it so the logout
+    # event is attributed to the right user.
+    uid = session.get("user_id")
+    uname = session.get("username")
+    if uid and uname:
+        _log_activity("logout", user_id=uid, username=uname)
     session.clear()
     return redirect(url_for("login"))
 
@@ -684,6 +779,216 @@ def recalculate(pid):
                 (json.dumps(outputs), pid))
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True, "outputs": outputs})
+
+# ─── ADMIN: TEAM ACTIVITY DASHBOARD ───────────────────────────────────────────
+# Friendly labels for the paths the dashboard surfaces. Anything not in
+# this map falls back to the raw path so unknown routes (admin pages,
+# nested views) still render a readable row.
+_ACTIVITY_PATH_LABELS = {
+    "/":              "MPC Underwriting",
+    "/home":          "Home",
+    "/returns":       "Project Returns",
+    "/loans":         "Loans & Debt",
+    "/operations":    "Operating Revenues",
+    "/ember-capital": "Ember Capital",
+    "/macro":         "Macro Data",
+    "/sales":         "Community Sales",
+    "/portfolio":     "Portfolio",
+    "/admin/activity":"Team Activity",
+}
+
+def _activity_label(path):
+    if not path:
+        return "—"
+    if path in _ACTIVITY_PATH_LABELS:
+        return _ACTIVITY_PATH_LABELS[path]
+    # /capital/report.pdf → "Capital · Report" style fallback for sub-pages
+    head = path.split("/")[1] if "/" in path else path
+    if head in {"capital", "ember-capital"}:
+        return "Ember Capital"
+    return path
+
+@app.route("/admin/activity")
+@login_required
+def admin_activity():
+    """Team Activity dashboard. Per-user roll-up of logins and page
+    views over the last 30 days, with a 14-day daily sparkline. Admin
+    only (we serve a 403-style page rather than redirecting so a
+    non-admin landing here gets a clear message)."""
+    if not session.get("is_admin"):
+        return render_template("admin_activity.html", forbidden=True), 403
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # ── KPI band ──
+    # Active users (7d): distinct user_ids with any event in last 7 days.
+    cur.execute("""
+        SELECT COUNT(DISTINCT user_id) AS n
+        FROM activity_log
+        WHERE ts >= NOW() - INTERVAL '7 days' AND user_id IS NOT NULL
+    """)
+    active_7d = (cur.fetchone() or {}).get("n") or 0
+
+    # Total logins (7d): how many sign-in events landed in the last week.
+    cur.execute("""
+        SELECT COUNT(*) AS n
+        FROM activity_log
+        WHERE event_type = 'login' AND ts >= NOW() - INTERVAL '7 days'
+    """)
+    logins_7d = (cur.fetchone() or {}).get("n") or 0
+
+    # Most-visited page (7d).
+    cur.execute("""
+        SELECT path, COUNT(*) AS n
+        FROM activity_log
+        WHERE event_type = 'page_view' AND ts >= NOW() - INTERVAL '7 days'
+              AND path IS NOT NULL
+        GROUP BY path
+        ORDER BY n DESC
+        LIMIT 1
+    """)
+    top_row = cur.fetchone()
+    top_page_label = _activity_label(top_row["path"]) if top_row else "—"
+    top_page_count = top_row["n"] if top_row else 0
+
+    # Total page views (7d) for the avg-views-per-active-user KPI.
+    cur.execute("""
+        SELECT COUNT(*) AS n
+        FROM activity_log
+        WHERE event_type = 'page_view' AND ts >= NOW() - INTERVAL '7 days'
+    """)
+    views_7d = (cur.fetchone() or {}).get("n") or 0
+    avg_views_per_user = round(views_7d / active_7d, 1) if active_7d else 0
+
+    # ── Per-user roll-up ──
+    # Pull every active user, plus anyone who logged in in the last 30
+    # days even if their account was later removed (LEFT JOIN so the row
+    # survives a deleted user; username comes from the denormalized
+    # column on activity_log).
+    cur.execute("""
+        SELECT u.id AS user_id, u.username, u.is_admin,
+               COALESCE(u.first_name, '') AS first_name,
+               COALESCE(u.last_name, '')  AS last_name
+        FROM users u
+        ORDER BY u.username
+    """)
+    user_rows = cur.fetchall()
+
+    # Aggregate activity counts per user in one round-trip.
+    cur.execute("""
+        SELECT user_id,
+               MAX(ts) AS last_seen,
+               COUNT(*) FILTER (WHERE event_type = 'login'
+                                AND ts >= NOW() - INTERVAL '7 days')  AS logins_7d,
+               COUNT(*) FILTER (WHERE event_type = 'login'
+                                AND ts >= NOW() - INTERVAL '30 days') AS logins_30d,
+               COUNT(*) FILTER (WHERE event_type = 'page_view'
+                                AND ts >= NOW() - INTERVAL '7 days')  AS views_7d,
+               COUNT(*) FILTER (WHERE event_type = 'page_view'
+                                AND ts >= NOW() - INTERVAL '30 days') AS views_30d
+        FROM activity_log
+        WHERE user_id IS NOT NULL
+        GROUP BY user_id
+    """)
+    by_user = {r["user_id"]: r for r in cur.fetchall()}
+
+    # 14-day daily page-view counts per user for the row sparkline.
+    cur.execute("""
+        SELECT user_id,
+               DATE_TRUNC('day', ts)::date AS d,
+               COUNT(*) AS n
+        FROM activity_log
+        WHERE event_type = 'page_view'
+          AND ts >= (NOW() - INTERVAL '14 days')::date
+          AND user_id IS NOT NULL
+        GROUP BY user_id, d
+    """)
+    spark_rows = cur.fetchall()
+    today = datetime.date.today()
+    days = [today - datetime.timedelta(days=13 - i) for i in range(14)]
+    spark_by_user = {}
+    for r in spark_rows:
+        d = r["d"]
+        if hasattr(d, "date"):
+            d = d.date()
+        spark_by_user.setdefault(r["user_id"], {})[d] = int(r["n"])
+
+    # Top 3 visited paths per user (last 30d). Single query, partition
+    # in memory so we only hit Postgres once.
+    cur.execute("""
+        SELECT user_id, path, COUNT(*) AS n
+        FROM activity_log
+        WHERE event_type = 'page_view'
+          AND ts >= NOW() - INTERVAL '30 days'
+          AND user_id IS NOT NULL
+          AND path IS NOT NULL
+        GROUP BY user_id, path
+    """)
+    top_paths = {}
+    for r in cur.fetchall():
+        top_paths.setdefault(r["user_id"], []).append((r["path"], r["n"]))
+    for uid in top_paths:
+        top_paths[uid].sort(key=lambda t: -t[1])
+
+    cur.close(); conn.close()
+
+    # Build the rows the template renders.
+    rows = []
+    for u in user_rows:
+        agg = by_user.get(u["user_id"]) or {}
+        last_seen = agg.get("last_seen")
+        if last_seen:
+            # naive UTC -> local date string. We're going for "Mar 5, 14:32"
+            # readability not microsecond accuracy.
+            last_seen_label = last_seen.strftime("%b %-d, %H:%M") if hasattr(last_seen, "strftime") else str(last_seen)
+        else:
+            last_seen_label = "Never"
+        spark_map = spark_by_user.get(u["user_id"], {})
+        spark_values = [spark_map.get(d, 0) for d in days]
+        spark_svg = _ops_sparkline(spark_values, "#F25929", bold=True) if any(spark_values) else ""
+        top3 = top_paths.get(u["user_id"], [])[:3]
+        top3_labels = [{"label": _activity_label(p), "n": n} for p, n in top3]
+        display = (f"{u['first_name']} {u['last_name']}".strip()) or u["username"]
+        rows.append({
+            "user_id":     u["user_id"],
+            "username":    u["username"],
+            "display":     display,
+            "is_admin":    u["is_admin"],
+            "last_seen":   last_seen_label,
+            "logins_7d":   int(agg.get("logins_7d") or 0),
+            "logins_30d":  int(agg.get("logins_30d") or 0),
+            "views_7d":    int(agg.get("views_7d") or 0),
+            "views_30d":   int(agg.get("views_30d") or 0),
+            "top_pages":   top3_labels,
+            "spark_svg":   spark_svg,
+            "active":      bool(spark_values and any(spark_values)),
+        })
+    # Sort: most-active in last 7d first, then by name. Inactive users
+    # bubble to the bottom so the admin sees who's lapsing at a glance.
+    rows.sort(key=lambda r: (-r["views_7d"], r["display"].lower()))
+
+    kpis = [
+        {"label": "Active Users",       "val": str(active_7d),
+         "sub":   "with any activity · last 7d"},
+        {"label": "Total Logins",       "val": str(logins_7d),
+         "sub":   "sign-ins · last 7d"},
+        {"label": "Most-Visited Page",  "val": top_page_label,
+         "sub":   f"{top_page_count} views · last 7d"},
+        {"label": "Avg Views / User",   "val": str(avg_views_per_user),
+         "sub":   "page views per active user · last 7d"},
+    ]
+
+    return render_template(
+        "admin_activity.html",
+        forbidden=False,
+        kpis=kpis,
+        rows=rows,
+        username=session.get("username"),
+        display_name=session.get("display_name", session.get("username")),
+        is_admin=True,
+        generated_at=datetime.datetime.now().strftime("%b %-d, %Y · %H:%M"),
+    )
 
 # ─── ADMIN API ────────────────────────────────────────────────────────────────
 @app.route("/api/admin/users", methods=["GET"])
