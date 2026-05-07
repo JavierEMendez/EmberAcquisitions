@@ -808,6 +808,41 @@ def _activity_label(path):
         return "Ember Capital"
     return path
 
+@app.route("/admin/users")
+@login_required
+def admin_users_page():
+    """Manage Team — full-page replacement for the legacy modal. The
+    page hits the existing /api/admin/users endpoints over fetch, so
+    no API changes were needed; this is presentation only."""
+    pa = session.get("page_access") or {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
+    if not session.get("is_admin"):
+        return render_template("admin_users.html", forbidden=True, is_admin=False, page_access=pa), 403
+    return render_template(
+        "admin_users.html",
+        forbidden=False,
+        username=session.get("username"),
+        display_name=session.get("display_name", session.get("username")),
+        is_admin=True,
+        page_access=pa,
+    )
+
+@app.route("/admin/reports")
+@login_required
+def admin_reports_page():
+    """Report Subscriptions — full-page replacement for the legacy
+    modal. Per-user × per-report dropdown matrix, autosaves on change."""
+    pa = session.get("page_access") or {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
+    if not session.get("is_admin"):
+        return render_template("admin_reports.html", forbidden=True, is_admin=False, page_access=pa), 403
+    return render_template(
+        "admin_reports.html",
+        forbidden=False,
+        username=session.get("username"),
+        display_name=session.get("display_name", session.get("username")),
+        is_admin=True,
+        page_access=pa,
+    )
+
 @app.route("/admin/activity")
 @login_required
 def admin_activity():
@@ -816,7 +851,8 @@ def admin_activity():
     only (we serve a 403-style page rather than redirecting so a
     non-admin landing here gets a clear message)."""
     if not session.get("is_admin"):
-        return render_template("admin_activity.html", forbidden=True), 403
+        pa = session.get("page_access") or {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
+        return render_template("admin_activity.html", forbidden=True, is_admin=False, page_access=pa), 403
 
     conn = get_db()
     cur = conn.cursor()
@@ -979,6 +1015,7 @@ def admin_activity():
          "sub":   "page views per active user · last 7d"},
     ]
 
+    pa = session.get("page_access") or {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
     return render_template(
         "admin_activity.html",
         forbidden=False,
@@ -987,6 +1024,7 @@ def admin_activity():
         username=session.get("username"),
         display_name=session.get("display_name", session.get("username")),
         is_admin=True,
+        page_access=pa,
         generated_at=datetime.datetime.now().strftime("%b %-d, %Y · %H:%M"),
     )
 

@@ -1,0 +1,234 @@
+{# ============================================================
+   Ember · Report Subscriptions (admin) — page template.
+   Replaces the legacy #reports-modal that used to live in
+   home.html. Per-team-member × per-report dropdown grid; each
+   change PUTs to /api/admin/users/<id>/reports.
+   ============================================================ #}
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Report Subscriptions · Ember Residential</title>
+<link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="/static/theme.css"/>
+<script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
+<style>
+  /* ── Shell ── */
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;}
+  body{background:var(--eax-bg);color:var(--eax-ink);font-family:'Plus Jakarta Sans',system-ui,sans-serif;overflow:hidden;}
+  #app{display:flex;height:100vh;overflow:hidden;}
+  #sidebar{width:240px;background:var(--eax-bg-2);border-right:1px solid var(--eax-line);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;}
+  .sidebar-logo{padding:16px 18px 14px;border-bottom:1px solid var(--eax-line)}
+  .logo-img{width:100%;max-width:160px;height:auto;display:block;margin:0 auto}
+  img.logo-light{display:none;}
+  [data-theme="light"] img.logo-dark{display:none;}
+  [data-theme="light"] img.logo-light{display:block;margin:0 auto;}
+  .logo-sub{font-size:10px;color:var(--eax-subtle);letter-spacing:0.2em;text-transform:uppercase;margin-top:8px;text-align:center;font-weight:700}
+  .sidebar-section{padding:8px 16px 4px;font-size:9px;line-height:1.2;color:var(--eax-subtle);letter-spacing:0.22em;text-transform:uppercase;margin-top:8px;font-weight:700}
+  .sidebar-item{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;border-radius:8px;margin:1px 8px;transition:all .15s;color:var(--eax-muted);font-size:13px;line-height:1.2;text-decoration:none;font-weight:500}
+  .sidebar-item:hover{background:var(--eax-accent-soft);color:var(--eax-ink);text-decoration:none}
+  .sidebar-item.active{background:var(--eax-surface);color:var(--eax-ink);font-weight:600;border:1px solid var(--eax-line);position:relative}
+  .sidebar-item.active::before{content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:2px;background:var(--eax-accent);border-radius:2px}
+  .sidebar-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0}
+  .sidebar-item.active .icon{opacity:1;color:var(--eax-accent)}
+  #main-content{flex:1;overflow:auto;min-width:0;padding:32px 36px 60px;}
+
+  /* ── Page header ── */
+  .pg-eyebrow{font-size:10px;letter-spacing:0.24em;color:var(--eax-accent);font-weight:600;text-transform:uppercase;margin-bottom:6px;}
+  .pg-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:300;font-size:30px;letter-spacing:-0.01em;color:var(--eax-ink-2);margin-bottom:6px;}
+  .pg-sub{font-size:13px;color:var(--eax-muted);max-width:760px;line-height:1.55;}
+
+  /* ── Subscription matrix panel ── */
+  .panel{background:var(--eax-surface);border:1px solid var(--eax-line);border-radius:10px;padding:18px 20px 16px;margin-top:24px;}
+  .panel-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px;}
+  .panel-h{font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;font-size:13px;color:var(--eax-ink-2);letter-spacing:0.04em;text-transform:uppercase;}
+  .panel-s{font-size:10.5px;color:var(--eax-subtle);font-family:'JetBrains Mono',ui-monospace,monospace;letter-spacing:0.06em;}
+
+  .reports-table-wrap{border:1px solid var(--eax-line);border-radius:8px;overflow:hidden;}
+  table.reports-grid{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;}
+  table.reports-grid th{
+    padding:10px 14px;text-align:left;font-size:10px;color:var(--eax-subtle);
+    letter-spacing:0.14em;text-transform:uppercase;font-weight:700;
+    border-bottom:1px solid var(--eax-line);background:var(--eax-bg-2);
+  }
+  table.reports-grid th.col-report{padding:10px 6px;text-align:center;letter-spacing:0.10em;}
+  table.reports-grid td{
+    padding:10px 14px;border-bottom:1px solid var(--eax-line-2);overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  table.reports-grid td.cell-report{padding:8px 6px;text-align:center;}
+  table.reports-grid tr:last-child td{border-bottom:none;}
+  table.reports-grid select{
+    background:var(--eax-surface);border:1px solid var(--eax-line-2);color:var(--eax-ink);
+    border-radius:6px;padding:5px 4px 5px 8px;font-size:11px;font-family:inherit;cursor:pointer;
+    outline:none;width:78px;text-transform:uppercase;font-weight:600;letter-spacing:0.04em;
+  }
+  .badge{
+    font-size:10px;background:var(--eax-accent-soft);color:var(--eax-accent);
+    border:1px solid rgba(242,89,41,.25);border-radius:4px;padding:2px 6px;margin-left:4px;
+  }
+  .rsub-pill{
+    display:inline-block;margin-left:8px;padding:1px 8px;border-radius:999px;
+    font-size:9.5px;font-weight:700;letter-spacing:0.08em;vertical-align:1px;
+  }
+
+  .panel-foot-note{
+    margin-top:14px;padding-top:12px;border-top:1px solid var(--eax-line);
+    font-size:11px;color:var(--eax-subtle);
+  }
+
+  /* ── Forbidden state ── */
+  .forbidden{
+    max-width:520px;margin:120px auto;text-align:center;padding:32px;
+    background:var(--eax-surface);border:1px solid var(--eax-line);border-radius:12px;
+  }
+  .forbidden h2{font-weight:500;font-size:18px;color:var(--eax-ink-2);margin-bottom:8px;}
+  .forbidden p{font-size:13px;color:var(--eax-muted);line-height:1.5;}
+  .forbidden a{color:var(--eax-accent);text-decoration:none;font-weight:600;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  {% set admin_subtitle = "Report Subs" %}
+  {% set admin_active   = "reports" %}
+  {% include "_partials/_admin_sidebar.html" %}
+
+  <div id="main-content">
+    {% if forbidden %}
+      <div class="forbidden">
+        <h2>Admin access required</h2>
+        <p>Report Subscriptions is only available to admin users. <a href="/home">Back to home</a>.</p>
+      </div>
+    {% else %}
+      <div class="pg-eyebrow">Administrative</div>
+      <h1 class="pg-title">Report Subscriptions</h1>
+      <p class="pg-sub">
+        Choose which monthly reports each team member receives by email — and in what format.
+        Pick "—" to opt them out of a specific report. Changes save automatically.
+      </p>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-h">Per-User Subscriptions</div>
+          <div class="panel-s">PDF or Excel · auto-saved</div>
+        </div>
+        <div class="reports-table-wrap">
+          <table id="reports-table" class="reports-grid">
+            <colgroup>
+              <col style="width:auto;"/>
+              <col style="width:90px;"/>
+              <col style="width:90px;"/>
+              <col style="width:90px;"/>
+              <col style="width:90px;"/>
+            </colgroup>
+            <thead>
+              <tr>
+                <th>Team Member</th>
+                <th class="col-report" title="Project Returns">Returns</th>
+                <th class="col-report" title="Ember Capital">Capital</th>
+                <th class="col-report" title="Operating Cashflows">Operations</th>
+                <th class="col-report" title="Loans &amp; Debt">Loans</th>
+              </tr>
+            </thead>
+            <tbody id="reports-tbody">
+              <tr><td colspan="5" style="padding:24px;text-align:center;color:var(--eax-subtle);font-size:12px;">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="panel-foot-note">
+          Subscriptions feed the monthly report email job. A user with no subscriptions stays on the team but receives no report email.
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if not forbidden %}
+<script>
+const REPORT_KEYS   = ['returns', 'ember_capital', 'operations', 'loans'];
+
+async function refreshReportsTable() {
+  const tbody = document.getElementById('reports-tbody');
+  try {
+    const res = await fetch('/api/admin/users');
+    const users = await res.json();
+    if (!Array.isArray(users) || users.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:var(--eax-subtle);font-size:12px;">No team members.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = users.map(u => {
+      const fn = (u.first_name || '').trim();
+      const ln = (u.last_name  || '').trim();
+      const display = `${fn} ${ln}`.trim() || u.username;
+      const subs = u.report_subscriptions || {};
+      const cells = REPORT_KEYS.map(k => {
+        const v = subs[k] || '';
+        const opts = ['', 'pdf', 'excel'].map(o => {
+          const sel = o === v ? ' selected' : '';
+          const label = o === '' ? '—' : o.toUpperCase();
+          return `<option value="${o}"${sel}>${label}</option>`;
+        }).join('');
+        return `<td class="cell-report">
+          <select data-uid="${u.id}" data-report="${k}" onchange="saveReportSub(this)">${opts}</select>
+        </td>`;
+      }).join('');
+      const subCount = Object.values(subs).filter(Boolean).length;
+      const pillBg = subCount === 0 ? 'var(--eax-bg-2)' : 'rgba(31, 122, 77, 0.14)';
+      const pillFg = subCount === 0 ? 'var(--eax-subtle)' : 'var(--eax-good)';
+      const pillText = subCount === 0 ? 'NONE' : `${subCount}`;
+      const pill = `<span class="rsub-pill" id="rsub-status-${u.id}" data-count="${subCount}" style="background:${pillBg};color:${pillFg};">${pillText}</span>`;
+      return `<tr id="rsub-row-${u.id}">
+        <td>
+          <div style="font-weight:600;color:var(--eax-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${display}${u.is_admin ? ' <span class="badge">Admin</span>' : ''}${pill}</div>
+          <div style="font-size:10.5px;color:var(--eax-subtle);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${u.email || 'no email on file'}</div>
+        </td>
+        ${cells}
+      </tr>`;
+    }).join('');
+  } catch (err) {
+    console.error('refreshReportsTable failed', err);
+    tbody.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:var(--eax-bad);">Failed to load users.</td></tr>';
+  }
+}
+
+async function saveReportSub(selectEl) {
+  const uid = selectEl.dataset.uid;
+  const row = document.getElementById('rsub-row-' + uid);
+  const subs = {};
+  row.querySelectorAll('select[data-report]').forEach(s => {
+    if (s.value) subs[s.dataset.report] = s.value;
+  });
+  selectEl.disabled = true;
+  try {
+    const res = await fetch(`/api/admin/users/${uid}/reports`, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({subscriptions: subs}),
+    });
+    if (!res.ok) throw new Error('save failed: ' + res.status);
+    const subCount = Object.keys(subs).length;
+    const pillEl = document.getElementById('rsub-status-' + uid);
+    if (pillEl) {
+      pillEl.dataset.count = subCount;
+      pillEl.textContent   = subCount === 0 ? 'NONE' : `${subCount}`;
+      pillEl.style.background = subCount === 0 ? 'var(--eax-bg-2)' : 'rgba(31, 122, 77, 0.14)';
+      pillEl.style.color      = subCount === 0 ? 'var(--eax-subtle)' : 'var(--eax-good)';
+    }
+  } catch (err) {
+    console.error(err);
+    alert('Could not save subscription. Try again.');
+  } finally {
+    selectEl.disabled = false;
+  }
+}
+
+refreshReportsTable();
+</script>
+{% endif %}
+</body>
+</html>

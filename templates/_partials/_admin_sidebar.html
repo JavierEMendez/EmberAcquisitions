@@ -1,0 +1,53 @@
+{# ─────────────────────────────────────────────────────────────────
+   Sidebar partial shared by the three admin pages:
+       /admin/users      (admin_users.html)
+       /admin/reports    (admin_reports.html)
+       /admin/activity   (admin_activity.html)
+
+   Caller contract — set these BEFORE including:
+     {% set admin_subtitle = "Team Activity" %}        # logo sub-text
+     {% set admin_active   = "activity" %}             # one of: users | reports | activity
+
+   Apps & Dashboards links are gated by `page_access` so the sidebar
+   shape matches what the user can actually open from their account.
+   ───────────────────────────────────────────────────────────────── #}
+<nav id="sidebar">
+  <div class="sidebar-logo">
+    <img src="/static/img/ember_logo.png"        alt="Ember" class="logo-img logo-dark">
+    <img src="/static/img/ember_logo_light.png"  alt="Ember" class="logo-img logo-light">
+    <div class="logo-sub">{{ admin_subtitle or "Admin" }}</div>
+  </div>
+
+  <div class="sidebar-section">Apps &amp; Dashboards</div>
+  {% if page_access.get('mpc_underwriting', true) %}
+  <a href="/" class="sidebar-item">
+    <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+    MPC Underwriting
+  </a>
+  {% endif %}
+  <a href="/home" class="sidebar-item">
+    <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 12l9-9 9 9M5 10v10h14V10" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Home
+  </a>
+
+  {# Administrative section is admin-only — non-admins who land here
+     via a 403 page should not see admin nav at all. #}
+  {% if is_admin %}
+  <div class="sidebar-section">Administrative</div>
+  <a href="/admin/users" class="sidebar-item{{ ' active' if admin_active == 'users' else '' }}">
+    <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2m13-9a4 4 0 110-8 4 4 0 010 8zm9 9v-2a4 4 0 00-3-3.87m-4-12a4 4 0 010 7.75" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Manage Team
+  </a>
+  <a href="/admin/reports" class="sidebar-item{{ ' active' if admin_active == 'reports' else '' }}">
+    <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 17v-6h13M9 17H4a1 1 0 01-1-1V8a1 1 0 011-1h5m0 10h13m-7-7v6m-3-3h6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Report Subscriptions
+  </a>
+  <a href="/admin/activity" class="sidebar-item{{ ' active' if admin_active == 'activity' else '' }}">
+    <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l3-3 4 4 5-6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Team Activity
+  </a>
+  {% endif %}
+
+  <div style="flex:1"></div>
+  {% include "_partials/_sidebar_foot.html" %}
+</nav>
