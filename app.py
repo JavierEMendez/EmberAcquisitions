@@ -1286,6 +1286,29 @@ def send_reports_now():
         "diag":  getattr(_send_monthly_emails, "last_diag", []),
     })
 
+@app.route("/api/admin/users/<int:uid>/send-reports", methods=["POST"])
+@login_required
+@admin_required
+def send_reports_to_user(uid):
+    """Ad-hoc per-user report send. Powers the Send button on each row
+    of /admin/reports. Returns the same {ok, count, diag} shape as the
+    bulk endpoint so the client can reuse the diag-rendering logic.
+    The diag will contain exactly one entry — either status 'sent' or
+    'skipped' with a reason ('no email on file', 'no subscriptions',
+    'no accessible reports …'). Period claim is bypassed (irrelevant
+    for ad-hoc); subscription gate at SQL level is bypassed (we want a
+    real diag entry rather than a silent zero-row result)."""
+    try:
+        count = _send_monthly_emails(force=True, recipient_ids=[uid])
+    except Exception as e:
+        print(f"[Reports] Per-user send failed (uid={uid}): {type(e).__name__}: {e}", flush=True)
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+    return jsonify({
+        "ok":    True,
+        "count": count,
+        "diag":  getattr(_send_monthly_emails, "last_diag", []),
+    })
+
 # ─── DEFAULT INPUTS TEMPLATE ──────────────────────────────────────────────────
 def default_inputs(name="New Project"):
     # Lot size defaults match Excel Cost Inputs rows 72-87 exactly
@@ -7412,15 +7435,29 @@ def _gen_new_pdf_report(rt, data, uploaded_at=None):
         return None
 
 
-def _send_monthly_emails(force=False):
-    """Send monthly reports to all opted-in users. Returns count of emails sent."""
+def _send_monthly_emails(force=False, recipient_ids=None):
+    """Send monthly reports. Returns count of emails sent.
+
+    Modes:
+      • Default (cron):       all opted-in users, period-claim enforced.
+      • force=True:           all opted-in users, period-claim bypassed.
+      • recipient_ids=[...]:  ad-hoc send to a specific subset, used by
+                              the per-user Send button on /admin/reports.
+                              Period claim is skipped (only meaningful
+                              for the once-a-month bulk send), and the
+                              subscription filter is dropped — admin is
+                              explicitly requesting these users; the
+                              per-user loop still skips users with no
+                              email or no resolvable subscriptions and
+                              records the reason in `diag`.
+    """
     now = datetime.datetime.utcnow()
     period = now.strftime("%Y-%m")
 
     conn = get_db()
     cur = conn.cursor()
 
-    if not force:
+    if not force and not recipient_ids:
         # Atomically claim this period BEFORE sending. The UNIQUE
         # constraint on report_sends.period means only one process can
         # win — if Railway runs the cron in two worker instances at the
@@ -7438,22 +7475,33 @@ def _send_monthly_emails(force=False):
             print(f"[Reports] Period {period} already claimed by another instance; skipping.", flush=True)
             return 0
 
-    # Fetch every user with an email + at least one subscription. We
-    # check both:
-    #   (a) the new `report_subscriptions` JSONB (set via the admin
-    #       Reports management modal) — preferred source.
-    #   (b) the legacy `report_opt_in` flag — kept for users who were
-    #       set up before the new UI shipped and never re-saved.
-    # A user matches if EITHER source says they're opted in.
-    cur.execute("""
-        SELECT id, username, email, report_format, report_subscriptions,
-               report_opt_in, page_access, first_name, last_name
-        FROM users
-        WHERE COALESCE(email, '') <> ''
-          AND ( report_opt_in = TRUE
-                OR (report_subscriptions IS NOT NULL
-                    AND report_subscriptions <> '{}'::jsonb) )
-    """)
+    if recipient_ids:
+        # Ad-hoc per-user send: filter by id only, no email/subscription
+        # gate at the SQL level so the per-recipient loop can record a
+        # specific skip reason ("no email on file", "no subscriptions")
+        # in the diag for each user the admin clicked.
+        cur.execute("""
+            SELECT id, username, email, report_format, report_subscriptions,
+                   report_opt_in, page_access, first_name, last_name
+            FROM users
+            WHERE id = ANY(%s)
+        """, (list(recipient_ids),))
+    else:
+        # Cron / bulk send: every user with an email + at least one
+        # subscription. Checks both:
+        #   (a) the new `report_subscriptions` JSONB (preferred source,
+        #       set via the admin Reports page).
+        #   (b) the legacy `report_opt_in` flag — kept for users who
+        #       were set up before the new UI shipped and never re-saved.
+        cur.execute("""
+            SELECT id, username, email, report_format, report_subscriptions,
+                   report_opt_in, page_access, first_name, last_name
+            FROM users
+            WHERE COALESCE(email, '') <> ''
+              AND ( report_opt_in = TRUE
+                    OR (report_subscriptions IS NOT NULL
+                        AND report_subscriptions <> '{}'::jsonb) )
+        """)
     recipients = cur.fetchall()
 
     # Fetch latest report data for all three types
@@ -7516,6 +7564,15 @@ def _send_monthly_emails(force=False):
         legacy_fmt  = user.get("report_format") or "pdf"
         subs        = user.get("report_subscriptions") or {}
         pa          = user.get("page_access") or {}
+
+        # Recipient might land here without an email when an admin
+        # explicitly requested an ad-hoc send (recipient_ids path skips
+        # the SQL-level email filter so we can record the skip reason).
+        if not email_addr:
+            print(f"[Reports]  · skip {display_name}: no email on file", flush=True)
+            diag.append({"user": display_name, "email": "",
+                         "status": "skipped", "reason": "no email on file"})
+            continue
 
         # Resolve which reports + format this user gets:
         #   • If `report_subscriptions` has entries, use them as-is —
