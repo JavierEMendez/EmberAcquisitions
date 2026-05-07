@@ -67,6 +67,27 @@
     border-radius:6px;padding:5px 4px 5px 8px;font-size:11px;font-family:inherit;cursor:pointer;
     outline:none;width:78px;text-transform:uppercase;font-weight:600;letter-spacing:0.04em;
   }
+
+  /* Per-row Send button — ad-hoc dispatch of the user's subscribed
+     reports. Idle is a quiet ghost button; busy/done states reuse the
+     accent / good / bad palette so the row's status is glanceable. */
+  .send-cell{padding:8px 10px;text-align:center;}
+  .send-btn{
+    background:transparent;border:1px solid var(--eax-line-2);color:var(--eax-muted);
+    border-radius:6px;padding:5px 11px;font-size:10.5px;font-family:inherit;cursor:pointer;
+    font-weight:700;letter-spacing:0.10em;text-transform:uppercase;
+    transition:all .15s;white-space:nowrap;
+  }
+  .send-btn:hover:not(:disabled){border-color:var(--eax-accent);color:var(--eax-accent);}
+  .send-btn:disabled{opacity:0.55;cursor:default;}
+  .send-btn.is-busy{border-color:var(--eax-line-2);color:var(--eax-muted);}
+  .send-btn.is-sent{border-color:var(--eax-good);color:var(--eax-good);}
+  .send-btn.is-skipped{border-color:var(--eax-line-2);color:var(--eax-subtle);}
+  .send-btn.is-error{border-color:var(--eax-bad);color:var(--eax-bad);}
+  .send-status{
+    display:block;font-size:10px;color:var(--eax-subtle);font-weight:500;
+    letter-spacing:0;text-transform:none;margin-top:3px;line-height:1.3;
+  }
   .badge{
     font-size:10px;background:var(--eax-accent-soft);color:var(--eax-accent);
     border:1px solid rgba(242,89,41,.25);border-radius:4px;padding:2px 6px;margin-left:4px;
@@ -121,10 +142,11 @@
           <table id="reports-table" class="reports-grid">
             <colgroup>
               <col style="width:auto;"/>
-              <col style="width:90px;"/>
-              <col style="width:90px;"/>
-              <col style="width:90px;"/>
-              <col style="width:90px;"/>
+              <col style="width:84px;"/>
+              <col style="width:84px;"/>
+              <col style="width:84px;"/>
+              <col style="width:84px;"/>
+              <col style="width:130px;"/>
             </colgroup>
             <thead>
               <tr>
@@ -133,10 +155,11 @@
                 <th class="col-report" title="Ember Capital">Capital</th>
                 <th class="col-report" title="Operating Cashflows">Operations</th>
                 <th class="col-report" title="Loans &amp; Debt">Loans</th>
+                <th class="col-report" title="Send this user's subscribed reports right now">Send Now</th>
               </tr>
             </thead>
             <tbody id="reports-tbody">
-              <tr><td colspan="5" style="padding:24px;text-align:center;color:var(--eax-subtle);font-size:12px;">Loading…</td></tr>
+              <tr><td colspan="6" style="padding:24px;text-align:center;color:var(--eax-subtle);font-size:12px;">Loading…</td></tr>
             </tbody>
           </table>
         </div>
@@ -158,7 +181,7 @@ async function refreshReportsTable() {
     const res = await fetch('/api/admin/users');
     const users = await res.json();
     if (!Array.isArray(users) || users.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:var(--eax-subtle);font-size:12px;">No team members.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--eax-subtle);font-size:12px;">No team members.</td></tr>';
       return;
     }
     tbody.innerHTML = users.map(u => {
@@ -182,17 +205,91 @@ async function refreshReportsTable() {
       const pillFg = subCount === 0 ? 'var(--eax-subtle)' : 'var(--eax-good)';
       const pillText = subCount === 0 ? 'NONE' : `${subCount}`;
       const pill = `<span class="rsub-pill" id="rsub-status-${u.id}" data-count="${subCount}" style="background:${pillBg};color:${pillFg};">${pillText}</span>`;
+      // Disable the Send button when the user has nothing that would
+      // actually go out — no email or zero subscriptions. Tooltip
+      // explains why so the admin doesn't click and wonder.
+      const hasEmail = !!(u.email || '').trim();
+      const sendDisabled = !hasEmail || subCount === 0;
+      const sendTitle = !hasEmail
+        ? 'No email on file — set one in Manage Team first'
+        : (subCount === 0 ? 'No subscriptions selected' : 'Send subscribed reports to this user now');
       return `<tr id="rsub-row-${u.id}">
         <td>
           <div style="font-weight:600;color:var(--eax-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${display}${u.is_admin ? ' <span class="badge">Admin</span>' : ''}${pill}</div>
           <div style="font-size:10.5px;color:var(--eax-subtle);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${u.email || 'no email on file'}</div>
         </td>
         ${cells}
+        <td class="send-cell">
+          <button class="send-btn" id="send-btn-${u.id}" data-uid="${u.id}"
+                  onclick="sendReportsToUser(${u.id})"
+                  ${sendDisabled ? 'disabled' : ''}
+                  title="${sendTitle.replace(/"/g, '&quot;')}">Send</button>
+          <span class="send-status" id="send-status-${u.id}"></span>
+        </td>
       </tr>`;
     }).join('');
   } catch (err) {
     console.error('refreshReportsTable failed', err);
-    tbody.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:var(--eax-bad);">Failed to load users.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--eax-bad);">Failed to load users.</td></tr>';
+  }
+}
+
+async function sendReportsToUser(uid) {
+  const btn    = document.getElementById('send-btn-' + uid);
+  const status = document.getElementById('send-status-' + uid);
+  if (!btn || btn.disabled) return;
+
+  // Lock the button + show the in-flight state. Reset class state from
+  // any prior click on this row.
+  btn.disabled = true;
+  btn.classList.remove('is-sent', 'is-skipped', 'is-error');
+  btn.classList.add('is-busy');
+  btn.textContent = 'Sending…';
+  status.textContent = '';
+  status.style.color = 'var(--eax-subtle)';
+
+  try {
+    const res = await fetch(`/api/admin/users/${uid}/send-reports`, {method: 'POST'});
+    const d   = await res.json();
+    btn.classList.remove('is-busy');
+    if (!res.ok || !d.ok) {
+      btn.classList.add('is-error');
+      btn.textContent = 'Retry';
+      status.textContent = d.error || ('HTTP ' + res.status);
+      status.style.color = 'var(--eax-bad)';
+      btn.disabled = false;
+      return;
+    }
+    // Diag has at most one entry — that user's outcome.
+    const entry = (Array.isArray(d.diag) && d.diag[0]) ? d.diag[0] : null;
+    if (entry && entry.status === 'sent') {
+      btn.classList.add('is-sent');
+      btn.textContent = 'Sent ✓';
+      const reports = (entry.reports || []).join(', ') || '(no attachments)';
+      status.textContent = reports;
+      status.style.color = 'var(--eax-good)';
+    } else if (entry && entry.status === 'skipped') {
+      btn.classList.add('is-skipped');
+      btn.textContent = 'Skipped';
+      status.textContent = entry.reason || 'no reports sent';
+      status.style.color = 'var(--eax-subtle)';
+      // Skip is a stable, repeatable state — no point re-enabling the
+      // button. Admin should fix the underlying issue (add email,
+      // pick subscriptions) and the row will re-render after.
+    } else {
+      btn.classList.add('is-error');
+      btn.textContent = 'Retry';
+      status.textContent = 'No diagnostic returned';
+      status.style.color = 'var(--eax-bad)';
+      btn.disabled = false;
+    }
+  } catch (err) {
+    btn.classList.remove('is-busy');
+    btn.classList.add('is-error');
+    btn.textContent = 'Retry';
+    status.textContent = err && err.message || 'Request failed';
+    status.style.color = 'var(--eax-bad)';
+    btn.disabled = false;
   }
 }
 
