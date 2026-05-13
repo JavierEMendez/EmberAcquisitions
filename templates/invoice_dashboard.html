@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="/static/theme.css"/>
-<link rel="stylesheet" href="/static/css/invoice_dashboard.css?v=5"/>
+<link rel="stylesheet" href="/static/css/invoice_dashboard.css?v=6"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 <style>
@@ -204,16 +204,16 @@
         <div class="arc-rail-eyebrow">Period Archive</div>
         <div class="arc-rail-title">Bi-weekly snapshots</div>
         <div class="arc-rail-hint">Click any period to view that snapshot. Latest is auto-selected on load.</div>
-        {# Button opens the upload modal. Inline `onclick` so it works
-           even if the page JS fails to wire (no dependency on wire()).
-           Inside the modal the drop area is itself a <label for=
-           "upload-file"> so clicking it opens the OS file picker
-           natively — no JS needed for that either. #}
-        <button class="arc-rail-upload" type="button" id="open-upload-rail"
-                onclick="document.getElementById('upload-modal').classList.add('is-open')">
+        {# Same <label> element as before so the visual rendering
+           stays pixel-identical. Removed the `for="upload-file"` so
+           clicking it no longer triggers the file picker — the
+           inline onclick opens the upload modal instead, which is
+           the flow the user wants. #}
+        <label class="arc-rail-upload" id="open-upload-rail"
+               onclick="document.getElementById('upload-modal').classList.add('is-open')">
           <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m14-7l-5-5-5 5m5-5v12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           Upload bi-weekly file
-        </button>
+        </label>
       </div>
       <div class="arc-rail-list" id="arc-row"></div>
     </aside>
@@ -661,8 +661,8 @@
   window.INVOICE_ARCHIVE = {{ archive|tojson if archive else '[]'|safe }};
   /* GL_COLORS is theme-stable, ship it as a static asset. */
 </script>
-<script src="/static/js/invoice_dashboard_gl_colors.js?v=5"></script>
-<script src="/static/js/invoice_dashboard.js?v=5"></script>
+<script src="/static/js/invoice_dashboard_gl_colors.js?v=6"></script>
+<script src="/static/js/invoice_dashboard.js?v=6"></script>
 {# Account Settings modal — required so the Account chip in
    _sidebar_foot.html has a working openAcct() handler. #}
 {% include "_partials/_account_modal.html" %}
