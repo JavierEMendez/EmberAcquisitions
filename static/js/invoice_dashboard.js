@@ -76,36 +76,42 @@
     return { start, end, key, label, short, year: y };
   }
   function buildPeriodArchive() {
-    // Empty-state guard: D.records is undefined when no uploads exist.
-    // Without this, .forEach throws at IIFE load time and kills the
-    // entire script — including the DOMContentLoaded handler that
-    // wires the file input's change event. That manifests as "the
-    // file picker opens but selecting a file does nothing."
-    if (!D || !Array.isArray(D.records)) return [];
-    const buckets = {};
-    D.records.forEach(r => {
-      const p = periodOf(r.processing_date);
-      if (!buckets[p.key]) buckets[p.key] = { ...p, records: [], ember: 0, ccdl: 0, total: 0, count: 0 };
-      const b = buckets[p.key];
-      b.records.push(r);
-      b.count += 1;
-      b.total += r.amount || 0;
-      if (r.entity.includes('Ember')) b.ember += 1; else b.ccdl += 1;
-    });
-    // Sort newest → oldest
-    const all = Object.values(buckets).sort((a, b) => b.start.localeCompare(a.start));
-    // The "current" period is whichever bucket holds the cp_proc records.
-    const cpKey = (() => {
-      const sample = D.records.find(r => r.is_cp_proc);
-      return sample ? periodOf(sample.processing_date).key : (all[0] && all[0].key);
-    })();
-    all.forEach(p => p.is_current = (p.key === cpKey));
-    return all;
+    // Source-of-truth: window.INVOICE_ARCHIVE — one entry per row in
+    // the server's `invoice_periods` table (one row per upload). The
+    // earlier version bucketed D.records by processing_date, which
+    // surfaced phantom rail cards for every historical month inside
+    // a Stampli export's YTD record set even when only one snapshot
+    // was actually uploaded. The rail represents UPLOADS, not slices
+    // of an upload's record history.
+    const archive = Array.isArray(window.INVOICE_ARCHIVE) ? window.INVOICE_ARCHIVE : [];
+    if (!archive.length) return [];
+    return archive.map(a => {
+      // a = { period_key, period_start, period_end, total_records,
+      //       total_amount, ember_count, ccdl_count, … }
+      // Map server fields to the in-page shape the rail renderer
+      // expects (key / short / year / count / total / ember / ccdl /
+      // end / is_current).
+      const p = periodOf(a.period_start);
+      return {
+        key:   a.period_key || p.key,
+        start: a.period_start,
+        end:   a.period_end || p.end,
+        label: p.label, short: p.short, year: p.year,
+        count: a.total_records || 0,
+        total: a.total_amount || 0,
+        ember: a.ember_count || 0,
+        ccdl:  a.ccdl_count || 0,
+        is_current: (a.period_key === window.INVOICE_PERIOD_KEY),
+      };
+    }).sort((a, b) => b.start.localeCompare(a.start));
   }
   const PERIODS = buildPeriodArchive();
   // Which period is the user currently viewing in the "This Period" tab?
-  // Empty-state → null (no period selected yet, no records loaded).
-  let activePeriodKey = (PERIODS.find(p => p.is_current) || PERIODS[0] || {}).key || null;
+  // Server tells us via INVOICE_PERIOD_KEY; fall back to the newest
+  // archive entry or null if there are no uploads yet (empty-state).
+  let activePeriodKey = window.INVOICE_PERIOD_KEY
+                     || (PERIODS[0] && PERIODS[0].key)
+                     || null;
 
   // ──────────────────────────────────────────────────────────
   // Date basis (Invoice Date / Processing Date)
@@ -160,11 +166,19 @@
   // KPI rendering — pulls from D.ytd + active period state.
   // ──────────────────────────────────────────────────────────
   function activePeriodStats() {
-    const ap = PERIODS.find(p => p.key === activePeriodKey);
-    if (!ap) return { ember:{count:0,total:0}, ccdl:{count:0,total:0}, combined:{count:0,total:0} };
+    // "Active period" = the records in the currently-loaded snapshot
+    // (D) that fall inside the upload's bi-weekly processing window —
+    // flagged is_cp_proc by the parser. Previously this read from
+    // per-card record buckets, but those no longer exist now that the
+    // rail is built from server-side INVOICE_ARCHIVE rather than
+    // record-level bucketing of D.
     let e = {count:0,total:0}, c = {count:0,total:0};
-    ap.records.forEach(r => {
-      const t = r.entity.includes('Ember') ? e : c;
+    if (!D || !Array.isArray(D.records)) {
+      return { ember: e, ccdl: c, combined: { count: 0, total: 0 } };
+    }
+    D.records.forEach(r => {
+      if (!r.is_cp_proc) return;
+      const t = (r.entity || '').includes('Ember') ? e : c;
       t.count += 1; t.total += (r.amount || 0);
     });
     return { ember: e, ccdl: c, combined: { count: e.count + c.count, total: e.total + c.total } };
@@ -739,15 +753,14 @@
     return `${MONTH_NAMES[m - 1]} ${d}, ${y}`;
   }
   function setActivePeriod(key) {
-    activePeriodKey = key;
-    document.querySelectorAll('.arc-card').forEach(c => {
-      c.classList.toggle('is-active', c.dataset.period === key);
-    });
-    syncCpBanner();
-    updateKPIs();
-    updateCharts();
-    buildMonthlyTable();
-    renderAllTables();
+    // If the user clicks a different rail card we need a different
+    // snapshot from the server — D only holds the currently-loaded
+    // period's records. Navigate via ?period= so the server-rendered
+    // first paint matches the chosen period (and the SSR path reuses
+    // the same template). Clicking the already-active card is a
+    // no-op.
+    if (!key || key === activePeriodKey) return;
+    location.assign('/invoice-dashboard?period=' + encodeURIComponent(key));
   }
 
   // ──────────────────────────────────────────────────────────
