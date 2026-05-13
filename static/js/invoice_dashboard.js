@@ -28,6 +28,41 @@
     var m = document.getElementById('upload-modal');
     if (m) m.classList.remove('is-open');
   };
+
+  // File-input change handler. Wired via inline `onchange` on the
+  // <input id="upload-file"> so it runs whether or not wire() ever
+  // executes. Builds the same preview block handleFileSelection
+  // builds later in the file, but standalone so this top section
+  // has no forward dependency on anything below.
+  window.invdHandleFile = function(input) {
+    var file = input && input.files && input.files[0];
+    if (!file) return;
+    var det  = document.getElementById('upload-detected');
+    var modal = document.getElementById('upload-modal');
+    var fname = file.name;
+    // Detect period by sniffing YYYY-MM-DD / YYYY_MM_DD in filename.
+    var m1 = fname.match(/(\d{4})[-_]?(\d{2})[-_]?(\d{2})/);
+    var html = '<div class="det-row"><span>File</span><b>' + fname + '</b></div>';
+    if (m1) {
+      var y  = Number(m1[1]), mo = Number(m1[2]), d = Number(m1[3]);
+      var firstHalf = d <= 15;
+      var pad = function (n) { return String(n).padStart(2, '0'); };
+      var endD = firstHalf ? 15 : new Date(y, mo, 0).getDate();
+      var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      var startD = firstHalf ? 1 : 16;
+      var label = months[mo - 1] + ' ' + startD + ' – ' + months[mo - 1] + ' ' + endD + ', ' + y;
+      html += '<div class="det-row"><span>Detected period</span><b>' + label + '</b></div>';
+      html += '<div class="det-row is-new"><span>Status</span><b>New archive entry</b></div>';
+    } else {
+      html += '<div class="det-row"><span>Detected period</span><b style="color:var(--eax-bad)">Could not parse date from filename</b></div>';
+    }
+    if (det) {
+      det.innerHTML = html;
+      det.classList.add('is-shown');
+    }
+    if (modal) modal.classList.add('is-open');
+  };
+
   window.invdCommitUpload = async function() {
     var input = document.getElementById('upload-file');
     var file  = input && input.files && input.files[0];
@@ -289,13 +324,18 @@
       grid:  { color: 'rgba(8,35,59,0.06)' },
     };
   }
-  Chart.defaults.font.family = 'DM Sans, "Plus Jakarta Sans", sans-serif';
-  Chart.defaults.color = '#5B6B7B';
-  Chart.defaults.plugins.tooltip.backgroundColor = '#0B1F33';
-  Chart.defaults.plugins.tooltip.titleColor = '#F4ECDD';
-  Chart.defaults.plugins.tooltip.bodyColor  = '#F4ECDD';
-  Chart.defaults.plugins.tooltip.padding = 10;
-  Chart.defaults.plugins.tooltip.cornerRadius = 6;
+  // Guarded — if Chart.js fails to load (CDN blocked, ad blocker,
+  // network blip) we don't want the whole script to crash here and
+  // break the upload flow which has nothing to do with charts.
+  try {
+    Chart.defaults.font.family = 'DM Sans, "Plus Jakarta Sans", sans-serif';
+    Chart.defaults.color = '#5B6B7B';
+    Chart.defaults.plugins.tooltip.backgroundColor = '#0B1F33';
+    Chart.defaults.plugins.tooltip.titleColor = '#F4ECDD';
+    Chart.defaults.plugins.tooltip.bodyColor  = '#F4ECDD';
+    Chart.defaults.plugins.tooltip.padding = 10;
+    Chart.defaults.plugins.tooltip.cornerRadius = 6;
+  } catch (e) { /* Chart.js unavailable — non-fatal */ }
 
   const charts = {};
   function buildOrUpdate(id, config) {
