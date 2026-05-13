@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Invoice Dashboard · Ember Acquisitions</title>
+<link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="/static/theme.css"/>
+<link rel="stylesheet" href="/static/css/invoice_dashboard.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
+<style>
+  /* ============================================================
+     App shell — copied verbatim from operations.html / capital.html
+     so /invoice-dashboard nests inside the same chrome the rest of
+     the app uses. Sidebar markup mirrors the canonical pattern.
+     ============================================================ */
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;}
+  body{
+    background:var(--eax-bg);color:var(--eax-ink);
+    font-family:'DM Sans','Plus Jakarta Sans',system-ui,sans-serif;
+    overflow:hidden;
+  }
+  #app{display:flex;height:100vh;overflow:hidden;}
+
+  #sidebar{
+    width:240px;background:var(--eax-bg-2);
+    border-right:1px solid var(--eax-line);
+    display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;
+  }
+  .sidebar-logo{padding:16px 18px 14px;border-bottom:1px solid var(--eax-line);}
+  .logo-img{width:100%;max-width:160px;height:auto;display:block;margin:0 auto;}
+  img.logo-light{display:none;}
+  [data-theme="light"] img.logo-dark{display:none;}
+  [data-theme="light"] img.logo-light{display:block;margin:0 auto;}
+  .logo-sub{
+    font-size:10px;color:var(--eax-subtle);letter-spacing:0.2em;text-transform:uppercase;
+    margin-top:8px;text-align:center;font-weight:700;
+  }
+  .sidebar-section{
+    padding:8px 16px 4px;font-size:9px;line-height:1.2;
+    color:var(--eax-subtle);letter-spacing:0.22em;text-transform:uppercase;
+    margin-top:8px;font-weight:700;
+  }
+  .sidebar-item{
+    display:flex;align-items:center;gap:10px;
+    padding:9px 14px;cursor:pointer;border-radius:8px;
+    margin:1px 8px;transition:all .15s;
+    color:var(--eax-muted);font-size:13px;line-height:1.2;
+    text-decoration:none;font-weight:500;
+  }
+  .sidebar-item:hover{background:var(--eax-accent-soft);color:var(--eax-ink);text-decoration:none;}
+  .sidebar-item.active{
+    background:var(--eax-surface);color:var(--eax-ink);
+    font-weight:600;border:1px solid var(--eax-line);position:relative;
+  }
+  .sidebar-item.active::before{
+    content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:2px;
+    background:var(--eax-accent);border-radius:2px;
+  }
+  .sidebar-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0;}
+  .sidebar-item.active .icon{opacity:1;color:var(--eax-accent);}
+
+  #main-content{flex:1;overflow:hidden;min-width:0;display:flex;}
+
+  /* ── Period Archive · second sidebar ──
+     Sits between the main app nav and the page content. Reuses the
+     same paper-on-bg-2 surface so the two rails read as a pair. */
+  #archive-rail{
+    width:248px;flex-shrink:0;
+    background:var(--eax-bg-2);
+    border-right:1px solid var(--eax-line);
+    display:flex;flex-direction:column;
+    overflow:hidden;
+  }
+  .arc-rail-head{
+    padding:18px 18px 12px;
+    border-bottom:1px solid var(--eax-line);
+  }
+  .arc-rail-eyebrow{
+    font-size:9.5px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;
+    color:var(--eax-accent);
+    display:flex;align-items:center;gap:10px;
+    margin-bottom:6px;
+  }
+  .arc-rail-eyebrow::after{content:"";flex:1;height:1px;background:var(--eax-line-2);}
+  .arc-rail-title{
+    font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;
+    font-size:14px;color:var(--eax-ink-2);
+    letter-spacing:-0.005em;margin-bottom:3px;
+  }
+  .arc-rail-hint{
+    font-size:11px;color:var(--eax-subtle);line-height:1.45;
+  }
+  .arc-rail-upload{
+    margin-top:12px;
+    width:100%;
+    display:flex;align-items:center;justify-content:center;gap:7px;
+    background-image:linear-gradient(var(--eax-accent), var(--eax-accent));
+    color:var(--eax-accent-fg);
+    border:1px solid var(--eax-accent);
+    border-radius:8px;padding:8px 12px;
+    font-family:var(--font-sans);font-size:11.5px;font-weight:700;
+    letter-spacing:0.04em;cursor:pointer;
+    box-shadow:0 6px 16px rgba(242,89,41,0.20);
+    transition:transform .12s, box-shadow .15s;
+  }
+  .arc-rail-upload:hover{
+    transform:translateY(-1px);
+    box-shadow:0 10px 22px rgba(242,89,41,0.30);
+  }
+  .arc-rail-year{
+    padding:14px 14px 4px;
+    font-size:9.5px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;
+    color:var(--eax-subtle);
+  }
+  .arc-rail-list{
+    flex:1;overflow-y:auto;
+    padding:4px 10px 14px;
+    display:flex;flex-direction:column;gap:6px;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── SIDEBAR ─────────────────────────────────────────────── -->
+  <nav id="sidebar">
+    <div class="sidebar-logo">
+      <img src="/static/img/ember_logo.png"       alt="Ember" class="logo-img logo-light"/>
+      <img src="/static/img/ember_logo_light.png" alt="Ember" class="logo-img logo-dark"/>
+      <div class="logo-sub">Invoice Dashboard</div>
+    </div>
+
+    <div class="sidebar-section">Apps &amp; Dashboards</div>
+    {# Standard sidebar links — page_access gates each one. Replace with an include if you have _partials/_app_sidebar.html. #}
+    {% if page_access.get('mpc_underwriting', true) %}
+    <a href="/" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+      MPC Underwriting
+    </a>
+    {% endif %}
+    {% if page_access.get('returns', true) %}
+    <a href="/returns" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Project Returns
+    </a>
+    {% endif %}
+    {% if page_access.get('loans', true) %}
+    <a href="/loans" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Loans &amp; Debt
+    </a>
+    {% endif %}
+    {% if page_access.get('operations', true) %}
+    <a href="/operations" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Operating Revenues
+    </a>
+    {% endif %}
+    {% if page_access.get('invoice_dashboard', true) %}
+    <a href="/invoice-dashboard" class="sidebar-item active">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 2h6a2 2 0 012 2v16l-3-2-2 2-2-2-2 2-3-2V4a2 2 0 012-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 7h6M9 11h6M9 15h4" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Invoice Dashboard
+    </a>
+    {% endif %}
+    {% if page_access.get('macro', true) %}
+    <a href="/macro" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="1.5"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Macro Dashboard
+    </a>
+    {% endif %}
+    {% if page_access.get('portfolio', true) %}
+    <a href="/ember-capital" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 3.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Ember Capital
+    </a>
+    {% endif %}
+    {% if page_access.get('sales', true) %}
+    <a href="/sales" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l3-3 4 4 5-6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Community Sales
+    </a>
+    {% endif %}
+    {% if page_access.get('verticals', true) %}
+    <a href="/verticals" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      Vertical Dashboard
+    </a>
+    {% endif %}
+    <div style="flex:1"></div>
+    {% include "_partials/_sidebar_foot.html" %}
+  </nav>
+
+  <div id="main-content">
+
+    <!-- ── Period Archive · vertical second sidebar ─────────── -->
+    <aside id="archive-rail" aria-label="Period archive">
+      <div class="arc-rail-head">
+        <div class="arc-rail-eyebrow">Period Archive</div>
+        <div class="arc-rail-title">Bi-weekly snapshots</div>
+        <div class="arc-rail-hint">Click any period to view that snapshot. Latest is auto-selected on load.</div>
+        <button class="arc-rail-upload" id="open-upload-rail" type="button">
+          <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m14-7l-5-5-5 5m5-5v12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Upload bi-weekly file
+        </button>
+      </div>
+      <div class="arc-rail-list" id="arc-row"></div>
+    </aside>
+
+    {% if not invoice %}
+    <div class="inv-page" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 32px;text-align:center;color:var(--eax-muted);">
+      <h2 style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;font-size:18px;color:var(--eax-ink-2);margin-bottom:8px;">No invoice data uploaded yet</h2>
+      <p style="font-size:13px;max-width:480px;line-height:1.55;">Upload the Stampli Invoice Dashboard HTML export to populate this page. Each bi-weekly upload becomes a snapshot in the Period Archive.</p>
+    </div>
+    {% else %}
+    <!-- ── INVOICE DASHBOARD PAGE ─────────────────────────── -->
+    <div class="inv-page">
+
+      <!-- ── Topbar ───────────────────────────────────────── -->
+      <header class="inv-topbar">
+        <div class="inv-topbar-l">
+          <div class="inv-eyebrow">Finance &middot; Accounts Payable</div>
+          <h1 class="inv-display">Invoice Dashboard</h1>
+          <p class="inv-subtitle">
+            All Stampli-sourced invoices across <b>Ember Group LLC</b> and <b>CCDL Ventures LLC</b>.
+            Updated twice monthly &mdash; each upload becomes a snapshot in the period archive below.
+          </p>
+        </div>
+        <div class="inv-topbar-r">
+          <div class="inv-meta">
+            <div class="lbl">Latest report</div>
+            <div class="val">{{ invoice.report_date.strftime("%b %-d, %Y") if invoice else "—" }}</div>
+            <div>Covers {{ invoice.period_start.strftime("%b %-d") }} &ndash; {{ invoice.period_end.strftime("%b %-d, %Y") if invoice else "—" }}</div>
+          </div>
+          <div class="inv-topbar-actions">
+            <a class="inv-btn" href="#">
+              <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" stroke-width="1.6"/><path d="M8 12h8M8 8h5M8 16h6" stroke-width="1.6" stroke-linecap="round"/></svg>
+              Excel
+            </a>
+            <a class="inv-btn" href="#">
+              <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4 m4-5l5 5 5-5 m-5 5V3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              PDF
+            </a>
+          </div>
+        </div>
+      </header>
+
+      <!-- ── Date basis bar ───────────────────────────────── -->
+      <div class="inv-basis-bar">
+        <span class="inv-basis-label">Date Basis</span>
+        <div class="inv-pillgroup">
+          <button class="inv-pill" data-basis="inv">Invoice Date</button>
+          <button class="inv-pill is-active" data-basis="proc">Processing Date</button>
+        </div>
+        <span class="inv-basis-note">
+          <span class="differ-count">14 invoices</span> have different invoice vs. processing months
+        </span>
+      </div>
+
+      <!-- ── Tab nav ──────────────────────────────────────── -->
+      <nav class="inv-tabnav">
+        <button class="inv-tab is-active" data-tab="overview">Overview</button>
+        <button class="inv-tab" data-tab="gl">By GL Account</button>
+        <button class="inv-tab" data-tab="monthly">Monthly</button>
+        <button class="inv-tab" data-tab="this-period">This Period <span class="tab-dot"></span></button>
+        <button class="inv-tab" data-tab="ember">Ember Group</button>
+        <button class="inv-tab" data-tab="ccdl">CCDL Ventures</button>
+        <button class="inv-tab" data-tab="all">All Invoices</button>
+      </nav>
+
+      <!-- ── Tab content ──────────────────────────────────── -->
+      <div class="inv-content">
+
+        <!-- ═══════════ OVERVIEW ═══════════ -->
+        <div id="panel-overview" class="inv-panel is-active">
+          <div class="inv-kpi-band cols-5">
+            <div class="inv-kpi">
+              <div class="kpi-label">Total Invoices (YTD)</div>
+              <div class="kpi-val num" id="o-count">—</div>
+              <div class="kpi-sub">Both entities</div>
+              <div class="kpi-delta" id="o-cp-count"></div>
+            </div>
+            <div class="inv-kpi">
+              <div class="kpi-label">Total Value (YTD)</div>
+              <div class="kpi-val num" id="o-total">—</div>
+              <div class="kpi-sub">Combined</div>
+              <div class="kpi-delta" id="o-cp-total"></div>
+            </div>
+            <div class="inv-kpi is-good">
+              <div class="kpi-label">Paid Invoices</div>
+              <div class="kpi-val num" id="o-paid">—</div>
+              <div class="kpi-sub" id="o-paid-pct"></div>
+            </div>
+            <div class="inv-kpi is-accent">
+              <div class="kpi-label">Not Yet Paid</div>
+              <div class="kpi-val num" id="o-notpaid">—</div>
+              <div class="kpi-sub" id="o-notpaid-pct"></div>
+            </div>
+            <div class="inv-kpi">
+              <div class="kpi-label">Avg Days to Pay</div>
+              <div class="kpi-val num" id="o-dtp">—</div>
+              <div class="kpi-sub">Invoice→process lag · <b id="o-lag">—</b></div>
+            </div>
+          </div>
+
+          <div class="inv-two-col">
+            <div class="inv-card">
+              <div class="inv-card-title">
+                <span class="ct-l">Entity Comparison <span class="ct-sub">YTD 2026</span></span>
+              </div>
+              <div class="inv-entity-split">
+                <div class="inv-entity-side l">
+                  <h4><span class="ent-dot"></span>Ember Group LLC</h4>
+                  <div class="inv-entity-metric"><span class="em-label">Invoices</span><span class="em-value" id="e-count">—</span></div>
+                  <div class="inv-entity-metric"><span class="em-label">Total</span><span class="em-value" id="e-total">—</span></div>
+                  <div class="inv-entity-metric"><span class="em-label">Paid Invoice</span><span class="em-value paid" id="e-paid">—</span></div>
+                  <div class="inv-entity-metric"><span class="em-label">Not Yet Paid</span><span class="em-value notpaid" id="e-notpaid">—</span></div>
+                  <div class="inv-entity-metric"><span class="em-label">Avg Days to Pay</span><span class="em-value" id="e-dtp">—</span></div>
+                  <div class="inv-entity-metric"><span class="em-label">This Period</span><span class="em-value" id="e-cp">—</span></div>
+                </div>
+                <div class="inv-entity-side r">
+                  <h4><span class="ent-dot"></span>CCDL Ventures LLC</h4>
+                  <div class="inv-entity-metric"><span class="em-label">Invoices</span><span class="em-value" id="c-count">—</span></div>
+                  <div class="inv-entity-metric"><span class="em-label">Total</span><span class="em-value" id="c-total">—</span></div>
+                  <div class="inv-entity-metric"><span class="em-label">Paid Invoice</span><span class="em-value paid" id="c-paid">—</span></div>
+                  <div class="inv-entity-metric"><span class="em-label">Not Yet Paid</span><span class="em-value notpaid" id="c-notpaid">—</span></div>
+                  <div class="inv-entity-metric"><span class="em-label">Avg Days to Pay</span><span class="em-value" id="c-dtp">—</span></div>
+                  <div class="inv-entity-metric"><span class="em-label">This Period</span><span class="em-value" id="c-cp">—</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="inv-card">
+              <div class="inv-card-title">
+                <span class="ct-l">Spend by GL Account <span class="ct-sub">Top 10 · YTD</span></span>
+              </div>
+              <div class="chart-wrap h260"><canvas id="glDonut"></canvas></div>
+            </div>
+          </div>
+
+          <div class="inv-card">
+            <div class="inv-card-title">
+              <span class="ct-l">Monthly Invoice Volume by Entity</span>
+              <span class="ct-badge proc" id="ov-basis-badge">Processing Date</span>
+            </div>
+            <div class="chart-wrap h260"><canvas id="monthlyBar"></canvas></div>
+          </div>
+        </div>
+
+        <!-- ═══════════ GL ACCOUNTS ═══════════ -->
+        <div id="panel-gl" class="inv-panel">
+          <div class="inv-section-head">
+            <span class="sh-l">Spend by GL Account</span>
+            <span class="sh-r"><b>YTD 2026</b> &middot; 25 GL accounts</span>
+          </div>
+          <div class="inv-two-col">
+            <div class="inv-card">
+              <div class="inv-card-title"><span class="ct-l">GL Account Totals</span></div>
+              <div class="chart-wrap h300"><canvas id="glBar"></canvas></div>
+            </div>
+            <div class="inv-card">
+              <div class="inv-card-title"><span class="ct-l">GL Account Share</span></div>
+              <div class="chart-wrap h300"><canvas id="glPie"></canvas></div>
+            </div>
+          </div>
+
+          <div class="inv-section-head">
+            <span class="sh-l">GL Account Cards</span>
+          </div>
+          <div class="gl-grid" id="glCards"></div>
+
+          <div class="inv-section-head">
+            <span class="sh-l">Invoices by GL Account</span>
+          </div>
+          <div class="inv-controls">
+            <input class="inv-search" id="gl-search" placeholder="Search vendor, invoice #, description…"/>
+            <select class="inv-filter" id="gl-gl-filter"><option value="">All GL Accounts</option></select>
+            <select class="inv-filter" id="gl-ent-filter">
+              <option value="">All Entities</option>
+              <option value="Ember Group LLC">Ember Group</option>
+              <option value="CCDL Ventures LLC">CCDL Ventures</option>
+            </select>
+            <span class="inv-count" id="gl-count"></span>
+          </div>
+          <div class="inv-card" style="padding:0;">
+            <div class="inv-tbl-wrap">
+              <table class="inv-tbl">
+                <thead><tr>
+                  <th data-sort="glTbody:0">Inv. Date</th>
+                  <th>Proc. Date</th>
+                  <th>Entity</th>
+                  <th data-sort="glTbody:3">Vendor</th>
+                  <th data-sort="glTbody:4">GL Account</th>
+                  <th>Description</th>
+                  <th>Invoice No.</th>
+                  <th>Status</th>
+                  <th class="r" data-sort="glTbody:8">Amount</th>
+                </tr></thead>
+                <tbody id="glTbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══════════ MONTHLY ═══════════ -->
+        <div id="panel-monthly" class="inv-panel">
+          <div class="inv-section-head">
+            <span class="sh-l">Month-over-Month Trend</span>
+            <span class="sh-r"><span class="ct-badge proc" id="monthly-tab-badge">Processing Date</span></span>
+          </div>
+          <div class="inv-card">
+            <div class="chart-wrap h260"><canvas id="monthlyLine"></canvas></div>
+          </div>
+
+          <div class="inv-section-head"><span class="sh-l">Monthly Detail</span></div>
+          <div class="inv-card" style="padding:0;overflow:hidden;">
+            <table class="mon-tbl" id="monTable"></table>
+          </div>
+        </div>
+
+        <!-- ═══════════ THIS PERIOD ═══════════ -->
+        <div id="panel-this-period" class="inv-panel">
+          <div class="cp-banner">
+            <div class="pb-l">
+              <div class="pb-eyebrow" id="cp-banner-eyebrow">Current Update</div>
+              <div class="pb-title" id="cp-banner-title">—</div>
+              <div class="pb-sub" id="cp-banner-sub">—</div>
+            </div>
+            <div class="cp-stats">
+              <div class="cp-stat"><div class="ps-val num" id="cp-count">—</div><div class="ps-lbl">New Invoices</div></div>
+              <div class="cp-stat"><div class="ps-val num" id="cp-total">—</div><div class="ps-lbl">Total Value</div></div>
+              <div class="cp-stat"><div class="ps-val num" id="cp-ember">—</div><div class="ps-lbl">Ember</div></div>
+              <div class="cp-stat"><div class="ps-val num" id="cp-ccdl">—</div><div class="ps-lbl">CCDL</div></div>
+            </div>
+          </div>
+
+          <div class="inv-card" style="padding:0;">
+            <div class="inv-tbl-wrap">
+              <table class="inv-tbl">
+                <thead><tr>
+                  <th>Entity</th><th>Inv. Date</th><th>Proc. Date</th><th>Vendor</th>
+                  <th>GL Account</th><th>Description</th><th>Invoice No.</th>
+                  <th>Status</th><th class="r">Amount</th>
+                </tr></thead>
+                <tbody id="cpTbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="inv-two-col">
+            <div class="inv-card">
+              <div class="inv-card-title">
+                <span class="ct-l">This Period vs Prior Months</span>
+                <span class="ct-badge proc" id="cp-chart-badge">Processing Date</span>
+              </div>
+              <div class="chart-wrap h220"><canvas id="cpCompare"></canvas></div>
+            </div>
+            <div class="inv-card">
+              <div class="inv-card-title"><span class="ct-l">YTD Running Total</span></div>
+              <div class="chart-wrap h220"><canvas id="cpRunning"></canvas></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══════════ EMBER ═══════════ -->
+        <div id="panel-ember" class="inv-panel">
+          <div class="inv-section-head">
+            <span class="sh-l">Ember Group, LLC</span>
+            <span class="sh-r"><b>YTD 2026</b></span>
+          </div>
+          <div class="inv-kpi-band cols-4">
+            <div class="inv-kpi"><div class="kpi-label">Invoices</div><div class="kpi-val num" id="e2-count">—</div></div>
+            <div class="inv-kpi"><div class="kpi-label">Total Value</div><div class="kpi-val num" id="e2-total">—</div></div>
+            <div class="inv-kpi is-good"><div class="kpi-label">Paid Invoice</div><div class="kpi-val num" id="e2-paid">—</div><div class="kpi-sub" id="e2-paid-pct"></div></div>
+            <div class="inv-kpi is-accent"><div class="kpi-label">Not Yet Paid</div><div class="kpi-val num" id="e2-notpaid">—</div><div class="kpi-sub" id="e2-notpaid-pct"></div></div>
+          </div>
+          <div class="inv-col-4060">
+            <div class="inv-card">
+              <div class="inv-card-title"><span class="ct-l">Top Vendors by Amount <span class="ct-sub">paid vs not paid</span></span></div>
+              <div id="emberVendorBars"></div>
+            </div>
+            <div class="inv-card">
+              <div class="inv-card-title">
+                <span class="ct-l">Monthly Paid vs Not Paid</span>
+                <span class="ct-badge proc" id="ember-chart-badge">Processing Date</span>
+              </div>
+              <div class="chart-wrap h220"><canvas id="emberMonthly"></canvas></div>
+            </div>
+          </div>
+          <div class="inv-card" style="padding:0;">
+            <div class="inv-controls" style="padding:14px 16px 0;">
+              <input class="inv-search" id="ember-search" placeholder="Search vendor, invoice #, description…"/>
+              <select class="inv-filter" id="ember-gl-filter"><option value="">All GL Accounts</option></select>
+              <select class="inv-filter" id="ember-status-filter"><option value="">All Statuses</option></select>
+              <span class="inv-count" id="ember-count"></span>
+            </div>
+            <div class="inv-tbl-wrap" style="border:none;border-top:1px solid var(--eax-line);border-radius:0;margin-top:14px;">
+              <table class="inv-tbl">
+                <thead><tr>
+                  <th data-sort="emberTbody:0">Inv. Date</th><th>Proc. Date</th>
+                  <th data-sort="emberTbody:2">Vendor</th>
+                  <th data-sort="emberTbody:3">GL Account</th>
+                  <th>Description</th><th>Invoice No.</th>
+                  <th data-sort="emberTbody:6">Status</th>
+                  <th>Paid On</th>
+                  <th class="r" data-sort="emberTbody:8">Amount</th>
+                </tr></thead>
+                <tbody id="emberTbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══════════ CCDL ═══════════ -->
+        <div id="panel-ccdl" class="inv-panel">
+          <div class="inv-section-head">
+            <span class="sh-l">CCDL Ventures, LLC</span>
+            <span class="sh-r"><b>YTD 2026</b></span>
+          </div>
+          <div class="inv-kpi-band cols-4">
+            <div class="inv-kpi"><div class="kpi-label">Invoices</div><div class="kpi-val num" id="c2-count">—</div></div>
+            <div class="inv-kpi"><div class="kpi-label">Total Value</div><div class="kpi-val num" id="c2-total">—</div></div>
+            <div class="inv-kpi is-good"><div class="kpi-label">Paid Invoice</div><div class="kpi-val num" id="c2-paid">—</div><div class="kpi-sub" id="c2-paid-pct"></div></div>
+            <div class="inv-kpi is-accent"><div class="kpi-label">Not Yet Paid</div><div class="kpi-val num" id="c2-notpaid">—</div><div class="kpi-sub" id="c2-notpaid-pct"></div></div>
+          </div>
+          <div class="inv-col-4060">
+            <div class="inv-card">
+              <div class="inv-card-title"><span class="ct-l">Top Vendors by Amount <span class="ct-sub">paid vs not paid</span></span></div>
+              <div id="ccdlVendorBars"></div>
+            </div>
+            <div class="inv-card">
+              <div class="inv-card-title">
+                <span class="ct-l">Monthly Paid vs Not Paid</span>
+                <span class="ct-badge proc" id="ccdl-chart-badge">Processing Date</span>
+              </div>
+              <div class="chart-wrap h220"><canvas id="ccdlMonthly"></canvas></div>
+            </div>
+          </div>
+          <div class="inv-card" style="padding:0;">
+            <div class="inv-controls" style="padding:14px 16px 0;">
+              <input class="inv-search" id="ccdl-search" placeholder="Search vendor, invoice #, description…"/>
+              <select class="inv-filter" id="ccdl-gl-filter"><option value="">All GL Accounts</option></select>
+              <select class="inv-filter" id="ccdl-status-filter"><option value="">All Statuses</option></select>
+              <span class="inv-count" id="ccdl-count"></span>
+            </div>
+            <div class="inv-tbl-wrap" style="border:none;border-top:1px solid var(--eax-line);border-radius:0;margin-top:14px;">
+              <table class="inv-tbl">
+                <thead><tr>
+                  <th data-sort="ccdlTbody:0">Inv. Date</th><th>Proc. Date</th>
+                  <th data-sort="ccdlTbody:2">Vendor</th>
+                  <th data-sort="ccdlTbody:3">GL Account</th>
+                  <th>Description</th><th>Invoice No.</th>
+                  <th data-sort="ccdlTbody:6">Status</th>
+                  <th>Paid On</th>
+                  <th class="r" data-sort="ccdlTbody:8">Amount</th>
+                </tr></thead>
+                <tbody id="ccdlTbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══════════ ALL INVOICES ═══════════ -->
+        <div id="panel-all" class="inv-panel">
+          <div class="inv-section-head">
+            <span class="sh-l">All Invoices</span>
+            <span class="sh-r">Orange left edge &middot; invoice and processing months differ. <b>NEW</b> tag &middot; received in active period.</span>
+          </div>
+          <div class="inv-controls">
+            <input class="inv-search" id="all-search" placeholder="Search vendor, invoice #, GL, description…"/>
+            <select class="inv-filter" id="all-ent-filter">
+              <option value="">All Entities</option>
+              <option value="Ember Group LLC">Ember Group</option>
+              <option value="CCDL Ventures LLC">CCDL Ventures</option>
+            </select>
+            <select class="inv-filter" id="all-month-filter"><option value="">All Months</option></select>
+            <select class="inv-filter" id="all-gl-filter"><option value="">All GL Accounts</option></select>
+            <select class="inv-filter" id="all-status-filter"><option value="">All Statuses</option></select>
+            <span class="inv-count" id="all-count"></span>
+          </div>
+          <div class="inv-card" style="padding:0;">
+            <div class="inv-tbl-wrap">
+              <table class="inv-tbl">
+                <thead><tr>
+                  <th data-sort="allTbody:0">Inv. Date</th>
+                  <th data-sort="allTbody:1">Proc. Date</th>
+                  <th>Entity</th>
+                  <th data-sort="allTbody:3">Vendor</th>
+                  <th data-sort="allTbody:4">GL Account</th>
+                  <th>Description</th><th>Invoice No.</th>
+                  <th data-sort="allTbody:7">Status</th>
+                  <th>Paid On</th>
+                  <th class="r" data-sort="allTbody:9">Amount</th>
+                </tr></thead>
+                <tbody id="allTbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /.inv-content -->
+
+      <footer class="inv-foot">
+        <span>Source &middot; Stampli &middot; <b>Ember Group, LLC</b> &amp; <b>CCDL Ventures, LLC</b></span>
+        <span>GL accounts mapped directly from the Stampli export</span>
+      </footer>
+    </div><!-- /.inv-page -->
+    {% endif %}
+
+  </div><!-- /#main-content -->
+</div><!-- /#app -->
+
+<!-- ── Upload modal ─────────────────────────────────────── -->
+<div class="inv-modal" id="upload-modal" role="dialog" aria-modal="true" aria-labelledby="upload-title">
+  <div class="inv-modal-box">
+    <div class="inv-modal-head">
+      <h3 id="upload-title">Upload bi-weekly invoice file</h3>
+      <button class="inv-modal-close" id="upload-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="inv-modal-meta">
+      Drop the Stampli HTML export for the period. We&rsquo;ll read the date range from the filename
+      (e.g. <code>Invoice_Dashboard_Ember_CCDL_2026_05_08.html</code>) and add it as a new snapshot
+      in the Period Archive. Re-uploading the same period replaces the prior snapshot.
+    </div>
+    <div class="inv-drop" id="upload-drop">
+      <div class="drop-icon">
+        <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m14-7l-5-5-5 5m5-5v12" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div class="drop-l1">Drop file or click to browse</div>
+      <div class="drop-l2">HTML / XLSX &middot; up to 10 MB</div>
+      <input type="file" id="upload-file" accept=".html,.htm,.xlsx" style="display:none;"/>
+    </div>
+    <div class="inv-detected" id="upload-detected"></div>
+    <div class="inv-modal-actions">
+      <button class="inv-btn" id="upload-cancel">Cancel</button>
+      <button class="inv-btn primary" id="upload-commit">Add to archive</button>
+    </div>
+  </div>
+</div>
+
+{# Server-injected payload — the latest period selected by load_period() #}
+<script id="invoice-data" type="application/json">
+{{ invoice.data|tojson if invoice else '{}'|safe }}
+</script>
+<script>
+  window.INVOICE_D = JSON.parse(document.getElementById('invoice-data').textContent || '{}');
+  window.INVOICE_ARCHIVE = {{ archive|tojson if archive else '[]'|safe }};
+  /* GL_COLORS is theme-stable, ship it as a static asset. */
+</script>
+<script src="/static/js/invoice_dashboard_gl_colors.js"></script>
+<script src="/static/js/invoice_dashboard.js"></script>
+{# Account Settings modal — required so the Account chip in
+   _sidebar_foot.html has a working openAcct() handler. #}
+{% include "_partials/_account_modal.html" %}
+</body>
+</html>
