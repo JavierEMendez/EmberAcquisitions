@@ -96,22 +96,25 @@
   .arc-rail-hint{
     font-size:11px;color:var(--eax-subtle);line-height:1.45;
   }
+  /* Ghost-button styled to match .admin-btn / .refresh-btn used on
+     the home and other dashboards: transparent base, subtle border,
+     accent on hover. Less shouty than the previous solid orange
+     button and more consistent with the rest of the app. */
   .arc-rail-upload{
     margin-top:12px;
     width:100%;
-    display:flex;align-items:center;justify-content:center;gap:7px;
-    background-image:linear-gradient(var(--eax-accent), var(--eax-accent));
-    color:var(--eax-accent-fg);
-    border:1px solid var(--eax-accent);
-    border-radius:8px;padding:8px 12px;
-    font-family:var(--font-sans);font-size:11.5px;font-weight:700;
+    display:inline-flex;align-items:center;justify-content:center;gap:6px;
+    background:transparent;
+    color:var(--eax-muted);
+    border:1px solid var(--eax-line-2);
+    border-radius:8px;padding:7px 12px;
+    font-family:var(--font-sans);font-size:11px;font-weight:600;
     letter-spacing:0.04em;cursor:pointer;
-    box-shadow:0 6px 16px rgba(242,89,41,0.20);
-    transition:transform .12s, box-shadow .15s;
+    transition:border-color .15s, color .15s, background .15s;
   }
   .arc-rail-upload:hover{
-    transform:translateY(-1px);
-    box-shadow:0 10px 22px rgba(242,89,41,0.30);
+    border-color:var(--eax-accent);
+    color:var(--eax-accent);
   }
   .arc-rail-year{
     padding:14px 14px 4px;
