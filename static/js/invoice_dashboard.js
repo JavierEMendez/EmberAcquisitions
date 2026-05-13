@@ -17,6 +17,41 @@
 
 (function () {
   'use strict';
+
+  // ──────────────────────────────────────────────────────────
+  // Expose modal handlers on window FIRST — before any other
+  // module-level code that could throw (Chart.defaults, INVOICE_D
+  // access, etc.). If anything below this point fails, the modal's
+  // Cancel and Add-to-archive inline onclick handlers still work.
+  // ──────────────────────────────────────────────────────────
+  window.invdCloseUploadModal = function() {
+    var m = document.getElementById('upload-modal');
+    if (m) m.classList.remove('is-open');
+  };
+  window.invdCommitUpload = async function() {
+    var input = document.getElementById('upload-file');
+    var file  = input && input.files && input.files[0];
+    if (!file) { alert('Pick a file first.'); return; }
+    var btn = document.getElementById('upload-commit');
+    var original = btn ? btn.textContent : 'Add to archive';
+    if (btn) { btn.disabled = true; btn.textContent = 'Uploading…'; }
+    try {
+      var fd = new FormData();
+      fd.append('file', file, file.name);
+      var r = await fetch('/api/invoice-dashboard/upload', { method: 'POST', body: fd });
+      var j = await r.json().catch(function () { return {}; });
+      if (!r.ok || !j.ok) {
+        alert('Upload failed: ' + (j.error || ('HTTP ' + r.status)));
+        if (btn) { btn.disabled = false; btn.textContent = original; }
+        return;
+      }
+      location.assign('/invoice-dashboard?period=' + encodeURIComponent(j.period_key));
+    } catch (err) {
+      alert('Upload failed: ' + (err && err.message || err));
+      if (btn) { btn.disabled = false; btn.textContent = original; }
+    }
+  };
+
   const D = window.INVOICE_D;
   const GL_COLORS = window.INVOICE_GL_COLORS;
 
@@ -826,35 +861,6 @@
     const el = document.getElementById(id);
     if (el) el.addEventListener(evt, fn);
   }
-
-  // Expose the upload commit handler on window so the template's inline
-  // onclick="window.invdCommitUpload()" can find it. Defined at IIFE
-  // execution time (before DOMContentLoaded) so the button is always
-  // armed by the time the user can click it — even if wire() somehow
-  // never runs.
-  window.invdCommitUpload = async function() {
-    const input = document.getElementById('upload-file');
-    const file  = input && input.files && input.files[0];
-    if (!file) { alert('Pick a file first.'); return; }
-    const btn = document.getElementById('upload-commit');
-    const original = btn ? btn.textContent : 'Add to archive';
-    if (btn) { btn.disabled = true; btn.textContent = 'Uploading…'; }
-    try {
-      const fd = new FormData();
-      fd.append('file', file, file.name);
-      const r = await fetch('/api/invoice-dashboard/upload', { method: 'POST', body: fd });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok || !j.ok) {
-        alert('Upload failed: ' + (j.error || ('HTTP ' + r.status)));
-        if (btn) { btn.disabled = false; btn.textContent = original; }
-        return;
-      }
-      location.assign('/invoice-dashboard?period=' + encodeURIComponent(j.period_key));
-    } catch (err) {
-      alert('Upload failed: ' + (err && err.message || err));
-      if (btn) { btn.disabled = false; btn.textContent = original; }
-    }
-  };
 
   function wire() {
     // Basis pills
