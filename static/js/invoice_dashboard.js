@@ -755,8 +755,14 @@
   // pattern and report the detected period.
   // ──────────────────────────────────────────────────────────
   function openUploadModal() {
-    document.getElementById('upload-modal').classList.add('is-open');
-    document.getElementById('upload-detected').classList.remove('is-shown');
+    // Just opens the modal — does NOT reset the preview, because
+    // handleFileSelection() may have just populated it. Resetting
+    // here would race-erase the just-shown preview rows. The button
+    // itself uses an inline onclick to add `is-open` without going
+    // through this function, so the empty-state open path is also
+    // covered without dropping the preview.
+    const m = document.getElementById('upload-modal');
+    if (m) m.classList.add('is-open');
   }
   function closeUploadModal() {
     document.getElementById('upload-modal').classList.remove('is-open');
@@ -859,7 +865,8 @@
     const drop = document.getElementById('upload-drop');
     const fileInput = document.getElementById('upload-file');
     if (!drop || !fileInput) return;        // modal markup absent — bail
-    drop.addEventListener('click', () => fileInput.click());
+    // Click-to-browse is handled natively by the <label for="upload-file">
+    // — no JS needed for that path. Drag/drop still wired below.
     drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('dragover'); });
     drop.addEventListener('dragleave', () => drop.classList.remove('dragover'));
     drop.addEventListener('drop', e => {
