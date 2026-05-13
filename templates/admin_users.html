@@ -167,6 +167,7 @@
             <label><input type="checkbox" id="new-pa-sales" checked>Community Sales</label>
             <label><input type="checkbox" id="new-pa-verticals" checked>Vertical Dashboard</label>
             <label><input type="checkbox" id="new-pa-verticals-comment" checked>Vertical Dashboard (Comments)</label>
+            <label><input type="checkbox" id="new-pa-invoice-dashboard" checked>Invoice Dashboard</label>
           </div>
           <button class="btn-add-user" onclick="addUser()">Add User</button>
         </div>
@@ -186,6 +187,7 @@ const PAGE_LABELS = {
   sales:             'Community Sales',
   verticals:         'Vertical Dashboard',
   verticals_comment: 'Vertical Dashboard (Comments)',
+  invoice_dashboard: 'Invoice Dashboard',
 };
 
 async function refreshUserList() {
@@ -255,6 +257,7 @@ async function addUser() {
     sales:             document.getElementById('new-pa-sales').checked,
     verticals:         document.getElementById('new-pa-verticals').checked,
     verticals_comment: document.getElementById('new-pa-verticals-comment').checked,
+    invoice_dashboard: document.getElementById('new-pa-invoice-dashboard').checked,
   };
   const email = document.getElementById('new-email').value.trim();
   if (!username || !password) { alert('Username and password required'); return; }
@@ -268,7 +271,7 @@ async function addUser() {
     document.getElementById('new-password').value = '';
     document.getElementById('new-email').value = '';
     document.getElementById('new-is-admin').checked = false;
-    ['mpc','returns','loans','operations','macro','sales','verticals','verticals-comment'].forEach(k=>document.getElementById('new-pa-'+k).checked=true);
+    ['mpc','returns','loans','operations','macro','sales','verticals','verticals-comment','invoice-dashboard'].forEach(k=>document.getElementById('new-pa-'+k).checked=true);
     await refreshUserList();
   } else { alert(d.error || 'Error creating user'); }
 }

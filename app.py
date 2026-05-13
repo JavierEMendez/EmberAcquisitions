@@ -2,7 +2,7 @@
 Ember Tract Underwriting Web App
 Flask + PostgreSQL + Flask-Login — no Excel required
 """
-import os, json, datetime, io, base64, requests, threading, concurrent.futures
+import os, re, json, datetime, io, base64, requests, threading, concurrent.futures
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail, Attachment, FileContent, FileName, FileType, Disposition, Content
 from functools import wraps
@@ -255,11 +255,58 @@ def init_db():
           created_at TIMESTAMPTZ DEFAULT NOW()
         );
         CREATE INDEX IF NOT EXISTS vd_imports_vertical_idx ON vd_imports(vertical);
+
+        -- ── Invoice Dashboard ──────────────────────────────────────
+        -- Bi-weekly Stampli HTML uploads. Unlike the `reports` table
+        -- (latest-snapshot pattern), every upload here is a permanent
+        -- entry the user can browse from the Period Archive rail.
+        -- Period key format: YYYY-MM-A (days 1-15) or YYYY-MM-B (16-EOM).
+        CREATE TABLE IF NOT EXISTS invoice_periods (
+            id              BIGSERIAL PRIMARY KEY,
+            period_key      TEXT       NOT NULL UNIQUE,
+            period_start    DATE       NOT NULL,
+            period_end      DATE       NOT NULL,
+            report_date     DATE       NOT NULL,
+            entities        TEXT[]     NOT NULL DEFAULT ARRAY['Ember Group LLC','CCDL Ventures LLC'],
+            total_records   INTEGER    NOT NULL,
+            total_amount    NUMERIC(14,2) NOT NULL,
+            data            JSONB      NOT NULL,
+            source_filename TEXT,
+            source_blob     BYTEA,
+            uploaded_by     TEXT,
+            uploaded_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT invoice_periods_period_key_chk
+                CHECK (period_key ~ '^[0-9]{4}-[0-9]{2}-[AB]$'),
+            CONSTRAINT invoice_periods_window_chk
+                CHECK (period_end >= period_start)
+        );
+        CREATE INDEX IF NOT EXISTS invoice_periods_period_start_idx
+            ON invoice_periods (period_start DESC);
+        -- Lightweight summary view for the archive rail so the page
+        -- route can render snapshot cards without pulling the full
+        -- JSONB blob from every row.
+        CREATE OR REPLACE VIEW invoice_periods_summary AS
+        SELECT
+            period_key,
+            period_start,
+            period_end,
+            report_date,
+            total_records,
+            total_amount,
+            COALESCE((SELECT COUNT(*)::int FROM jsonb_array_elements(data->'records') r
+                      WHERE r->>'entity' = 'Ember Group LLC'),  0) AS ember_count,
+            COALESCE((SELECT COUNT(*)::int FROM jsonb_array_elements(data->'records') r
+                      WHERE r->>'entity' = 'CCDL Ventures LLC'), 0) AS ccdl_count,
+            uploaded_at
+        FROM invoice_periods
+        ORDER BY period_start DESC;
     """)
     # Backfill `verticals` page_access for existing users so the new
     # dashboard is visible by default — same convention used for
     # portfolio / macro / sales when those shipped.
     cur.execute("UPDATE users SET page_access = page_access || '{\"verticals\": true}'::jsonb WHERE page_access->>'verticals' IS NULL")
+    # Backfill `invoice_dashboard` page_access — new Stampli analytics page.
+    cur.execute("UPDATE users SET page_access = page_access || '{\"invoice_dashboard\": true}'::jsonb WHERE page_access->>'invoice_dashboard' IS NULL")
     # Per-user "can edit comments on the Vertical Dashboard" flag.
     # Default true to match the legacy behavior (anyone with verticals
     # access could edit, gated only by a shared admin password). Admins
@@ -1715,6 +1762,271 @@ def vd_page():
         page_access=pa,
     )
 
+# ─── INVOICE DASHBOARD ───────────────────────────────────────────────────────
+# Bi-weekly Stampli HTML invoice analytics. Each upload becomes a
+# permanent row in `invoice_periods` keyed by half-month (YYYY-MM-A
+# for 1–15, YYYY-MM-B for 16–EOM). The Period Archive rail on the
+# /invoice-dashboard page lets users time-travel between snapshots.
+
+_INVD_MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+_INVD_D_PATTERN  = re.compile(r"const\s+D\s*=\s*(\{[\s\S]*?\});\s*\n?\s*const\s+GL_COLORS", re.MULTILINE)
+_INVD_DATE_TUPLE = re.compile(r"(\d{4})[-_]?(\d{2})[-_]?(\d{2})")
+_INVD_REPORT_HDR = re.compile(
+    r"Updated:\s*([A-Z][a-z]+)\s+(\d{1,2})\s*[–—\-]\s*(?:([A-Z][a-z]+)\s+)?(\d{1,2}),\s*(\d{4})",
+)
+_INVD_REPORT_DT  = re.compile(r"Report Date:\s*([A-Z][a-z]+)\s+(\d{1,2}),\s*(\d{4})")
+
+def _invd_period_of(d):
+    """Half-month period metadata. d is a datetime.date.
+    Returns {key, start, end, label, short, year}."""
+    import calendar
+    first_half = d.day <= 15
+    start_day  = 1 if first_half else 16
+    end_day    = 15 if first_half else calendar.monthrange(d.year, d.month)[1]
+    key   = f"{d.year}-{d.month:02d}-{'A' if first_half else 'B'}"
+    mo    = _INVD_MONTH_NAMES[d.month - 1]
+    return {
+        "key":   key,
+        "start": datetime.date(d.year, d.month, start_day),
+        "end":   datetime.date(d.year, d.month, end_day),
+        "label": f"{mo} {start_day} – {mo} {end_day}, {d.year}",
+        "short": f"{mo.upper()} {start_day}–{end_day}",
+        "year":  d.year,
+    }
+
+def _invd_load_period(period_key=None):
+    """Latest row if period_key is None, otherwise the specific period.
+    Returns a dict shaped like the JS-side data island expects, or None."""
+    conn = get_db(); cur = conn.cursor()
+    try:
+        if period_key:
+            cur.execute(
+                "SELECT period_key, period_start, period_end, report_date, "
+                "       total_records, total_amount, data, uploaded_at "
+                "FROM invoice_periods WHERE period_key = %s", (period_key,))
+        else:
+            cur.execute(
+                "SELECT period_key, period_start, period_end, report_date, "
+                "       total_records, total_amount, data, uploaded_at "
+                "FROM invoice_periods ORDER BY period_start DESC LIMIT 1")
+        row = cur.fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        # psycopg2 with RealDictCursor returns JSONB as dict already;
+        # be defensive if a different driver hands back a string.
+        if isinstance(d.get("data"), str):
+            d["data"] = json.loads(d["data"])
+        # Serialize date/Decimal values for jsonify safety.
+        for k in ("period_start", "period_end", "report_date"):
+            if d.get(k) and hasattr(d[k], "isoformat"):
+                d[k] = d[k].isoformat()
+        if d.get("uploaded_at") and hasattr(d["uploaded_at"], "isoformat"):
+            d["uploaded_at"] = d["uploaded_at"].isoformat()
+        if d.get("total_amount") is not None:
+            d["total_amount"] = float(d["total_amount"])
+        return d
+    finally:
+        cur.close(); conn.close()
+
+def _invd_load_archive_summary():
+    """Every period from newest to oldest. Used by the rail."""
+    conn = get_db(); cur = conn.cursor()
+    try:
+        cur.execute(
+            "SELECT period_key, period_start, period_end, report_date, "
+            "       total_records, total_amount, ember_count, ccdl_count, "
+            "       uploaded_at FROM invoice_periods_summary")
+        rows = cur.fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            for k in ("period_start", "period_end", "report_date"):
+                if d.get(k) and hasattr(d[k], "isoformat"):
+                    d[k] = d[k].isoformat()
+            if d.get("uploaded_at") and hasattr(d["uploaded_at"], "isoformat"):
+                d["uploaded_at"] = d["uploaded_at"].isoformat()
+            if d.get("total_amount") is not None:
+                d["total_amount"] = float(d["total_amount"])
+            out.append(d)
+        return out
+    finally:
+        cur.close(); conn.close()
+
+def _invd_save_upload(*, period_key, period_start, period_end, report_date,
+                      data, source_filename=None, source_blob=None,
+                      uploaded_by=None):
+    """UPSERT one period row. Returns metadata about what landed."""
+    records = data.get("records", [])
+    total_records = len(records)
+    total_amount  = sum(float(r.get("amount", 0) or 0) for r in records)
+    conn = get_db(); cur = conn.cursor()
+    try:
+        cur.execute("SELECT 1 FROM invoice_periods WHERE period_key = %s", (period_key,))
+        replaced = cur.fetchone() is not None
+        cur.execute("""
+            INSERT INTO invoice_periods
+                (period_key, period_start, period_end, report_date,
+                 total_records, total_amount, data,
+                 source_filename, source_blob, uploaded_by, uploaded_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, NOW())
+            ON CONFLICT (period_key) DO UPDATE SET
+                period_start    = EXCLUDED.period_start,
+                period_end      = EXCLUDED.period_end,
+                report_date     = EXCLUDED.report_date,
+                total_records   = EXCLUDED.total_records,
+                total_amount    = EXCLUDED.total_amount,
+                data            = EXCLUDED.data,
+                source_filename = COALESCE(EXCLUDED.source_filename,
+                                           invoice_periods.source_filename),
+                source_blob     = COALESCE(EXCLUDED.source_blob,
+                                           invoice_periods.source_blob),
+                uploaded_by     = COALESCE(EXCLUDED.uploaded_by,
+                                           invoice_periods.uploaded_by),
+                uploaded_at     = NOW();
+        """, (period_key, period_start, period_end, report_date,
+              total_records, total_amount, json.dumps(data),
+              source_filename, psycopg2.Binary(source_blob) if source_blob else None,
+              uploaded_by))
+        conn.commit()
+    finally:
+        cur.close(); conn.close()
+    p = _invd_period_of(period_start)
+    return {"period_key": period_key, "period_label": p["label"],
+            "total_records": total_records, "replaced": replaced}
+
+def _invd_parse_stampli_export(raw, filename=""):
+    """Parse a Stampli HTML export. Returns
+    {period_key, period_start, period_end, report_date, data}.
+    Raises ValueError if the upload doesn't look like a Stampli file."""
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        text = raw.decode("utf-8", errors="replace")
+    m = _INVD_D_PATTERN.search(text)
+    if not m:
+        raise ValueError(
+            "Could not find `const D = {...}` block in the upload. "
+            "Is this really the Stampli Invoice Dashboard HTML export?")
+    try:
+        D = json.loads(m.group(1))
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invoice payload didn't parse as JSON: {e}")
+    report_date = _invd_detect_report_date(text, filename)
+    if not report_date:
+        raise ValueError(
+            "Could not determine the report date. Include YYYY_MM_DD in the "
+            "filename or restore the 'Report Date:' header in the source export.")
+    start, end = _invd_detect_period_window(text)
+    if not start or not end:
+        anchor = datetime.date(report_date.year, report_date.month,
+                                max(1, report_date.day - 1))
+        p = _invd_period_of(anchor)
+        start, end = p["start"], p["end"]
+    return {
+        "period_key":   _invd_period_of(start)["key"],
+        "period_start": start,
+        "period_end":   end,
+        "report_date":  report_date,
+        "data":         D,
+    }
+
+def _invd_detect_report_date(text, filename):
+    m = _INVD_DATE_TUPLE.search(filename or "")
+    if m:
+        y, mo, d = map(int, m.groups())
+        try: return datetime.date(y, mo, d)
+        except ValueError: pass
+    m = _INVD_REPORT_DT.search(text)
+    if m:
+        mo_name, day, year = m.groups()
+        try:
+            mo = _INVD_MONTH_NAMES.index(mo_name[:3]) + 1
+            return datetime.date(int(year), mo, int(day))
+        except ValueError: pass
+    return None
+
+def _invd_detect_period_window(text):
+    m = _INVD_REPORT_HDR.search(text)
+    if not m: return (None, None)
+    mo1, d1, mo2, d2, year = m.groups()
+    if not mo2: mo2 = mo1
+    try:
+        start = datetime.date(int(year), _INVD_MONTH_NAMES.index(mo1[:3]) + 1, int(d1))
+        end   = datetime.date(int(year), _INVD_MONTH_NAMES.index(mo2[:3]) + 1, int(d2))
+        return (start, end)
+    except ValueError:
+        return (None, None)
+
+# ── ROUTES ───────────────────────────────────────────────────────────
+@app.route("/invoice-dashboard")
+@login_required
+def invoice_dashboard():
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("invoice_dashboard", True):
+        return redirect(url_for("home"))
+    if session.get("is_admin"):
+        pa = {**pa, "invoice_dashboard": True}
+    period_key = request.args.get("period")
+    period   = _invd_load_period(period_key)
+    archive  = _invd_load_archive_summary()
+    return render_template(
+        "invoice_dashboard.html",
+        invoice=period,           # None when no uploads yet → empty state
+        archive=archive,
+        page_access=pa,
+        is_admin=session.get("is_admin", False),
+        username=session.get("username"),
+        display_name=session.get("display_name", session.get("username")),
+    )
+
+@app.route("/api/invoice-dashboard/period/<period_key>")
+@login_required
+def api_invoice_period(period_key):
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("invoice_dashboard", True):
+        return jsonify({"error": "forbidden"}), 403
+    period = _invd_load_period(period_key)
+    if not period:
+        return jsonify({"error": "not found", "period_key": period_key}), 404
+    return jsonify(period)
+
+@app.route("/api/invoice-dashboard/upload", methods=["POST"])
+@login_required
+def api_invoice_upload():
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("invoice_dashboard", True):
+        return jsonify({"error": "forbidden"}), 403
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "no file"}), 400
+    raw = f.read()
+    try:
+        normalized = _invd_parse_stampli_export(raw, filename=f.filename)
+        result = _invd_save_upload(
+            period_key      = normalized["period_key"],
+            period_start    = normalized["period_start"],
+            period_end      = normalized["period_end"],
+            report_date     = normalized["report_date"],
+            data            = normalized["data"],
+            source_filename = f.filename,
+            source_blob     = raw,
+            uploaded_by     = session.get("username") or "?",
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        app.logger.exception("Invoice upload failed")
+        return jsonify({"error": f"internal: {e}"}), 500
+    return jsonify({
+        "ok":            True,
+        "period_key":    result["period_key"],
+        "period_label":  result["period_label"],
+        "replaced":      result["replaced"],
+        "total_records": result["total_records"],
+    })
+
 # ─── ADMIN: TEAM ACTIVITY DASHBOARD ───────────────────────────────────────────
 # Friendly labels for the paths the dashboard surfaces. Anything not in
 # this map falls back to the raw path so unknown routes (admin pages,
@@ -2006,7 +2318,7 @@ def create_user():
         "mpc_underwriting": True, "returns": True, "loans": True,
         "operations": True, "macro": True, "sales": True,
         "portfolio": True, "reports": True, "verticals": True,
-        "verticals_comment": True,
+        "verticals_comment": True, "invoice_dashboard": True,
     })
     if not username or not password:
         return jsonify({"error": "Username and password required"}), 400
