@@ -618,6 +618,10 @@
 }
 .inv-modal-meta{font-size:12px;color:var(--eax-muted);margin-bottom:16px;line-height:1.55;}
 .inv-drop{
+  /* display:block — <label> defaults to inline, which fragments the
+     dashed border into chunks at line boundaries. Forcing block keeps
+     the border rendering as a single rectangle around the whole area. */
+  display:block;
   border:1.5px dashed var(--eax-line-2);
   border-radius:10px;
   padding:30px 18px;text-align:center;
