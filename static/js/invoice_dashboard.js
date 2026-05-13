@@ -826,6 +826,36 @@
     const el = document.getElementById(id);
     if (el) el.addEventListener(evt, fn);
   }
+
+  // Expose the upload commit handler on window so the template's inline
+  // onclick="window.invdCommitUpload()" can find it. Defined at IIFE
+  // execution time (before DOMContentLoaded) so the button is always
+  // armed by the time the user can click it — even if wire() somehow
+  // never runs.
+  window.invdCommitUpload = async function() {
+    const input = document.getElementById('upload-file');
+    const file  = input && input.files && input.files[0];
+    if (!file) { alert('Pick a file first.'); return; }
+    const btn = document.getElementById('upload-commit');
+    const original = btn ? btn.textContent : 'Add to archive';
+    if (btn) { btn.disabled = true; btn.textContent = 'Uploading…'; }
+    try {
+      const fd = new FormData();
+      fd.append('file', file, file.name);
+      const r = await fetch('/api/invoice-dashboard/upload', { method: 'POST', body: fd });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) {
+        alert('Upload failed: ' + (j.error || ('HTTP ' + r.status)));
+        if (btn) { btn.disabled = false; btn.textContent = original; }
+        return;
+      }
+      location.assign('/invoice-dashboard?period=' + encodeURIComponent(j.period_key));
+    } catch (err) {
+      alert('Upload failed: ' + (err && err.message || err));
+      if (btn) { btn.disabled = false; btn.textContent = original; }
+    }
+  };
+
   function wire() {
     // Basis pills
     document.querySelectorAll('[data-basis]').forEach(el => {
@@ -875,37 +905,11 @@
     on('upload-modal',  'click', (e) => {
       if (e.target.id === 'upload-modal') closeUploadModal();
     });
-    // Add-to-archive — POST the selected file to the upload endpoint.
-    // The handoff bundle shipped the button markup but never wired
-    // this handler; without it the button was dead.
-    on('upload-commit', 'click', async () => {
-      const input = document.getElementById('upload-file');
-      const file  = input && input.files && input.files[0];
-      if (!file) { alert('Pick a file first.'); return; }
-      const btn = document.getElementById('upload-commit');
-      const original = btn.textContent;
-      btn.disabled = true;
-      btn.textContent = 'Uploading…';
-      try {
-        const fd = new FormData();
-        fd.append('file', file, file.name);
-        const r = await fetch('/api/invoice-dashboard/upload', { method: 'POST', body: fd });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok || !j.ok) {
-          alert('Upload failed: ' + (j.error || ('HTTP ' + r.status)));
-          btn.disabled = false; btn.textContent = original;
-          return;
-        }
-        // Success — reload so the new snapshot lands in the rail and
-        // the page picks up the latest period via the SSR path.
-        // Adding a hash so the location-bar change is visible if the
-        // user happened to be looking, but a plain reload would do.
-        location.assign('/invoice-dashboard?period=' + encodeURIComponent(j.period_key));
-      } catch (err) {
-        alert('Upload failed: ' + (err && err.message || err));
-        btn.disabled = false; btn.textContent = original;
-      }
-    });
+    // Add-to-archive — wired here AND exposed on window so the
+    // template's inline onclick="window.invdCommitUpload()" path also
+    // works (defense in depth: if wire() ever fails to run, the
+    // inline onclick still does the right thing).
+    on('upload-commit', 'click', () => window.invdCommitUpload && window.invdCommitUpload());
     const drop = document.getElementById('upload-drop');
     const fileInput = document.getElementById('upload-file');
     if (!drop || !fileInput) return;        // modal markup absent — bail
