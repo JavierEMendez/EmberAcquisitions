@@ -338,34 +338,95 @@
   }
 
   // ──────────────────────────────────────────────────────────
-  // Charts — Chart.js wired with Ember palette
+  // Charts — Chart.js wired with theme-aware Ember palette.
+  //
+  // The "Ember Group" series color used to be hardcoded to #13344E
+  // (ember-ink-2), which is dark navy. That sits invisibly on the
+  // navy-mode dashboard background — the bars literally disappear.
+  // We now read the active theme from <html data-theme="..."> and
+  // resolve a palette that stays legible on both backgrounds.
+  // Charts re-render when the user toggles theme via a
+  // MutationObserver on documentElement[data-theme].
   // ──────────────────────────────────────────────────────────
-  const EMBER = '#13344E';   // ember-ink-2
-  const CCDL  = '#1F7A4D';   // ember-good
-  const PAID  = '#1F7A4D';
-  const UNPAID = '#F25929';  // ember-orange
-  const HILITE = '#F25929';
-  const MUTED  = 'rgba(19,52,78,0.45)';
-
-  // Soft gridlines that don't fight the paper bg
-  function gridOpts() {
+  function isDarkTheme() {
+    return document.documentElement.getAttribute('data-theme') === 'dark';
+  }
+  // Returns the palette for the current theme. Re-resolved on every
+  // chart build so theme switches take effect immediately.
+  function palette() {
+    const dark = isDarkTheme();
     return {
-      ticks: { color: '#5B6B7B', font: { size: 10, family: 'DM Sans, sans-serif' } },
-      grid:  { color: 'rgba(8,35,59,0.06)' },
+      EMBER:  dark ? '#8FB6D9' : '#13344E',   // legible on navy / dark on paper
+      CCDL:   dark ? '#6BC793' : '#1F7A4D',   // matches --eax-good per theme
+      PAID:   dark ? '#6BC793' : '#1F7A4D',
+      UNPAID: dark ? '#F57346' : '#F25929',   // matches --eax-accent per theme
+      HILITE: dark ? '#F57346' : '#F25929',
+      MUTED:  dark ? 'rgba(255,255,255,0.30)' : 'rgba(19,52,78,0.45)',
+      // Chart text + axis colors. The previous fixed #5B6B7B was OK on
+      // paper but rendered as low-contrast murky grey on navy — and
+      // the donut/pie legends in particular looked black-ish because
+      // they had no explicit color override and inherited it.
+      TEXT:   dark ? '#E8EDF2' : '#5B6B7B',
+      GRID:   dark ? 'rgba(255,255,255,0.08)' : 'rgba(8,35,59,0.06)',
+      TOOLTIP_BG:    dark ? '#08233B' : '#0B1F33',
+      TOOLTIP_TEXT:  '#F4ECDD',
     };
   }
-  // Guarded — if Chart.js fails to load (CDN blocked, ad blocker,
-  // network blip) we don't want the whole script to crash here and
-  // break the upload flow which has nothing to do with charts.
+
+  function gridOpts() {
+    const p = palette();
+    return {
+      ticks: { color: p.TEXT, font: { size: 10, family: 'DM Sans, sans-serif' } },
+      grid:  { color: p.GRID },
+    };
+  }
+  // Apply Chart.defaults from the current theme. Called on init AND
+  // on every theme toggle so legend / tick / tooltip colors track.
+  function applyChartDefaults() {
+    try {
+      const p = palette();
+      Chart.defaults.font.family = 'DM Sans, "Plus Jakarta Sans", sans-serif';
+      Chart.defaults.color = p.TEXT;
+      Chart.defaults.plugins.tooltip.backgroundColor = p.TOOLTIP_BG;
+      Chart.defaults.plugins.tooltip.titleColor      = p.TOOLTIP_TEXT;
+      Chart.defaults.plugins.tooltip.bodyColor       = p.TOOLTIP_TEXT;
+      Chart.defaults.plugins.tooltip.padding         = 10;
+      Chart.defaults.plugins.tooltip.cornerRadius    = 6;
+    } catch (e) { /* Chart.js unavailable — non-fatal */ }
+  }
+  applyChartDefaults();
+  // Re-render charts when the user flips the theme toggle. We listen
+  // on documentElement[data-theme] because that's where the central
+  // sidebar toggle writes ('dark' / 'light').
   try {
-    Chart.defaults.font.family = 'DM Sans, "Plus Jakarta Sans", sans-serif';
-    Chart.defaults.color = '#5B6B7B';
-    Chart.defaults.plugins.tooltip.backgroundColor = '#0B1F33';
-    Chart.defaults.plugins.tooltip.titleColor = '#F4ECDD';
-    Chart.defaults.plugins.tooltip.bodyColor  = '#F4ECDD';
-    Chart.defaults.plugins.tooltip.padding = 10;
-    Chart.defaults.plugins.tooltip.cornerRadius = 6;
-  } catch (e) { /* Chart.js unavailable — non-fatal */ }
+    new MutationObserver(function () {
+      applyChartDefaults();
+      refreshPaletteVars();
+      // Only rebuild if data is loaded; otherwise nothing to repaint.
+      if (D && Array.isArray(D.records) && D.records.length) {
+        try { buildCharts();  } catch (_) {}
+        try { buildVendorBars('emberVendorBars','Ember Group LLC'); } catch (_) {}
+        try { buildVendorBars('ccdlVendorBars', 'CCDL Ventures LLC'); } catch (_) {}
+      }
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  } catch (e) { /* no-op */ }
+
+  // The rest of the file references EMBER, CCDL, PAID, UNPAID, HILITE,
+  // MUTED as if they were module-level constants — keep that shape, but
+  // back them with mutable `let`s that re-resolve on theme change so
+  // every chart rebuild picks up the current palette without each call
+  // site having to change.
+  let EMBER, CCDL, PAID, UNPAID, HILITE, MUTED;
+  function refreshPaletteVars() {
+    const p = palette();
+    EMBER  = p.EMBER;
+    CCDL   = p.CCDL;
+    PAID   = p.PAID;
+    UNPAID = p.UNPAID;
+    HILITE = p.HILITE;
+    MUTED  = p.MUTED;
+  }
+  refreshPaletteVars();
 
   const charts = {};
   function buildOrUpdate(id, config) {
@@ -376,7 +437,14 @@
   }
 
   function buildCharts() {
+    const p = palette();
     const gls = D.gl_accounts.slice(0, 10);
+    // Surface color forms the white-in-light / navy-in-dark slice
+    // separator between donut/pie segments. Hardcoded #FFFFFF kept
+    // working in dark mode (white lines on colored slices) but made
+    // the donut feel slightly more disconnected than necessary —
+    // match the surface so it reads as actual gaps either way.
+    const SLICE_BORDER = p.TEXT === '#5B6B7B' ? '#FFFFFF' : '#0E2A41';
     buildOrUpdate('glDonut', {
       type: 'doughnut',
       data: {
@@ -384,7 +452,7 @@
         datasets: [{
           data: gls.map(g => g.total),
           backgroundColor: gls.map(g => GL_COLORS[g.gl] || EMBER),
-          borderWidth: 2, borderColor: '#FFFFFF',
+          borderWidth: 2, borderColor: SLICE_BORDER,
         }],
       },
       options: {
@@ -393,11 +461,13 @@
           legend: {
             position: 'right',
             labels: {
+              color: p.TEXT,
               font: { size: 10 }, boxWidth: 10,
               generateLabels: ch => ch.data.labels.map((l, i) => ({
                 text: l + ' · ' + fmtK(ch.data.datasets[0].data[i]),
                 fillStyle:   ch.data.datasets[0].backgroundColor[i],
                 strokeStyle: ch.data.datasets[0].backgroundColor[i],
+                fontColor:   p.TEXT,
                 index: i,
               })),
             },
@@ -435,13 +505,13 @@
         datasets: [{
           data: D.gl_accounts.map(g => g.total),
           backgroundColor: D.gl_accounts.map(g => GL_COLORS[g.gl] || EMBER),
-          borderWidth: 2, borderColor: '#FFFFFF',
+          borderWidth: 2, borderColor: SLICE_BORDER,
         }],
       },
       options: {
         responsive: true, maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'right', labels: { font: { size: 10 }, boxWidth: 10 } },
+          legend: { position: 'right', labels: { color: p.TEXT, font: { size: 10 }, boxWidth: 10 } },
           tooltip: { callbacks: { label: c => ' ' + fmt(c.raw) } },
         },
       },
@@ -477,8 +547,8 @@
     buildOrUpdate('monthlyLine', {
       type: 'line',
       data: { labels, datasets: [
-        { label: 'Ember Group',  data: eV, borderColor: EMBER, backgroundColor: 'rgba(19,52,78,0.10)', tension: .3, fill: true, pointRadius: 5, pointBackgroundColor: EMBER },
-        { label: 'CCDL Ventures',data: cV, borderColor: CCDL,  backgroundColor: 'rgba(31,122,77,0.10)', tension: .3, fill: true, pointRadius: 5, pointBackgroundColor: CCDL },
+        { label: 'Ember Group',  data: eV, borderColor: EMBER, backgroundColor: EMBER + '1A', tension: .3, fill: true, pointRadius: 5, pointBackgroundColor: EMBER },
+        { label: 'CCDL Ventures',data: cV, borderColor: CCDL,  backgroundColor: CCDL  + '1A', tension: .3, fill: true, pointRadius: 5, pointBackgroundColor: CCDL },
       ]},
       options: {
         responsive: true, maintainAspectRatio: false,
@@ -539,7 +609,7 @@
       type: 'line',
       data: { labels, datasets: [{
         label: 'YTD Cumulative', data: rd,
-        borderColor: EMBER, backgroundColor: 'rgba(19,52,78,0.12)',
+        borderColor: EMBER, backgroundColor: EMBER + '1F',
         tension: .3, fill: true, pointRadius: 5, pointBackgroundColor: EMBER,
       }]},
       options: {
