@@ -2,7 +2,7 @@
 Ember Tract Underwriting Web App
 Flask + PostgreSQL + Flask-Login — no Excel required
 """
-import os, re, json, datetime, io, base64, requests, threading, concurrent.futures
+import os, re, html, json, datetime, io, base64, requests, threading, concurrent.futures
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail, Attachment, FileContent, FileName, FileType, Disposition, Content
 from functools import wraps
@@ -1915,12 +1915,20 @@ def _invd_parse_stampli_export(raw, filename=""):
         D = json.loads(m.group(1))
     except json.JSONDecodeError as e:
         raise ValueError(f"Invoice payload didn't parse as JSON: {e}")
-    report_date = _invd_detect_report_date(text, filename)
+    # Decode HTML entities ONLY for the banner/period detection — the
+    # JSON literal extraction above already grabbed the raw D block.
+    # Stampli's `Updated: Apr 16 – Apr 30` banner encodes the dash as
+    # `&ndash;` in source, which our regex's dash class won't match
+    # until we unescape. Without this, period detection silently fails
+    # and the parser falls back to the filename date (May 8 → May 1-15)
+    # even though the file is the Apr 16-30 report.
+    text_decoded = html.unescape(text)
+    report_date = _invd_detect_report_date(text_decoded, filename)
     if not report_date:
         raise ValueError(
             "Could not determine the report date. Include YYYY_MM_DD in the "
             "filename or restore the 'Report Date:' header in the source export.")
-    start, end = _invd_detect_period_window(text)
+    start, end = _invd_detect_period_window(text_decoded)
     if not start or not end:
         anchor = datetime.date(report_date.year, report_date.month,
                                 max(1, report_date.day - 1))
