@@ -96,26 +96,23 @@
   .arc-rail-hint{
     font-size:11px;color:var(--eax-subtle);line-height:1.45;
   }
-  /* Ghost-button styled to match .admin-btn / .refresh-btn used on
-     the home and other dashboards: transparent base, subtle border,
-     accent on hover. Less shouty than the previous solid orange
-     button and more consistent with the rest of the app. */
+  /* Primary action — matches the `.btn.primary` pattern from
+     capital.css (Capital Report PDF open button) for consistency:
+     solid accent fill, white text, 11px/600 font, 7×12 padding,
+     8px radius, brightness-1.04 on hover. */
   .arc-rail-upload{
     margin-top:12px;
     width:100%;
     display:inline-flex;align-items:center;justify-content:center;gap:6px;
-    background:transparent;
-    color:var(--eax-muted);
-    border:1px solid var(--eax-line-2);
+    background:var(--eax-accent);
+    color:#fff;
+    border:1px solid var(--eax-accent);
     border-radius:8px;padding:7px 12px;
-    font-family:var(--font-sans);font-size:11px;font-weight:600;
-    letter-spacing:0.04em;cursor:pointer;
-    transition:border-color .15s, color .15s, background .15s;
+    font-family:inherit;font-size:11px;font-weight:600;
+    cursor:pointer;
+    transition:filter .15s;
   }
-  .arc-rail-upload:hover{
-    border-color:var(--eax-accent);
-    color:var(--eax-accent);
-  }
+  .arc-rail-upload:hover{ filter:brightness(1.04); }
   .arc-rail-year{
     padding:14px 14px 4px;
     font-size:9.5px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;
@@ -134,8 +131,8 @@
   <!-- ── SIDEBAR ─────────────────────────────────────────────── -->
   <nav id="sidebar">
     <div class="sidebar-logo">
-      <img src="/static/img/ember_logo.png"       alt="Ember" class="logo-img logo-light"/>
-      <img src="/static/img/ember_logo_light.png" alt="Ember" class="logo-img logo-dark"/>
+      <img src="/static/img/ember_logo.png"        alt="Ember" class="logo-img logo-dark"/>
+      <img src="/static/img/ember_logo_light.png"  alt="Ember" class="logo-img logo-light"/>
       <div class="logo-sub">Invoice Dashboard</div>
     </div>
 
