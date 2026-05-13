@@ -1834,7 +1834,25 @@ def _invd_load_period(period_key=None):
         cur.close(); conn.close()
 
 def _invd_load_archive_summary():
-    """Every period from newest to oldest. Used by the rail."""
+    """Every period from newest to oldest. Used by the rail.
+
+    Dates are converted to ISO 8601 strings (`YYYY-MM-DD`) before
+    return because the rail data flows ONLY through JSON →
+    `window.INVOICE_ARCHIVE`, and Flask 3's default JSON provider
+    serializes `datetime.date` as RFC-822 (`"Thu, 16 Apr 2026
+    00:00:00 GMT"`), which the JS-side `periodOf(dateStr).split("-")`
+    can't parse. The resulting NaN cascades through
+    `buildPeriodArchive()` and throws at module load — the IIFE
+    aborts and *nothing* downstream of it (KPIs, charts, tables,
+    rail cards) renders. Converting to ISO here keeps the JS path
+    self-consistent.
+
+    `_invd_load_period()` deliberately does NOT do this conversion
+    because that path's dates flow through the Jinja template
+    (`{{ invoice.period_start.strftime(...) }}`), which requires
+    a real `datetime.date` object. Two different serialization
+    requirements, two different functions.
+    """
     conn = get_db(); cur = conn.cursor()
     try:
         cur.execute(
@@ -1845,10 +1863,11 @@ def _invd_load_archive_summary():
         out = []
         for r in rows:
             d = dict(r)
-            # Dates stay as datetime.date — tojson / jsonify handle
-            # them natively, and the template also strftime's the
-            # period_start/end values directly. Only Decimal needs
-            # explicit conversion.
+            for k in ("period_start", "period_end", "report_date"):
+                if d.get(k) is not None:
+                    d[k] = d[k].isoformat()           # → "YYYY-MM-DD"
+            if d.get("uploaded_at") is not None:
+                d["uploaded_at"] = d["uploaded_at"].isoformat()
             if d.get("total_amount") is not None:
                 d["total_amount"] = float(d["total_amount"])
             out.append(d)
