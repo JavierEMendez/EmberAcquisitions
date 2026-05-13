@@ -1815,15 +1815,18 @@ def _invd_load_period(period_key=None):
             return None
         d = dict(row)
         # psycopg2 with RealDictCursor returns JSONB as dict already;
-        # be defensive if a different driver hands back a string.
+        # defensive if a different driver hands back a string.
         if isinstance(d.get("data"), str):
             d["data"] = json.loads(d["data"])
-        # Serialize date/Decimal values for jsonify safety.
-        for k in ("period_start", "period_end", "report_date"):
-            if d.get(k) and hasattr(d[k], "isoformat"):
-                d[k] = d[k].isoformat()
-        if d.get("uploaded_at") and hasattr(d["uploaded_at"], "isoformat"):
-            d["uploaded_at"] = d["uploaded_at"].isoformat()
+        # IMPORTANT: leave `period_start` / `period_end` / `report_date`
+        # as datetime.date objects. The Jinja template calls `.strftime`
+        # on them (see invoice_dashboard.html: `invoice.period_start
+        # .strftime(...)`), and Flask's tojson filter / jsonify already
+        # serialize dates natively for the JSON paths. Calling
+        # .isoformat() here was a hangover from an earlier defensive
+        # rewrite and broke the page-render path with AttributeError.
+        # Only Decimal → float still needs explicit conversion (psycopg2
+        # returns NUMERIC as Decimal which isn't JSON-friendly).
         if d.get("total_amount") is not None:
             d["total_amount"] = float(d["total_amount"])
         return d
@@ -1842,11 +1845,10 @@ def _invd_load_archive_summary():
         out = []
         for r in rows:
             d = dict(r)
-            for k in ("period_start", "period_end", "report_date"):
-                if d.get(k) and hasattr(d[k], "isoformat"):
-                    d[k] = d[k].isoformat()
-            if d.get("uploaded_at") and hasattr(d["uploaded_at"], "isoformat"):
-                d["uploaded_at"] = d["uploaded_at"].isoformat()
+            # Dates stay as datetime.date — tojson / jsonify handle
+            # them natively, and the template also strftime's the
+            # period_start/end values directly. Only Decimal needs
+            # explicit conversion.
             if d.get("total_amount") is not None:
                 d["total_amount"] = float(d["total_amount"])
             out.append(d)
