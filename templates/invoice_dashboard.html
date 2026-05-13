@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="/static/theme.css"/>
-<link rel="stylesheet" href="/static/css/invoice_dashboard.css?v=9"/>
+<link rel="stylesheet" href="/static/css/invoice_dashboard.css?v=10"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 <style>
@@ -650,10 +650,10 @@
        button pattern. JS-side handlers in wire() remain as a backup
        for keyboard / programmatic activation. #}
     <div class="inv-modal-actions">
-      <button class="inv-btn" id="upload-cancel"
-              onclick="document.getElementById('upload-modal').classList.remove('is-open')">Cancel</button>
-      <button class="inv-btn primary" id="upload-commit"
-              onclick="window.invdCommitUpload && window.invdCommitUpload()">Add to archive</button>
+      <button type="button" class="inv-btn" id="upload-cancel"
+              onclick="(window.invdCloseUploadModal && window.invdCloseUploadModal()) || document.getElementById('upload-modal').classList.remove('is-open'); return false;">Cancel</button>
+      <button type="button" class="inv-btn primary" id="upload-commit"
+              onclick="window.invdCommitUpload && window.invdCommitUpload(); return false;">Add to archive</button>
     </div>
   </div>
 </div>
@@ -671,8 +671,8 @@
   window.INVOICE_PERIOD_KEY = {{ invoice.period_key|tojson if invoice else 'null'|safe }};
   /* GL_COLORS is theme-stable, ship it as a static asset. */
 </script>
-<script src="/static/js/invoice_dashboard_gl_colors.js?v=9"></script>
-<script src="/static/js/invoice_dashboard.js?v=9"></script>
+<script src="/static/js/invoice_dashboard_gl_colors.js?v=10"></script>
+<script src="/static/js/invoice_dashboard.js?v=10"></script>
 {# Account Settings modal — required so the Account chip in
    _sidebar_foot.html has a working openAcct() handler. #}
 {% include "_partials/_account_modal.html" %}
