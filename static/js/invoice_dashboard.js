@@ -76,6 +76,12 @@
     return { start, end, key, label, short, year: y };
   }
   function buildPeriodArchive() {
+    // Empty-state guard: D.records is undefined when no uploads exist.
+    // Without this, .forEach throws at IIFE load time and kills the
+    // entire script — including the DOMContentLoaded handler that
+    // wires the file input's change event. That manifests as "the
+    // file picker opens but selecting a file does nothing."
+    if (!D || !Array.isArray(D.records)) return [];
     const buckets = {};
     D.records.forEach(r => {
       const p = periodOf(r.processing_date);
@@ -98,7 +104,8 @@
   }
   const PERIODS = buildPeriodArchive();
   // Which period is the user currently viewing in the "This Period" tab?
-  let activePeriodKey = (PERIODS.find(p => p.is_current) || PERIODS[0]).key;
+  // Empty-state → null (no period selected yet, no records loaded).
+  let activePeriodKey = (PERIODS.find(p => p.is_current) || PERIODS[0] || {}).key || null;
 
   // ──────────────────────────────────────────────────────────
   // Date basis (Invoice Date / Processing Date)
