@@ -780,7 +780,20 @@
 
   // ──────────────────────────────────────────────────────────
   // Wiring
+  //
+  // Defensive: tiny `on(id, evt, fn)` helper that no-ops when the
+  // element isn't in the DOM. In empty-state mode (no invoice data
+  // yet), most of the dashboard markup isn't rendered — but the
+  // Upload modal IS, and the Upload button on the archive rail IS,
+  // and the previous unguarded getElementById().addEventListener
+  // chain threw on the first missing element (gl-search) which
+  // aborted wire() before it ever reached the upload button bind.
+  // That's why clicking "Upload bi-weekly file" did nothing.
   // ──────────────────────────────────────────────────────────
+  function on(id, evt, fn) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener(evt, fn);
+  }
   function wire() {
     // Basis pills
     document.querySelectorAll('[data-basis]').forEach(el => {
@@ -797,31 +810,33 @@
         sortTbl(tbodyId, Number(col));
       });
     });
-    // Filters
-    document.getElementById('gl-search').addEventListener('input', filterGlTable);
-    document.getElementById('gl-gl-filter').addEventListener('change', filterGlTable);
-    document.getElementById('gl-ent-filter').addEventListener('change', filterGlTable);
+    // Filters — guarded individually so the empty-state page (which
+    // omits the filter inputs) doesn't break the rest of the wiring.
+    on('gl-search',     'input',  filterGlTable);
+    on('gl-gl-filter',  'change', filterGlTable);
+    on('gl-ent-filter', 'change', filterGlTable);
     ['ember','ccdl'].forEach(w => {
-      document.getElementById(w + '-search').addEventListener('input', () => filterEntityTbl(w));
-      document.getElementById(w + '-gl-filter').addEventListener('change', () => filterEntityTbl(w));
-      document.getElementById(w + '-status-filter').addEventListener('change', () => filterEntityTbl(w));
+      on(w + '-search',        'input',  () => filterEntityTbl(w));
+      on(w + '-gl-filter',     'change', () => filterEntityTbl(w));
+      on(w + '-status-filter', 'change', () => filterEntityTbl(w));
     });
-    document.getElementById('all-search').addEventListener('input', filterAllTbl);
+    on('all-search', 'input', filterAllTbl);
     ['all-ent-filter','all-month-filter','all-gl-filter','all-status-filter'].forEach(id => {
-      document.getElementById(id).addEventListener('change', filterAllTbl);
+      on(id, 'change', filterAllTbl);
     });
 
     // Upload modal — both the rail trigger and any topbar trigger.
     document.querySelectorAll('#open-upload, #open-upload-rail').forEach(b => {
       b.addEventListener('click', openUploadModal);
     });
-    document.getElementById('upload-close').addEventListener('click', closeUploadModal);
-    document.getElementById('upload-cancel').addEventListener('click', closeUploadModal);
-    document.getElementById('upload-modal').addEventListener('click', (e) => {
+    on('upload-close',  'click', closeUploadModal);
+    on('upload-cancel', 'click', closeUploadModal);
+    on('upload-modal',  'click', (e) => {
       if (e.target.id === 'upload-modal') closeUploadModal();
     });
     const drop = document.getElementById('upload-drop');
     const fileInput = document.getElementById('upload-file');
+    if (!drop || !fileInput) return;        // modal markup absent — bail
     drop.addEventListener('click', () => fileInput.click());
     drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('dragover'); });
     drop.addEventListener('dragleave', () => drop.classList.remove('dragover'));
@@ -836,10 +851,18 @@
 
   // ──────────────────────────────────────────────────────────
   // INIT
+  //
+  // wire() and renderPeriodArchive() are always safe to run — they
+  // either bind handlers on the always-present rail/modal markup, or
+  // no-op against missing elements. The data-render functions below
+  // require D.records / D.ytd / etc., so they get skipped in the
+  // empty-state where INVOICE_D is `{}` (no uploads yet).
   // ──────────────────────────────────────────────────────────
+  const _HAS_DATA = !!(D && Array.isArray(D.records) && D.records.length);
   document.addEventListener('DOMContentLoaded', () => {
     wire();
     renderPeriodArchive();
+    if (!_HAS_DATA) return;
     populateDropdowns();
     rebuildMonthFilter();
     buildTables();
