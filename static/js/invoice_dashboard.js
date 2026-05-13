@@ -131,7 +131,32 @@
   const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   function periodOf(dateStr) {
     // 2026-04-22 → {start:'2026-04-16', end:'2026-04-30', key, label, short}
-    const [y, m, d] = dateStr.split('-').map(Number);
+    // Robust against non-ISO inputs: pull the first YYYY-MM-DD we can
+    // find anywhere in the string. Flask used to serialize dates as
+    // RFC-822 ("Thu, 16 Apr 2026 00:00:00 GMT") which made the naive
+    // split('-') return NaN — that crashed buildPeriodArchive() and
+    // took the whole IIFE down with it. Server now sends ISO, but
+    // belt-and-suspenders here so a future regression doesn't blank
+    // the entire dashboard.
+    var iso = (dateStr || '').match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (!iso) {
+      // Try to extract a parseable date by going through Date()
+      var dParsed = new Date(dateStr);
+      if (!isNaN(dParsed.getTime())) {
+        var yy = dParsed.getFullYear();
+        var mm = dParsed.getMonth() + 1;
+        var dd = dParsed.getDate();
+        iso = [null, String(yy), String(mm).padStart(2, '0'), String(dd).padStart(2, '0')];
+      }
+    }
+    if (!iso) {
+      // Final fallback — produce a placeholder that won't crash.
+      var now = new Date();
+      iso = [null, String(now.getFullYear()), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')];
+    }
+    const y = Number(iso[1]);
+    const m = Number(iso[2]);
+    const d = Number(iso[3]);
     const dom = d;
     const firstHalf = dom <= 15;
     const startD = firstHalf ? 1 : 16;
@@ -175,7 +200,12 @@
       };
     }).sort((a, b) => b.start.localeCompare(a.start));
   }
-  const PERIODS = buildPeriodArchive();
+  // Module-level call — wrapped because if it ever throws, the IIFE
+  // crashes before DOMContentLoaded is registered and the entire
+  // dashboard goes blank. Treat archive-build failure as "no archive."
+  let PERIODS = [];
+  try { PERIODS = buildPeriodArchive(); }
+  catch (e) { console.error('buildPeriodArchive failed', e); PERIODS = []; }
   // Which period is the user currently viewing in the "This Period" tab?
   // Server tells us via INVOICE_PERIOD_KEY; fall back to the newest
   // archive entry or null if there are no uploads yet (empty-state).
