@@ -774,8 +774,14 @@
       html += `<div class="det-row"><span>Detected period</span><b style="color:var(--eax-bad)">Could not parse date from filename</b></div>`;
       html += `<div class="det-row"><span>Tip</span><b>Include YYYY_MM_DD (e.g. <code>2026_05_08</code>) in the filename.</b></div>`;
     }
-    det.innerHTML = html;
-    det.classList.add('is-shown');
+    if (det) {
+      det.innerHTML = html;
+      det.classList.add('is-shown');
+    }
+    // Open the preview modal so the user can review the filename
+    // sniff result and confirm with "Add to archive" — the file
+    // picker has already happened by this point.
+    openUploadModal();
   }
 
   // ──────────────────────────────────────────────────────────
@@ -825,9 +831,19 @@
       on(id, 'change', filterAllTbl);
     });
 
-    // Upload modal — both the rail trigger and any topbar trigger.
+    // Upload flow — clicking the rail/topbar button opens the OS
+    // file picker directly. After the user selects a file,
+    // handleFileSelection() opens the preview modal automatically
+    // (filename sniff + "new vs replace" status), so the modal is a
+    // confirmation step, not the first thing the user sees. This is
+    // closer to the upload pattern on /home (Update Dashboard
+    // Reports / Upload Macro Excel buttons) and removes the
+    // "click button → confusing empty modal" beat from the flow.
+    const uploadInput = document.getElementById('upload-file');
     document.querySelectorAll('#open-upload, #open-upload-rail').forEach(b => {
-      b.addEventListener('click', openUploadModal);
+      b.addEventListener('click', () => {
+        if (uploadInput) uploadInput.click();
+      });
     });
     on('upload-close',  'click', closeUploadModal);
     on('upload-cancel', 'click', closeUploadModal);
