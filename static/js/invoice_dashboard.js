@@ -831,16 +831,15 @@
       on(id, 'change', filterAllTbl);
     });
 
-    // Upload flow — clicking the rail/topbar button opens the OS
-    // file picker directly. After the user selects a file,
-    // handleFileSelection() opens the preview modal automatically
-    // (filename sniff + "new vs replace" status), so the modal is a
-    // confirmation step, not the first thing the user sees. This is
-    // closer to the upload pattern on /home (Update Dashboard
-    // Reports / Upload Macro Excel buttons) and removes the
-    // "click button → confusing empty modal" beat from the flow.
+    // Upload flow — the rail's "Upload bi-weekly file" trigger is now
+    // a <label for="upload-file">, so the browser handles opening the
+    // OS file picker natively (no JS required). After file selection,
+    // the file input's change handler (wired further down) fires
+    // handleFileSelection() which populates + opens the preview modal.
+    // #open-upload is a topbar trigger placeholder — bind via JS if/
+    // when it ever exists.
     const uploadInput = document.getElementById('upload-file');
-    document.querySelectorAll('#open-upload, #open-upload-rail').forEach(b => {
+    document.querySelectorAll('#open-upload').forEach(b => {
       b.addEventListener('click', () => {
         if (uploadInput) uploadInput.click();
       });
