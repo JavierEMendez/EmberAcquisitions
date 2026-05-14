@@ -477,34 +477,45 @@
 {% endif %}
 
 {# ───────── Dashboards ───────── #}
-{# 4-tuple per card: (page_access_key, href, title, description).
-   ember_capital has no per-user gate — it's available to every signed-in
-   user. The other keys are gated by `page_access`. #}
-{% set dashboards = [
-  ('returns',     '/returns',       'Active Project Returns',          'Current projected performance of active Ember projects.'),
-  ('loans',       '/loans',         'Loan Capacities & Debt Schedules','All current active Ember loans and their respective KPIs.'),
-  ('operations',  '/operations',    'Operating Revenues',              'Forecasted Ember operating revenues from active projects.'),
-  ('ember_capital','/ember-capital','Ember Capital',                   'Aggregate view of all active projects: total lots, IRR, margins, and status.'),
-  ('macro',       '/macro',         'Macroeconomic Data',              'Population, income, GDP, employment, real estate for Houston metro.'),
-  ('sales',       '/sales',         'Community Sales Tracker',         'Home and lot sales data for active Ember MPCs.'),
-  ('verticals',   '/verticals',     'Vertical Dashboard',              'Leasing & operations across active verticals — LightHaven, The Hawthorne, Shops at Grand Prairie.'),
-  ('invoice_dashboard','/invoice-dashboard','Invoice Dashboard',         'Bi-weekly Stampli invoice analytics — entity comparison, GL breakdown, and a period archive.'),
+{# Grouped into named categories so the page scales as we add dashboards.
+   Each entry is (group_name, [cards]); each card is
+   (page_access_key, href, title, description). `ember_capital` has no
+   per-user gate — it's available to every signed-in user. Other keys are
+   gated by `page_access`. A group with zero visible cards is skipped. #}
+{% set dashboard_groups = [
+  ('Portfolio Performance', [
+    ('ember_capital',    '/ember-capital',     'Ember Capital',                    'Aggregate view of all active projects: total lots, IRR, margins, and status.'),
+    ('returns',          '/returns',           'Active Project Returns',           'Current projected performance of active Ember projects.'),
+  ]),
+  ('Sales & Leasing', [
+    ('sales',            '/sales',             'Community Sales Tracker',          'Home and lot sales data for active Ember MPCs.'),
+    ('verticals',        '/verticals',         'Vertical Dashboard',               'Leasing & operations across active verticals — LightHaven, The Hawthorne, Shops at Grand Prairie.'),
+  ]),
+  ('Finance & Accounting', [
+    ('operations',       '/operations',        'Operating Revenues',               'Forecasted Ember operating revenues from active projects.'),
+    ('loans',            '/loans',             'Loan Capacities & Debt Schedules', 'All current active Ember loans and their respective KPIs.'),
+    ('invoice_dashboard','/invoice-dashboard', 'Invoice Dashboard',                'Bi-weekly Stampli invoice analytics — entity comparison, GL breakdown, and a period archive.'),
+  ]),
+  ('Market Intelligence', [
+    ('macro',            '/macro',             'Macroeconomic Data',               'Population, income, GDP, employment, real estate for Houston metro.'),
+  ]),
 ] %}
-{# Count how many cards will render — used by the "06 / 06" counter. #}
-{% set ns = namespace(count=0) %}
-{% for key, href, title, desc in dashboards %}
-  {% if key == 'ember_capital' or page_access.get(key, true) %}
-    {% set ns.count = ns.count + 1 %}
-  {% endif %}
-{% endfor %}
-<section class="section">
-  <div class="section-head">
-    <div class="section-eyebrow">Dashboards</div>
-    <div class="section-counter">{{ '%02d'|format(ns.count) }} / {{ '%02d'|format(ns.count) }}</div>
-  </div>
-  <div class="dash-grid">
-    {% for key, href, title, desc in dashboards %}
-      {% if key == 'ember_capital' or page_access.get(key, true) %}
+{% for group_name, cards in dashboard_groups %}
+  {# Build the list of cards visible to this user in this group. #}
+  {% set visible = namespace(list=[]) %}
+  {% for key, href, title, desc in cards %}
+    {% if key == 'ember_capital' or page_access.get(key, true) %}
+      {% set visible.list = visible.list + [(key, href, title, desc)] %}
+    {% endif %}
+  {% endfor %}
+  {% if visible.list %}
+  <section class="section">
+    <div class="section-head">
+      <div class="section-eyebrow">{{ group_name }}</div>
+      <div class="section-counter">{{ '%02d'|format(visible.list|length) }} / {{ '%02d'|format(visible.list|length) }}</div>
+    </div>
+    <div class="dash-grid">
+      {% for key, href, title, desc in visible.list %}
       <a class="dash-card" href="{{ href }}">
         <div class="dash-card-top">
           <span class="dash-eyebrow">Dashboard</span>
@@ -519,10 +530,11 @@
           </span>
         </div>
       </a>
-      {% endif %}
-    {% endfor %}
-  </div>
-</section>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+{% endfor %}
 
 {# ───────── Administrative (admin-only) ─────────
    Sits below the Dashboards section. Hosts what used to live in the
