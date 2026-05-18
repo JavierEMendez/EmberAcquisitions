@@ -5748,14 +5748,44 @@ def export_operations_excel():
         rows = [[row["label"]] + row["values"] for row in yr.get("rows", [])]
         r = write_table(r, headers, rows, yr.get("totals", []))
 
-    # Monthly Revenue
+    # Monthly Revenue — by-project roll-up + detailed Project × Category
     mo = data.get("monthly", {})
     if mo.get("dates"):
+        dates    = mo["dates"]
+        mo_rows  = mo.get("rows", []) or []
+        mo_total = mo.get("totals", []) or []
+        month_hdrs = [f"{d[5:7]}/{d[2:4]}" for d in dates]
+
+        # Roll-up: sum across the 6 fee categories per project per month.
+        # Preserves the first-seen project order from the detail rows so
+        # this section and the detail below read in the same order.
+        proj_order: list[str] = []
+        proj_totals: dict[str, list[float]] = {}
+        for row in mo_rows:
+            p = row.get("project")
+            vals = row.get("values") or []
+            if not p:
+                continue
+            if p not in proj_totals:
+                proj_order.append(p)
+                proj_totals[p] = [0.0] * len(dates)
+            for i, v in enumerate(vals[: len(dates)]):
+                try:
+                    proj_totals[p][i] += float(v or 0)
+                except (TypeError, ValueError):
+                    pass
+
+        if proj_order:
+            r = write_section(r, "Monthly Revenue by Project (Roll-Up)")
+            headers = ["Project"] + month_hdrs
+            rolled  = [[p] + proj_totals[p] for p in proj_order]
+            r = write_table(r, headers, rolled, mo_total)
+
+        # Detail: Project × Category, unchanged.
         r = write_section(r, "Monthly Fee Revenue")
-        dates = mo["dates"]
-        headers = ["Project / Category"] + [f"{d[5:7]}/{d[2:4]}" for d in dates]
-        rows = [[f"{row['project']} — {row['category']}"] + row["values"] for row in mo.get("rows", [])]
-        r = write_table(r, headers, rows, mo.get("totals", []))
+        headers = ["Project / Category"] + month_hdrs
+        rows = [[f"{row['project']} — {row['category']}"] + row["values"] for row in mo_rows]
+        r = write_table(r, headers, rows, mo_total)
 
     # Next 12 Months
     n12 = data.get("next_12_months", {})
