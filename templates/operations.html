@@ -15,7 +15,7 @@
 <link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/theme.css?v=2"/>
+<link rel="stylesheet" href="/static/theme.css?v=3"/>
 <link rel="stylesheet" href="/static/css/operations.css"/>
 {# No-flash theme bootstrap — read localStorage before any CSS resolves. #}
 <script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
@@ -149,8 +149,10 @@
             </p>
           </div>
           <div class="ops-topbar-r">
+            {# "Updated · TODAY" line removed — it was rendering the current
+               render-time date, not the data cutoff. Authoritative dates
+               now live in the data-dates footer at the bottom. #}
             <div class="ops-meta">
-              <div>Updated · {{ ops.updated_at_short }}</div>
               <div>{{ ops.period_short }}</div>
             </div>
             <div class="ops-topbar-actions">

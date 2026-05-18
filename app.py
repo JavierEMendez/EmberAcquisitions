@@ -534,6 +534,13 @@ def _home_portfolio_summary():
             r["report_type"]: r["uploaded_at"].strftime("%-d %b %Y")
             for r in rows if r["uploaded_at"]
         }
+        # Ember Capital reads from reports[returns], so its upload date
+        # mirrors the returns row. Without this, the home card has no
+        # date at all when the returns blob predates `data_from`.
+        if "returns" in out["report_dates"]:
+            out["report_dates"].setdefault(
+                "ember_capital", out["report_dates"]["returns"]
+            )
         # `data_from` is an ISO yyyy-mm-dd string (the parser calls
         # _date_iso). Format it the same way as report_dates.
         data_from_by_type: dict[str, str] = {}
@@ -5517,13 +5524,22 @@ def loans_report():
         return jsonify(diag)
 
     loans_ctx = _build_loans_view_context(raw_data, uploaded_at)
-    # Data dates footer: "Data From" from cell U3 on Loan Capacities & DS.
-    data_from        = _fmt_data_date(raw_data.get("data_from") if raw_data else None)
+    # Data dates footer:
+    #   "Data From"  — Loan Capacities & DS!U3 (loan capacities cutoff)
+    #   "Debt From"  — Debt!D1 (debt-schedules detail cutoff; pulled
+    #                  into the loans tab via formulas, so its own
+    #                  date is often different from U3)
+    #   "Uploaded"   — when this row landed in the reports table
+    data_from        = _fmt_data_date(raw_data.get("data_from")      if raw_data else None)
+    debt_from        = _fmt_data_date(raw_data.get("debt_data_from") if raw_data else None)
     uploaded_at_fmt  = _fmt_data_date(uploaded_at)
+    extras           = [("Debt From", debt_from)] if debt_from else []
     return render_template(
         "loans.html",
         loans=loans_ctx,
-        data_from=data_from, uploaded_at=uploaded_at_fmt,
+        data_from=data_from,
+        data_dates_extra=extras,
+        uploaded_at=uploaded_at_fmt,
         is_admin=session.get("is_admin", False),
         page_access=pa,
     )

@@ -661,6 +661,17 @@ def parse_dashboard(file_bytes: bytes) -> dict:
         loans_data["date"]      = returns_data["date"]
         loans_data["data_from"] = returns_data["date"]
 
+    # Debt tab — the Loan Capacities & DS sheet pulls debt-schedule rows
+    # from here via formulas, so Debt!D1's "Date Updated" is the as-of
+    # date for the debt schedules section (separate from the loan
+    # capacities cutoff in U3 on the loans tab). Surface it as a second
+    # date field on the Loans dashboard footer.
+    if "Debt" in wb.sheetnames and loans_data is not None:
+        debt_ws = wb["Debt"]
+        debt_data_from = _date_iso(debt_ws.cell(row=1, column=4).value)  # D1
+        if debt_data_from:
+            loans_data["debt_data_from"] = debt_data_from
+
     wb.close()
 
     return {
