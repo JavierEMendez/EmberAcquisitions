@@ -1204,18 +1204,30 @@ def _vd_can_edit_comments():
     pa = session.get("page_access") or {}
     return bool(pa.get("verticals_comment", True))
 
+def _vd_can_upload():
+    """Server-side gate for vertical *data* uploads (Master Tracker /
+    Master xlsx / PSR xlsx). Mirrors `_vd_can_edit_comments` but
+    **defaults to False** — uploads replace project data, so we want
+    explicit grants rather than implicit access. Admins always pass."""
+    if session.get("is_admin"):
+        return True
+    pa = session.get("page_access") or {}
+    return bool(pa.get("verticals_upload", False))
+
 @app.route("/api/verticals/me", methods=["GET"])
 @login_required
 def vd_me():
     """Lightweight permission probe used by the Vertical Dashboard SPA
-    on load to decide whether to show the Edit-comments dock. The
-    dashboard itself enforces nothing — the server gates writes — but
-    hiding affordances the user can't act on keeps the UI clean."""
+    on load to decide whether to show the Edit-comments dock and the
+    per-vertical upload buttons. The dashboard itself enforces nothing
+    — the server gates writes — but hiding affordances the user can't
+    act on keeps the UI clean."""
     return jsonify({
         "username":          session.get("username"),
         "displayName":       session.get("display_name") or session.get("username"),
         "isAdmin":           bool(session.get("is_admin")),
         "canEditComments":   _vd_can_edit_comments(),
+        "canUpload":         _vd_can_upload(),
     })
 
 @app.route("/api/verticals/comments/<key>", methods=["PUT"])
@@ -1248,8 +1260,12 @@ def vd_put_comment(key):
 # ── BULK UPLOAD (called by update_dashboard.py) ──
 @app.route("/api/verticals/upload", methods=["POST"])
 @login_required
-@admin_required
 def vd_post_upload():
+    # Was @admin_required; now any user holding page_access.verticals_upload
+    # can upload (admins always pass). UI in static/verticals/index.html
+    # hides the Upload buttons for users who fail this check.
+    if not _vd_can_upload():
+        return jsonify({"error": "Upload not permitted for this user"}), 403
     v = _vd_vertical()
     if not v:
         return jsonify({"error": "Unknown vertical"}), 400

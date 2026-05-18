@@ -167,6 +167,10 @@
             <label><input type="checkbox" id="new-pa-sales" checked>Community Sales</label>
             <label><input type="checkbox" id="new-pa-verticals" checked>Vertical Dashboard</label>
             <label><input type="checkbox" id="new-pa-verticals-comment" checked>Vertical Dashboard (Comments)</label>
+            {# Unchecked by default — uploads replace project data, so we
+               want admins to explicitly grant this rather than have new
+               users get it implicitly. Server defaults to False too. #}
+            <label><input type="checkbox" id="new-pa-verticals-upload">Vertical Dashboard (Upload)</label>
             <label><input type="checkbox" id="new-pa-invoice-dashboard" checked>Invoice Dashboard</label>
           </div>
           <button class="btn-add-user" onclick="addUser()">Add User</button>
@@ -187,6 +191,7 @@ const PAGE_LABELS = {
   sales:             'Community Sales',
   verticals:         'Vertical Dashboard',
   verticals_comment: 'Vertical Dashboard (Comments)',
+  verticals_upload:  'Vertical Dashboard (Upload)',
   invoice_dashboard: 'Invoice Dashboard',
 };
 
@@ -257,6 +262,7 @@ async function addUser() {
     sales:             document.getElementById('new-pa-sales').checked,
     verticals:         document.getElementById('new-pa-verticals').checked,
     verticals_comment: document.getElementById('new-pa-verticals-comment').checked,
+    verticals_upload:  document.getElementById('new-pa-verticals-upload').checked,
     invoice_dashboard: document.getElementById('new-pa-invoice-dashboard').checked,
   };
   const email = document.getElementById('new-email').value.trim();
@@ -272,6 +278,8 @@ async function addUser() {
     document.getElementById('new-email').value = '';
     document.getElementById('new-is-admin').checked = false;
     ['mpc','returns','loans','operations','macro','sales','verticals','verticals-comment','invoice-dashboard'].forEach(k=>document.getElementById('new-pa-'+k).checked=true);
+    // verticals-upload defaults to unchecked — reset back to that state.
+    document.getElementById('new-pa-verticals-upload').checked = false;
     await refreshUserList();
   } else { alert(d.error || 'Error creating user'); }
 }

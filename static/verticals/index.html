@@ -1382,9 +1382,28 @@
   fetch('/api/verticals/me', { headers: { 'Accept': 'application/json' } })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (j) {
-      if (j && j.canEditComments === false) {
+      if (!j) return;
+      // Comments dock — gated by page_access.verticals_comment.
+      if (j.canEditComments === false) {
         var dock = document.getElementById('lh-admin-dock');
         if (dock) dock.style.display = 'none';
+      }
+      // Upload buttons across all three verticals — gated by
+      // page_access.verticals_upload. We hide the buttons rather than
+      // disable them so a user without the perm sees a clean UI; the
+      // server enforces independently (POST /api/verticals/upload
+      // returns 403 without the perm).
+      if (j.canUpload === false) {
+        var selectors = [
+          'button[data-ie-import="all"]',  // LightHaven Master Tracker
+          '#hw-master-import-btn',          // Hawthorne Master xlsx
+          '#tgp-import-btn',                // TGP PSR xlsx
+        ];
+        selectors.forEach(function (sel) {
+          document.querySelectorAll(sel).forEach(function (el) {
+            el.style.display = 'none';
+          });
+        });
       }
     })
     .catch(function () { /* silent */ });
