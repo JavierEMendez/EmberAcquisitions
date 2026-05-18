@@ -428,13 +428,20 @@ body {
    Data Dates Footer
    Used by templates/_partials/_data_dates_footer.html on every
    dashboard. Two labelled date fields ("Data From" · "Uploaded")
-   in a muted top-bordered strip pinned to the bottom of the page.
-   Width/centering mirror the home page's main content rail.
+   pinned to the bottom of the viewport (position:fixed) because
+   the dashboard shells all use `body { overflow: hidden }` —
+   anything outside the inner scroll container would be clipped.
+   `left: 240px` clears the main sidebar; the .page-invoice
+   override below clears the additional Archive rail.
    ───────────────────────────────────────────────────────────── */
 .data-dates-footer {
-  max-width: 1400px;
-  margin: 48px auto 32px;
-  padding: 14px 24px 0;
+  position: fixed;
+  bottom: 0;
+  left: 240px;
+  right: 0;
+  margin: 0;
+  padding: 9px 24px;
+  background: var(--eax-bg-2);
   border-top: 1px solid var(--eax-line);
   display: flex;
   align-items: center;
@@ -443,6 +450,7 @@ body {
   color: var(--eax-subtle);
   font-family: 'DM Sans', 'Plus Jakarta Sans', system-ui, sans-serif;
   font-size: 11px;
+  z-index: 10;
 }
 .data-dates-footer .ddf-item {
   display: inline-flex;
@@ -464,5 +472,7 @@ body {
 }
 .data-dates-footer .ddf-sep {
   color: var(--eax-line-2);
-  margin: 0 -4px;
 }
+/* Invoice Dashboard nests an Archive rail (248px) between the
+   sidebar and the page content — push the footer past both. */
+body.page-invoice .data-dates-footer { left: 488px; }
