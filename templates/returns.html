@@ -244,7 +244,7 @@
   .acct-modal.open{display:flex}
   .acct-box{background:var(--eax-surface);border:1px solid var(--eax-line);border-radius:14px;padding:28px;width:380px;max-width:92vw;max-height:92vh;overflow-y:auto;box-shadow:var(--eax-shadow-card)}
 </style>
-<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/theme.css?v=2">
 <script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 </head>
 <body>
@@ -822,5 +822,6 @@ document.querySelectorAll('.rw-proj').forEach(el => {
 })();
 </script>
 {% endif %}
+{% include "_partials/_data_dates_footer.html" %}
 </body>
 </html>

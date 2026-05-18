@@ -423,3 +423,46 @@ body {
 .full-loading {
   color: var(--eax-muted);
 }
+
+/* ─────────────────────────────────────────────────────────────
+   Data Dates Footer
+   Used by templates/_partials/_data_dates_footer.html on every
+   dashboard. Two labelled date fields ("Data From" · "Uploaded")
+   in a muted top-bordered strip pinned to the bottom of the page.
+   Width/centering mirror the home page's main content rail.
+   ───────────────────────────────────────────────────────────── */
+.data-dates-footer {
+  max-width: 1400px;
+  margin: 48px auto 32px;
+  padding: 14px 24px 0;
+  border-top: 1px solid var(--eax-line);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  color: var(--eax-subtle);
+  font-family: 'DM Sans', 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-size: 11px;
+}
+.data-dates-footer .ddf-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.data-dates-footer .ddf-lbl {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--eax-muted);
+}
+.data-dates-footer .ddf-val {
+  font-weight: 600;
+  color: var(--eax-ink-2);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+.data-dates-footer .ddf-sep {
+  color: var(--eax-line-2);
+  margin: 0 -4px;
+}

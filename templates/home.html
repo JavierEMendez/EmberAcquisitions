@@ -7,7 +7,7 @@
 <link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml"/>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/theme.css?v=2">
 <script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
@@ -524,7 +524,15 @@
         <div class="dash-title">{{ title }}</div>
         <div class="dash-desc">{{ desc }}</div>
         <div class="dash-foot">
-          <span class="dash-upd">{% if report_dates.get(key) %}UPD {{ report_dates[key]|upper }}{% else %}&nbsp;{% endif %}</span>
+          {# Prefer the in-data "Data From" date (cutoff of the underlying data).
+             Falls back to the upload timestamp only when no parser has supplied
+             a data_from yet (e.g., on a freshly-deployed instance before any
+             new uploads have happened). #}
+          <span class="dash-upd">
+            {% if data_from_dates.get(key) %}DATA FROM {{ data_from_dates[key]|upper }}
+            {% elif report_dates.get(key) %}UPD {{ report_dates[key]|upper }}
+            {% else %}&nbsp;{% endif %}
+          </span>
           <span class="dash-open">Open
             <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </span>
