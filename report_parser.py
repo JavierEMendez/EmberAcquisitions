@@ -102,7 +102,14 @@ def _parse_returns(ws) -> dict:
     pro-rating from yearly totals.
     """
     title = _str(ws.cell(row=3, column=3).value)  # C3
-    report_date = _date_iso(ws.cell(row=3, column=26).value)  # Z3
+    # "Data From" date — the label "Date Updated:" lives in C2, the date in E2.
+    # Older workbooks used Z3 (which is `=TODAY()`); we now prefer E2 because
+    # it reflects the actual underwriting cutoff, not the upload day. Falls
+    # back to Z3 → today() so an older workbook still gets a usable date.
+    report_date = (
+        _date_iso(ws.cell(row=2, column=5).value)   # E2 (new convention)
+        or _date_iso(ws.cell(row=3, column=26).value)  # Z3 (legacy)
+    )
 
     # Year headers from first project block row, columns G-AB
     years = []
@@ -195,6 +202,7 @@ def _parse_returns(ws) -> dict:
     return {
         "title": title or "Consolidated Ember Project Returns",
         "date": report_date,
+        "data_from": report_date,  # canonical name; "date" kept for back-compat
         "years": years,
         "months": months,    # ISO YYYY-MM-DD per monthly column; [] when the workbook has no monthly block
         "projects": projects,
@@ -260,8 +268,12 @@ def _read_totals_row(ws, row: int) -> dict:
 def _parse_loans(ws) -> dict:
     """Parse the 'Loan Capacities & DS' tab."""
 
-    # Determine the report date from context (use today as fallback)
-    report_date = date.today().isoformat()
+    # "Data From" date — label "Date Updated:" in T3, date in U3.
+    # Falls back to today() so older workbooks without the cell still parse.
+    report_date = (
+        _date_iso(ws.cell(row=3, column=21).value)  # U3
+        or date.today().isoformat()
+    )
 
     # --- MPC Loans (rows 7-10, totals row 11) ---
     mpc_rows = []
@@ -290,6 +302,7 @@ def _parse_loans(ws) -> dict:
 
     return {
         "date": report_date,
+        "data_from": report_date,  # canonical name; "date" kept for back-compat
         "mpc_loans": {
             "headers": list(_LOAN_HEADERS),
             "rows": mpc_rows,
@@ -405,6 +418,13 @@ _OPS_CATEGORIES = [
 def _parse_operations(ws) -> dict:
     """Parse the 'Operations' tab."""
     from datetime import date as _date
+
+    # "Data From" date — label "Date Updated" in C1, date in D1.
+    # Falls back to today() if the cell is missing on older workbooks.
+    report_date = (
+        _date_iso(ws.cell(row=1, column=4).value)  # D1
+        or _date.today().isoformat()
+    )
 
     # --- Determine column extent from row 56 (Model Dates) ---
     dates = []       # list of ISO date strings
@@ -548,6 +568,8 @@ def _parse_operations(ws) -> dict:
         n12_totals = []
 
     return {
+        "date": report_date,
+        "data_from": report_date,  # canonical name for "Data From" UI
         "kpis": kpis,
         "yearly_rollup": {
             "years": yearly_years,
@@ -631,9 +653,13 @@ def parse_dashboard(file_bytes: bytes) -> dict:
 
     ops_data = _parse_operations(ops_ws) if ops_ws else {}
 
-    # Use the returns date for loans if available
-    if returns_data.get("date") and loans_data:
-        loans_data["date"] = returns_data["date"]
+    # Legacy override: older workbooks didn't have a date cell on the
+    # loans tab, so we copied the returns date over. Now that we read
+    # U3 on the Loan Capacities & DS tab directly, only fall back to
+    # the returns date when the loans tab genuinely has no date.
+    if loans_data and not loans_data.get("data_from") and returns_data.get("date"):
+        loans_data["date"]      = returns_data["date"]
+        loans_data["data_from"] = returns_data["date"]
 
     wb.close()
 

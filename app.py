@@ -463,6 +463,29 @@ def logout():
     return redirect(url_for("login"))
 
 # ─── MAIN APP ─────────────────────────────────────────────────────────────────
+def _fmt_data_date(val) -> str | None:
+    """Format an ISO yyyy-mm-dd string or date/datetime as '10 May 2026'.
+
+    Returns None when the input is falsy or unparseable. Used by dashboard
+    routes to render a consistent "Data From" / "Uploaded" date in the
+    page-footer partial (_partials/_data_dates_footer.html).
+    """
+    if not val:
+        return None
+    if isinstance(val, str):
+        try:
+            d = datetime.datetime.strptime(val[:10], "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            return None
+    elif isinstance(val, datetime.datetime):
+        d = val.date()
+    elif isinstance(val, datetime.date):
+        d = val
+    else:
+        return None
+    return d.strftime("%-d %b %Y")
+
+
 def _home_portfolio_summary():
     """Compute the at-a-glance portfolio numbers shown on the home hero.
 
@@ -479,7 +502,8 @@ def _home_portfolio_summary():
       - portfolio_irr (float|None)      — LP-contribution-weighted IRR
       - portfolio_irr_label (str)       — '22%', or '—'
       - active_project_count (int)      — projects with any non-zero metric
-      - report_dates (dict)             — last-updated date string per type
+      - report_dates (dict)             — upload-date string per type
+      - data_from_dates (dict)          — "Data From" date string per dashboard
       - reports_updated_today (int)     — types updated in last ~36h
     """
     out = {
@@ -489,24 +513,64 @@ def _home_portfolio_summary():
         "portfolio_irr_label": "—",
         "active_project_count": 0,
         "report_dates": {},
+        "data_from_dates": {},
         "reports_updated_today": 0,
     }
     try:
         conn = get_db()
         cur = conn.cursor()
+        # Latest row per report_type — pulls both upload time and the
+        # in-data `data_from` field that the parsers now populate.
         cur.execute("""
-            SELECT report_type, MAX(uploaded_at) as last_updated
-            FROM reports GROUP BY report_type
+            SELECT DISTINCT ON (report_type)
+                   report_type,
+                   uploaded_at,
+                   data->>'data_from' AS data_from
+            FROM reports
+            ORDER BY report_type, uploaded_at DESC
         """)
         rows = cur.fetchall()
         out["report_dates"] = {
-            r["report_type"]: r["last_updated"].strftime("%-d %b %Y")
-            for r in rows if r["last_updated"]
+            r["report_type"]: r["uploaded_at"].strftime("%-d %b %Y")
+            for r in rows if r["uploaded_at"]
         }
+        # `data_from` is an ISO yyyy-mm-dd string (the parser calls
+        # _date_iso). Format it the same way as report_dates.
+        data_from_by_type: dict[str, str] = {}
+        for r in rows:
+            df = r.get("data_from") if isinstance(r, dict) else r["data_from"]
+            if not df:
+                continue
+            try:
+                d = datetime.datetime.strptime(df, "%Y-%m-%d").date()
+                data_from_by_type[r["report_type"]] = d.strftime("%-d %b %Y")
+            except (TypeError, ValueError):
+                continue
+        # Ember Capital reads from the returns blob, so its "Data From"
+        # is the same as returns. Mirror it so the home card shows a date.
+        if "returns" in data_from_by_type:
+            data_from_by_type.setdefault("ember_capital", data_from_by_type["returns"])
         cutoff = datetime.datetime.now() - datetime.timedelta(hours=36)
         out["reports_updated_today"] = sum(
-            1 for r in rows if r["last_updated"] and r["last_updated"].replace(tzinfo=None) >= cutoff
+            1 for r in rows if r["uploaded_at"] and r["uploaded_at"].replace(tzinfo=None) >= cutoff
         )
+
+        # Invoice dashboard lives in a separate table (invoice_periods).
+        # Use the latest period's report_date as "Data From".
+        try:
+            cur.execute(
+                "SELECT report_date FROM invoice_periods "
+                "ORDER BY period_start DESC LIMIT 1"
+            )
+            inv = cur.fetchone()
+            if inv and inv["report_date"]:
+                data_from_by_type["invoice_dashboard"] = (
+                    inv["report_date"].strftime("%-d %b %Y")
+                )
+        except Exception:
+            pass
+
+        out["data_from_dates"] = data_from_by_type
 
         # Pull the latest returns report — same source the Ember Capital page
         # reads from.
@@ -579,6 +643,7 @@ def home():
         is_admin=session.get("is_admin"),
         page_access=pa,
         report_dates=summary["report_dates"],
+        data_from_dates=summary["data_from_dates"],
         lp_equity_label=summary["lp_equity_label"],
         portfolio_irr_label=summary["portfolio_irr_label"],
         active_project_count=summary["active_project_count"],
@@ -2000,10 +2065,16 @@ def invoice_dashboard():
     period_key = request.args.get("period")
     period   = _invd_load_period(period_key)
     archive  = _invd_load_archive_summary()
+    # Data dates footer: "Data From" = the Stampli "Updated" date
+    # (period.report_date); "Uploaded" = when this period snapshot was
+    # saved to the invoice_periods table.
+    data_from   = _fmt_data_date(period.get("report_date")) if period else None
+    uploaded_at = _fmt_data_date(period.get("uploaded_at")) if period else None
     return render_template(
         "invoice_dashboard.html",
         invoice=period,           # None when no uploads yet → empty state
         archive=archive,
+        data_from=data_from, uploaded_at=uploaded_at,
         page_access=pa,
         is_admin=session.get("is_admin", False),
         username=session.get("username"),
@@ -3454,12 +3525,25 @@ def portfolio_page():
     pa.setdefault("reports",   True)
 
     capital = _build_capital_view_context()
+    # Capital reads from the same returns blob as /returns, so its
+    # "Data From" / "Uploaded" should match. Pull both from the latest
+    # reports[returns] row for the dashboard footer.
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "SELECT data->>'data_from' AS data_from, uploaded_at "
+        "FROM reports WHERE report_type = 'returns' "
+        "ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    rrow = cur.fetchone(); cur.close(); conn.close()
+    data_from   = _fmt_data_date(rrow["data_from"]   if rrow else None)
+    uploaded_at = _fmt_data_date(rrow["uploaded_at"] if rrow else None)
     return render_template(
         "capital.html",
         username=session.get("username"),
         is_admin=session.get("is_admin", False),
         page_access=pa,
         capital=capital,
+        data_from=data_from, uploaded_at=uploaded_at,
     )
 
 
@@ -5361,13 +5445,17 @@ def returns_report():
     row = cur.fetchone()
     cur.close(); conn.close()
     data = row["data"] if row else None
-    uploaded_at = row["uploaded_at"].strftime("%B %d, %Y") if row else None
+    # Data dates footer: "Data From" comes from the parser (cell E2 on
+    # Consolidated Project Returns); "Uploaded" is the row's upload time.
+    data_from   = _fmt_data_date(data.get("data_from") if data else None)
+    uploaded_at = _fmt_data_date(row["uploaded_at"]) if row else None
     enriched = _enrich_returns_payload(data)
     pa = session.get("page_access") or {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
     if session.get("is_admin"):
         pa = {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
     return render_template("returns.html",
-        data=data, enriched=enriched, uploaded_at=uploaded_at,
+        data=data, enriched=enriched,
+        data_from=data_from, uploaded_at=uploaded_at,
         username=session.get("username"),
         is_admin=session.get("is_admin"), page_access=pa)
 
@@ -5429,9 +5517,13 @@ def loans_report():
         return jsonify(diag)
 
     loans_ctx = _build_loans_view_context(raw_data, uploaded_at)
+    # Data dates footer: "Data From" from cell U3 on Loan Capacities & DS.
+    data_from        = _fmt_data_date(raw_data.get("data_from") if raw_data else None)
+    uploaded_at_fmt  = _fmt_data_date(uploaded_at)
     return render_template(
         "loans.html",
         loans=loans_ctx,
+        data_from=data_from, uploaded_at=uploaded_at_fmt,
         is_admin=session.get("is_admin", False),
         page_access=pa,
     )
@@ -6210,9 +6302,13 @@ def operations_report():
     raw_data    = row["data"]        if row else None
     uploaded_at = row["uploaded_at"] if row else None
     ops_ctx = _build_operations_view_context(raw_data, uploaded_at)
+    # Data dates footer: "Data From" from cell D1 on the Operations tab.
+    data_from       = _fmt_data_date(raw_data.get("data_from") if raw_data else None)
+    uploaded_at_fmt = _fmt_data_date(uploaded_at)
     return render_template(
         "operations.html",
         ops=ops_ctx,
+        data_from=data_from, uploaded_at=uploaded_at_fmt,
         is_admin=session.get("is_admin", False),
         page_access=pa,
     )
@@ -9330,7 +9426,9 @@ def macro_dashboard():
     cur.execute("SELECT data, uploaded_at FROM reports WHERE report_type = 'macro' ORDER BY uploaded_at DESC LIMIT 1")
     row = cur.fetchone(); cur.close(); conn.close()
     data = row["data"] if row else None
-    uploaded_at = row["uploaded_at"].strftime("%B %d, %Y") if row else None
+    # Unified date format ("10 May 2026") used by both the header
+    # "Last updated:" line and the new data-dates footer partial.
+    uploaded_at = _fmt_data_date(row["uploaded_at"]) if row else None
     pa = session.get("page_access") or {}
     if session.get("is_admin"):
         pa = {k: True for k in ["mpc_underwriting","returns","loans","operations","macro","portfolio"]}
@@ -9380,7 +9478,12 @@ def macro_dashboard():
     else:
         print("FRED_API_KEY not set", flush=True)
 
+    # Data dates footer for macro: the parser doesn't yet expose a
+    # per-series "as of" date, so we mirror the upload/refresh timestamp
+    # for both "Data From" and "Uploaded". Can swap "Data From" to the
+    # latest data month per series in a follow-up.
     return render_template("macro.html", data=data, uploaded_at=uploaded_at,
+                           data_from=uploaded_at,
                            is_admin=session.get("is_admin"), page_access=pa,
                            fred_data=fred_data)
 

@@ -1,0 +1,29 @@
+{# ───────── Data dates footer ─────────
+   A small two-field footer for "Data From" (the cutoff/as-of date in
+   the underlying data) and "Uploaded" (when the file/data was loaded
+   into the app). Lives at the bottom of every dashboard page that
+   has data backing it.
+
+   Caller variables in scope:
+     data_from   — formatted date string (e.g. "10 May 2026") or None
+     uploaded_at — formatted date string or None
+
+   Renders nothing when both are falsy so empty-state pages stay clean.
+#}
+{% if data_from or uploaded_at %}
+<div class="data-dates-footer" role="contentinfo" aria-label="Data dates">
+  {% if data_from %}
+  <span class="ddf-item">
+    <span class="ddf-lbl">Data From</span>
+    <span class="ddf-val">{{ data_from }}</span>
+  </span>
+  {% endif %}
+  {% if data_from and uploaded_at %}<span class="ddf-sep">·</span>{% endif %}
+  {% if uploaded_at %}
+  <span class="ddf-item">
+    <span class="ddf-lbl">Uploaded</span>
+    <span class="ddf-val">{{ uploaded_at }}</span>
+  </span>
+  {% endif %}
+</div>
+{% endif %}
