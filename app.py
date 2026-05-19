@@ -5668,24 +5668,33 @@ def export_operations_excel():
     ws = wb.active
     ws.title = "Operating Revenues"
 
-    GOLD = "C8A96E"
+    WHITE = "FFFFFF"
     HEADER_FILL = PatternFill("solid", fgColor="1E2535")
     TOTALS_FILL = PatternFill("solid", fgColor="161B24")
     thin = Side(style="thin", color="2E3750")
     cell_border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
+    # Font palette mirrors the user's hand-tweaked workbook
+    # (Downloads/Ember_Operating_Revenues (2).xlsx):
+    #   - Title + section headers: default (black), bold, sized.
+    #   - Column headers + totals rows: white text on the dark navy fills
+    #     so they read; previously muted-gray / black-on-dark was illegible.
+    #   - KPI labels + data cells: unchanged (default black).
     def _hdr_font(bold=False):
-        return Font(name="Calibri", size=9, bold=bold, color="8B95A8")
+        return Font(name="Calibri", size=9, bold=bold, color=WHITE)
 
     def _val_font(bold=False):
         return Font(name="Calibri", size=9, bold=bold)
 
-    def _gold_font(bold=True, size=10):
-        return Font(name="Calibri", size=size, bold=bold, color=GOLD)
+    def _totals_font(bold=True):
+        return Font(name="Calibri", size=9, bold=bold, color=WHITE)
+
+    def _section_font(size=11):
+        return Font(name="Calibri", size=size, bold=True)
 
     def write_section(r, title):
         c = ws.cell(row=r, column=1, value=title)
-        c.font = _gold_font(size=11)
+        c.font = _section_font(size=11)
         return r + 1
 
     def write_table(r, col_headers, data_rows, totals):
@@ -5707,14 +5716,14 @@ def export_operations_excel():
                 if ci > 1 and isinstance(v, (int, float)) and v:
                     cell.number_format = "#,##0"
             r += 1
-        # Totals row
-        ws.cell(row=r, column=1, value="Total").font = _val_font(bold=True)
+        # Totals row — white text on the navy TOTALS_FILL so it reads.
+        ws.cell(row=r, column=1, value="Total").font = _totals_font(bold=True)
         ws.cell(row=r, column=1).border = cell_border
         ws.cell(row=r, column=1).fill = TOTALS_FILL
         ws.cell(row=r, column=1).alignment = Alignment(horizontal="left")
         for ci, v in enumerate(totals, 2):
             cell = ws.cell(row=r, column=ci, value=v if v else None)
-            cell.font = _val_font(bold=True)
+            cell.font = _totals_font(bold=True)
             cell.fill = TOTALS_FILL
             cell.border = cell_border
             cell.alignment = Alignment(horizontal="right")
@@ -5723,8 +5732,8 @@ def export_operations_excel():
         return r + 2
 
     r = 1
-    # Title
-    ws.cell(row=r, column=1, value="Ember Operating Revenues").font = Font(name="Calibri", bold=True, size=14, color=GOLD)
+    # Title — default-color bold (gold removed to match the tweaked palette).
+    ws.cell(row=r, column=1, value="Ember Operating Revenues").font = Font(name="Calibri", bold=True, size=14)
     r += 1
     ws.cell(row=r, column=1, value=f"Last updated: {uploaded_at}").font = Font(name="Calibri", size=9, color="8B95A8")
     r += 2
