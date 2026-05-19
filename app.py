@@ -131,7 +131,11 @@ def init_db():
             sent_at TIMESTAMP DEFAULT NOW()
         );
         ALTER TABLE projects ADD COLUMN IF NOT EXISTS scenarios JSONB DEFAULT '[]'::jsonb;
-        ALTER TABLE projects ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Active';
+        ALTER TABLE projects ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Initial UW';
+        -- Existing DBs had the column with DEFAULT 'Active'. New deals
+        -- should land in "Initial UW" first; existing rows keep their
+        -- current status (this ALTER only changes the column default).
+        ALTER TABLE projects ALTER COLUMN status SET DEFAULT 'Initial UW';
         ALTER TABLE projects ADD COLUMN IF NOT EXISTS change_log JSONB DEFAULT '[]'::jsonb;
         CREATE TABLE IF NOT EXISTS projects (
             id SERIAL PRIMARY KEY,
@@ -724,9 +728,16 @@ def create_project():
         outputs = {}
     conn = get_db()
     cur = conn.cursor()
+    # New deals start in "Initial UW" — they only flow through to the
+    # Ember Capital pipeline once an underwriter promotes them to
+    # "Active" (right-click → Set Status, or click the badge on the
+    # project list). Setting it explicitly here rather than relying on
+    # the schema default makes the intent obvious in the code path.
     cur.execute(
-        "INSERT INTO projects (name, address, created_by, inputs, outputs) VALUES (%s, %s, %s, %s, %s) RETURNING id",
-        (name, data.get("address", ""), session["user_id"], json.dumps(inputs), json.dumps(outputs))
+        "INSERT INTO projects (name, address, created_by, inputs, outputs, status) "
+        "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+        (name, data.get("address", ""), session["user_id"],
+         json.dumps(inputs), json.dumps(outputs), "Initial UW")
     )
     pid = cur.fetchone()["id"]
     conn.commit(); cur.close(); conn.close()
@@ -803,7 +814,7 @@ def delete_project(pid):
 def set_project_status(pid):
     data = request.json or {}
     status = data.get("status", "Active")
-    if status not in {"Active", "Under Contract", "Closed", "Dead"}:
+    if status not in {"Initial UW", "Active", "Under Contract", "Closed", "Dead"}:
         return jsonify({"error": "Invalid status"}), 400
     conn = get_db(); cur = conn.cursor()
     cur.execute("UPDATE projects SET status = %s WHERE id = %s", (status, pid))
