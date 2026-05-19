@@ -204,17 +204,17 @@ def export_excel(inputs: dict) -> bytes:
     write_cell(ri, "B5", _n(inputs.get("brokerage_fees")))
     write_cell(ri, "B6", _n(inputs.get("lot_closing_costs")))
 
-    # $/FF by year (rows 13–23, year 0–10)
+    # $/FF by year (rows 14–24, year 0–10; row 13 is the header)
     price_per_ff = inputs.get("price_per_ff") or {}
     for yr in range(11):
-        row = 13 + yr
+        row = 14 + yr
         val = price_per_ff.get(yr) or price_per_ff.get(str(yr))
         if val is not None:
             write_cell(ri, f"B{row}", _n(val))
 
-    # Home table (rows 27–42, FF 25–100)
+    # Home table (rows 28–43, FF 25–100; row 27 is the header)
     lot_sizes = inputs.get("lot_sizes", [])
-    ht_rows = [27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42]
+    ht_rows = [28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43]
     for i, row in enumerate(ht_rows):
         ls = lot_sizes[i] if i < len(lot_sizes) else {}
         write_cell(ri, f"B{row}", _n(ls.get("build_time")))
@@ -227,11 +227,11 @@ def export_excel(inputs: dict) -> bytes:
         write_cell(ri, f"K{row}", _n(ls.get("lot_av_pct")))
         write_cell(ri, f"M{row}", _n(ls.get("lot_tax_rate")))
 
-    # Residential pods (rows 46–51)
-    write_cell(ri, "A46", _n(inputs.get("res_pod_acreage")))
-    write_cell(ri, "B46", _n(inputs.get("res_pod_count")))
+    # Residential pods (rows 47–52; row 46 is the header)
+    write_cell(ri, "A47", _n(inputs.get("res_pod_acreage")))
+    write_cell(ri, "B47", _n(inputs.get("res_pod_count")))
     res_pods = inputs.get("res_pods", [])
-    res_pod_rows = [46, 47, 48, 49, 50, 51]
+    res_pod_rows = [47, 48, 49, 50, 51, 52]
     for i, row in enumerate(res_pod_rows):
         rp = res_pods[i] if i < len(res_pods) else {}
         write_cell(ri, f"F{row}", _n(rp.get("price_per_acre")))
@@ -240,11 +240,11 @@ def export_excel(inputs: dict) -> bytes:
         write_cell(ri, f"I{row}", _n(rp.get("impact_fee_per_lot")))
         write_cell(ri, f"K{row}", _n(rp.get("sale_period")))
 
-    # Commercial pods (rows 55–60)
-    write_cell(ri, "A55", _n(inputs.get("comm_pod_acreage")))
-    write_cell(ri, "B55", _n(inputs.get("comm_pod_count")))
+    # Commercial pods (rows 56–61; row 55 is the header)
+    write_cell(ri, "A56", _n(inputs.get("comm_pod_acreage")))
+    write_cell(ri, "B56", _n(inputs.get("comm_pod_count")))
     comm_pods = inputs.get("comm_pods", [])
-    comm_pod_rows = [55, 56, 57, 58, 59, 60]
+    comm_pod_rows = [56, 57, 58, 59, 60, 61]
     for i, row in enumerate(comm_pod_rows):
         cp = comm_pods[i] if i < len(comm_pods) else {}
         write_cell(ri, f"F{row}", _n(cp.get("price_per_sf")))
@@ -253,21 +253,21 @@ def export_excel(inputs: dict) -> bytes:
         write_cell(ri, f"J{row}", _n(cp.get("av_per_acre")))
         write_cell(ri, f"K{row}", _n(cp.get("av_delay_months")))
 
-    # MUD & WCID (rows 64–65)
+    # MUD & WCID (rows 65–66; row 64 is the header)
     mud = inputs.get("mud_bond") or {}
     wcid = inputs.get("wcid_bond") or {}
-    write_cell(ri, "B64", _n(mud.get("toggle")))
-    write_cell(ri, "C64", _n(mud.get("debt_ratio")))
-    write_cell(ri, "D64", _n(mud.get("first_bond_period")))
-    write_cell(ri, "E64", _n(mud.get("bond_interval")))
-    write_cell(ri, "F64", _n(mud.get("pct_to_dev")))
-    write_cell(ri, "G64", _n(mud.get("receivables_fee")))
-    write_cell(ri, "B65", _n(wcid.get("toggle")))
-    write_cell(ri, "C65", _n(wcid.get("debt_ratio")))
-    write_cell(ri, "D65", _n(wcid.get("first_bond_period")))
-    write_cell(ri, "E65", _n(wcid.get("bond_interval")))
-    write_cell(ri, "F65", _n(wcid.get("pct_to_dev")))
-    write_cell(ri, "G65", _n(wcid.get("receivables_fee")))
+    write_cell(ri, "B65", _n(mud.get("toggle")))
+    write_cell(ri, "C65", _n(mud.get("debt_ratio")))
+    write_cell(ri, "D65", _n(mud.get("first_bond_period")))
+    write_cell(ri, "E65", _n(mud.get("bond_interval")))
+    write_cell(ri, "F65", _n(mud.get("pct_to_dev")))
+    write_cell(ri, "G65", _n(mud.get("receivables_fee")))
+    write_cell(ri, "B66", _n(wcid.get("toggle")))
+    write_cell(ri, "C66", _n(wcid.get("debt_ratio")))
+    write_cell(ri, "D66", _n(wcid.get("first_bond_period")))
+    write_cell(ri, "E66", _n(wcid.get("bond_interval")))
+    write_cell(ri, "F66", _n(wcid.get("pct_to_dev")))
+    write_cell(ri, "G66", _n(wcid.get("receivables_fee")))
 
     # Save to bytes
     buf = io.BytesIO()
