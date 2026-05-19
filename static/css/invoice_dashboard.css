@@ -195,31 +195,59 @@
 }
 .inv-basis-note .differ-count{color:var(--eax-accent);font-weight:700;}
 
-/* ───────── Tab nav ───────── */
+/* ───────── Tab nav ─────────
+   Pill segmented-control style: each tab is a rounded chip with a
+   border so it reads as a button, not a header. Active tab gets the
+   solid accent fill + a soft shadow. Replaced the old text-with-
+   underline pattern so users can tell at a glance these are clickable. */
 .inv-tabnav{
-  display:flex;gap:0;padding:14px 36px 0;
+  display:flex;gap:8px;
+  padding:18px 36px 16px;
   border-bottom:1px solid var(--eax-line);
   margin-top:14px;
   overflow-x:auto;
+  flex-wrap:wrap;
 }
 .inv-tab{
-  padding:11px 16px 13px;
+  padding:8px 16px;
   font-size:13px;font-weight:600;
   color:var(--eax-muted);
-  background:transparent;border:none;cursor:pointer;
-  border-bottom:2px solid transparent;
+  background:var(--eax-bg-2);
+  border:1px solid var(--eax-line);
+  border-radius:999px;
+  cursor:pointer;
   font-family:inherit;
   white-space:nowrap;
   letter-spacing:-0.005em;
-  transition:color .15s, border-color .15s;
+  transition:background .15s, border-color .15s, color .15s, box-shadow .15s, transform .1s;
   display:inline-flex;align-items:center;gap:6px;
 }
-.inv-tab:hover{color:var(--eax-ink-2);}
-.inv-tab.is-active{color:var(--eax-ink);border-bottom-color:var(--eax-accent);font-weight:700;}
+.inv-tab:hover{
+  color:var(--eax-ink);
+  border-color:var(--eax-line-2);
+  background:var(--eax-accent-soft);
+}
+.inv-tab:active{ transform:translateY(1px); }
+.inv-tab.is-active{
+  color:var(--eax-accent-fg);
+  background:var(--eax-accent);
+  border-color:var(--eax-accent);
+  font-weight:700;
+  box-shadow:0 2px 10px rgba(242,89,41,0.22);
+}
+.inv-tab.is-active:hover{
+  /* override the soft-background hover when active */
+  background:var(--eax-accent);
+  color:var(--eax-accent-fg);
+}
 .inv-tab .tab-dot{
   width:6px;height:6px;border-radius:50%;
   background:var(--eax-accent);display:inline-block;
 }
+/* When the "This Period" tab is active, the dot blends into the
+   accent fill — flip it to the accent-foreground (typically white)
+   so the indicator stays visible. */
+.inv-tab.is-active .tab-dot{ background:var(--eax-accent-fg); }
 
 /* ───────── Content area ───────── */
 .inv-content{padding:24px 36px 36px;}
