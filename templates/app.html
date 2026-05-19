@@ -499,11 +499,11 @@ tr.pod-inactive input { pointer-events: none; }
     <div class="sidebar-section">Projects</div>
     <div class="status-filter-bar" id="status-filter-bar">
       <button class="sf-pill" onclick="setStatusFilter('Initial UW',this)">Initial UW</button>
-      <button class="sf-pill active" onclick="setStatusFilter('Active',this)">Active</button>
+      <button class="sf-pill" onclick="setStatusFilter('Active',this)">Active</button>
       <button class="sf-pill" onclick="setStatusFilter('Under Contract',this)">Under Contract</button>
       <button class="sf-pill" onclick="setStatusFilter('Closed',this)">Closed</button>
       <button class="sf-pill" onclick="setStatusFilter('Dead',this)">Dead</button>
-      <button class="sf-pill" onclick="setStatusFilter('All',this)">All</button>
+      <button class="sf-pill active" onclick="setStatusFilter('All',this)">All</button>
     </div>
     <div class="proj-list" id="proj-list"></div>
     <div class="new-proj-btn" onclick="openNewProject()">
@@ -1246,7 +1246,7 @@ let dirty = false;
 let charts = {};
 const isAdmin = {{ 'true' if is_admin else 'false' }};
 let _allProjects = [];
-let _statusFilter = 'Active';
+let _statusFilter = 'All';
 let _ctxPid = null;
 
 // ── INIT ──────────────────────────────────────────────────────────
