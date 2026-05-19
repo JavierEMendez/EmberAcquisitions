@@ -97,7 +97,11 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'DM San
 .proj-item:hover .proj-del{opacity:.6}
 .proj-del:hover{opacity:1!important;background:rgba(224,82,82,.1)}
 /* Status badges */
-.status-badge{font-size:9px;border-radius:3px;padding:1px 5px;font-weight:600;flex-shrink:0;letter-spacing:.02em}
+.status-badge{font-size:9px;border-radius:3px;padding:1px 5px;font-weight:600;flex-shrink:0;letter-spacing:.02em;cursor:pointer;transition:filter .12s, box-shadow .12s;}
+.status-badge:hover{filter:brightness(1.18);box-shadow:0 0 0 1px var(--border);}
+/* New "Initial UW" status — muted gray-blue so it reads as
+   "preliminary / pending" alongside the existing palette. */
+.status-initial-uw{background:rgba(139,149,168,.15);color:#8b95a8}
 .status-active{background:rgba(31,122,77,.15);color:#5e9e8c}
 .status-under-contract{background:rgba(242,89,41,.15);color:var(--accent)}
 [data-theme="light"] .status-under-contract{background:rgba(8,35,59,.12);color:var(--text-strong)}
@@ -494,6 +498,7 @@ tr.pod-inactive input { pointer-events: none; }
 
     <div class="sidebar-section">Projects</div>
     <div class="status-filter-bar" id="status-filter-bar">
+      <button class="sf-pill" onclick="setStatusFilter('Initial UW',this)">Initial UW</button>
       <button class="sf-pill active" onclick="setStatusFilter('Active',this)">Active</button>
       <button class="sf-pill" onclick="setStatusFilter('Under Contract',this)">Under Contract</button>
       <button class="sf-pill" onclick="setStatusFilter('Closed',this)">Closed</button>
@@ -1205,9 +1210,13 @@ tr.pod-inactive input { pointer-events: none; }
   </div>
 </div>
 
-<!-- Context menu for project status -->
+<!-- Context menu for project status. Opens on right-click of a
+     project row *and* on left-click of the status badge (the badge
+     click is the discoverable affordance; the context menu remains
+     for power users). -->
 <div id="ctx-menu">
   <div style="padding:5px 14px 3px;font-size:10px;color:var(--text-dim);letter-spacing:.08em;text-transform:uppercase">Set Status</div>
+  <div class="ctx-item" onclick="setProjectStatus(_ctxPid,'Initial UW')">● Initial UW</div>
   <div class="ctx-item" onclick="setProjectStatus(_ctxPid,'Active')">● Active</div>
   <div class="ctx-item" onclick="setProjectStatus(_ctxPid,'Under Contract')">● Under Contract</div>
   <div class="ctx-item" onclick="setProjectStatus(_ctxPid,'Closed')">● Closed</div>
@@ -1312,12 +1321,19 @@ function renderProjectList() {
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:6px">
           <div class="proj-item-name">${p.name || 'Unnamed'}</div>
-          <span class="status-badge ${statusClass}">${p.status || 'Active'}</span>
+          <span class="status-badge ${statusClass}" title="Click to change status"
+                onclick="openStatusMenuForBadge(${p.id}, event)">${p.status || 'Active'}</span>
         </div>
         <div class="proj-item-sub">${p.address ? p.address.substring(0,22)+' · ' : ''}${irrDisp}</div>
       </div>
       ${isAdmin ? `<div class="proj-del" title="Delete" onclick="deleteProject(${p.id},event)">✕</div>` : ''}`;
-    el.onclick = (e) => { if (!e.target.classList.contains('proj-del')) selectProject(p.id); };
+    el.onclick = (e) => {
+      // Status-badge clicks bubble up — don't select the project when the
+      // user is just changing a status.
+      if (e.target.classList.contains('proj-del')) return;
+      if (e.target.classList.contains('status-badge')) return;
+      selectProject(p.id);
+    };
     el.oncontextmenu = (e) => { e.preventDefault(); openCtxMenu(p.id, e.clientX, e.clientY); };
     list.appendChild(el);
   });
@@ -1337,7 +1353,24 @@ function openCtxMenu(pid, x, y) {
   m.style.left = Math.min(x, window.innerWidth - 180) + 'px';
   m.style.top = Math.min(y, window.innerHeight - 180) + 'px';
 }
-document.addEventListener('click', () => { document.getElementById('ctx-menu').style.display = 'none'; });
+// Visible per-deal status setter: badge click drops the same menu just
+// below the badge. Stops propagation so the row-click handler doesn't
+// also fire (which would navigate into the project).
+function openStatusMenuForBadge(pid, evt) {
+  evt.stopPropagation();
+  const r = evt.currentTarget.getBoundingClientRect();
+  openCtxMenu(pid, r.left, r.bottom + 4);
+}
+// Single delegated dismiss — closes the menu on any click that isn't
+// the menu itself or a badge (which opens it). Without the badge/menu
+// guard, clicking the badge would open *and* immediately close it.
+document.addEventListener('click', (e) => {
+  const m = document.getElementById('ctx-menu');
+  if (!m) return;
+  if (m.contains(e.target)) return;
+  if (e.target.classList && e.target.classList.contains('status-badge')) return;
+  m.style.display = 'none';
+});
 
 async function setProjectStatus(pid, status) {
   document.getElementById('ctx-menu').style.display = 'none';
