@@ -4977,8 +4977,13 @@ renderUnits('all');
     if (stagedBoot && stagedBoot.leasingPace) applyLeasingPace(stagedBoot.leasingPace);
   } catch(_) {}
 
-  // Auth via Ember session cookie (same-origin); admin gating
-  // happens server-side in /api/verticals/upload.
+  // Auth via Ember session cookie (same-origin); upload gating
+  // happens server-side in /api/verticals/upload via _vd_can_upload.
+  // Previously this function swallowed the fetch result entirely, so a
+  // 403 (perm denied) or 500 (DB error) was invisible — the user saw
+  // the client-side "✓ filename — N rows" status (which only reflects
+  // the in-browser parse) and assumed everything saved. Now mirror
+  // Hawthorne / TGP: surface server response into the per-card status.
   async function autoPushToServer() {
     const isHttp = (location.protocol === 'http:' || location.protocol === 'https:');
     if (!isHttp) return;
@@ -4996,12 +5001,39 @@ renderUnits('all');
       leasingPace: staged.leasingPace || null,
     };
     try {
-      await fetch('/api/verticals/upload?vertical=lighthaven', {
+      const res = await fetch('/api/verticals/upload?vertical=lighthaven', {
         method: 'POST',
         headers: { 'Content-Type':'application/json' },
         body: JSON.stringify(payload),
       });
-    } catch(_) { /* silent — the per-card status already reflects the upload */ }
+      let body = null;
+      try { body = await res.json(); } catch (_) { /* non-JSON body */ }
+      if (!res.ok) {
+        const reason = (body && body.error) ? body.error : ('HTTP ' + res.status);
+        const msg = '✗ Server save failed: ' + reason + ' (data loaded locally only).';
+        console.error('[LH] /api/verticals/upload', res.status, body);
+        try { setStatus('all', msg, 'err'); saveStatus('all', { msg, kind:'err' }); } catch(_) {}
+        return;
+      }
+      // Success — append a "saved to server" trailer so the user knows
+      // the upload made it past the perm gate and into the DB.
+      const n = (body && body.unitsImported) || units.length || 0;
+      const tabs = (body && body.tabsUpdated) || [];
+      const trailer = ' · saved to server (' + n + ' units' + (tabs.length ? ', ' + tabs.length + ' data tabs' : '') + ')';
+      console.info('[LH] /api/verticals/upload ok', body);
+      try {
+        const cur = document.querySelector('[data-ie-status="all"]');
+        const base = (cur && cur.textContent) ? cur.textContent.replace(/ · saved to server.*$| · Server.*$/i, '') : '';
+        if (base) {
+          setStatus('all', base + trailer, 'ok');
+          saveStatus('all', { msg: base + trailer, kind:'ok' });
+        }
+      } catch(_) {}
+    } catch (err) {
+      const msg = '✗ Network error saving to server: ' + (err && err.message ? err.message : err) + ' (data loaded locally only).';
+      console.error('[LH] upload network error', err);
+      try { setStatus('all', msg, 'err'); saveStatus('all', { msg, kind:'err' }); } catch(_) {}
+    }
   }
   window.LH_autoPush = autoPushToServer;
 
