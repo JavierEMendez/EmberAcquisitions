@@ -1325,7 +1325,16 @@ def vd_post_upload():
     imported_by = body.get("importedBy") or session.get("username") or "uploader"
     conn = get_db(); cur = conn.cursor()
     try:
-        if isinstance(units, list):
+        # Only replace the unit roster when the client actually sent
+        # some — an empty list used to wipe vd_units (the DELETE ran
+        # even with zero rows to insert), which masked a partial-import
+        # bug on the LightHaven client: when one sub-importer (Data
+        # Table) threw but the other sheets succeeded, units came over
+        # as `[]` and the previous data got cleared without replacement.
+        # The vd_imports row still landed (and the "Report as of" badge
+        # bumped), making the upload look like it "only updated the
+        # date." Now: skip the DELETE unless we have rows to put back.
+        if isinstance(units, list) and units:
             cur.execute("DELETE FROM vd_units WHERE vertical = %s", (v,))
             for u in units:
                 cur.execute("""
