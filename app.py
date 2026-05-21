@@ -1205,24 +1205,63 @@ def vd_get_comment(key):
         return jsonify({"section_key": key, "body": "", "updated_at": None})
     return jsonify(dict(row))
 
+def _refresh_page_access_from_db():
+    """Pull the *current* page_access for the logged-in user from the
+    DB and update the session snapshot so subsequent reads see fresh
+    values.
+
+    `session["page_access"]` is populated at login and only refreshed
+    on subsequent logins — so when an admin grants a new permission to
+    a user who's already logged in, that user is stuck until they log
+    out and back in. For permissions that default to False with no
+    init-time backfill (e.g. `verticals_upload`), this manifests as
+    "I gave Carlos the permission but the upload button is still
+    hidden." Re-reading from the DB inside the permission helpers
+    avoids that.
+
+    Returns the latest page_access dict, or the existing session
+    snapshot if the lookup fails (so a transient DB error doesn't
+    randomly deny access).
+    """
+    uid = session.get("user_id")
+    if not uid:
+        return session.get("page_access") or {}
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("SELECT page_access FROM users WHERE id = %s", (uid,))
+        row = cur.fetchone(); cur.close(); conn.close()
+        if row and row["page_access"] is not None:
+            pa = row["page_access"]
+            session["page_access"] = pa
+            return pa
+    except Exception:
+        # Defensive: any DB hiccup falls back to the session snapshot.
+        pass
+    return session.get("page_access") or {}
+
+
 def _vd_can_edit_comments():
     """Server-side gate for vertical comment writes. Admin overrides;
     otherwise the user must hold page_access.verticals_comment. Default
     true on the flag so existing accounts (backfilled in init_db) keep
-    the legacy behavior."""
+    the legacy behavior. Re-reads from DB so admin grants apply without
+    requiring the user to log out and back in."""
     if session.get("is_admin"):
         return True
-    pa = session.get("page_access") or {}
+    pa = _refresh_page_access_from_db()
     return bool(pa.get("verticals_comment", True))
 
 def _vd_can_upload():
     """Server-side gate for vertical *data* uploads (Master Tracker /
     Master xlsx / PSR xlsx). Mirrors `_vd_can_edit_comments` but
     **defaults to False** — uploads replace project data, so we want
-    explicit grants rather than implicit access. Admins always pass."""
+    explicit grants rather than implicit access. Admins always pass.
+    Re-reads from DB so admin grants apply without requiring the user
+    to log out and back in (this was reported in the wild — Carlos
+    granted the perm, button stayed hidden until he re-logged in)."""
     if session.get("is_admin"):
         return True
-    pa = session.get("page_access") or {}
+    pa = _refresh_page_access_from_db()
     return bool(pa.get("verticals_upload", False))
 
 @app.route("/api/verticals/me", methods=["GET"])
