@@ -4995,28 +4995,63 @@ renderUnits('all');
 
   // Auth via Ember session cookie (same-origin); upload gating
   // happens server-side in /api/verticals/upload via _vd_can_upload.
-  // Previously this function swallowed the fetch result entirely, so a
-  // 403 (perm denied) or 500 (DB error) was invisible — the user saw
-  // the client-side "✓ filename — N rows" status (which only reflects
-  // the in-browser parse) and assumed everything saved. Now mirror
-  // Hawthorne / TGP: surface server response into the per-card status.
+  //
+  // Two hardening passes since this function originally swallowed
+  // results entirely:
+  //   1. Show a "⏳ saving to server…" indicator the moment the push
+  //      starts, so the user can see something IS happening (and so
+  //      we have proof the function ran, useful when debugging).
+  //   2. Wrap the whole body in a single try/catch so setup errors
+  //      (e.g., loadStaged() throws, getUnits() throws) surface as a
+  //      UI message instead of an unhandled promise rejection that's
+  //      only visible to DevTools users.
+  // Strips any prior server-status trailer ("saved/saving/Server save
+  // failed/Network error") off the base status text so retries don't
+  // pile up stacked suffixes.
+  const SERVER_TRAILER_RE =
+    / · (saved to server|saving to server|Server save failed|Network error saving to server).*$/i;
+
+  function _lhStripServerTrailer() {
+    try {
+      const cur = document.querySelector('[data-ie-status="all"]');
+      return (cur && cur.textContent) ? cur.textContent.replace(SERVER_TRAILER_RE, '') : '';
+    } catch (_) { return ''; }
+  }
+  function _lhAppendServerStatus(trailer, kind) {
+    try {
+      const base = _lhStripServerTrailer();
+      if (!base) return;
+      setStatus('all', base + trailer, kind || 'ok');
+      saveStatus('all', { msg: base + trailer, kind: kind || 'ok' });
+    } catch (_) {}
+  }
+
   async function autoPushToServer() {
     const isHttp = (location.protocol === 'http:' || location.protocol === 'https:');
     if (!isHttp) return;
-    const staged = loadStaged();
-    const units = (window.LH_units && window.LH_units.getUnits()) || (typeof unitData !== 'undefined' ? unitData : []);
-    const payload = {
-      vertical: 'lighthaven',
-      sourceFile: 'web_upload',
-      importedBy: 'dashboard_ui',
-      units,
-      noi: staged.noi || null,
-      traffic: staged.traffic || null,
-      leadSources: staged.leadSources || null,
-      rents: staged.rents || null,
-      leasingPace: staged.leasingPace || null,
-    };
+    // Show pending indicator immediately so the user can see the push
+    // fired (this also helps confirm the new code is loaded if the
+    // trailer never updates).
+    _lhAppendServerStatus(' · saving to server…', 'ok');
+
+    let units = [];
     try {
+      const staged = loadStaged();
+      units = (window.LH_units && window.LH_units.getUnits()) || (typeof unitData !== 'undefined' ? unitData : []);
+      const payload = {
+        vertical: 'lighthaven',
+        sourceFile: 'web_upload',
+        importedBy: 'dashboard_ui',
+        units,
+        noi: staged.noi || null,
+        traffic: staged.traffic || null,
+        leadSources: staged.leadSources || null,
+        rents: staged.rents || null,
+        leasingPace: staged.leasingPace || null,
+      };
+      console.info('[LH] /api/verticals/upload posting',
+        { units: units.length, hasNoi: !!payload.noi, hasTraffic: !!payload.traffic,
+          hasRents: !!payload.rents, hasLeasingPace: !!payload.leasingPace });
       const res = await fetch('/api/verticals/upload?vertical=lighthaven', {
         method: 'POST',
         headers: { 'Content-Type':'application/json' },
@@ -5026,29 +5061,21 @@ renderUnits('all');
       try { body = await res.json(); } catch (_) { /* non-JSON body */ }
       if (!res.ok) {
         const reason = (body && body.error) ? body.error : ('HTTP ' + res.status);
-        const msg = '✗ Server save failed: ' + reason + ' (data loaded locally only).';
-        console.error('[LH] /api/verticals/upload', res.status, body);
-        try { setStatus('all', msg, 'err'); saveStatus('all', { msg, kind:'err' }); } catch(_) {}
+        console.error('[LH] /api/verticals/upload FAILED', res.status, body);
+        _lhAppendServerStatus(' · ✗ Server save failed: ' + reason + ' (data loaded locally only).', 'err');
         return;
       }
-      // Success — append a "saved to server" trailer so the user knows
-      // the upload made it past the perm gate and into the DB.
       const n = (body && body.unitsImported) || units.length || 0;
       const tabs = (body && body.tabsUpdated) || [];
-      const trailer = ' · saved to server (' + n + ' units' + (tabs.length ? ', ' + tabs.length + ' data tabs' : '') + ')';
-      console.info('[LH] /api/verticals/upload ok', body);
-      try {
-        const cur = document.querySelector('[data-ie-status="all"]');
-        const base = (cur && cur.textContent) ? cur.textContent.replace(/ · saved to server.*$| · Server.*$/i, '') : '';
-        if (base) {
-          setStatus('all', base + trailer, 'ok');
-          saveStatus('all', { msg: base + trailer, kind:'ok' });
-        }
-      } catch(_) {}
+      console.info('[LH] /api/verticals/upload OK', body);
+      _lhAppendServerStatus(
+        ' · saved to server (' + n + ' units' + (tabs.length ? ', ' + tabs.length + ' data tabs' : '') + ')',
+        'ok',
+      );
     } catch (err) {
-      const msg = '✗ Network error saving to server: ' + (err && err.message ? err.message : err) + ' (data loaded locally only).';
-      console.error('[LH] upload network error', err);
-      try { setStatus('all', msg, 'err'); saveStatus('all', { msg, kind:'err' }); } catch(_) {}
+      console.error('[LH] autoPushToServer error (before/around fetch):', err);
+      const reason = (err && err.message) ? err.message : String(err);
+      _lhAppendServerStatus(' · ✗ Network error saving to server: ' + reason + ' (data loaded locally only).', 'err');
     }
   }
   window.LH_autoPush = autoPushToServer;
