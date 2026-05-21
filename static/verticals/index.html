@@ -4514,7 +4514,23 @@ renderUnits('all');
         const when = new Date().toLocaleString();
         const sheetWord = result.sheets === 1 ? 'sheet' : 'sheets';
         const hitList = (result.hits && result.hits.length) ? ` [${result.hits.join(', ')}]` : '';
-        const msg = `✓ ${f.name} — ${result.count} row${result.count===1?'':'s'} across ${result.sheets} ${sheetWord}${hitList} (${when})`;
+        // Surface partial-import errors. Previously these were silently
+        // dropped if at least one sub-importer succeeded — so a file
+        // where (e.g.) Data Table failed but NOI/Traffic/Rents worked
+        // showed a clean ✓, while units came over to the server as an
+        // empty array. That's how "only the upload date updates" looked
+        // in the wild.
+        const errList = (result.errors && result.errors.length)
+          ? ` — ⚠ partial: ${result.errors.length} sheet${result.errors.length===1?'':'s'} skipped (${result.errors.map(s=>s.split(':')[0]).join(', ')})`
+          : '';
+        if (result.errors && result.errors.length) {
+          console.warn('[LH import] partial — sub-importer errors:', result.errors);
+        }
+        // `kind` stays 'ok' because at least one sheet imported; the
+        // ⚠ emoji + "partial:" tag in the message text is the visible
+        // signal that one or more sheets failed.
+        const tick = errList ? '⚠' : '✓';
+        const msg = `${tick} ${f.name} — ${result.count} row${result.count===1?'':'s'} across ${result.sheets} ${sheetWord}${hitList}${errList} (${when})`;
         setStatus(key, msg, 'ok');
         saveStatus(key, { msg, kind:'ok' });
         // Persist imported unit roster so a page refresh rehydrates it
