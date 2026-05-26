@@ -1,0 +1,330 @@
+/* ────────────────────────────────────────────────────────────
+   Financial Statements dashboard — Sage Intacct backed.
+   Lives at /financials. Visual language mirrors the Invoice
+   Dashboard's pill nav + clean statement-card style.
+   ──────────────────────────────────────────────────────────── */
+
+.fin-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--eax-accent);
+  margin-bottom: 8px;
+}
+.fin-title {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--eax-ink);
+  letter-spacing: -0.02em;
+  margin: 0 0 8px;
+}
+.fin-sub {
+  font-size: 13px;
+  color: var(--eax-muted);
+  line-height: 1.55;
+  max-width: 720px;
+  margin: 0 0 24px;
+}
+
+/* ── Controls row: entity + period + refresh ───────────────── */
+.fin-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.fin-control {
+  display: flex;
+  flex-direction: column;
+  min-width: 240px;
+}
+.fin-control label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--eax-subtle);
+  margin-bottom: 6px;
+}
+.fin-control select {
+  background: var(--eax-bg-2);
+  border: 1px solid var(--eax-line);
+  border-radius: 8px;
+  color: var(--eax-ink);
+  padding: 9px 12px;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.fin-control select:focus { border-color: var(--eax-accent); }
+.fin-control select:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.fin-control-actions { min-width: auto; }
+.fin-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid var(--eax-line-2);
+  color: var(--eax-muted);
+  padding: 9px 16px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+}
+.fin-btn:hover { border-color: var(--eax-accent); color: var(--eax-accent); }
+.fin-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.fin-btn.primary {
+  background: var(--eax-accent);
+  color: var(--eax-accent-fg);
+  border-color: var(--eax-accent);
+  box-shadow: 0 4px 12px rgba(242, 89, 41, 0.18);
+}
+.fin-btn.primary:hover {
+  filter: brightness(1.05);
+  color: var(--eax-accent-fg);
+  border-color: var(--eax-accent);
+}
+.fin-btn.primary:disabled { box-shadow: none; }
+
+.fin-status {
+  margin: 6px 0 18px;
+  font-size: 12px;
+  color: var(--eax-muted);
+  min-height: 14px;
+}
+.fin-status.err { color: var(--eax-bad); }
+.fin-status.ok  { color: var(--eax-good); }
+.fin-status.info { color: var(--eax-muted); }
+
+/* ── Statement tabs (pill segmented control) ───────────────── */
+.fin-tabnav {
+  display: flex;
+  gap: 8px;
+  padding: 4px 0 16px;
+  border-bottom: 1px solid var(--eax-line);
+  margin-bottom: 20px;
+  overflow-x: auto;
+  flex-wrap: wrap;
+}
+.fin-tab {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--eax-muted);
+  background: var(--eax-bg-2);
+  border: 1px solid var(--eax-line);
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  letter-spacing: -0.005em;
+  transition: all .15s;
+}
+.fin-tab:hover:not(:disabled):not(.is-disabled) {
+  color: var(--eax-ink);
+  border-color: var(--eax-line-2);
+  background: var(--eax-accent-soft);
+}
+.fin-tab.is-active {
+  color: var(--eax-accent-fg);
+  background: var(--eax-accent);
+  border-color: var(--eax-accent);
+  font-weight: 700;
+  box-shadow: 0 2px 10px rgba(242, 89, 41, 0.22);
+}
+.fin-tab.is-disabled,
+.fin-tab[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── Empty-state card ──────────────────────────────────────── */
+.fin-card {
+  background: var(--eax-bg-2);
+  border: 1px solid var(--eax-line);
+  border-radius: 12px;
+  padding: 32px;
+}
+.fin-empty {
+  text-align: center;
+  padding: 64px 32px;
+}
+.fin-empty-title {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--eax-ink-2);
+  margin-bottom: 10px;
+}
+.fin-empty-body {
+  font-size: 13px;
+  color: var(--eax-muted);
+  line-height: 1.55;
+  max-width: 600px;
+  margin: 0 auto 8px;
+}
+.fin-empty code {
+  background: var(--eax-surface);
+  border: 1px solid var(--eax-line);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  font-size: 11px;
+}
+
+/* ── Statement table ──────────────────────────────────────── */
+.fin-statement {
+  background: var(--eax-bg-2);
+  border: 1px solid var(--eax-line);
+  border-radius: 12px;
+  padding: 28px 32px;
+}
+.fin-stmt-head {
+  text-align: center;
+  margin-bottom: 22px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--eax-line);
+}
+.fin-stmt-entity {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--eax-ink);
+}
+.fin-stmt-name {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--eax-ink-2);
+  margin-top: 2px;
+}
+.fin-stmt-period {
+  font-size: 13px;
+  color: var(--eax-muted);
+  margin-top: 2px;
+}
+.fin-stmt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.fin-stmt-table td,
+.fin-stmt-table th {
+  padding: 6px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+.fin-stmt-table th.num,
+.fin-stmt-table td.num {
+  text-align: right;
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  font-size: 12.5px;
+}
+.fin-stmt-table thead th {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--eax-subtle);
+  border-bottom: 1px solid var(--eax-line);
+  padding-bottom: 8px;
+}
+.fin-stmt-table tr.section td:first-child {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--eax-ink);
+  padding-top: 16px;
+}
+.fin-stmt-table tr.subsection td:first-child {
+  font-weight: 600;
+  color: var(--eax-ink-2);
+  padding-left: 16px;
+  padding-top: 10px;
+}
+.fin-stmt-table tr.lineitem td:first-child {
+  padding-left: 36px;
+  color: var(--eax-ink-2);
+}
+.fin-stmt-table tr.lineitem.contra td {
+  color: var(--eax-muted);
+  font-style: italic;
+}
+.fin-stmt-table tr.subtotal {
+  border-top: 1px solid var(--eax-line);
+}
+.fin-stmt-table tr.subtotal td {
+  font-weight: 700;
+  color: var(--eax-ink-2);
+  padding-left: 16px;
+  padding-top: 6px;
+  padding-bottom: 10px;
+}
+.fin-stmt-table tr.section-total {
+  border-top: 2px solid var(--eax-line-2);
+  border-bottom: 2px solid var(--eax-line-2);
+}
+.fin-stmt-table tr.section-total td {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--eax-accent);
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.fin-stmt-table tr.footing td {
+  font-size: 11px;
+  color: var(--eax-subtle);
+  font-style: italic;
+  padding-top: 18px;
+  border-top: 1px dashed var(--eax-line-2);
+}
+.fin-stmt-note {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: var(--eax-accent-soft);
+  border-left: 3px solid var(--eax-accent);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--eax-ink-2);
+  line-height: 1.55;
+}
+
+/* ── Data-dates footer (Last Refreshed) ───────────────────── */
+.fin-data-dates {
+  margin-top: 24px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--eax-line);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 11px;
+  color: var(--eax-subtle);
+  flex-wrap: wrap;
+}
+.fin-data-dates .ddf-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.fin-data-dates .ddf-lbl {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--eax-muted);
+}
+.fin-data-dates .ddf-val {
+  font-weight: 600;
+  color: var(--eax-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.fin-data-dates .ddf-sep { color: var(--eax-line-2); }
