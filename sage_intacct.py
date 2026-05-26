@@ -201,29 +201,66 @@ def _post(xml_body: str, url: Optional[str] = None,
     )
 
 
+def _extract_all_errors(root: ET.Element) -> list:
+    """Walk the entire response tree for <error> nodes and return their
+    metadata as 'errno | description | description2 | correction' strings.
+    Sage puts error info in different XPaths depending on which validation
+    failed (control / authentication / individual operation result), so we
+    search broadly rather than guessing the path."""
+    out = []
+    for err in root.iter("error"):
+        errno = err.findtext("errorno") or ""
+        d1 = err.findtext("description") or ""
+        d2 = err.findtext("description2") or ""
+        cor = err.findtext("correction") or ""
+        parts = [x.strip() for x in (errno, d1, d2, cor) if x and x.strip()]
+        if parts:
+            out.append(" | ".join(parts))
+    return out
+
+
 def _check_status(root: ET.Element) -> None:
     """Raise IntacctAPIError on any non-success status in the standard
-    response envelope. Sage's success/failure is signalled at three
-    levels (control, authentication, individual operation result), and
-    a failure at any level swallows everything after it. We check all
-    three and surface the first useful error description we find."""
+    response envelope. Sage's success/failure is signalled at three levels
+    (control, authentication, individual operation result), and a failure
+    at any level swallows everything after it. We pull *all* <error>
+    descriptions from anywhere in the tree, then surface them; if no
+    description is found, we include a short raw-XML excerpt so we can
+    debug what Sage actually returned."""
+    def _excerpt():
+        try:
+            s = ET.tostring(root, encoding="unicode")
+            return s[:600] + ("…" if len(s) > 600 else "")
+        except Exception:
+            return "<could not serialize response>"
+
+    errs = _extract_all_errors(root)
+    errs_str = "; ".join(errs) if errs else ""
+
     # Control level
     ctl_status = root.findtext("./control/status")
     if ctl_status and ctl_status != "success":
-        msg = root.findtext("./errormessage/error/description") or "control failed"
+        msg = errs_str or f"control failed (no description). Raw: {_excerpt()}"
         raise IntacctAPIError(f"Sage control error: {msg}")
 
     # Authentication level
     auth_status = root.findtext("./operation/authentication/status")
     if auth_status and auth_status != "success":
-        msg = (
-            root.findtext("./operation/errormessage/error/description")
-            or root.findtext("./operation/errormessage/error/correction")
-            or "authentication failed"
-        )
+        msg = errs_str or f"authentication failed (no description). Raw: {_excerpt()}"
         raise IntacctAPIError(f"Sage authentication error: {msg}")
 
-    # Operation-result level — first error wins
+    # Operation-result level — Sage sometimes returns status=failure on
+    # the result envelope with the error description sitting INSIDE the
+    # operation result rather than at the control/auth level. Catch
+    # those too.
+    for result in root.findall("./operation/result"):
+        rstatus = result.findtext("status")
+        if rstatus and rstatus != "success":
+            sub = _extract_all_errors(result)
+            msg = "; ".join(sub) if sub else (errs_str or f"operation failed. Raw: {_excerpt()}")
+            raise IntacctAPIError(f"Sage operation error: {msg}")
+
+    # Any operation errormessage that isn't nested under a result
     for err in root.findall(".//result/errormessage/error"):
         desc = err.findtext("description") or err.findtext("description2") or ""
         corr = err.findtext("correction") or ""
@@ -319,10 +356,13 @@ def _get_list(
         fields_xml = "<fields>" + "".join(
             f"<field>{_xml_escape(f)}</field>" for f in fields
         ) + "</fields>"
+    # showprivate is only valid for a subset of objects and Sage rejects
+    # the whole envelope at control level if you pass it on others.
+    # Safer to omit — we don't need privacy-flagged records.
     content = (
         f'<function controlid="{_new_control_id()}">'
         f'<get_list object="{_xml_escape(object_name)}" '
-        f'maxitems="{int(maxitems)}" showprivate="true">'
+        f'maxitems="{int(maxitems)}">'
         f'{filter_xml}{fields_xml}'
         f'</get_list>'
         f'</function>'
