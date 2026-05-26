@@ -2123,6 +2123,18 @@ def api_financials_ping():
     return jsonify(sage_intacct.ping())
 
 
+@app.route("/api/financials/diagnose", methods=["GET"])
+@login_required
+def api_financials_diagnose():
+    """Admin diagnostic — probes Sage user permissions across LOCATION,
+    REPORTINGPERIOD, and USERINFO with several filter combos so we can
+    see exactly which queries succeed/fail/return zero. Useful when
+    /api/financials/entities returns an empty list with no error."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "admin only"}), 403
+    return jsonify(sage_intacct.diagnose())
+
+
 # ─── INVOICE DASHBOARD ───────────────────────────────────────────────────────
 # Bi-weekly Stampli HTML invoice analytics. Each upload becomes a
 # permanent row in `invoice_periods` keyed by half-month (YYYY-MM-A
