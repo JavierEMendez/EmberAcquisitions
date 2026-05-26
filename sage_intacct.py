@@ -455,18 +455,79 @@ def get_trial_balance(entity_id: str, period_name: str,
 def ping() -> dict:
     """Smoke test — verifies env vars are set and Sage accepts our
     login. Used by the admin diagnostic route at /api/financials/ping.
-    Never raises; returns {'ok': bool, 'message': str, 'sessionid_prefix': str}."""
+
+    On failure, includes Sage's raw response excerpt so the admin can
+    diagnose which credential is wrong (Sage puts the descriptive error
+    in different XML paths depending on the failure mode — control vs
+    auth, sender vs user, missing vs invalid). Never raises."""
     if not is_configured():
         missing = [k for k in _CREDENTIAL_KEYS if not os.environ.get(k)]
         return {"ok": False, "message": f"Missing env vars: {', '.join(missing)}"}
+
+    # Do the login inline so we can keep the raw response in scope and
+    # surface it to the caller when something goes wrong.
+    content = (
+        f'<function controlid="{_new_control_id()}">'
+        "<getAPISession/>"
+        "</function>"
+    )
     try:
-        sid, endpoint = get_session(force_refresh=True)
-        return {
-            "ok": True,
-            "message": f"Connected to {endpoint}",
-            "sessionid_prefix": sid[:8] + "…",
-        }
-    except (IntacctConfigurationError, IntacctAPIError) as e:
+        body = _build_envelope(content, _login_xml())
+    except IntacctConfigurationError as e:
         return {"ok": False, "message": str(e)}
+    try:
+        xml_text = _post(body)
+    except IntacctAPIError as e:
+        return {"ok": False, "message": f"Network/HTTP error: {e}"}
     except Exception as e:
-        return {"ok": False, "message": f"Unexpected error: {e}"}
+        return {"ok": False, "message": f"Unexpected network error: {e}"}
+
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as e:
+        return {
+            "ok": False,
+            "message": f"Sage returned non-XML: {e}",
+            "raw_response_excerpt": xml_text[:1500],
+        }
+
+    ctl_status = root.findtext("./control/status")
+    auth_status = root.findtext("./operation/authentication/status")
+
+    # Walk the whole response for any <error> nodes — Sage puts them at
+    # different levels (./errormessage, ./operation/errormessage,
+    # ./operation/result/errormessage) so search broadly.
+    errors = []
+    for err in root.iter("error"):
+        errno = err.findtext("errorno") or ""
+        d1 = err.findtext("description") or ""
+        d2 = err.findtext("description2") or ""
+        cor = err.findtext("correction") or ""
+        parts = [x.strip() for x in (errno, d1, d2, cor) if x and x.strip()]
+        if parts:
+            errors.append(" | ".join(parts))
+
+    if ctl_status == "success" and auth_status == "success":
+        sid = root.findtext("./operation/result/data/api/sessionid") or ""
+        endpoint = root.findtext("./operation/result/data/api/endpoint") or _api_url()
+        # Update the in-memory cache so the next real call doesn't re-login
+        with _session_lock:
+            _session_cache["id"] = sid
+            _session_cache["endpoint"] = endpoint
+            _session_cache["expires_at"] = time.time() + SESSION_TTL_SECONDS
+        return {
+            "ok":                True,
+            "message":           f"Connected to {endpoint}",
+            "sessionid_prefix":  (sid[:8] + "…") if sid else "",
+            "control_status":    ctl_status,
+            "auth_status":       auth_status,
+        }
+
+    return {
+        "ok":                  False,
+        "message":             "Sage login failed — see details below",
+        "control_status":      ctl_status,
+        "auth_status":         auth_status,
+        "sage_errors":         errors or ["No <error> nodes found in response"],
+        "raw_response_excerpt": xml_text[:1500],
+    }
