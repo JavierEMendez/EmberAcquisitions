@@ -327,6 +327,36 @@ def _call(content_xml: str, timeout: int = DEFAULT_TIMEOUT) -> ET.Element:
     raise IntacctAPIError("Sage call failed after one session refresh retry")
 
 
+# ─── inspect (object schema introspection) ───────────────────────────────────
+def _inspect_fields(object_name: str) -> list[str]:
+    """Use Sage's <inspect> to return the list of field IDs that exist
+    on an object. Avoids guess-and-check when an object's API field
+    names differ from its UI labels."""
+    content = (
+        f'<function controlid="{_new_control_id()}">'
+        f"<inspect>"
+        f"<object>{_xml_escape(object_name)}</object>"
+        f"</inspect>"
+        f"</function>"
+    )
+    try:
+        root = _call(content)
+    except IntacctAPIError:
+        return []
+    # inspect's response shape varies a bit between Sage versions —
+    # walk for any <Field>/<ID> or <Fields>/<Field> nodes.
+    ids = []
+    for fld in root.iter():
+        if fld.tag in ("Field", "field"):
+            for tag in ("ID", "id", "name", "NAME"):
+                v = fld.findtext(tag)
+                if v:
+                    ids.append(v)
+                    break
+    # Dedup, sort
+    return sorted(set(ids))
+
+
 # ─── Modern <query> operation (structured filter) ───────────────────────────
 def _query(
     object_name: str,
@@ -607,14 +637,17 @@ def get_trial_balance(entity_id: str, period_name: str,
     (e.g., "Month Ended March 2026" vs "Calendar Year Ended December
     2026" vs a YTD-style custom period).
     """
-    # 1) Account balances for the requested entity + period
+    # 1) Account balances for the requested entity + period.
+    # Field name is PERIODNAME (not REPORTINGPERIODNAME — that's the
+    # name on REPORTINGPERIOD itself; GLACCOUNTBALANCE uses PERIODNAME).
+    # BOOKID dropped from filter — it's a company-level config, not a
+    # field on individual balance rows.
     balances = _query(
         "GLACCOUNTBALANCE",
         fields=["ACCOUNTNO", "BEGINBAL", "ENDBAL", "DEBIT", "CREDIT"],
         filter_pairs=[
-            ("REPORTINGPERIODNAME", period_name),
-            ("LOCATIONID",          entity_id),
-            ("BOOKID",              _book()),
+            ("PERIODNAME", period_name),
+            ("LOCATIONID", entity_id),
         ],
     )
 
@@ -858,9 +891,26 @@ def diagnose() -> dict:
                 "error":  str(e)[:300],
             })
 
+    # ── Inspect probes for GLACCOUNTBALANCE + GLACCOUNT so we can see
+    # the actual field names Sage exposes on this instance (instead of
+    # guessing REPORTINGPERIODNAME vs PERIODNAME vs PERIOD).
+    inspect_targets = ["GLACCOUNTBALANCE", "GLACCOUNT"]
+    schema_probes = []
+    for obj in inspect_targets:
+        fields = _inspect_fields(obj)
+        schema_probes.append({
+            "label":  f"inspect — {obj} fields",
+            "object": obj,
+            "via":    "inspect",
+            "ok":     bool(fields),
+            "count":  len(fields),
+            "fields": fields,
+        })
+
     return {
         "ok":     True,
         "probes": out_probes,
+        "schema": schema_probes,
         "hint": (
             "Interpretation: if every LOCATION probe returns 0 but USERINFO works, "
             "the API user is missing Read permission on the Company object. "
@@ -868,6 +918,8 @@ def diagnose() -> dict:
             "the filter is wrong for this Sage instance. If unfiltered returns "
             "exactly 1, the user is entity-scoped and can only see its own entity. "
             "For the trial-balance candidates: whichever object returns 'ok: true' "
-            "is the one we'll route get_trial_balance() through next."
+            "is the one we'll route get_trial_balance() through next. "
+            "The `schema` block lists the actual field names so we don't have to "
+            "guess (e.g., PERIODNAME vs REPORTINGPERIODNAME)."
         ),
     }
