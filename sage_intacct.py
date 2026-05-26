@@ -344,14 +344,25 @@ def _read_by_query(
 # ─── Public API ──────────────────────────────────────────────────────────────
 def list_entities() -> list[dict]:
     """All active top-level entities (LOCATIONTYPE='E'). Sorted by
-    display name. Each dict: {'id': LOCATIONID, 'name': ENTITYNAME}."""
+    display name. Each dict: {'id': LOCATIONID, 'name': ENTITYNAME}.
+
+    Note: STATUS filter is applied in Python rather than as part of
+    the Sage query. /api/financials/diagnose showed STATUS='active'
+    returns 0 rows via readByQuery even though the field is populated
+    with that exact value — a quirk of Sage's legacy query syntax for
+    certain "status-like" fields. Filtering server-side on
+    LOCATIONTYPE='E' (which DOES work) gets us a small enough set to
+    filter the remaining ~5 inactive rows in Python.
+    """
     rows = _read_by_query(
         "LOCATION",
-        "STATUS = 'active' AND LOCATIONTYPE = 'E'",
+        "LOCATIONTYPE = 'E'",
         "LOCATIONID,NAME,ENTITYNAME,STATUS,LOCATIONTYPE",
     )
     out = []
     for r in rows:
+        if (r.get("STATUS") or "").strip().lower() != "active":
+            continue
         out.append({
             "id":   r.get("LOCATIONID", ""),
             "name": (r.get("ENTITYNAME") or r.get("NAME") or r.get("LOCATIONID", "")).strip(),
@@ -364,15 +375,19 @@ def list_periods(closed_only: bool = True, max_periods: int = 60) -> list[dict]:
     """Active reporting periods sorted oldest → newest. By default,
     only returns periods whose END_DATE is before today (closed).
     Filtered to the most recent `max_periods` to keep the dropdown
-    manageable — ~5 years of monthlies fits in 60."""
+    manageable — ~5 years of monthlies fits in 60.
+
+    Same STATUS-filter caveat as list_entities() — applied in Python."""
     rows = _read_by_query(
         "REPORTINGPERIOD",
-        "STATUS = 'active'",
+        "",  # unfiltered; STATUS filter applied below
         "RECORDNO,NAME,START_DATE,END_DATE,STATUS,REPORTINGPERIODTYPE",
     )
     today = datetime.utcnow().date()
     out = []
     for r in rows:
+        if (r.get("STATUS") or "").strip().lower() != "active":
+            continue
         start_s = (r.get("START_DATE") or "").strip()
         end_s = (r.get("END_DATE") or "").strip()
         try:
