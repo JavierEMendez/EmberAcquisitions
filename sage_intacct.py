@@ -351,34 +351,29 @@ def _query(
         f"<field>{_xml_escape(f)}</field>" for f in fields
     ) + "</select>"
 
+    # Sage's <query> filter children are direct comparison ops
+    # (<equalto>, <lessthan>, etc.) or logical combinators (<and>, <or>).
+    # Each comparison op takes <field> + <value> as direct children —
+    # NO <expression> wrapper, NO <operator> sub-element. The previous
+    # <expression><field>/<operator>/<value> shape was wrong; Sage
+    # told us exactly what it accepts in the error response.
+    def _equalto(field, value):
+        return (
+            "<equalto>"
+            f"<field>{_xml_escape(field)}</field>"
+            f"<value>{_xml_escape(value)}</value>"
+            "</equalto>"
+        )
+
     if not filter_pairs:
         filter_xml = ""
     elif len(filter_pairs) == 1:
         f, v = filter_pairs[0]
-        filter_xml = (
-            "<filter>"
-            "<expression>"
-            f"<field>{_xml_escape(f)}</field>"
-            "<operator>=</operator>"
-            f"<value>{_xml_escape(v)}</value>"
-            "</expression>"
-            "</filter>"
-        )
+        filter_xml = f"<filter>{_equalto(f, v)}</filter>"
     else:
-        # Multiple filters joined with AND via the <logical> wrapper.
-        exprs = "".join(
-            "<expression>"
-            f"<field>{_xml_escape(f)}</field>"
-            "<operator>=</operator>"
-            f"<value>{_xml_escape(v)}</value>"
-            "</expression>"
-            for f, v in filter_pairs
-        )
-        filter_xml = (
-            "<filter><logical><operator>and</operator>"
-            f"{exprs}"
-            "</logical></filter>"
-        )
+        # Multiple conditions joined with <and>.
+        inner = "".join(_equalto(f, v) for f, v in filter_pairs)
+        filter_xml = f"<filter><and>{inner}</and></filter>"
 
     out: list[dict] = []
     result_id = None
