@@ -531,3 +531,76 @@ def ping() -> dict:
         "sage_errors":         errors or ["No <error> nodes found in response"],
         "raw_response_excerpt": xml_text[:1500],
     }
+
+
+def diagnose() -> dict:
+    """Permission-probe diagnostic: run a series of readByQuery calls
+    against different objects + filter combos so we can pinpoint where
+    a user is missing read access. Used by /api/financials/diagnose.
+
+    Returns one record per probe with the query, count, sample rows,
+    and any errors. Stops at 5 rows per probe to keep the response
+    light — we're testing connectivity, not pulling data."""
+    if not is_configured():
+        missing = [k for k in _CREDENTIAL_KEYS if not os.environ.get(k)]
+        return {"ok": False, "message": f"Missing env vars: {', '.join(missing)}"}
+
+    probes = [
+        # (label, object, query, fields)
+        ("USERINFO — who is the API user?",
+         "USERINFO", "", "USER_ID,LOGINID,FIRST_NAME,LAST_NAME,EMAIL1,STATUS,USERTYPE"),
+        ("LOCATION — unfiltered (any visible locations?)",
+         "LOCATION", "", "LOCATIONID,NAME,LOCATIONTYPE,STATUS,PARENTID"),
+        ("LOCATION — STATUS = 'active' only",
+         "LOCATION", "STATUS = 'active'", "LOCATIONID,NAME,LOCATIONTYPE,STATUS"),
+        ("LOCATION — LOCATIONTYPE = 'E' only",
+         "LOCATION", "LOCATIONTYPE = 'E'", "LOCATIONID,NAME,LOCATIONTYPE,STATUS"),
+        ("LOCATION — both filters (what /api/financials/entities does)",
+         "LOCATION", "STATUS = 'active' AND LOCATIONTYPE = 'E'",
+         "LOCATIONID,NAME,LOCATIONTYPE,STATUS"),
+        ("REPORTINGPERIOD — unfiltered",
+         "REPORTINGPERIOD", "", "RECORDNO,NAME,START_DATE,END_DATE,STATUS"),
+        ("REPORTINGPERIOD — STATUS = 'active'",
+         "REPORTINGPERIOD", "STATUS = 'active'", "RECORDNO,NAME,START_DATE,END_DATE,STATUS"),
+    ]
+
+    out_probes = []
+    for label, obj, query, fields in probes:
+        try:
+            rows = _read_by_query(obj, query, fields, pagesize=5, max_pages=1)
+            out_probes.append({
+                "label":   label,
+                "object":  obj,
+                "query":   query,
+                "ok":      True,
+                "count":   len(rows),
+                "sample":  rows[:3],
+            })
+        except IntacctAPIError as e:
+            out_probes.append({
+                "label":  label,
+                "object": obj,
+                "query":  query,
+                "ok":     False,
+                "error":  str(e),
+            })
+        except Exception as e:
+            out_probes.append({
+                "label":  label,
+                "object": obj,
+                "query":  query,
+                "ok":     False,
+                "error":  f"Unexpected: {e}",
+            })
+
+    return {
+        "ok":     True,
+        "probes": out_probes,
+        "hint": (
+            "Interpretation: if every LOCATION probe returns 0 but USERINFO works, "
+            "the API user is missing Read permission on the Company object. "
+            "If unfiltered LOCATION returns >0 but the filtered ones return 0, "
+            "the filter is wrong for this Sage instance. If unfiltered returns "
+            "exactly 1, the user is entity-scoped and can only see its own entity."
+        ),
+    }
