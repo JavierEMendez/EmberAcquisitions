@@ -770,6 +770,7 @@ def diagnose() -> dict:
                 "label":   label,
                 "object":  obj,
                 "query":   query,
+                "via":     "readByQuery",
                 "ok":      True,
                 "count":   len(rows),
                 "sample":  rows[:3],
@@ -779,16 +780,50 @@ def diagnose() -> dict:
                 "label":  label,
                 "object": obj,
                 "query":  query,
+                "via":    "readByQuery",
                 "ok":     False,
-                "error":  str(e),
+                "error":  str(e)[:300],
             })
         except Exception as e:
             out_probes.append({
                 "label":  label,
                 "object": obj,
                 "query":  query,
+                "via":    "readByQuery",
                 "ok":     False,
                 "error":  f"Unexpected: {e}",
+            })
+
+    # ── Probe candidate trial-balance / account-balance objects via
+    # the modern <query> operation. None of TRIALBALANCE / get_list
+    # 'trialbalance' / readByQuery TRIALBALANCE worked, so we need to
+    # find which object actually exposes balance data in this Sage
+    # instance. Tries several known/plausible names.
+    tb_candidates = [
+        ("TRIALBALANCE",     "modern query — TRIALBALANCE (last attempt)"),
+        ("GLACCOUNTBALANCE", "modern query — GLACCOUNTBALANCE (likely)"),
+        ("ARBALANCE",        "modern query — ARBALANCE (control case)"),
+        ("APBALANCE",        "modern query — APBALANCE (control case)"),
+        ("GLTRIALBALANCE",   "modern query — GLTRIALBALANCE (alt naming)"),
+    ]
+    for obj, label in tb_candidates:
+        try:
+            rows = _query(obj, ["RECORDNO"], filter_pairs=[], page_size=5, max_pages=1)
+            out_probes.append({
+                "label":   label,
+                "object":  obj,
+                "via":     "query",
+                "ok":      True,
+                "count":   len(rows),
+                "sample":  rows[:2],
+            })
+        except IntacctAPIError as e:
+            out_probes.append({
+                "label":  label,
+                "object": obj,
+                "via":    "query",
+                "ok":     False,
+                "error":  str(e)[:300],
             })
 
     return {
@@ -799,6 +834,8 @@ def diagnose() -> dict:
             "the API user is missing Read permission on the Company object. "
             "If unfiltered LOCATION returns >0 but the filtered ones return 0, "
             "the filter is wrong for this Sage instance. If unfiltered returns "
-            "exactly 1, the user is entity-scoped and can only see its own entity."
+            "exactly 1, the user is entity-scoped and can only see its own entity. "
+            "For the trial-balance candidates: whichever object returns 'ok: true' "
+            "is the one we'll route get_trial_balance() through next."
         ),
     }
