@@ -290,6 +290,54 @@ def _call(content_xml: str, timeout: int = DEFAULT_TIMEOUT) -> ET.Element:
     raise IntacctAPIError("Sage call failed after one session refresh retry")
 
 
+# ─── Generic get_list (legacy operation) ─────────────────────────────────────
+def _get_list(
+    object_name: str,
+    filter_pairs: list,
+    fields: list,
+    maxitems: int = 1000,
+) -> list[dict]:
+    """Sage's legacy `get_list` operation. Used for objects that
+    aren't exposed via the newer `readByQuery` — `trialbalance` is the
+    canonical case (readByQuery on uppercase TRIALBALANCE returns
+    "Object definition not found").
+
+    filter_pairs: list of (field, value) tuples joined with implicit AND.
+    fields:       list of field names to request; empty = all.
+    maxitems:     up to 1000 (Sage's cap for this operation).
+    """
+    filter_xml = ""
+    if filter_pairs:
+        clauses = "".join(
+            f'<equalto field="{_xml_escape(f)}" value="{_xml_escape(v)}"/>'
+            for f, v in filter_pairs
+        )
+        # Multiple equalto siblings inside <filter> are ANDed by Sage.
+        filter_xml = f"<filter>{clauses}</filter>"
+    fields_xml = ""
+    if fields:
+        fields_xml = "<fields>" + "".join(
+            f"<field>{_xml_escape(f)}</field>" for f in fields
+        ) + "</fields>"
+    content = (
+        f'<function controlid="{_new_control_id()}">'
+        f'<get_list object="{_xml_escape(object_name)}" '
+        f'maxitems="{int(maxitems)}" showprivate="true">'
+        f'{filter_xml}{fields_xml}'
+        f'</get_list>'
+        f'</function>'
+    )
+    root = _call(content)
+    data = root.find("./operation/result/data")
+    if data is None:
+        return []
+    out = []
+    for row in list(data):
+        d = {child.tag: (child.text or "") for child in row}
+        out.append(d)
+    return out
+
+
 # ─── Generic readByQuery + pagination ────────────────────────────────────────
 def _read_by_query(
     obj: str,
@@ -423,22 +471,28 @@ def get_trial_balance(entity_id: str, period_name: str,
          'credit': 0.0,
          'close': 0.0}
 
-    Sage's TRIALBALANCE object exposes opening + debit + credit + closing
-    per account for the requested period. The caller decides MTD vs YTD
-    by picking the right period name (e.g., "Month Ended March 2026" vs
-    "Quarter Ended March 2026" or a YTD-style custom period).
+    Uses Sage's legacy `get_list` operation (lowercase 'trialbalance')
+    rather than readByQuery on TRIALBALANCE — the latter returns
+    "Object definition not found". This is one of the older Sage
+    objects only exposed through get_list.
+
+    The caller decides MTD vs YTD by picking the right period name
+    (e.g., "Month Ended March 2026" vs "Calendar Year Ended December
+    2026" vs a YTD-style custom period).
     """
-    book = _book()
-    query = (
-        f"REPORTINGPERIODNAME = '{period_name}' "
-        f"AND LOCATIONID = '{entity_id}' "
-        f"AND BOOKID = '{book}'"
-    )
-    rows = _read_by_query(
-        "TRIALBALANCE",
-        query,
-        "ACCT_NO,ACCT_TITLE,OPENING_BALANCE,DEBIT,CREDIT,CLOSING_BALANCE,"
-        "LOCATION,LOCATIONID,REPORTINGPERIODNAME,BOOKID",
+    rows = _get_list(
+        "trialbalance",
+        [
+            ("REPORTINGPERIODNAME", period_name),
+            ("LOCATIONID",          entity_id),
+            ("BOOKID",              _book()),
+        ],
+        [
+            "ACCT_NO", "ACCT_TITLE",
+            "OPENING_BALANCE", "DEBIT", "CREDIT", "CLOSING_BALANCE",
+            "LOCATION", "LOCATIONID",
+            "REPORTINGPERIODNAME", "BOOKID",
+        ],
     )
 
     def _f(s: str) -> float:
