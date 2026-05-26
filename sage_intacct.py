@@ -327,6 +327,96 @@ def _call(content_xml: str, timeout: int = DEFAULT_TIMEOUT) -> ET.Element:
     raise IntacctAPIError("Sage call failed after one session refresh retry")
 
 
+# ─── Modern <query> operation (structured filter) ───────────────────────────
+def _query(
+    object_name: str,
+    fields: list,
+    filter_pairs: list = None,
+    page_size: int = 1000,
+    max_pages: int = 20,
+) -> list[dict]:
+    """Sage's modern <query> operation (Intacct 30.0+). Required for
+    aggregate / analytic objects like TRIALBALANCE that aren't exposed
+    via readByQuery or get_list. Uses structured XML filters instead
+    of a query-string.
+
+    filter_pairs: list of (field, value) tuples joined with AND. Each
+                  becomes an <expression> with operator "=".
+
+    Pagination via <queryMore><resultId>...</resultId></queryMore>
+    when Sage returns numremaining > 0.
+    """
+    filter_pairs = filter_pairs or []
+    fields_xml = "<select>" + "".join(
+        f"<field>{_xml_escape(f)}</field>" for f in fields
+    ) + "</select>"
+
+    if not filter_pairs:
+        filter_xml = ""
+    elif len(filter_pairs) == 1:
+        f, v = filter_pairs[0]
+        filter_xml = (
+            "<filter>"
+            "<expression>"
+            f"<field>{_xml_escape(f)}</field>"
+            "<operator>=</operator>"
+            f"<value>{_xml_escape(v)}</value>"
+            "</expression>"
+            "</filter>"
+        )
+    else:
+        # Multiple filters joined with AND via the <logical> wrapper.
+        exprs = "".join(
+            "<expression>"
+            f"<field>{_xml_escape(f)}</field>"
+            "<operator>=</operator>"
+            f"<value>{_xml_escape(v)}</value>"
+            "</expression>"
+            for f, v in filter_pairs
+        )
+        filter_xml = (
+            "<filter><logical><operator>and</operator>"
+            f"{exprs}"
+            "</logical></filter>"
+        )
+
+    out: list[dict] = []
+    result_id = None
+    for _ in range(max_pages):
+        if result_id is None:
+            content = (
+                f'<function controlid="{_new_control_id()}">'
+                "<query>"
+                f"<object>{_xml_escape(object_name)}</object>"
+                f"{fields_xml}"
+                f"{filter_xml}"
+                f"<pagesize>{int(page_size)}</pagesize>"
+                "</query>"
+                "</function>"
+            )
+        else:
+            content = (
+                f'<function controlid="{_new_control_id()}">'
+                f"<queryMore><resultId>{_xml_escape(result_id)}</resultId></queryMore>"
+                "</function>"
+            )
+        root = _call(content)
+        data = root.find("./operation/result/data")
+        if data is None:
+            break
+        result_id = data.attrib.get("resultId") or None
+        try:
+            remaining = int(data.attrib.get("numremaining", "0") or "0")
+        except ValueError:
+            remaining = 0
+        for row in list(data):
+            d = {child.tag: (child.text or "") for child in row}
+            out.append(d)
+        if not result_id or remaining <= 0:
+            break
+    return out
+
+
 # ─── Generic get_list (legacy operation) ─────────────────────────────────────
 def _get_list(
     object_name: str,
@@ -511,27 +601,31 @@ def get_trial_balance(entity_id: str, period_name: str,
          'credit': 0.0,
          'close': 0.0}
 
-    Uses Sage's legacy `get_list` operation (lowercase 'trialbalance')
-    rather than readByQuery on TRIALBALANCE — the latter returns
-    "Object definition not found". This is one of the older Sage
-    objects only exposed through get_list.
+    Uses Sage's modern <query> operation (introduced in Intacct 30.0)
+    against the TRIALBALANCE object. TRIALBALANCE is *not* available
+    via readByQuery ("Object definition not found") or get_list
+    ("'trialbalance' is not in the enumeration of allowed objects"),
+    so query is the only path. The filter uses Sage's structured
+    expression syntax — <equalto> in a get_list filter, which I tried
+    first, isn't valid (Sage expects <expression><field>/<operator>/
+    <value> nodes).
 
     The caller decides MTD vs YTD by picking the right period name
     (e.g., "Month Ended March 2026" vs "Calendar Year Ended December
     2026" vs a YTD-style custom period).
     """
-    rows = _get_list(
-        "trialbalance",
-        [
-            ("REPORTINGPERIODNAME", period_name),
-            ("LOCATIONID",          entity_id),
-            ("BOOKID",              _book()),
-        ],
-        [
+    rows = _query(
+        "TRIALBALANCE",
+        fields=[
             "ACCT_NO", "ACCT_TITLE",
             "OPENING_BALANCE", "DEBIT", "CREDIT", "CLOSING_BALANCE",
             "LOCATION", "LOCATIONID",
             "REPORTINGPERIODNAME", "BOOKID",
+        ],
+        filter_pairs=[
+            ("REPORTINGPERIODNAME", period_name),
+            ("LOCATIONID",          entity_id),
+            ("BOOKID",              _book()),
         ],
     )
 
