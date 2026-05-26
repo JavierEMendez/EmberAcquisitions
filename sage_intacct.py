@@ -596,27 +596,21 @@ def get_trial_balance(entity_id: str, period_name: str,
          'credit': 0.0,
          'close': 0.0}
 
-    Uses Sage's modern <query> operation (introduced in Intacct 30.0)
-    against the TRIALBALANCE object. TRIALBALANCE is *not* available
-    via readByQuery ("Object definition not found") or get_list
-    ("'trialbalance' is not in the enumeration of allowed objects"),
-    so query is the only path. The filter uses Sage's structured
-    expression syntax — <equalto> in a get_list filter, which I tried
-    first, isn't valid (Sage expects <expression><field>/<operator>/
-    <value> nodes).
+    The diagnose endpoint confirmed: TRIALBALANCE doesn't exist on
+    this Sage instance via any operation, but GLACCOUNTBALANCE does
+    (via the modern <query> operation). GLACCOUNTBALANCE has the
+    balances we need (BEGINBAL, ENDBAL, DEBIT, CREDIT) but NOT the
+    account title — that lives on GLACCOUNT (the chart of accounts).
+    So we issue two queries and join in Python.
 
     The caller decides MTD vs YTD by picking the right period name
     (e.g., "Month Ended March 2026" vs "Calendar Year Ended December
     2026" vs a YTD-style custom period).
     """
-    rows = _query(
-        "TRIALBALANCE",
-        fields=[
-            "ACCT_NO", "ACCT_TITLE",
-            "OPENING_BALANCE", "DEBIT", "CREDIT", "CLOSING_BALANCE",
-            "LOCATION", "LOCATIONID",
-            "REPORTINGPERIODNAME", "BOOKID",
-        ],
+    # 1) Account balances for the requested entity + period
+    balances = _query(
+        "GLACCOUNTBALANCE",
+        fields=["ACCOUNTNO", "BEGINBAL", "ENDBAL", "DEBIT", "CREDIT"],
         filter_pairs=[
             ("REPORTINGPERIODNAME", period_name),
             ("LOCATIONID",          entity_id),
@@ -624,11 +618,15 @@ def get_trial_balance(entity_id: str, period_name: str,
         ],
     )
 
-    def _f(s: str) -> float:
+    # 2) Chart of accounts → ACCOUNTNO → TITLE map. Same data every
+    # call so we could cache, but readByQuery on GLACCOUNT is fast
+    # enough (~1300 records) that uncached is fine for MVP.
+    coa_titles = _coa_titles_cached()
+
+    def _f(s) -> float:
         if not s:
             return 0.0
-        s = s.strip()
-        # Sage uses parens for negatives in some object responses
+        s = str(s).strip()
         neg = s.startswith("(") and s.endswith(")")
         s = s.strip("()").replace(",", "")
         try:
@@ -637,16 +635,50 @@ def get_trial_balance(entity_id: str, period_name: str,
             return 0.0
 
     out = []
-    for r in rows:
+    for r in balances:
+        no = (r.get("ACCOUNTNO") or "").strip()
+        if not no:
+            continue
         out.append({
-            "no":     (r.get("ACCT_NO") or "").strip(),
-            "name":   (r.get("ACCT_TITLE") or "").strip(),
-            "open":   _f(r.get("OPENING_BALANCE") or ""),
-            "debit":  _f(r.get("DEBIT") or ""),
-            "credit": _f(r.get("CREDIT") or ""),
-            "close":  _f(r.get("CLOSING_BALANCE") or ""),
+            "no":     no,
+            "name":   coa_titles.get(no, ""),
+            "open":   _f(r.get("BEGINBAL")),
+            "debit":  _f(r.get("DEBIT")),
+            "credit": _f(r.get("CREDIT")),
+            "close":  _f(r.get("ENDBAL")),
         })
     return out
+
+
+# Per-worker COA cache. Chart of accounts changes rarely, and a TB
+# refresh shouldn't re-pull 1,300 accounts for the title join.
+_coa_cache_lock = threading.Lock()
+_coa_cache: dict = {"titles": None, "fetched_at": 0.0}
+COA_CACHE_TTL_SECONDS = 30 * 60  # 30 min
+
+
+def _coa_titles_cached() -> dict:
+    """Return {ACCOUNTNO: TITLE} for the active chart of accounts.
+    Cached in-process for 30 min — way longer than any single user
+    session. Cheap to refresh if needed."""
+    now = time.time()
+    with _coa_cache_lock:
+        if _coa_cache["titles"] is not None and _coa_cache["fetched_at"] > now - COA_CACHE_TTL_SECONDS:
+            return _coa_cache["titles"]
+
+    rows = _read_by_query(
+        "GLACCOUNT",
+        "",  # status filter doesn't work via readByQuery query string;
+             # we just take everything since titles are stable anyway.
+        "ACCOUNTNO,TITLE,STATUS",
+        pagesize=1000,
+        max_pages=5,
+    )
+    titles = {(r.get("ACCOUNTNO") or "").strip(): (r.get("TITLE") or "").strip() for r in rows}
+    with _coa_cache_lock:
+        _coa_cache["titles"] = titles
+        _coa_cache["fetched_at"] = now
+    return titles
 
 
 # ─── Debug helper for one-off connectivity tests ─────────────────────────────
