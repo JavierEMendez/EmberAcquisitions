@@ -19,6 +19,8 @@ from bohlke_parser import parse_bohlke
 from waller_parser import parse_waller_monthly
 from hpermits_parser import parse_hpermits
 from uw_parser import parse_uw
+import sage_intacct
+from frp_mapping import roll_up_balance_sheet, summarize_bs
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -286,6 +288,22 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS invoice_periods_period_start_idx
             ON invoice_periods (period_start DESC);
+
+        -- ── Financial Statements (Sage Intacct cache) ──────────────
+        -- Caches the parsed trial balance per (entity, period) so the
+        -- /financials dashboard renders without re-hitting Sage on
+        -- every page load. Refresh-from-Sage button overwrites the row.
+        -- `accounts` is the array of TB rows from sage_intacct.get_trial_balance.
+        CREATE TABLE IF NOT EXISTS intacct_tb_cache (
+            entity_id    TEXT          NOT NULL,
+            period_name  TEXT          NOT NULL,
+            fetched_at   TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+            fetched_by   INTEGER       REFERENCES users(id),
+            accounts     JSONB         NOT NULL,
+            PRIMARY KEY (entity_id, period_name)
+        );
+        CREATE INDEX IF NOT EXISTS intacct_tb_cache_fetched_idx
+            ON intacct_tb_cache (fetched_at DESC);
         -- Lightweight summary view for the archive rail so the page
         -- route can render snapshot cards without pulling the full
         -- JSONB blob from every row.
@@ -320,6 +338,10 @@ def init_db():
     cur.execute("UPDATE users SET page_access = page_access || '{\"portfolio\": true}'::jsonb WHERE page_access->>'portfolio' IS NULL")
     cur.execute("UPDATE users SET page_access = page_access || '{\"macro\": true}'::jsonb WHERE page_access->>'macro' IS NULL")
     cur.execute("UPDATE users SET page_access = page_access || '{\"sales\": true}'::jsonb WHERE page_access->>'sales' IS NULL")
+    # `financials` gates the Sage-Intacct-backed Financial Statements
+    # dashboard. Defaults to FALSE — financial statements are sensitive,
+    # so we want explicit admin grants rather than backfilling true.
+    cur.execute("UPDATE users SET page_access = page_access || '{\"financials\": false}'::jsonb WHERE page_access->>'financials' IS NULL")
     # `reports` toggle gates download/export of executive PDFs and Excels.
     # Admin-controllable per user; defaults to true so we don't yank the
     # ability away from existing accounts on deploy.
@@ -1908,6 +1930,198 @@ def vd_page():
         is_admin=session.get("is_admin"),
         page_access=pa,
     )
+
+# ─── FINANCIAL STATEMENTS DASHBOARD ──────────────────────────────────────────
+# Sage-Intacct-backed entity-level Balance Sheet · Income Statement ·
+# Statement of Cash Flows. Phase 1 ships BS only — IS and SoCF come in
+# follow-up PRs. Trial balances are cached in `intacct_tb_cache` so the
+# dashboard renders fast; the Refresh-from-Sage button re-pulls.
+# (Imports for sage_intacct + frp_mapping live at the top of the file.)
+
+
+def _can_view_financials() -> bool:
+    """Per-user gate for /financials. Admin overrides; otherwise the
+    user must hold page_access.financials. Defaults to False — financial
+    statements are sensitive. Re-reads from DB so admin grants apply
+    without requiring re-login (same pattern as _vd_can_upload)."""
+    if session.get("is_admin"):
+        return True
+    pa = _refresh_page_access_from_db()
+    return bool(pa.get("financials", False))
+
+
+def _fin_cache_get(entity_id: str, period_name: str):
+    """Return cached TB rows + fetched_at, or None if no cache exists."""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "SELECT accounts, fetched_at, fetched_by "
+        "FROM intacct_tb_cache WHERE entity_id = %s AND period_name = %s",
+        (entity_id, period_name)
+    )
+    row = cur.fetchone(); cur.close(); conn.close()
+    if not row:
+        return None
+    return {
+        "accounts":   row["accounts"] or [],
+        "fetched_at": row["fetched_at"],
+        "fetched_by": row.get("fetched_by"),
+    }
+
+
+def _fin_cache_put(entity_id: str, period_name: str, accounts: list):
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO intacct_tb_cache (entity_id, period_name, accounts, fetched_at, fetched_by)
+        VALUES (%s, %s, %s, NOW(), %s)
+        ON CONFLICT (entity_id, period_name) DO UPDATE
+          SET accounts   = EXCLUDED.accounts,
+              fetched_at = NOW(),
+              fetched_by = EXCLUDED.fetched_by
+    """, (entity_id, period_name, json.dumps(accounts), session.get("user_id")))
+    conn.commit(); cur.close(); conn.close()
+
+
+@app.route("/financials")
+@login_required
+def financials_page():
+    if not _can_view_financials():
+        return redirect(url_for("home"))
+    pa = session.get("page_access") or {}
+    return render_template(
+        "financials.html",
+        username=session.get("username"),
+        display_name=session.get("display_name", session.get("username")),
+        is_admin=session.get("is_admin", False),
+        page_access=pa,
+        sage_configured=sage_intacct.is_configured(),
+    )
+
+
+@app.route("/api/financials/entities", methods=["GET"])
+@login_required
+def api_financials_entities():
+    if not _can_view_financials():
+        return jsonify({"error": "forbidden"}), 403
+    if not sage_intacct.is_configured():
+        return jsonify({"configured": False, "entities": []}), 200
+    try:
+        entities = sage_intacct.list_entities()
+        return jsonify({"configured": True, "entities": entities})
+    except sage_intacct.IntacctConfigurationError as e:
+        return jsonify({"configured": False, "error": str(e)}), 200
+    except sage_intacct.IntacctAPIError as e:
+        return jsonify({"configured": True, "entities": [], "error": str(e)}), 502
+
+
+@app.route("/api/financials/periods", methods=["GET"])
+@login_required
+def api_financials_periods():
+    if not _can_view_financials():
+        return jsonify({"error": "forbidden"}), 403
+    if not sage_intacct.is_configured():
+        return jsonify({"configured": False, "periods": []}), 200
+    try:
+        periods = sage_intacct.list_periods(closed_only=True)
+        return jsonify({"configured": True, "periods": periods})
+    except sage_intacct.IntacctConfigurationError as e:
+        return jsonify({"configured": False, "error": str(e)}), 200
+    except sage_intacct.IntacctAPIError as e:
+        return jsonify({"configured": True, "periods": [], "error": str(e)}), 502
+
+
+def _fin_render_bs(accounts: list) -> dict:
+    """Run the mapping over a TB and shape it for the template."""
+    rolled = roll_up_balance_sheet(accounts)
+    summary = summarize_bs(rolled)
+    # Convert OrderedDicts to plain dicts for jsonify
+    structure = []
+    for sec, subs in summary["structure"].items():
+        sec_obj = {"section": sec, "total": summary["section_totals"][sec], "subsections": []}
+        for sub, rows in subs.items():
+            sec_obj["subsections"].append({
+                "subsection": sub,
+                "total":      summary["subsection_totals"][(sec, sub)],
+                "line_items": [
+                    {"line_item": r["line_item"], "value": r["value"], "is_contra": r["is_contra"]}
+                    for r in rows
+                ],
+            })
+        structure.append(sec_obj)
+    return {
+        "structure":         structure,
+        "total_assets":      summary["total_assets"],
+        "total_liab_and_eq": summary["total_liab_and_eq"],
+        "footing_check":     summary["footing_check"],
+    }
+
+
+@app.route("/api/financials/balance-sheet", methods=["GET"])
+@login_required
+def api_financials_balance_sheet():
+    """Return the rolled-up BS for the cached TB of (entity, period).
+    Does NOT call Sage — refresh hits a separate endpoint."""
+    if not _can_view_financials():
+        return jsonify({"error": "forbidden"}), 403
+    entity = (request.args.get("entity") or "").strip()
+    period = (request.args.get("period") or "").strip()
+    if not entity or not period:
+        return jsonify({"error": "entity and period required"}), 400
+    cache = _fin_cache_get(entity, period)
+    if not cache:
+        return jsonify({
+            "cached":  False,
+            "message": "No data cached for this entity/period. Click Refresh from Sage.",
+        }), 200
+    bs = _fin_render_bs(cache["accounts"])
+    return jsonify({
+        "cached":     True,
+        "entity":     entity,
+        "period":     period,
+        "fetched_at": cache["fetched_at"].isoformat() if cache["fetched_at"] else None,
+        "balance_sheet": bs,
+    })
+
+
+@app.route("/api/financials/refresh", methods=["POST"])
+@login_required
+def api_financials_refresh():
+    """Pull fresh TB from Sage for (entity, period), cache it, return
+    the rolled-up BS. This is the slow path (~5-30 sec depending on
+    entity size)."""
+    if not _can_view_financials():
+        return jsonify({"error": "forbidden"}), 403
+    entity = (request.args.get("entity") or "").strip()
+    period = (request.args.get("period") or "").strip()
+    if not entity or not period:
+        return jsonify({"error": "entity and period required"}), 400
+    if not sage_intacct.is_configured():
+        return jsonify({"error": "Sage Intacct credentials not configured"}), 503
+    try:
+        accounts = sage_intacct.get_trial_balance(entity, period)
+    except sage_intacct.IntacctConfigurationError as e:
+        return jsonify({"error": str(e)}), 503
+    except sage_intacct.IntacctAPIError as e:
+        return jsonify({"error": f"Sage API error: {e}"}), 502
+    _fin_cache_put(entity, period, accounts)
+    bs = _fin_render_bs(accounts)
+    return jsonify({
+        "cached":     True,
+        "entity":     entity,
+        "period":     period,
+        "fetched_at": datetime.datetime.utcnow().isoformat() + "Z",
+        "account_count": len(accounts),
+        "balance_sheet": bs,
+    })
+
+
+@app.route("/api/financials/ping", methods=["GET"])
+@login_required
+def api_financials_ping():
+    """Admin diagnostic — confirms Sage env vars are set + login works."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "admin only"}), 403
+    return jsonify(sage_intacct.ping())
+
 
 # ─── INVOICE DASHBOARD ───────────────────────────────────────────────────────
 # Bi-weekly Stampli HTML invoice analytics. Each upload becomes a

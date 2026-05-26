@@ -1,0 +1,408 @@
+{# ============================================================
+   Ember · Financial Statements (Sage Intacct backed)
+   Phase 1: Entity dropdown · period dropdown · Refresh-from-Sage ·
+   Balance Sheet render. Income Statement / Statement of Cash Flows
+   land in follow-up PRs. Excel + PDF exports also follow.
+   ============================================================ #}
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Financial Statements · Ember Acquisitions</title>
+<link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="/static/theme.css?v=3"/>
+<link rel="stylesheet" href="/static/css/financials.css?v=1"/>
+<script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
+<style>
+  /* App shell — copied from operations.html so /financials nests in
+     the canonical sidebar chrome. */
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;}
+  body{background:var(--eax-bg);color:var(--eax-ink);font-family:'DM Sans','Plus Jakarta Sans',system-ui,sans-serif;overflow:hidden;}
+  #app{display:flex;height:100vh;overflow:hidden;}
+  #sidebar{width:240px;background:var(--eax-bg-2);border-right:1px solid var(--eax-line);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;}
+  .sidebar-logo{padding:16px 18px 14px;border-bottom:1px solid var(--eax-line)}
+  .logo-img{width:100%;max-width:160px;height:auto;display:block;margin:0 auto}
+  img.logo-light{display:none;}
+  [data-theme="light"] img.logo-dark{display:none;}
+  [data-theme="light"] img.logo-light{display:block;margin:0 auto;}
+  .logo-sub{font-size:10px;color:var(--eax-subtle);letter-spacing:0.2em;text-transform:uppercase;margin-top:8px;text-align:center;font-weight:700}
+  .sidebar-section{padding:8px 16px 4px;font-size:9px;line-height:1.2;color:var(--eax-subtle);letter-spacing:0.22em;text-transform:uppercase;margin-top:8px;font-weight:700}
+  .sidebar-item{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;border-radius:8px;margin:1px 8px;transition:all .15s;color:var(--eax-muted);font-size:13px;line-height:1.2;text-decoration:none;font-weight:500}
+  .sidebar-item:hover{background:var(--eax-accent-soft);color:var(--eax-ink);text-decoration:none}
+  .sidebar-item.active{background:var(--eax-surface);color:var(--eax-ink);font-weight:600;border:1px solid var(--eax-line);position:relative}
+  .sidebar-item.active::before{content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:2px;background:var(--eax-accent);border-radius:2px}
+  .sidebar-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0}
+  .sidebar-item.active .icon{opacity:1;color:var(--eax-accent)}
+  #main-content{flex:1;overflow:hidden;min-width:0;display:flex;}
+  .fin-page{flex:1;min-width:0;overflow:auto;padding:28px 36px 80px;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  {# ── SIDEBAR ────────────────────────────────────────────────── #}
+  <nav id="sidebar">
+    <div class="sidebar-logo">
+      <img src="/static/img/ember_logo.png"        alt="Ember" class="logo-img logo-dark">
+      <img src="/static/img/ember_logo_light.png"  alt="Ember" class="logo-img logo-light">
+      <div class="logo-sub">Financials</div>
+    </div>
+    <div class="sidebar-section">Apps &amp; Dashboards</div>
+    {% if page_access.get('mpc_underwriting', true) %}
+    <a href="/" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+      MPC Underwriting
+    </a>
+    {% endif %}
+    {% if page_access.get('returns', true) %}
+    <a href="/returns" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Project Returns
+    </a>
+    {% endif %}
+    {% if page_access.get('loans', true) %}
+    <a href="/loans" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Loans &amp; Debt
+    </a>
+    {% endif %}
+    {% if page_access.get('operations', true) %}
+    <a href="/operations" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Operating Revenues
+    </a>
+    {% endif %}
+    {% if page_access.get('invoice_dashboard', true) %}
+    <a href="/invoice-dashboard" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 2h6a2 2 0 012 2v16l-3-2-2 2-2-2-2 2-3-2V4a2 2 0 012-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 7h6M9 11h6M9 15h4" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Invoice Dashboard
+    </a>
+    {% endif %}
+    {% if page_access.get('financials', true) %}
+    <a href="/financials" class="sidebar-item active">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M9 17V9m4 8V5m4 12v-7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Financial Statements
+    </a>
+    {% endif %}
+    {% if page_access.get('macro', true) %}
+    <a href="/macro" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="1.5"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Macro Dashboard
+    </a>
+    {% endif %}
+    {% if page_access.get('portfolio', true) %}
+    <a href="/ember-capital" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 3.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Ember Capital
+    </a>
+    {% endif %}
+    {% if page_access.get('sales', true) %}
+    <a href="/sales" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l3-3 4 4 5-6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Community Sales
+    </a>
+    {% endif %}
+    {% if page_access.get('verticals', true) %}
+    <a href="/verticals" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      Vertical Dashboard
+    </a>
+    {% endif %}
+    <div style="flex:1"></div>
+    {% include "_partials/_sidebar_foot.html" %}
+  </nav>
+
+  <div id="main-content">
+    <div class="fin-page">
+      {# ── Header / page title ─────────────────────────────── #}
+      <div class="fin-eyebrow">FINANCE &middot; SAGE INTACCT</div>
+      <h1 class="fin-title">Financial Statements</h1>
+      <p class="fin-sub">
+        Per-entity Balance Sheet, Income Statement, and Statement of Cash Flows.
+        Data is cached locally; click <b>Refresh from Sage</b> to pull the latest trial balance.
+      </p>
+
+      {# ── Controls (entity + period + refresh) ─────────────── #}
+      <div class="fin-controls">
+        <div class="fin-control">
+          <label for="fin-entity">Entity</label>
+          <select id="fin-entity" disabled>
+            <option value="">Loading entities…</option>
+          </select>
+        </div>
+        <div class="fin-control">
+          <label for="fin-period">Period</label>
+          <select id="fin-period" disabled>
+            <option value="">Loading periods…</option>
+          </select>
+        </div>
+        <div class="fin-control fin-control-actions">
+          <button id="fin-refresh" class="fin-btn primary" disabled>
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Refresh from Sage
+          </button>
+        </div>
+      </div>
+      <div id="fin-status" class="fin-status"></div>
+
+      {# ── Statement tabs ──────────────────────────────────── #}
+      <div class="fin-tabnav">
+        <button class="fin-tab is-active" data-statement="balance-sheet">Balance Sheet</button>
+        <button class="fin-tab is-disabled" data-statement="income-statement" disabled
+                title="Coming in Phase 2">Income Statement</button>
+        <button class="fin-tab is-disabled" data-statement="cash-flows" disabled
+                title="Coming in Phase 3">Statement of Cash Flows</button>
+        <button class="fin-tab is-disabled" data-statement="export-excel" disabled
+                title="Coming in Phase 4">⬇ Excel</button>
+        <button class="fin-tab is-disabled" data-statement="export-pdf" disabled
+                title="Coming in Phase 5">⬇ PDF</button>
+      </div>
+
+      {# ── Sage not configured empty state ─────────────────── #}
+      {% if not sage_configured %}
+      <div class="fin-card fin-empty">
+        <div class="fin-empty-title">Sage Intacct not connected</div>
+        <p class="fin-empty-body">
+          Set these environment variables on Railway, then re-deploy:
+          <code>INTACCT_SENDER_ID</code>, <code>INTACCT_SENDER_PASSWORD</code>,
+          <code>INTACCT_USER_ID</code>, <code>INTACCT_USER_PASSWORD</code>,
+          <code>INTACCT_COMPANY_ID</code>.
+        </p>
+        {% if is_admin %}
+        <p class="fin-empty-body">
+          Once set, hit <code><a href="/api/financials/ping">/api/financials/ping</a></code>
+          (admin only) to verify the connection.
+        </p>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {# ── BS panel — populated by JS ───────────────────────── #}
+      <div id="fin-bs-panel" class="fin-panel">
+        <div id="fin-bs-placeholder" class="fin-card fin-empty">
+          <div class="fin-empty-title">Select an entity and period</div>
+          <p class="fin-empty-body">
+            Choose an entity and a closed reporting period from the dropdowns above,
+            then click <b>Refresh from Sage</b> if no cached data is available.
+          </p>
+        </div>
+        <div id="fin-bs-content" class="fin-statement" style="display:none;">
+          {# Statement contents inserted by JS. Looks like:
+             <h2>Entity Name, LLC — Balance Sheet — March 31, 2026</h2>
+             <table class="fin-stmt-table">
+               <tr><th colspan="2">Section</th></tr>
+               <tr><td class="lvl-2">Subsection</td><td></td></tr>
+               <tr><td class="lvl-3">Line item</td><td>$x</td></tr>
+               <tr class="subtotal"><td>Total Subsection</td><td>$x</td></tr>
+               <tr class="section-total"><td>Total Section</td><td>$x</td></tr>
+             </table>
+          #}
+        </div>
+      </div>
+
+      {# Data dates footer for /financials — populated by JS after refresh #}
+      <div id="fin-data-dates" class="fin-data-dates" style="display:none;"></div>
+    </div>
+  </div>
+</div>
+
+{% include "_partials/_account_modal.html" %}
+
+<script>
+const FIN = {
+  entities: [],
+  periods:  [],
+  currentEntity: '',
+  currentPeriod: '',
+  sageConfigured: {{ 'true' if sage_configured else 'false' }},
+};
+
+function $(id) { return document.getElementById(id); }
+function setStatus(msg, kind) {
+  const el = $('fin-status');
+  el.textContent = msg || '';
+  el.className = 'fin-status' + (kind ? (' ' + kind) : '');
+}
+function fmtMoney(n) {
+  if (n === null || n === undefined || isNaN(n)) return '—';
+  const r = Math.round(n);
+  const neg = r < 0;
+  const s = Math.abs(r).toLocaleString('en-US');
+  return neg ? '(' + s + ')' : s;
+}
+
+async function loadEntities() {
+  if (!FIN.sageConfigured) {
+    $('fin-entity').innerHTML = '<option value="">Sage not configured</option>';
+    return;
+  }
+  try {
+    const res = await fetch('/api/financials/entities');
+    const j = await res.json();
+    FIN.entities = j.entities || [];
+    const sel = $('fin-entity');
+    sel.innerHTML = '<option value="">Select an entity…</option>'
+      + FIN.entities.map(e => `<option value="${e.id}">${e.name}</option>`).join('');
+    sel.disabled = false;
+    sel.addEventListener('change', onSelectionChange);
+  } catch (err) {
+    console.error('Failed to load entities', err);
+    setStatus('Could not load entities: ' + err.message, 'err');
+  }
+}
+
+async function loadPeriods() {
+  if (!FIN.sageConfigured) {
+    $('fin-period').innerHTML = '<option value="">Sage not configured</option>';
+    return;
+  }
+  try {
+    const res = await fetch('/api/financials/periods');
+    const j = await res.json();
+    FIN.periods = j.periods || [];
+    // Show most-recent period first
+    const sorted = [...FIN.periods].reverse();
+    const sel = $('fin-period');
+    sel.innerHTML = '<option value="">Select a period…</option>'
+      + sorted.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
+    sel.disabled = false;
+    sel.addEventListener('change', onSelectionChange);
+  } catch (err) {
+    console.error('Failed to load periods', err);
+    setStatus('Could not load periods: ' + err.message, 'err');
+  }
+}
+
+function onSelectionChange() {
+  FIN.currentEntity = $('fin-entity').value;
+  FIN.currentPeriod = $('fin-period').value;
+  $('fin-refresh').disabled = !(FIN.currentEntity && FIN.currentPeriod);
+  if (FIN.currentEntity && FIN.currentPeriod) {
+    // Try to render from cache; if no cache, show empty state
+    fetchBalanceSheet(false);
+  } else {
+    $('fin-bs-content').style.display = 'none';
+    $('fin-bs-placeholder').style.display = '';
+    $('fin-data-dates').style.display = 'none';
+  }
+}
+
+async function fetchBalanceSheet(forceRefresh) {
+  const e = FIN.currentEntity, p = FIN.currentPeriod;
+  if (!e || !p) return;
+  setStatus(forceRefresh ? 'Pulling trial balance from Sage…' : 'Loading…', 'info');
+  $('fin-refresh').disabled = true;
+  try {
+    const url = '/api/financials/' + (forceRefresh ? 'refresh' : 'balance-sheet')
+              + '?entity=' + encodeURIComponent(e) + '&period=' + encodeURIComponent(p);
+    const res = await fetch(url, { method: forceRefresh ? 'POST' : 'GET' });
+    const j = await res.json();
+    if (!res.ok) {
+      setStatus('Error: ' + (j.error || ('HTTP ' + res.status)), 'err');
+      return;
+    }
+    if (!j.cached) {
+      // No cache; show placeholder telling user to click Refresh
+      $('fin-bs-content').style.display = 'none';
+      $('fin-bs-placeholder').style.display = '';
+      $('fin-bs-placeholder').innerHTML =
+        '<div class="fin-empty-title">No data cached for this entity / period</div>'
+      + '<p class="fin-empty-body">'
+      +   'Click <b>Refresh from Sage</b> to pull the trial balance. '
+      +   'This typically takes 5–30 seconds depending on entity size.'
+      + '</p>';
+      $('fin-data-dates').style.display = 'none';
+      setStatus('');
+      return;
+    }
+    renderBalanceSheet(j);
+    setStatus(forceRefresh ? 'Refresh complete.' : '', 'ok');
+  } catch (err) {
+    console.error('BS fetch failed', err);
+    setStatus('Network error: ' + err.message, 'err');
+  } finally {
+    $('fin-refresh').disabled = !(FIN.currentEntity && FIN.currentPeriod);
+  }
+}
+
+function renderBalanceSheet(payload) {
+  const bs = payload.balance_sheet;
+  if (!bs || !bs.structure) {
+    setStatus('No balance sheet data in response.', 'err');
+    return;
+  }
+  const entityName = (FIN.entities.find(e => e.id === payload.entity) || {}).name || payload.entity;
+  let html = '';
+  html += '<div class="fin-stmt-head">';
+  html +=   '<div class="fin-stmt-entity">' + escapeHtml(entityName) + '</div>';
+  html +=   '<div class="fin-stmt-name">Balance Sheet</div>';
+  html +=   '<div class="fin-stmt-period">' + escapeHtml(payload.period) + '</div>';
+  html += '</div>';
+  html += '<table class="fin-stmt-table">';
+  html +=   '<thead><tr><th></th><th class="num">Balance</th></tr></thead>';
+  html +=   '<tbody>';
+  for (const sec of bs.structure) {
+    html += '<tr class="section"><td>' + escapeHtml(sec.section) + '</td><td></td></tr>';
+    for (const sub of sec.subsections) {
+      html += '<tr class="subsection"><td>' + escapeHtml(sub.subsection) + '</td><td></td></tr>';
+      for (const li of sub.line_items) {
+        const v = li.value;
+        const displayClass = li.is_contra ? 'lineitem contra' : 'lineitem';
+        html += '<tr class="' + displayClass + '">'
+              + '<td>' + escapeHtml(li.line_item) + '</td>'
+              + '<td class="num">' + fmtMoney(v) + '</td></tr>';
+      }
+      html += '<tr class="subtotal"><td>Total ' + escapeHtml(sub.subsection) + '</td>'
+            + '<td class="num">' + fmtMoney(sub.total) + '</td></tr>';
+    }
+    html += '<tr class="section-total"><td>Total ' + escapeHtml(sec.section) + '</td>'
+          + '<td class="num">' + fmtMoney(sec.total) + '</td></tr>';
+  }
+  // Footing check
+  html += '<tr class="footing"><td>Footing Check (Assets − Liab &amp; Equity, should be 0)</td>'
+        + '<td class="num">' + fmtMoney(bs.footing_check) + '</td></tr>';
+  html += '</tbody></table>';
+  // Note about Phase-1 retained-earnings limitation
+  if (Math.abs(bs.footing_check) > 1) {
+    html += '<div class="fin-stmt-note">'
+          + 'Phase 1 note: Retained Earnings shown here is the GL 30500 balance only; '
+          + 'YTD net income is not yet rolled in. The footing difference matches the '
+          + 'current-year net income that closes into RE at year-end. Phase 2 will '
+          + 'fold YTD NI into Retained Earnings so the BS foots.'
+          + '</div>';
+  }
+  $('fin-bs-content').innerHTML = html;
+  $('fin-bs-placeholder').style.display = 'none';
+  $('fin-bs-content').style.display = '';
+
+  // Data-dates footer
+  const dd = $('fin-data-dates');
+  const fetched = payload.fetched_at
+                ? new Date(payload.fetched_at).toLocaleString()
+                : '—';
+  dd.innerHTML =
+      '<span class="ddf-item"><span class="ddf-lbl">Period</span><span class="ddf-val">'
+    + escapeHtml(payload.period) + '</span></span>'
+    + '<span class="ddf-sep">·</span>'
+    + '<span class="ddf-item"><span class="ddf-lbl">Last Refreshed from Sage</span>'
+    + '<span class="ddf-val">' + escapeHtml(fetched) + '</span></span>';
+  dd.style.display = '';
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+$('fin-refresh').addEventListener('click', () => fetchBalanceSheet(true));
+
+// Boot
+loadEntities();
+loadPeriods();
+</script>
+</body>
+</html>
