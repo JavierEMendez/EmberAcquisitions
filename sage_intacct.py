@@ -794,6 +794,10 @@ def get_trial_balance(entity_id: str, period_name: str,
     # default to 1 = debit) — defaulting was inflating one-sided
     # imports. AMOUNT alone, unsigned, contributes nothing to a TB.
     sums: dict[str, float] = {}
+    # per_loc_sums tracks each account's contribution by LOCATION so the
+    # diagnostic can show "this $71M Land balance came $35M from loc A and
+    # $35M from loc B" — i.e., reveal parent+child double-posting visibly.
+    per_loc_sums: dict[str, dict[str, float]] = {}
     state_counter: dict[str, int] = {}
     skipped_no_tr_type = 0
     posted_kept = posted_dropped = date_dropped = 0
@@ -827,8 +831,15 @@ def get_trial_balance(entity_id: str, period_name: str,
         except (TypeError, ValueError):
             skipped_no_tr_type += 1
             continue
-        sums[no] = sums.get(no, 0.0) + amount * tr_type
+        signed = amount * tr_type
+        sums[no] = sums.get(no, 0.0) + signed
+        loc = (e.get("LOCATION") or "").strip() or "(unknown)"
+        bucket = per_loc_sums.setdefault(no, {})
+        bucket[loc] = bucket.get(loc, 0.0) + signed
         posted_kept += 1
+    # Stash the per-(account × location) breakdown so the refresh route
+    # can surface it in the diagnostic block.
+    get_trial_balance._last_per_location_sums = per_loc_sums
     log.info(
         "get_trial_balance: %d entries → kept=%d  post-filtered=%d  date-filtered=%d "
         "tr_type-missing=%d  → %d accounts; state counts: %s",

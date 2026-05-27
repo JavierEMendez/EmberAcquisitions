@@ -2111,13 +2111,42 @@ def api_financials_refresh():
     # mapped to). When 0 entries came back, ALSO includes the sample
     # GLENTRY.LOCATION values so we can fix the filter format.
     from frp_mapping import classify_bs as _classify_bs
-    accounts_sample = []
-    for a in accounts[:25]:  # cap so the payload stays small
-        accounts_sample.append({
+    # Full classified account list, sorted by absolute close balance —
+    # biggest dollars first, so misclassifications jump out at the top.
+    accounts_full = []
+    for a in accounts:
+        accounts_full.append({
             "no":         a.get("no", ""),
             "name":       a.get("name", ""),
             "close":      a.get("close", 0.0),
             "mapped_to":  _classify_bs(a.get("no", ""), a.get("name", "")) or "(unmapped)",
+        })
+    accounts_full.sort(key=lambda a: -abs(a.get("close", 0.0)))
+    # Per-location breakdown for accounts where it matters most:
+    #   - abs(balance) > $1M (big-dollar items),  OR
+    #   - more than one LOCATION contributed (potential double-counting).
+    # Each entry shows the per-location split, sorted by abs contribution.
+    per_loc_raw = getattr(sage_intacct.get_trial_balance,
+                          "_last_per_location_sums", {}) or {}
+    per_location_balances = []
+    for a in accounts_full:
+        no = a["no"]
+        locs = per_loc_raw.get(no, {})
+        if not locs:
+            continue
+        big = abs(a["close"]) > 1_000_000
+        split = len(locs) > 1
+        if not (big or split):
+            continue
+        per_location_balances.append({
+            "no":        no,
+            "name":      a["name"],
+            "close":     a["close"],
+            "mapped_to": a["mapped_to"],
+            "by_location": sorted(
+                [{"loc": L, "sum": S} for L, S in locs.items()],
+                key=lambda x: -abs(x["sum"]),
+            ),
         })
     # Resolve what sub-locations get queried so we can see the fan-out
     # in the diagnostic (helps when only the parent's name is visible
@@ -2130,7 +2159,8 @@ def api_financials_refresh():
         "filter_value_used":     entity,
         "sub_locations_queried": sub_locs,
         "account_count":         len(accounts),
-        "accounts_sample":       accounts_sample,
+        "accounts_full":         accounts_full,
+        "per_location_balances": per_location_balances,
     }
     if not accounts:
         sample_locs = getattr(sage_intacct.get_trial_balance,

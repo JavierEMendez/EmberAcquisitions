@@ -376,60 +376,95 @@ function renderBalanceSheet(payload) {
           + 'fold YTD NI into Retained Earnings so the BS foots.'
           + '</div>';
   }
-  // When the BS rendered with zero line items, show a yellow banner
-  // explaining what came back so we don't get a silent empty page.
-  // Includes the server-side diagnostic (sample GLENTRY LOCATIONs)
-  // when present, AND the account_count + response shape so we can
-  // tell whether the server even attached the diagnostic field.
+  // Diagnostic block is always rendered — collapsed by default but
+  // expandable. Holds the full classified account list + per-LOCATION
+  // breakdown for big accounts so we can spot misclassifications and
+  // double-counting (e.g., Land posting on both parent + child loc).
   const totalLines = bs.structure.reduce(
     (n, sec) => n + sec.subsections.reduce((m, sub) => m + sub.line_items.length, 0),
     0,
   );
-  if (totalLines === 0) {
-    const d = payload.diagnostic || {};
-    html += '<div class="fin-stmt-note" style="background:#fff4e8;border-left-color:#f59e0b;">'
-          + '<b>No line items rendered.</b> '
-          + 'account_count = <code>' + (payload.account_count ?? '?') + '</code>. ';
-    html += '<br>Filter value sent to Sage: <code>'
-          + escapeHtml(d.filter_value_used || '(none)') + '</code>.';
-    if (Array.isArray(d.sub_locations_queried) && d.sub_locations_queried.length) {
-      html += '<br>Sub-locations queried: <code>'
-            + escapeHtml(JSON.stringify(d.sub_locations_queried))
-            + '</code>';
+  const d = payload.diagnostic || {};
+  const isEmpty = (totalLines === 0);
+  const detailsOpen = isEmpty ? ' open' : '';
+  const noteBg = isEmpty
+    ? 'background:#fff4e8;border-left-color:#f59e0b;'
+    : '';
+  html += '<details class="fin-stmt-note" style="' + noteBg + '"' + detailsOpen + '>';
+  html += '<summary style="cursor:pointer;font-weight:600;">';
+  if (isEmpty) {
+    html += 'No line items rendered &mdash; click for diagnostic detail';
+  } else {
+    html += 'Debug detail (full account list + per-location breakdown)';
+  }
+  html += '</summary>';
+  html += '<div style="margin-top:10px;">';
+  html += 'account_count = <code>' + (payload.account_count ?? '?') + '</code>. ';
+  html += 'Filter value sent to Sage: <code>'
+        + escapeHtml(d.filter_value_used || '(none)') + '</code>.';
+  if (Array.isArray(d.sub_locations_queried) && d.sub_locations_queried.length) {
+    html += '<br>Sub-locations queried: <code>'
+          + escapeHtml(JSON.stringify(d.sub_locations_queried))
+          + '</code>';
+  }
+  // Full classified account list, sorted by abs(close) desc. Lets us
+  // see at a glance every account that contributes to the BS and what
+  // FRP line item it mapped into.
+  if (Array.isArray(d.accounts_full) && d.accounts_full.length) {
+    html += '<br><br><b>All accounts (' + d.accounts_full.length
+          + '), sorted by |balance| desc:</b>'
+          + '<table style="margin-top:8px;border-collapse:collapse;font-size:11px;font-family:monospace;">'
+          + '<thead><tr style="text-align:left;border-bottom:1px solid #d4a574;">'
+          +   '<th style="padding:4px 12px 4px 0;">no</th>'
+          +   '<th style="padding:4px 12px 4px 0;">name</th>'
+          +   '<th style="padding:4px 12px 4px 0;">close</th>'
+          +   '<th style="padding:4px 0;">mapped_to</th>'
+          + '</tr></thead><tbody>';
+    for (const a of d.accounts_full) {
+      const unmappedColor = a.mapped_to === '(unmapped)' ? 'color:#a16207;' : '';
+      html += '<tr style="' + unmappedColor + '">'
+            + '<td style="padding:2px 12px 2px 0;">' + escapeHtml(a.no) + '</td>'
+            + '<td style="padding:2px 12px 2px 0;">' + escapeHtml(a.name || '(empty)') + '</td>'
+            + '<td style="padding:2px 12px 2px 0;text-align:right;">' + fmtMoney(a.close) + '</td>'
+            + '<td style="padding:2px 0;">' + escapeHtml(a.mapped_to) + '</td>'
+            + '</tr>';
     }
-    // Sample of accounts that came back, with what FRP line item each
-    // classified to (or "(unmapped)" if no rule matched). This is the
-    // key diagnostic: shows account number, title, balance, and where
-    // the rollup put it. Unmapped accounts = title pattern doesn't
-    // match any RULES_BS predicate.
-    if (Array.isArray(d.accounts_sample) && d.accounts_sample.length) {
-      html += '<br><br><b>Accounts returned by aggregation '
-            + '(first ' + d.accounts_sample.length + '):</b>'
-            + '<table style="margin-top:8px;border-collapse:collapse;font-size:11px;font-family:monospace;">'
+    html += '</tbody></table>';
+  }
+  // Per-LOCATION breakdown for accounts with abs(close) > $1M or those
+  // contributed by more than one location. Spots parent+child double-
+  // counting at a glance — e.g., Land $35M from loc 16 + $35M from
+  // loc 16.001 = the 2x doubling we're chasing.
+  if (Array.isArray(d.per_location_balances) && d.per_location_balances.length) {
+    html += '<br><br><b>Per-location breakdown (big or split accounts, '
+          + d.per_location_balances.length + '):</b>';
+    for (const a of d.per_location_balances) {
+      html += '<div style="margin-top:10px;font-family:monospace;font-size:11px;">'
+            + '<b>' + escapeHtml(a.no) + '</b> &mdash; '
+            + escapeHtml(a.name || '(empty)')
+            + ' &nbsp; <i>(close = ' + fmtMoney(a.close) + ', mapped &rarr; '
+            + escapeHtml(a.mapped_to) + ')</i>'
+            + '<table style="margin-top:4px;margin-left:16px;border-collapse:collapse;">'
             + '<thead><tr style="text-align:left;border-bottom:1px solid #d4a574;">'
-            +   '<th style="padding:4px 12px 4px 0;">no</th>'
-            +   '<th style="padding:4px 12px 4px 0;">name</th>'
-            +   '<th style="padding:4px 12px 4px 0;">close</th>'
-            +   '<th style="padding:4px 0;">mapped_to</th>'
+            +   '<th style="padding:2px 16px 2px 0;">LOCATION</th>'
+            +   '<th style="padding:2px 0;">contribution</th>'
             + '</tr></thead><tbody>';
-      for (const a of d.accounts_sample) {
+      for (const lp of a.by_location) {
         html += '<tr>'
-              + '<td style="padding:2px 12px 2px 0;">' + escapeHtml(a.no) + '</td>'
-              + '<td style="padding:2px 12px 2px 0;">' + escapeHtml(a.name || '(empty)') + '</td>'
-              + '<td style="padding:2px 12px 2px 0;text-align:right;">' + fmtMoney(a.close) + '</td>'
-              + '<td style="padding:2px 0;">' + escapeHtml(a.mapped_to) + '</td>'
+              + '<td style="padding:1px 16px 1px 0;">' + escapeHtml(lp.loc) + '</td>'
+              + '<td style="padding:1px 0;text-align:right;">' + fmtMoney(lp.sum) + '</td>'
               + '</tr>';
       }
-      html += '</tbody></table>';
+      html += '</tbody></table></div>';
     }
-    if (Array.isArray(d.sample_glentry_locations) && d.sample_glentry_locations.length) {
-      html += '<br><b>Sample GLENTRY.LOCATION values:</b> <code>'
-            + escapeHtml(JSON.stringify(d.sample_glentry_locations))
-            + '</code>';
-    }
-    if (d.note) html += '<br><br>' + escapeHtml(d.note);
-    html += '</div>';
   }
+  if (Array.isArray(d.sample_glentry_locations) && d.sample_glentry_locations.length) {
+    html += '<br><b>Sample GLENTRY.LOCATION values:</b> <code>'
+          + escapeHtml(JSON.stringify(d.sample_glentry_locations))
+          + '</code>';
+  }
+  if (d.note) html += '<br><br>' + escapeHtml(d.note);
+  html += '</div></details>';
 
   $('fin-bs-content').innerHTML = html;
   $('fin-bs-placeholder').style.display = 'none';
