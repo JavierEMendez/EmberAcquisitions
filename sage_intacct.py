@@ -328,10 +328,11 @@ def _call(content_xml: str, timeout: int = DEFAULT_TIMEOUT) -> ET.Element:
 
 
 # ─── inspect (object schema introspection) ───────────────────────────────────
-def _inspect_fields(object_name: str) -> list[str]:
+def _inspect_fields(object_name: str) -> dict:
     """Use Sage's <inspect> to return the list of field IDs that exist
-    on an object. Avoids guess-and-check when an object's API field
-    names differ from its UI labels."""
+    on an object. Returns {'fields': [...], 'error': '...'} so the
+    caller can see why inspect returned nothing (often a permission
+    issue — inspect needs a higher role than read in some setups)."""
     content = (
         f'<function controlid="{_new_control_id()}">'
         f"<inspect>"
@@ -341,8 +342,8 @@ def _inspect_fields(object_name: str) -> list[str]:
     )
     try:
         root = _call(content)
-    except IntacctAPIError:
-        return []
+    except IntacctAPIError as e:
+        return {"fields": [], "error": str(e)[:300]}
     # inspect's response shape varies a bit between Sage versions —
     # walk for any <Field>/<ID> or <Fields>/<Field> nodes.
     ids = []
@@ -353,8 +354,32 @@ def _inspect_fields(object_name: str) -> list[str]:
                 if v:
                     ids.append(v)
                     break
-    # Dedup, sort
-    return sorted(set(ids))
+    return {"fields": sorted(set(ids)), "error": None}
+
+
+def _probe_field_validity(object_name: str, field: str) -> dict:
+    """Test whether a field exists on an object by trying it as a
+    filter with a junk value. Sage's response distinguishes
+    "field doesn't exist" (XL03000010) from other errors, so we can
+    detect field validity without needing inspect privileges."""
+    try:
+        _query(
+            object_name,
+            ["RECORDNO"],
+            filter_pairs=[(field, "__probe_value__")],
+            page_size=1,
+            max_pages=1,
+        )
+        return {"valid": True}
+    except IntacctAPIError as e:
+        msg = str(e)
+        # XL03000010 with the field name in it = the field doesn't exist.
+        if "XL03000010" in msg and field.lower() in msg.lower():
+            return {"valid": False, "error": msg[:300]}
+        # Any other error means the field is valid but something else
+        # is wrong (bad value, missing required filter, etc.) — still
+        # tells us the field exists.
+        return {"valid": True, "note": f"other error: {msg[:200]}"}
 
 
 # ─── Modern <query> operation (structured filter) ───────────────────────────
@@ -891,35 +916,61 @@ def diagnose() -> dict:
                 "error":  str(e)[:300],
             })
 
-    # ── Inspect probes for GLACCOUNTBALANCE + GLACCOUNT so we can see
-    # the actual field names Sage exposes on this instance (instead of
-    # guessing REPORTINGPERIODNAME vs PERIODNAME vs PERIOD).
+    # ── Inspect probes for GLACCOUNTBALANCE + GLACCOUNT (in case the
+    # user account has inspect privileges) ──────────────────────────
     inspect_targets = ["GLACCOUNTBALANCE", "GLACCOUNT"]
     schema_probes = []
     for obj in inspect_targets:
-        fields = _inspect_fields(obj)
+        result = _inspect_fields(obj)
         schema_probes.append({
             "label":  f"inspect — {obj} fields",
             "object": obj,
             "via":    "inspect",
-            "ok":     bool(fields),
-            "count":  len(fields),
-            "fields": fields,
+            "ok":     bool(result.get("fields")),
+            "count":  len(result.get("fields") or []),
+            "fields": result.get("fields") or [],
+            "error":  result.get("error"),
+        })
+
+    # ── Field-validity probes on GLACCOUNTBALANCE. Tries common period
+    # / book / location field names as filters with a junk value.
+    # Sage's XL03000010 ("Field requested is not valid") tells us
+    # definitively which fields don't exist; other errors mean the
+    # field DOES exist but our test value isn't a match. Either way
+    # we learn the schema without needing inspect privileges.
+    field_candidates_glab = [
+        # Period
+        "PERIODNAME", "REPORTINGPERIOD", "REPORTINGPERIODNAME",
+        "PERIOD", "FISCALPERIOD", "REPORTINGYEAR", "FISCALYEAR",
+        # Location
+        "LOCATIONID", "LOCATION_ID", "LOCATION",
+        # Account
+        "ACCOUNTNO", "ACCOUNT_NO", "ACCT_NO", "ACCOUNT",
+        # Book
+        "BOOK", "BOOKID", "REPORTINGBOOK",
+        # Balance fields (informational — we expect these to be
+        # filterable but the "not valid" path also covers select-time)
+        "BEGINBAL", "ENDBAL", "DEBIT", "CREDIT",
+    ]
+    field_probes = []
+    for field in field_candidates_glab:
+        result = _probe_field_validity("GLACCOUNTBALANCE", field)
+        field_probes.append({
+            "object": "GLACCOUNTBALANCE",
+            "field":  field,
+            **result,
         })
 
     return {
-        "ok":     True,
-        "probes": out_probes,
-        "schema": schema_probes,
+        "ok":            True,
+        "probes":        out_probes,
+        "schema":        schema_probes,
+        "field_probes":  field_probes,
         "hint": (
-            "Interpretation: if every LOCATION probe returns 0 but USERINFO works, "
-            "the API user is missing Read permission on the Company object. "
-            "If unfiltered LOCATION returns >0 but the filtered ones return 0, "
-            "the filter is wrong for this Sage instance. If unfiltered returns "
-            "exactly 1, the user is entity-scoped and can only see its own entity. "
-            "For the trial-balance candidates: whichever object returns 'ok: true' "
-            "is the one we'll route get_trial_balance() through next. "
-            "The `schema` block lists the actual field names so we don't have to "
-            "guess (e.g., PERIODNAME vs REPORTINGPERIODNAME)."
+            "Read `field_probes` to find which fields exist on GLACCOUNTBALANCE. "
+            "Each probe sends the field with a junk value; valid:true means the "
+            "field name is real (regardless of whether the value matched). The "
+            "first valid period-style field (PERIODNAME / REPORTINGPERIOD / "
+            "PERIOD / FISCALPERIOD) is what get_trial_balance should use."
         ),
     }
