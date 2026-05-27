@@ -2104,29 +2104,44 @@ def api_financials_refresh():
         return jsonify({"error": f"Sage API error: {e}"}), 502
     _fin_cache_put(entity, period, accounts)
     bs = _fin_render_bs(accounts)
-    # When the result is empty, surface diagnostic info (specifically
-    # the sample LOCATION values from GLENTRY so we can see if our
-    # entity_id format is wrong).
-    diagnostic = {}
+    # Always attach a diagnostic block now — we've been blind too many
+    # times to "non-zero accounts but 0 line items rendered" cases.
+    # Includes the account sample so we can see what classify_bs is
+    # seeing (number, name, signed close balance, what line item it
+    # mapped to). When 0 entries came back, ALSO includes the sample
+    # GLENTRY.LOCATION values so we can fix the filter format.
+    from frp_mapping import classify_bs as _classify_bs
+    accounts_sample = []
+    for a in accounts[:25]:  # cap so the payload stays small
+        accounts_sample.append({
+            "no":         a.get("no", ""),
+            "name":       a.get("name", ""),
+            "close":      a.get("close", 0.0),
+            "mapped_to":  _classify_bs(a.get("no", ""), a.get("name", "")) or "(unmapped)",
+        })
+    diagnostic = {
+        "filter_value_used":     entity,
+        "account_count":         len(accounts),
+        "accounts_sample":       accounts_sample,
+    }
     if not accounts:
         sample_locs = getattr(sage_intacct.get_trial_balance,
                               "_last_sample_locations", None)
         if sample_locs is not None:
             diagnostic["sample_glentry_locations"] = sample_locs
-            diagnostic["filter_value_used"] = entity
             diagnostic["note"] = (
                 "0 GLENTRY rows matched the LOCATION filter. "
                 "Compare `filter_value_used` to `sample_glentry_locations` "
                 "to see what format Sage stores in GLENTRY.LOCATION."
             )
     return jsonify({
-        "cached":     True,
-        "entity":     entity,
-        "period":     period,
-        "fetched_at": datetime.datetime.utcnow().isoformat() + "Z",
+        "cached":        True,
+        "entity":        entity,
+        "period":        period,
+        "fetched_at":    datetime.datetime.utcnow().isoformat() + "Z",
         "account_count": len(accounts),
         "balance_sheet": bs,
-        "diagnostic":  diagnostic,
+        "diagnostic":    diagnostic,
     })
 
 
