@@ -701,25 +701,25 @@ def get_trial_balance(entity_id: str, period_name: str,
         except ValueError:
             log.warning("Could not parse period end_date %r", period_end_str)
 
-    # Pull all GL entries for this entity. Only request fields we've
-    # confirmed exist (ACCOUNTNO, AMOUNT from the perm probe sample);
-    # extra fields like STATE / POSTED_DATE / TR_TYPE caused DL02000001
-    # "couldn't process" errors — they're either invalid on this Sage
-    # instance or have internal restrictions. Add them back individually
-    # once /api/financials/diagnose's glentry_field_probes confirms which
-    # are valid.
+    # GLENTRY field-validity probes definitively settled the schema:
+    #   LOCATIONID  → exists but "cannot be queried" (Sage's exact wording)
+    #   LOCATION    → THE queryable entity-filter field on GLENTRY
+    #   STATE       → enum: Draft / Submitted / Approved / Posted / etc.
+    #   TR_TYPE     → enum: 1 (debit) / -1 (credit), used to sign AMOUNT
+    #   ENTRY_DATE  → MM/DD/YYYY date field
+    #   AMOUNT      → unsigned magnitude; sign comes from TR_TYPE
+    #   ACCOUNTNO   → valid selectable
     #
-    # Without a POSTED_DATE filter, the aggregation sums every entry
-    # for the entity through "now" — equivalent to "current balance as
-    # of today". For BS that's correct as long as the period is the
-    # most recent closed one. Historical periods will be approximate
-    # until we discover the right date field.
+    # Single-clause filter only — multi-clause readByQuery has been
+    # unreliable on this instance (e.g., LOCATION.STATUS='active'
+    # returning 0 rows). State + date filtering happens in Python after
+    # the fetch.
     log.info("get_trial_balance: pulling GLENTRY for entity=%s period=%s end=%s",
              entity_id, period_name, period_end_str)
     entries = _read_by_query(
         "GLENTRY",
-        f"LOCATIONID = '{entity_id}'",
-        "ACCOUNTNO,AMOUNT",
+        f"LOCATION = '{entity_id}'",
+        "ACCOUNTNO,AMOUNT,TR_TYPE,STATE,ENTRY_DATE",
         pagesize=1000,
         max_pages=100,
     )
@@ -736,18 +736,44 @@ def get_trial_balance(entity_id: str, period_name: str,
         except (TypeError, ValueError):
             return 0.0
 
-    # Aggregate AMOUNT by account. AMOUNT is signed in Sage — sum
-    # directly gives closing balance per account. Sign convention
-    # validation happens against the GPD-Mar-2026 FRP after first
-    # successful render.
+    # Aggregate: signed_amount = AMOUNT * TR_TYPE per entry, then sum
+    # by account. TR_TYPE = 1 (debit) or -1 (credit) per Sage's probe
+    # response. Sum gives the standard signed TB balance: positive for
+    # debit-balance accounts (assets, expenses), negative for credit-
+    # balance accounts (liabilities, equity, revenue). frp_mapping
+    # flips sign on Liabilities/Equity sections for display.
     sums: dict[str, float] = {}
+    posted_kept = posted_dropped = date_dropped = 0
     for e in entries:
+        state = (e.get("STATE") or "").strip()
+        if state and state != "Posted":
+            posted_dropped += 1
+            continue
+        if period_end:
+            ed_str = (e.get("ENTRY_DATE") or "").strip()
+            if ed_str:
+                try:
+                    ed = datetime.strptime(ed_str, "%m/%d/%Y")
+                    if ed > period_end:
+                        date_dropped += 1
+                        continue
+                except ValueError:
+                    pass
         no = (e.get("ACCOUNTNO") or "").strip()
         if not no:
             continue
-        sums[no] = sums.get(no, 0.0) + _f(e.get("AMOUNT"))
-    log.info("get_trial_balance: %d entries → %d accounts with activity",
-             len(entries), len(sums))
+        amount = _f(e.get("AMOUNT"))
+        try:
+            tr_type = int(float((e.get("TR_TYPE") or "1").strip()))
+        except (TypeError, ValueError):
+            tr_type = 1
+        sums[no] = sums.get(no, 0.0) + amount * tr_type
+        posted_kept += 1
+    log.info(
+        "get_trial_balance: kept=%d post-filtered=%d date-filtered=%d "
+        "→ %d accounts with activity",
+        posted_kept, posted_dropped, date_dropped, len(sums),
+    )
 
     # Join with the chart of accounts for titles (in-process cache).
     coa_titles = _coa_titles_cached()
