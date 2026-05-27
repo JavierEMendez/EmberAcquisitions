@@ -392,6 +392,11 @@ function renderBalanceSheet(payload) {
           + 'account_count = <code>' + (payload.account_count ?? '?') + '</code>. ';
     html += '<br>Filter value sent to Sage: <code>'
           + escapeHtml(d.filter_value_used || '(none)') + '</code>.';
+    if (Array.isArray(d.sub_locations_queried) && d.sub_locations_queried.length) {
+      html += '<br>Sub-locations queried: <code>'
+            + escapeHtml(JSON.stringify(d.sub_locations_queried))
+            + '</code>';
+    }
     // Sample of accounts that came back, with what FRP line item each
     // classified to (or "(unmapped)" if no rule matched). This is the
     // key diagnostic: shows account number, title, balance, and where

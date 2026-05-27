@@ -714,18 +714,33 @@ def get_trial_balance(entity_id: str, period_name: str,
     # unreliable on this instance (e.g., LOCATION.STATUS='active'
     # returning 0 rows). State + date filtering happens in Python after
     # the fetch.
-    log.info("get_trial_balance: pulling GLENTRY for entity=%s period=%s end=%s",
-             entity_id, period_name, period_end_str)
-    entries = _read_by_query(
-        "GLENTRY",
-        f"LOCATION = '{entity_id}'",
-        # LOCATION included in select so we can verify what values
-        # Sage stores there when the filter returns 0 rows.
-        "ACCOUNTNO,AMOUNT,TR_TYPE,STATE,ENTRY_DATE,LOCATION",
-        pagesize=1000,
-        max_pages=100,
-    )
-    log.info("get_trial_balance: fetched %d GL entries", len(entries))
+    # Sage multi-entity: the chosen LOCATIONID is the top-level entity,
+    # but actual GL transactions are usually posted to its sub-locations
+    # (LOCATIONTYPE='C' rows whose PARENTID matches the entity). Filtering
+    # GLENTRY by just the parent ID returns only inter-entity / eliminations.
+    # Resolve the full set of locations under this entity and query
+    # each in turn, then aggregate.
+    sub_locations = _entity_location_set(entity_id)
+    log.info("get_trial_balance: entity=%s expanded to %d location(s): %s",
+             entity_id, len(sub_locations), sub_locations)
+
+    entries: list[dict] = []
+    for loc in sub_locations:
+        try:
+            page = _read_by_query(
+                "GLENTRY",
+                f"LOCATION = '{loc}'",
+                "ACCOUNTNO,AMOUNT,TR_TYPE,STATE,ENTRY_DATE,LOCATION",
+                pagesize=1000,
+                max_pages=100,
+            )
+            log.info("get_trial_balance: LOCATION=%s → %d entries", loc, len(page))
+            entries.extend(page)
+        except IntacctAPIError as e:
+            log.warning("get_trial_balance: GLENTRY query for LOCATION=%s failed: %s", loc, e)
+
+    log.info("get_trial_balance: fetched %d total GL entries across %d locations",
+             len(entries), len(sub_locations))
 
     # If we got 0 entries for this LOCATION value, sample some
     # unfiltered rows to learn what LOCATION values Sage actually
@@ -809,6 +824,44 @@ def get_trial_balance(entity_id: str, period_name: str,
             "close":  total,
         })
     return out
+
+
+def _entity_location_set(entity_id: str) -> list[str]:
+    """Return the entity's LOCATIONID plus every sub-location LOCATIONID
+    that lists it as PARENTID. In Sage's multi-entity setup, GL postings
+    typically land on sub-locations (LOCATIONTYPE='C') with the chosen
+    entity as parent, so a TB query needs to fan out across all of them.
+
+    Single-level fan-out (one parent → its direct children). If your
+    Sage instance nests deeper (grandchildren), we'd recurse — but the
+    Ember COA structure observed so far is flat one level under the
+    entity, so a single pass is enough.
+    """
+    out = [entity_id]
+    try:
+        children = _read_by_query(
+            "LOCATION",
+            f"PARENTID = '{entity_id}'",
+            "LOCATIONID,LOCATIONTYPE,STATUS,PARENTID",
+            pagesize=1000,
+            max_pages=2,
+        )
+        for c in children:
+            cid = (c.get("LOCATIONID") or "").strip()
+            status = (c.get("STATUS") or "").strip().lower()
+            if cid and status == "active":
+                out.append(cid)
+    except IntacctAPIError as e:
+        log.warning("_entity_location_set: child-location lookup failed for %s: %s",
+                    entity_id, e)
+    # De-dup while preserving order
+    seen = set()
+    deduped = []
+    for x in out:
+        if x and x not in seen:
+            seen.add(x)
+            deduped.append(x)
+    return deduped
 
 
 # Per-worker COA cache. Chart of accounts changes rarely, and a TB

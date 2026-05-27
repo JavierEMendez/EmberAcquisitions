@@ -2119,8 +2119,16 @@ def api_financials_refresh():
             "close":      a.get("close", 0.0),
             "mapped_to":  _classify_bs(a.get("no", ""), a.get("name", "")) or "(unmapped)",
         })
+    # Resolve what sub-locations get queried so we can see the fan-out
+    # in the diagnostic (helps when only the parent's name is visible
+    # in the dropdown but the actual postings are on children).
+    try:
+        sub_locs = sage_intacct._entity_location_set(entity)
+    except Exception:
+        sub_locs = [entity]
     diagnostic = {
         "filter_value_used":     entity,
+        "sub_locations_queried": sub_locs,
         "account_count":         len(accounts),
         "accounts_sample":       accounts_sample,
     }
