@@ -663,16 +663,27 @@ def get_trial_balance(entity_id: str, period_name: str,
     2026" vs a YTD-style custom period).
     """
     # 1) Account balances for the requested entity + period.
-    # Field name is PERIODNAME (not REPORTINGPERIODNAME — that's the
-    # name on REPORTINGPERIOD itself; GLACCOUNTBALANCE uses PERIODNAME).
-    # BOOKID dropped from filter — it's a company-level config, not a
-    # field on individual balance rows.
+    # Field names confirmed via /api/financials/diagnose probes on this
+    # Sage instance:
+    #   PERIOD     ← period filter (NOT PERIODNAME or REPORTINGPERIOD)
+    #   LOCATIONID ← entity filter
+    #   BOOKID     ← reporting book filter (does exist; I'd wrongly
+    #                dropped it earlier)
+    #   ACCOUNTNO  ← account number (select)
+    #   ENDBAL     ← closing balance (select)
+    # BEGINBAL / DEBIT / CREDIT came back as "Field requested is not
+    # valid" on this Sage instance — they don't exist on GLACCOUNTBALANCE
+    # here. That's fine for Phase 1 BS: the only field the frp_mapping
+    # rollup uses is `close`, derived from ENDBAL. Phase 2 (IS render +
+    # YTD NI) will need to discover the equivalents of DEBIT/CREDIT
+    # (likely SUMDEBITS/SUMCREDITS or similar) via the same probing pattern.
     balances = _query(
         "GLACCOUNTBALANCE",
-        fields=["ACCOUNTNO", "BEGINBAL", "ENDBAL", "DEBIT", "CREDIT"],
+        fields=["ACCOUNTNO", "ENDBAL"],
         filter_pairs=[
-            ("PERIODNAME", period_name),
+            ("PERIOD",     period_name),
             ("LOCATIONID", entity_id),
+            ("BOOKID",     _book()),
         ],
     )
 
@@ -700,9 +711,11 @@ def get_trial_balance(entity_id: str, period_name: str,
         out.append({
             "no":     no,
             "name":   coa_titles.get(no, ""),
-            "open":   _f(r.get("BEGINBAL")),
-            "debit":  _f(r.get("DEBIT")),
-            "credit": _f(r.get("CREDIT")),
+            # open/debit/credit unavailable on this Sage's GLACCOUNTBALANCE
+            # — Phase 1 BS doesn't use these, Phase 2 will discover them.
+            "open":   0.0,
+            "debit":  0.0,
+            "credit": 0.0,
             "close":  _f(r.get("ENDBAL")),
         })
     return out
