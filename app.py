@@ -2104,6 +2104,21 @@ def api_financials_refresh():
         return jsonify({"error": f"Sage API error: {e}"}), 502
     _fin_cache_put(entity, period, accounts)
     bs = _fin_render_bs(accounts)
+    # When the result is empty, surface diagnostic info (specifically
+    # the sample LOCATION values from GLENTRY so we can see if our
+    # entity_id format is wrong).
+    diagnostic = {}
+    if not accounts:
+        sample_locs = getattr(sage_intacct.get_trial_balance,
+                              "_last_sample_locations", None)
+        if sample_locs is not None:
+            diagnostic["sample_glentry_locations"] = sample_locs
+            diagnostic["filter_value_used"] = entity
+            diagnostic["note"] = (
+                "0 GLENTRY rows matched the LOCATION filter. "
+                "Compare `filter_value_used` to `sample_glentry_locations` "
+                "to see what format Sage stores in GLENTRY.LOCATION."
+            )
     return jsonify({
         "cached":     True,
         "entity":     entity,
@@ -2111,6 +2126,7 @@ def api_financials_refresh():
         "fetched_at": datetime.datetime.utcnow().isoformat() + "Z",
         "account_count": len(accounts),
         "balance_sheet": bs,
+        "diagnostic":  diagnostic,
     })
 
 
