@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="/static/theme.css?v=3"/>
-<link rel="stylesheet" href="/static/css/financials.css?v=1"/>
+<link rel="stylesheet" href="/static/css/financials.css?v=2"/>
 <script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 <style>
   /* App shell — copied from operations.html so /financials nests in
@@ -301,6 +301,7 @@ async function fetchBalanceSheet(forceRefresh) {
               + '?entity=' + encodeURIComponent(e) + '&period=' + encodeURIComponent(p);
     const res = await fetch(url, { method: forceRefresh ? 'POST' : 'GET' });
     const j = await res.json();
+    console.log('[financials] /api/financials/' + (forceRefresh ? 'refresh' : 'balance-sheet') + ' response:', j);
     if (!res.ok) {
       setStatus('Error: ' + (j.error || ('HTTP ' + res.status)), 'err');
       return;
@@ -375,18 +376,32 @@ function renderBalanceSheet(payload) {
           + 'fold YTD NI into Retained Earnings so the BS foots.'
           + '</div>';
   }
-  // Diagnostic block — when account_count is 0 the server attaches a
-  // sample of the LOCATION values GLENTRY actually uses, so the user
-  // can see whether the entity-id we filter on matches Sage's format.
-  if (payload.diagnostic && Object.keys(payload.diagnostic).length) {
-    const d = payload.diagnostic;
+  // When the BS rendered with zero line items, show a yellow banner
+  // explaining what came back so we don't get a silent empty page.
+  // Includes the server-side diagnostic (sample GLENTRY LOCATIONs)
+  // when present, AND the account_count + response shape so we can
+  // tell whether the server even attached the diagnostic field.
+  const totalLines = bs.structure.reduce(
+    (n, sec) => n + sec.subsections.reduce((m, sub) => m + sub.line_items.length, 0),
+    0,
+  );
+  if (totalLines === 0) {
+    const d = payload.diagnostic || {};
+    const hasDiag = Object.keys(d).length > 0;
     html += '<div class="fin-stmt-note" style="background:#fff4e8;border-left-color:#f59e0b;">'
-          + '<b>Diagnostic — 0 rows matched the LOCATION filter:</b><br>'
-          + 'Sent: <code>' + escapeHtml(d.filter_value_used || '') + '</code><br>'
-          + 'Sample LOCATION values found in GLENTRY: <code>'
-          + escapeHtml(JSON.stringify(d.sample_glentry_locations || [])) + '</code><br>'
-          + (d.note ? escapeHtml(d.note) : '')
-          + '</div>';
+          + '<b>No line items rendered.</b> '
+          + 'account_count = <code>' + (payload.account_count ?? '?') + '</code>. ';
+    if (hasDiag) {
+      html += '<br><br><b>Diagnostic (from server):</b><br>'
+            + 'Filter value sent to Sage: <code>' + escapeHtml(d.filter_value_used || '(none)') + '</code><br>'
+            + 'Sample GLENTRY.LOCATION values: <code>'
+            + escapeHtml(JSON.stringify(d.sample_glentry_locations || [])) + '</code><br>'
+            + (d.note ? escapeHtml(d.note) : '');
+    } else {
+      html += '<br>No <code>diagnostic</code> block in the response. '
+            + 'See DevTools console for the full payload.';
+    }
+    html += '</div>';
   }
 
   $('fin-bs-content').innerHTML = html;
