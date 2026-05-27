@@ -638,6 +638,29 @@ def list_periods(closed_only: bool = True, max_periods: int = 60) -> list[dict]:
     return out[-max_periods:]
 
 
+def _resolve_period_recordno(period_name: str) -> str:
+    """Look up the RECORDNO for a reporting period given its name.
+    Sage's GLACCOUNTBALANCE.PERIOD filter sometimes expects the period
+    NAME, sometimes the RECORDNO — depends on instance configuration.
+    Returns empty string if not found (caller can fall back to name)."""
+    if not period_name:
+        return ""
+    try:
+        rows = _read_by_query(
+            "REPORTINGPERIOD",
+            "",  # status filter doesn't work via query string
+            "RECORDNO,NAME",
+            pagesize=1000,
+            max_pages=2,
+        )
+        for r in rows:
+            if (r.get("NAME") or "").strip() == period_name.strip():
+                return (r.get("RECORDNO") or "").strip()
+    except IntacctAPIError:
+        pass
+    return ""
+
+
 def get_trial_balance(entity_id: str, period_name: str,
                       timeout: int = DEFAULT_TIMEOUT) -> list[dict]:
     """Pull the trial balance for one entity + named reporting period.
@@ -663,27 +686,28 @@ def get_trial_balance(entity_id: str, period_name: str,
     2026" vs a YTD-style custom period).
     """
     # 1) Account balances for the requested entity + period.
-    # Field names confirmed via /api/financials/diagnose probes on this
-    # Sage instance:
-    #   PERIOD     ← period filter (NOT PERIODNAME or REPORTINGPERIOD)
+    # Field names confirmed via /api/financials/diagnose:
+    #   PERIOD     ← period filter (NOT PERIODNAME / REPORTINGPERIOD)
     #   LOCATIONID ← entity filter
-    #   BOOKID     ← reporting book filter (does exist; I'd wrongly
-    #                dropped it earlier)
     #   ACCOUNTNO  ← account number (select)
     #   ENDBAL     ← closing balance (select)
-    # BEGINBAL / DEBIT / CREDIT came back as "Field requested is not
-    # valid" on this Sage instance — they don't exist on GLACCOUNTBALANCE
-    # here. That's fine for Phase 1 BS: the only field the frp_mapping
-    # rollup uses is `close`, derived from ENDBAL. Phase 2 (IS render +
-    # YTD NI) will need to discover the equivalents of DEBIT/CREDIT
-    # (likely SUMDEBITS/SUMCREDITS or similar) via the same probing pattern.
+    # BOOKID is a valid field but a silent <status>failure</status>
+    # came back when we included it as a filter — likely the env-set
+    # value ("ACCRUAL") doesn't match this instance's book id. Dropped
+    # for Phase 1; if the user has multiple books and ACCRUAL ends up
+    # being the wrong default, the filter can be put back once we
+    # discover the right book identifier.
+    #
+    # PERIOD takes either the period NAME or its RECORDNO depending
+    # on the instance — try RECORDNO first (more reliable across
+    # configurations), fall back to NAME if lookup fails.
+    period_value = _resolve_period_recordno(period_name) or period_name
     balances = _query(
         "GLACCOUNTBALANCE",
         fields=["ACCOUNTNO", "ENDBAL"],
         filter_pairs=[
-            ("PERIOD",     period_name),
+            ("PERIOD",     period_value),
             ("LOCATIONID", entity_id),
-            ("BOOKID",     _book()),
         ],
     )
 
