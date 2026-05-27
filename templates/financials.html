@@ -387,20 +387,42 @@ function renderBalanceSheet(payload) {
   );
   if (totalLines === 0) {
     const d = payload.diagnostic || {};
-    const hasDiag = Object.keys(d).length > 0;
     html += '<div class="fin-stmt-note" style="background:#fff4e8;border-left-color:#f59e0b;">'
           + '<b>No line items rendered.</b> '
           + 'account_count = <code>' + (payload.account_count ?? '?') + '</code>. ';
-    if (hasDiag) {
-      html += '<br><br><b>Diagnostic (from server):</b><br>'
-            + 'Filter value sent to Sage: <code>' + escapeHtml(d.filter_value_used || '(none)') + '</code><br>'
-            + 'Sample GLENTRY.LOCATION values: <code>'
-            + escapeHtml(JSON.stringify(d.sample_glentry_locations || [])) + '</code><br>'
-            + (d.note ? escapeHtml(d.note) : '');
-    } else {
-      html += '<br>No <code>diagnostic</code> block in the response. '
-            + 'See DevTools console for the full payload.';
+    html += '<br>Filter value sent to Sage: <code>'
+          + escapeHtml(d.filter_value_used || '(none)') + '</code>.';
+    // Sample of accounts that came back, with what FRP line item each
+    // classified to (or "(unmapped)" if no rule matched). This is the
+    // key diagnostic: shows account number, title, balance, and where
+    // the rollup put it. Unmapped accounts = title pattern doesn't
+    // match any RULES_BS predicate.
+    if (Array.isArray(d.accounts_sample) && d.accounts_sample.length) {
+      html += '<br><br><b>Accounts returned by aggregation '
+            + '(first ' + d.accounts_sample.length + '):</b>'
+            + '<table style="margin-top:8px;border-collapse:collapse;font-size:11px;font-family:monospace;">'
+            + '<thead><tr style="text-align:left;border-bottom:1px solid #d4a574;">'
+            +   '<th style="padding:4px 12px 4px 0;">no</th>'
+            +   '<th style="padding:4px 12px 4px 0;">name</th>'
+            +   '<th style="padding:4px 12px 4px 0;">close</th>'
+            +   '<th style="padding:4px 0;">mapped_to</th>'
+            + '</tr></thead><tbody>';
+      for (const a of d.accounts_sample) {
+        html += '<tr>'
+              + '<td style="padding:2px 12px 2px 0;">' + escapeHtml(a.no) + '</td>'
+              + '<td style="padding:2px 12px 2px 0;">' + escapeHtml(a.name || '(empty)') + '</td>'
+              + '<td style="padding:2px 12px 2px 0;text-align:right;">' + fmtMoney(a.close) + '</td>'
+              + '<td style="padding:2px 0;">' + escapeHtml(a.mapped_to) + '</td>'
+              + '</tr>';
+      }
+      html += '</tbody></table>';
     }
+    if (Array.isArray(d.sample_glentry_locations) && d.sample_glentry_locations.length) {
+      html += '<br><b>Sample GLENTRY.LOCATION values:</b> <code>'
+            + escapeHtml(JSON.stringify(d.sample_glentry_locations))
+            + '</code>';
+    }
+    if (d.note) html += '<br><br>' + escapeHtml(d.note);
     html += '</div>';
   }
 
