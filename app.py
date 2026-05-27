@@ -2148,6 +2148,35 @@ def api_financials_refresh():
                 key=lambda x: -abs(x["sum"]),
             ),
         })
+    # Per-year DR/CR tally + raw-entry samples for the TOP-15 accounts
+    # by |close|. Targets the "is this 2x because year-opening JEs
+    # replay cumulative balance" theory: if Land shows e.g. DR=$35M in
+    # year 1, then DR=$35M again in year 2 (no new acquisitions but
+    # same amount appears), that's the opening-JE doubling pattern.
+    per_year_raw     = getattr(sage_intacct.get_trial_balance,
+                               "_last_per_year_sums", {}) or {}
+    samples_raw      = getattr(sage_intacct.get_trial_balance,
+                               "_last_account_samples", {}) or {}
+    account_time_detail = []
+    for a in accounts_full[:15]:
+        no = a["no"]
+        yrs = per_year_raw.get(no, {})
+        if not yrs:
+            continue
+        # by_year sorted by year string asc
+        by_year = sorted(
+            [{"year": y, "dr": v["dr"], "cr": v["cr"], "net": v["dr"] - v["cr"], "count": v["count"]}
+             for y, v in yrs.items()],
+            key=lambda x: x["year"],
+        )
+        account_time_detail.append({
+            "no":        no,
+            "name":      a["name"],
+            "close":     a["close"],
+            "mapped_to": a["mapped_to"],
+            "by_year":   by_year,
+            "samples":   samples_raw.get(no, []),
+        })
     # Resolve what sub-locations get queried so we can see the fan-out
     # in the diagnostic (helps when only the parent's name is visible
     # in the dropdown but the actual postings are on children).
@@ -2161,6 +2190,7 @@ def api_financials_refresh():
         "account_count":         len(accounts),
         "accounts_full":         accounts_full,
         "per_location_balances": per_location_balances,
+        "account_time_detail":   account_time_detail,
     }
     if not accounts:
         sample_locs = getattr(sage_intacct.get_trial_balance,

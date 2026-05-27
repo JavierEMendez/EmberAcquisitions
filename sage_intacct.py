@@ -798,6 +798,15 @@ def get_trial_balance(entity_id: str, period_name: str,
     # diagnostic can show "this $71M Land balance came $35M from loc A and
     # $35M from loc B" — i.e., reveal parent+child double-posting visibly.
     per_loc_sums: dict[str, dict[str, float]] = {}
+    # per_year_sums: {account: {year: {"dr": x, "cr": y, "count": n}}}
+    # — surfaces whether the same balance is being re-stated each fiscal
+    # year (the strongest theory for the 2x Land doubling: opening BB
+    # journal entries replaying cumulative balances).
+    per_year_sums: dict[str, dict[str, dict[str, float]]] = {}
+    # per_account_samples: {account: [{entry_date, amount, tr_type, signed, state}]}
+    # capped at 8 per account so the payload stays bounded.
+    per_account_samples: dict[str, list[dict]] = {}
+    SAMPLE_CAP = 8
     state_counter: dict[str, int] = {}
     skipped_no_tr_type = 0
     posted_kept = posted_dropped = date_dropped = 0
@@ -808,16 +817,16 @@ def get_trial_balance(entity_id: str, period_name: str,
         if st and st != "Posted":
             posted_dropped += 1
             continue
-        if period_end:
-            ed_str = (e.get("ENTRY_DATE") or "").strip()
-            if ed_str:
-                try:
-                    ed = datetime.strptime(ed_str, "%m/%d/%Y")
-                    if ed > period_end:
-                        date_dropped += 1
-                        continue
-                except ValueError:
-                    pass
+        ed_str = (e.get("ENTRY_DATE") or "").strip()
+        ed_obj = None
+        if ed_str:
+            try:
+                ed_obj = datetime.strptime(ed_str, "%m/%d/%Y")
+            except ValueError:
+                pass
+        if period_end and ed_obj and ed_obj > period_end:
+            date_dropped += 1
+            continue
         no = (e.get("ACCOUNTNO") or "").strip()
         if not no:
             continue
@@ -836,10 +845,33 @@ def get_trial_balance(entity_id: str, period_name: str,
         loc = (e.get("LOCATION") or "").strip() or "(unknown)"
         bucket = per_loc_sums.setdefault(no, {})
         bucket[loc] = bucket.get(loc, 0.0) + signed
+        # Per-year DR/CR tally — using ENTRY_DATE's year, or "?" for
+        # entries with no parseable date.
+        yr = str(ed_obj.year) if ed_obj else "?"
+        yrbuckets = per_year_sums.setdefault(no, {})
+        ybuck = yrbuckets.setdefault(yr, {"dr": 0.0, "cr": 0.0, "count": 0})
+        if tr_type > 0:
+            ybuck["dr"] += amount
+        else:
+            ybuck["cr"] += amount
+        ybuck["count"] += 1
+        # Up to 8 sample raw entries per account — sorted later by date
+        # client-side via inspection if needed; capture order of arrival.
+        slist = per_account_samples.setdefault(no, [])
+        if len(slist) < SAMPLE_CAP:
+            slist.append({
+                "entry_date": ed_str,
+                "amount":     amount,
+                "tr_type":    tr_type,
+                "signed":     signed,
+                "state":      st,
+                "location":   loc,
+            })
         posted_kept += 1
-    # Stash the per-(account × location) breakdown so the refresh route
-    # can surface it in the diagnostic block.
+    # Stash diagnostics so the refresh route can surface them.
     get_trial_balance._last_per_location_sums = per_loc_sums
+    get_trial_balance._last_per_year_sums    = per_year_sums
+    get_trial_balance._last_account_samples  = per_account_samples
     log.info(
         "get_trial_balance: %d entries → kept=%d  post-filtered=%d  date-filtered=%d "
         "tr_type-missing=%d  → %d accounts; state counts: %s",

@@ -458,6 +458,69 @@ function renderBalanceSheet(payload) {
       html += '</tbody></table></div>';
     }
   }
+  // Per-year DR/CR tally + raw entry samples for the top accounts.
+  // Designed to expose the "year-opening JE replays cumulative balance"
+  // doubling pattern: if Land shows DR $35M in year N and DR $35M
+  // again in year N+1 with no new acquisitions, the opening JE is the
+  // smoking gun.
+  if (Array.isArray(d.account_time_detail) && d.account_time_detail.length) {
+    html += '<br><br><b>Time breakdown for top ' + d.account_time_detail.length
+          + ' accounts (by |balance|):</b>';
+    for (const a of d.account_time_detail) {
+      html += '<div style="margin-top:14px;font-family:monospace;font-size:11px;">'
+            + '<b>' + escapeHtml(a.no) + '</b> &mdash; '
+            + escapeHtml(a.name || '(empty)')
+            + ' &nbsp; <i>(close = ' + fmtMoney(a.close) + ', mapped &rarr; '
+            + escapeHtml(a.mapped_to) + ')</i>';
+      // By-year DR/CR
+      if (Array.isArray(a.by_year) && a.by_year.length) {
+        html += '<table style="margin-top:4px;margin-left:16px;border-collapse:collapse;">'
+              + '<thead><tr style="text-align:left;border-bottom:1px solid #d4a574;">'
+              +   '<th style="padding:2px 16px 2px 0;">year</th>'
+              +   '<th style="padding:2px 16px 2px 0;text-align:right;">DR</th>'
+              +   '<th style="padding:2px 16px 2px 0;text-align:right;">CR</th>'
+              +   '<th style="padding:2px 16px 2px 0;text-align:right;">net (DR-CR)</th>'
+              +   '<th style="padding:2px 0;text-align:right;">#entries</th>'
+              + '</tr></thead><tbody>';
+        for (const y of a.by_year) {
+          html += '<tr>'
+                + '<td style="padding:1px 16px 1px 0;">' + escapeHtml(y.year) + '</td>'
+                + '<td style="padding:1px 16px 1px 0;text-align:right;">' + fmtMoney(y.dr) + '</td>'
+                + '<td style="padding:1px 16px 1px 0;text-align:right;">' + fmtMoney(y.cr) + '</td>'
+                + '<td style="padding:1px 16px 1px 0;text-align:right;">' + fmtMoney(y.net) + '</td>'
+                + '<td style="padding:1px 0;text-align:right;">' + y.count + '</td>'
+                + '</tr>';
+        }
+        html += '</tbody></table>';
+      }
+      // Sample raw entries
+      if (Array.isArray(a.samples) && a.samples.length) {
+        html += '<div style="margin-top:4px;margin-left:16px;color:#666;">'
+              + 'sample entries (up to 8):</div>'
+              + '<table style="margin-left:16px;border-collapse:collapse;">'
+              + '<thead><tr style="text-align:left;border-bottom:1px solid #d4a574;color:#666;">'
+              +   '<th style="padding:2px 12px 2px 0;">date</th>'
+              +   '<th style="padding:2px 12px 2px 0;text-align:right;">amount</th>'
+              +   '<th style="padding:2px 12px 2px 0;text-align:right;">tr_type</th>'
+              +   '<th style="padding:2px 12px 2px 0;text-align:right;">signed</th>'
+              +   '<th style="padding:2px 12px 2px 0;">state</th>'
+              +   '<th style="padding:2px 0;">location</th>'
+              + '</tr></thead><tbody>';
+        for (const s of a.samples) {
+          html += '<tr style="color:#666;">'
+                + '<td style="padding:1px 12px 1px 0;">' + escapeHtml(s.entry_date || '') + '</td>'
+                + '<td style="padding:1px 12px 1px 0;text-align:right;">' + fmtMoney(s.amount) + '</td>'
+                + '<td style="padding:1px 12px 1px 0;text-align:right;">' + s.tr_type + '</td>'
+                + '<td style="padding:1px 12px 1px 0;text-align:right;">' + fmtMoney(s.signed) + '</td>'
+                + '<td style="padding:1px 12px 1px 0;">' + escapeHtml(s.state || '') + '</td>'
+                + '<td style="padding:1px 0;">' + escapeHtml(s.location || '') + '</td>'
+                + '</tr>';
+        }
+        html += '</tbody></table>';
+      }
+      html += '</div>';
+    }
+  }
   if (Array.isArray(d.sample_glentry_locations) && d.sample_glentry_locations.length) {
     html += '<br><b>Sample GLENTRY.LOCATION values:</b> <code>'
           + escapeHtml(JSON.stringify(d.sample_glentry_locations))
