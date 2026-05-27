@@ -719,11 +719,39 @@ def get_trial_balance(entity_id: str, period_name: str,
     entries = _read_by_query(
         "GLENTRY",
         f"LOCATION = '{entity_id}'",
-        "ACCOUNTNO,AMOUNT,TR_TYPE,STATE,ENTRY_DATE",
+        # LOCATION included in select so we can verify what values
+        # Sage stores there when the filter returns 0 rows.
+        "ACCOUNTNO,AMOUNT,TR_TYPE,STATE,ENTRY_DATE,LOCATION",
         pagesize=1000,
         max_pages=100,
     )
     log.info("get_trial_balance: fetched %d GL entries", len(entries))
+
+    # If we got 0 entries for this LOCATION value, sample some
+    # unfiltered rows to learn what LOCATION values Sage actually
+    # uses on GLENTRY — that tells us whether our entity_id format
+    # is wrong (e.g., LOCATIONID vs LOCATION-RECORDNO).
+    if not entries:
+        try:
+            sample = _read_by_query(
+                "GLENTRY", "",
+                "ACCOUNTNO,LOCATION",
+                pagesize=20, max_pages=1,
+            )
+            distinct_locations = sorted({
+                (s.get("LOCATION") or "").strip()
+                for s in sample if s.get("LOCATION")
+            })
+            log.warning(
+                "get_trial_balance: 0 entries matched LOCATION='%s'. "
+                "Sample LOCATION values from unfiltered GLENTRY: %s",
+                entity_id, distinct_locations,
+            )
+            # Stash on the function for the route to surface
+            get_trial_balance._last_sample_locations = distinct_locations
+        except Exception as e:
+            log.warning("sample LOCATION fetch failed: %s", e)
+            get_trial_balance._last_sample_locations = []
 
     def _f(s) -> float:
         if not s:
@@ -737,28 +765,22 @@ def get_trial_balance(entity_id: str, period_name: str,
             return 0.0
 
     # Aggregate: signed_amount = AMOUNT * TR_TYPE per entry, then sum
-    # by account. TR_TYPE = 1 (debit) or -1 (credit) per Sage's probe
-    # response. Sum gives the standard signed TB balance: positive for
-    # debit-balance accounts (assets, expenses), negative for credit-
-    # balance accounts (liabilities, equity, revenue). frp_mapping
-    # flips sign on Liabilities/Equity sections for display.
+    # by account. TR_TYPE = 1 (debit) or -1 (credit). Sum gives the
+    # standard signed TB balance (positive for debit-balance accounts,
+    # negative for credit-balance accounts); frp_mapping flips sign on
+    # Liabilities/Equity sections for display.
+    #
+    # State + date Python filtering DEFERRED — we got 0 rows after
+    # applying STATE='Posted' AND ENTRY_DATE<=period_end. Easier to
+    # diagnose with no filters: every fetched entry contributes to
+    # the rollup, and the BS shows what Sage actually has. Once values
+    # match the FRP we'll re-introduce the filters and tighten.
     sums: dict[str, float] = {}
-    posted_kept = posted_dropped = date_dropped = 0
+    state_counter: dict[str, int] = {}
     for e in entries:
-        state = (e.get("STATE") or "").strip()
-        if state and state != "Posted":
-            posted_dropped += 1
-            continue
-        if period_end:
-            ed_str = (e.get("ENTRY_DATE") or "").strip()
-            if ed_str:
-                try:
-                    ed = datetime.strptime(ed_str, "%m/%d/%Y")
-                    if ed > period_end:
-                        date_dropped += 1
-                        continue
-                except ValueError:
-                    pass
+        st = (e.get("STATE") or "").strip()
+        if st:
+            state_counter[st] = state_counter.get(st, 0) + 1
         no = (e.get("ACCOUNTNO") or "").strip()
         if not no:
             continue
@@ -768,11 +790,9 @@ def get_trial_balance(entity_id: str, period_name: str,
         except (TypeError, ValueError):
             tr_type = 1
         sums[no] = sums.get(no, 0.0) + amount * tr_type
-        posted_kept += 1
     log.info(
-        "get_trial_balance: kept=%d post-filtered=%d date-filtered=%d "
-        "→ %d accounts with activity",
-        posted_kept, posted_dropped, date_dropped, len(sums),
+        "get_trial_balance: %d entries → %d accounts; state counts: %s",
+        len(entries), len(sums), state_counter,
     )
 
     # Join with the chart of accounts for titles (in-process cache).
