@@ -375,6 +375,20 @@ function renderBalanceSheet(payload) {
           + 'fold YTD NI into Retained Earnings so the BS foots.'
           + '</div>';
   }
+  // Diagnostic block — when account_count is 0 the server attaches a
+  // sample of the LOCATION values GLENTRY actually uses, so the user
+  // can see whether the entity-id we filter on matches Sage's format.
+  if (payload.diagnostic && Object.keys(payload.diagnostic).length) {
+    const d = payload.diagnostic;
+    html += '<div class="fin-stmt-note" style="background:#fff4e8;border-left-color:#f59e0b;">'
+          + '<b>Diagnostic — 0 rows matched the LOCATION filter:</b><br>'
+          + 'Sent: <code>' + escapeHtml(d.filter_value_used || '') + '</code><br>'
+          + 'Sample LOCATION values found in GLENTRY: <code>'
+          + escapeHtml(JSON.stringify(d.sample_glentry_locations || [])) + '</code><br>'
+          + (d.note ? escapeHtml(d.note) : '')
+          + '</div>';
+  }
+
   $('fin-bs-content').innerHTML = html;
   $('fin-bs-placeholder').style.display = 'none';
   $('fin-bs-content').style.display = '';
