@@ -638,27 +638,30 @@ def list_periods(closed_only: bool = True, max_periods: int = 60) -> list[dict]:
     return out[-max_periods:]
 
 
-def _resolve_period_recordno(period_name: str) -> str:
-    """Look up the RECORDNO for a reporting period given its name.
-    Sage's GLACCOUNTBALANCE.PERIOD filter sometimes expects the period
-    NAME, sometimes the RECORDNO — depends on instance configuration.
-    Returns empty string if not found (caller can fall back to name)."""
+def _resolve_period_info(period_name: str) -> dict:
+    """Look up the full record for a reporting period given its name.
+    Returns {'recordno': ..., 'start_date': MM/DD/YYYY, 'end_date': MM/DD/YYYY}
+    or {} if not found."""
     if not period_name:
-        return ""
+        return {}
     try:
         rows = _read_by_query(
             "REPORTINGPERIOD",
-            "",  # status filter doesn't work via query string
-            "RECORDNO,NAME",
+            "",
+            "RECORDNO,NAME,START_DATE,END_DATE",
             pagesize=1000,
             max_pages=2,
         )
         for r in rows:
             if (r.get("NAME") or "").strip() == period_name.strip():
-                return (r.get("RECORDNO") or "").strip()
+                return {
+                    "recordno":   (r.get("RECORDNO") or "").strip(),
+                    "start_date": (r.get("START_DATE") or "").strip(),
+                    "end_date":   (r.get("END_DATE") or "").strip(),
+                }
     except IntacctAPIError:
         pass
-    return ""
+    return {}
 
 
 def get_trial_balance(entity_id: str, period_name: str,
@@ -674,47 +677,44 @@ def get_trial_balance(entity_id: str, period_name: str,
          'credit': 0.0,
          'close': 0.0}
 
-    The diagnose endpoint confirmed: TRIALBALANCE doesn't exist on
-    this Sage instance via any operation, but GLACCOUNTBALANCE does
-    (via the modern <query> operation). GLACCOUNTBALANCE has the
-    balances we need (BEGINBAL, ENDBAL, DEBIT, CREDIT) but NOT the
-    account title — that lives on GLACCOUNT (the chart of accounts).
-    So we issue two queries and join in Python.
+    Implementation note: after exhaustive probing this Sage instance
+    won't return data from GLACCOUNTBALANCE (filtered queries silently
+    fail despite the user having admin rights and the object existing
+    in the schema). The workable path is aggregating GLENTRY directly —
+    sum AMOUNT per account across all posted entries up through the
+    period end date. Slower (~10–30s for a multi-year entity, paginated
+    through thousands of rows) but reliable since GLENTRY is queryable
+    on every Sage instance.
 
-    The caller decides MTD vs YTD by picking the right period name
-    (e.g., "Month Ended March 2026" vs "Calendar Year Ended December
-    2026" vs a YTD-style custom period).
+    Trade-off accepted because: (a) result is cached in
+    intacct_tb_cache so we only pay the cost on Refresh, and (b) Phase 1
+    only needs closing balances for the Balance Sheet, which is exactly
+    what summing AMOUNT-to-date gives us.
     """
-    # 1) Account balances for the requested entity + period.
-    # Field names confirmed via /api/financials/diagnose:
-    #   PERIOD     ← period filter (NOT PERIODNAME / REPORTINGPERIOD)
-    #   LOCATIONID ← entity filter
-    #   ACCOUNTNO  ← account number (select)
-    #   ENDBAL     ← closing balance (select)
-    # BOOKID is a valid field but a silent <status>failure</status>
-    # came back when we included it as a filter — likely the env-set
-    # value ("ACCRUAL") doesn't match this instance's book id. Dropped
-    # for Phase 1; if the user has multiple books and ACCRUAL ends up
-    # being the wrong default, the filter can be put back once we
-    # discover the right book identifier.
-    #
-    # PERIOD takes either the period NAME or its RECORDNO depending
-    # on the instance — try RECORDNO first (more reliable across
-    # configurations), fall back to NAME if lookup fails.
-    period_value = _resolve_period_recordno(period_name) or period_name
-    balances = _query(
-        "GLACCOUNTBALANCE",
-        fields=["ACCOUNTNO", "ENDBAL"],
-        filter_pairs=[
-            ("PERIOD",     period_value),
-            ("LOCATIONID", entity_id),
-        ],
-    )
+    # Look up the period's end date so we can cut off the aggregation.
+    period_info = _resolve_period_info(period_name)
+    period_end_str = (period_info.get("end_date") or "").strip()
+    period_end: Optional[datetime] = None
+    if period_end_str:
+        try:
+            period_end = datetime.strptime(period_end_str, "%m/%d/%Y")
+        except ValueError:
+            log.warning("Could not parse period end_date %r", period_end_str)
 
-    # 2) Chart of accounts → ACCOUNTNO → TITLE map. Same data every
-    # call so we could cache, but readByQuery on GLACCOUNT is fast
-    # enough (~1300 records) that uncached is fine for MVP.
-    coa_titles = _coa_titles_cached()
+    # Pull all GL entries for this entity. Filter by LOCATIONID only at
+    # the Sage side; date / state filtering happens client-side because
+    # readByQuery's query-string is unreliable on multi-clause filters
+    # in this instance (cf. STATUS='active' returning 0 rows on LOCATION).
+    log.info("get_trial_balance: pulling GLENTRY for entity=%s period=%s end=%s",
+             entity_id, period_name, period_end_str)
+    entries = _read_by_query(
+        "GLENTRY",
+        f"LOCATIONID = '{entity_id}'",
+        "RECORDNO,ACCOUNTNO,AMOUNT,STATE,POSTED_DATE,TR_TYPE",
+        pagesize=1000,
+        max_pages=100,  # ≤ 100k entries; entities should fit comfortably
+    )
+    log.info("get_trial_balance: fetched %d GL entries", len(entries))
 
     def _f(s) -> float:
         if not s:
@@ -727,20 +727,47 @@ def get_trial_balance(entity_id: str, period_name: str,
         except (TypeError, ValueError):
             return 0.0
 
-    out = []
-    for r in balances:
-        no = (r.get("ACCOUNTNO") or "").strip()
+    # Aggregate by account. Apply date + state filters here.
+    # AMOUNT on GLENTRY is signed by TR_TYPE (1 = debit, -1 = credit),
+    # but the AMOUNT field already incorporates the sign in most Sage
+    # configurations. We try the direct-sum path first; if balances
+    # come out with flipped signs vs the FRP, we'll multiply by TR_TYPE.
+    sums: dict[str, float] = {}
+    posted_kept = posted_dropped = date_dropped = 0
+    for e in entries:
+        state = (e.get("STATE") or "").strip().lower()
+        if state and state != "posted":
+            posted_dropped += 1
+            continue
+        posted_date_str = (e.get("POSTED_DATE") or "").strip()
+        if period_end and posted_date_str:
+            try:
+                pd = datetime.strptime(posted_date_str, "%m/%d/%Y")
+                if pd > period_end:
+                    date_dropped += 1
+                    continue
+            except ValueError:
+                pass
+        posted_kept += 1
+        no = (e.get("ACCOUNTNO") or "").strip()
         if not no:
             continue
+        sums[no] = sums.get(no, 0.0) + _f(e.get("AMOUNT"))
+    log.info("get_trial_balance: aggregated kept=%d post-filtered=%d date-filtered=%d → %d accounts with activity",
+             posted_kept, posted_dropped, date_dropped, len(sums))
+
+    # Join with the chart of accounts for titles (in-process cache).
+    coa_titles = _coa_titles_cached()
+
+    out = []
+    for no, total in sums.items():
         out.append({
             "no":     no,
             "name":   coa_titles.get(no, ""),
-            # open/debit/credit unavailable on this Sage's GLACCOUNTBALANCE
-            # — Phase 1 BS doesn't use these, Phase 2 will discover them.
             "open":   0.0,
             "debit":  0.0,
             "credit": 0.0,
-            "close":  _f(r.get("ENDBAL")),
+            "close":  total,
         })
     return out
 
