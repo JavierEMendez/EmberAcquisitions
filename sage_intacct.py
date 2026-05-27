@@ -701,18 +701,27 @@ def get_trial_balance(entity_id: str, period_name: str,
         except ValueError:
             log.warning("Could not parse period end_date %r", period_end_str)
 
-    # Pull all GL entries for this entity. Filter by LOCATIONID only at
-    # the Sage side; date / state filtering happens client-side because
-    # readByQuery's query-string is unreliable on multi-clause filters
-    # in this instance (cf. STATUS='active' returning 0 rows on LOCATION).
+    # Pull all GL entries for this entity. Only request fields we've
+    # confirmed exist (ACCOUNTNO, AMOUNT from the perm probe sample);
+    # extra fields like STATE / POSTED_DATE / TR_TYPE caused DL02000001
+    # "couldn't process" errors — they're either invalid on this Sage
+    # instance or have internal restrictions. Add them back individually
+    # once /api/financials/diagnose's glentry_field_probes confirms which
+    # are valid.
+    #
+    # Without a POSTED_DATE filter, the aggregation sums every entry
+    # for the entity through "now" — equivalent to "current balance as
+    # of today". For BS that's correct as long as the period is the
+    # most recent closed one. Historical periods will be approximate
+    # until we discover the right date field.
     log.info("get_trial_balance: pulling GLENTRY for entity=%s period=%s end=%s",
              entity_id, period_name, period_end_str)
     entries = _read_by_query(
         "GLENTRY",
         f"LOCATIONID = '{entity_id}'",
-        "RECORDNO,ACCOUNTNO,AMOUNT,STATE,POSTED_DATE,TR_TYPE",
+        "ACCOUNTNO,AMOUNT",
         pagesize=1000,
-        max_pages=100,  # ≤ 100k entries; entities should fit comfortably
+        max_pages=100,
     )
     log.info("get_trial_balance: fetched %d GL entries", len(entries))
 
@@ -727,34 +736,18 @@ def get_trial_balance(entity_id: str, period_name: str,
         except (TypeError, ValueError):
             return 0.0
 
-    # Aggregate by account. Apply date + state filters here.
-    # AMOUNT on GLENTRY is signed by TR_TYPE (1 = debit, -1 = credit),
-    # but the AMOUNT field already incorporates the sign in most Sage
-    # configurations. We try the direct-sum path first; if balances
-    # come out with flipped signs vs the FRP, we'll multiply by TR_TYPE.
+    # Aggregate AMOUNT by account. AMOUNT is signed in Sage — sum
+    # directly gives closing balance per account. Sign convention
+    # validation happens against the GPD-Mar-2026 FRP after first
+    # successful render.
     sums: dict[str, float] = {}
-    posted_kept = posted_dropped = date_dropped = 0
     for e in entries:
-        state = (e.get("STATE") or "").strip().lower()
-        if state and state != "posted":
-            posted_dropped += 1
-            continue
-        posted_date_str = (e.get("POSTED_DATE") or "").strip()
-        if period_end and posted_date_str:
-            try:
-                pd = datetime.strptime(posted_date_str, "%m/%d/%Y")
-                if pd > period_end:
-                    date_dropped += 1
-                    continue
-            except ValueError:
-                pass
-        posted_kept += 1
         no = (e.get("ACCOUNTNO") or "").strip()
         if not no:
             continue
         sums[no] = sums.get(no, 0.0) + _f(e.get("AMOUNT"))
-    log.info("get_trial_balance: aggregated kept=%d post-filtered=%d date-filtered=%d → %d accounts with activity",
-             posted_kept, posted_dropped, date_dropped, len(sums))
+    log.info("get_trial_balance: %d entries → %d accounts with activity",
+             len(entries), len(sums))
 
     # Join with the chart of accounts for titles (in-process cache).
     coa_titles = _coa_titles_cached()
@@ -1025,6 +1018,35 @@ def diagnose() -> dict:
             **result,
         })
 
+    # ── GLENTRY field probes — now that we're aggregating GLENTRY,
+    # we need to know which date / state / location fields are valid
+    # so Phase 2 can filter posted/dated entries server-side instead
+    # of pulling everything. Probes use a generic _probe_field_validity
+    # helper which sends `<equalto>` with a junk value; XL03000010 with
+    # the field name in it means the field doesn't exist.
+    glentry_field_candidates = [
+        # Date candidates
+        "DATE", "POSTED_DATE", "ENTRY_DATE", "TRX_DATE", "BATCH_DATE",
+        # Posted/state candidates
+        "STATE", "POSTING_STATE", "POSTED", "STATUS",
+        # Location/entity candidates
+        "LOCATIONID", "LOCATION", "ENTITY",
+        # Transaction type candidates
+        "TR_TYPE", "POSTING_TYPE", "DEBITCREDIT",
+        # Debit/credit candidates (might be separate from AMOUNT)
+        "DEBITAMOUNT", "CREDITAMOUNT", "DEBIT_AMOUNT", "CREDIT_AMOUNT",
+        # Book candidate
+        "BOOK", "BOOKID",
+    ]
+    glentry_field_probes = []
+    for field in glentry_field_candidates:
+        result = _probe_field_validity("GLENTRY", field)
+        glentry_field_probes.append({
+            "object": "GLENTRY",
+            "field":  field,
+            **result,
+        })
+
     # ── Permission probes — read access to financial-data objects.
     # If LOCATION + REPORTINGPERIOD work but GLENTRY / GLACCOUNT /
     # GLACCOUNTBALANCE all return 0 or fail, this user's role only
@@ -1055,11 +1077,12 @@ def diagnose() -> dict:
             })
 
     return {
-        "ok":            True,
-        "probes":        out_probes,
-        "schema":        schema_probes,
-        "field_probes":  field_probes,
-        "perm_probes":   perm_probes,
+        "ok":                   True,
+        "probes":               out_probes,
+        "schema":               schema_probes,
+        "field_probes":         field_probes,
+        "glentry_field_probes": glentry_field_probes,
+        "perm_probes":          perm_probes,
         "hint": (
             "READING ORDER:\n"
             "1. `perm_probes` first — if GLENTRY and GLACCOUNT both return\n"
