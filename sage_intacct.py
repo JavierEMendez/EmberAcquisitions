@@ -382,6 +382,51 @@ def _probe_field_validity(object_name: str, field: str) -> dict:
         return {"valid": True, "note": f"other error: {msg[:200]}"}
 
 
+# ─── Discover queryable GLENTRY fields (cached) ───────────────────────────
+#
+# Beyond the core 6 (ACCOUNTNO, AMOUNT, TR_TYPE, STATE, ENTRY_DATE,
+# LOCATION) there are likely Sage fields that identify ADJUSTING /
+# BEGINNING-BALANCE / RESTATEMENT journals — JOURNAL, BATCHNO,
+# RECORDTYPE, etc. We need them to differentiate the "true history"
+# entries from the year-end snapshot JEs that are double-counting
+# cumulative balances (the Land 2x bug).
+#
+# Probed once per process and cached on the module — probes are cheap
+# (1-row queries) but we don't want to repeat them on every refresh.
+_GLENTRY_EXTRA_CANDIDATES = [
+    # Journal source / type indicators
+    "JOURNAL", "JOURNALSYMBOL", "JOURNAL_NO", "BATCHNO", "BATCH_NO",
+    "BATCH_TITLE", "BATCHTITLE", "RECORDTYPE", "SOURCE", "SOURCETYPE",
+    "ENTRYTYPE",
+    # Document / reference
+    "DOCUMENT", "DOCUMENTNO", "REFERENCENO", "REFERENCE",
+    # Description / memo
+    "DESCRIPTION", "ENTRY_DESCRIPTION", "ENTRYDESC", "MEMO",
+    # Created / modified for forensic ordering
+    "WHENCREATED", "WHENMODIFIED", "CREATEDDATETIME",
+]
+_glentry_extra_valid: list[str] = None  # cache; None = not yet probed
+
+
+def _discover_glentry_extra_fields() -> list[str]:
+    """Return the subset of _GLENTRY_EXTRA_CANDIDATES that this Sage
+    instance actually exposes. Cached after first call."""
+    global _glentry_extra_valid
+    if _glentry_extra_valid is not None:
+        return _glentry_extra_valid
+    valid = []
+    for fld in _GLENTRY_EXTRA_CANDIDATES:
+        try:
+            r = _probe_field_validity("GLENTRY", fld)
+            if r.get("valid"):
+                valid.append(fld)
+        except Exception as e:
+            log.warning("probe GLENTRY.%s raised: %s", fld, e)
+    log.info("GLENTRY extra valid fields discovered: %s", valid)
+    _glentry_extra_valid = valid
+    return valid
+
+
 # ─── Modern <query> operation (structured filter) ───────────────────────────
 def _query(
     object_name: str,
@@ -724,13 +769,21 @@ def get_trial_balance(entity_id: str, period_name: str,
     log.info("get_trial_balance: entity=%s expanded to %d location(s): %s",
              entity_id, len(sub_locations), sub_locations)
 
+    # Discover which extra fields are queryable on GLENTRY (journal
+    # source, batch, document, description) so we can spot the
+    # year-end snapshot JEs that are causing the BS doubling.
+    extra_fields = _discover_glentry_extra_fields()
+    select_clause = ",".join(
+        ["ACCOUNTNO", "AMOUNT", "TR_TYPE", "STATE", "ENTRY_DATE", "LOCATION"]
+        + extra_fields
+    )
     entries: list[dict] = []
     for loc in sub_locations:
         try:
             page = _read_by_query(
                 "GLENTRY",
                 f"LOCATION = '{loc}'",
-                "ACCOUNTNO,AMOUNT,TR_TYPE,STATE,ENTRY_DATE,LOCATION",
+                select_clause,
                 pagesize=1000,
                 max_pages=100,
             )
@@ -738,6 +791,8 @@ def get_trial_balance(entity_id: str, period_name: str,
             entries.extend(page)
         except IntacctAPIError as e:
             log.warning("get_trial_balance: GLENTRY query for LOCATION=%s failed: %s", loc, e)
+    # Stash the field list so the diagnostic can show what we queried.
+    get_trial_balance._last_extra_fields = extra_fields
 
     log.info("get_trial_balance: fetched %d total GL entries across %d locations",
              len(entries), len(sub_locations))
@@ -859,14 +914,22 @@ def get_trial_balance(entity_id: str, period_name: str,
         # client-side via inspection if needed; capture order of arrival.
         slist = per_account_samples.setdefault(no, [])
         if len(slist) < SAMPLE_CAP:
-            slist.append({
+            sample = {
                 "entry_date": ed_str,
                 "amount":     amount,
                 "tr_type":    tr_type,
                 "signed":     signed,
                 "state":      st,
                 "location":   loc,
-            })
+            }
+            # Tack on whichever extra fields Sage exposes — JOURNAL,
+            # BATCHNO, RECORDTYPE, DESCRIPTION etc. — so we can spot
+            # year-end snapshot/restatement JEs in the sample dump.
+            for fld in extra_fields:
+                v = e.get(fld)
+                if v is not None:
+                    sample[fld] = v
+            slist.append(sample)
         posted_kept += 1
     # Stash diagnostics so the refresh route can surface them.
     get_trial_balance._last_per_location_sums = per_loc_sums

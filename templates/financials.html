@@ -493,8 +493,18 @@ function renderBalanceSheet(payload) {
         }
         html += '</tbody></table>';
       }
-      // Sample raw entries
+      // Sample raw entries. Beyond the fixed columns we surface any
+      // extra fields Sage exposes (JOURNAL, BATCHNO, RECORDTYPE, etc.)
+      // — those are how we'll identify the snapshot/restatement JEs.
       if (Array.isArray(a.samples) && a.samples.length) {
+        const fixedCols = ['entry_date','amount','tr_type','signed','state','location'];
+        const extraCols = new Set();
+        for (const s of a.samples) {
+          for (const k of Object.keys(s)) {
+            if (!fixedCols.includes(k)) extraCols.add(k);
+          }
+        }
+        const extraColList = Array.from(extraCols);
         html += '<div style="margin-top:4px;margin-left:16px;color:#666;">'
               + 'sample entries (up to 8):</div>'
               + '<table style="margin-left:16px;border-collapse:collapse;">'
@@ -504,8 +514,11 @@ function renderBalanceSheet(payload) {
               +   '<th style="padding:2px 12px 2px 0;text-align:right;">tr_type</th>'
               +   '<th style="padding:2px 12px 2px 0;text-align:right;">signed</th>'
               +   '<th style="padding:2px 12px 2px 0;">state</th>'
-              +   '<th style="padding:2px 0;">location</th>'
-              + '</tr></thead><tbody>';
+              +   '<th style="padding:2px 12px 2px 0;">location</th>';
+        for (const k of extraColList) {
+          html += '<th style="padding:2px 12px 2px 0;">' + escapeHtml(k) + '</th>';
+        }
+        html += '</tr></thead><tbody>';
         for (const s of a.samples) {
           html += '<tr style="color:#666;">'
                 + '<td style="padding:1px 12px 1px 0;">' + escapeHtml(s.entry_date || '') + '</td>'
@@ -513,8 +526,12 @@ function renderBalanceSheet(payload) {
                 + '<td style="padding:1px 12px 1px 0;text-align:right;">' + s.tr_type + '</td>'
                 + '<td style="padding:1px 12px 1px 0;text-align:right;">' + fmtMoney(s.signed) + '</td>'
                 + '<td style="padding:1px 12px 1px 0;">' + escapeHtml(s.state || '') + '</td>'
-                + '<td style="padding:1px 0;">' + escapeHtml(s.location || '') + '</td>'
-                + '</tr>';
+                + '<td style="padding:1px 12px 1px 0;">' + escapeHtml(s.location || '') + '</td>';
+          for (const k of extraColList) {
+            const v = s[k];
+            html += '<td style="padding:1px 12px 1px 0;">' + escapeHtml(v == null ? '' : String(v)) + '</td>';
+          }
+          html += '</tr>';
         }
         html += '</tbody></table>';
       }
