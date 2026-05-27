@@ -998,16 +998,48 @@ def diagnose() -> dict:
             **result,
         })
 
+    # ── Permission probes — read access to financial-data objects.
+    # If LOCATION + REPORTINGPERIOD work but GLENTRY / GLACCOUNT /
+    # GLACCOUNTBALANCE all return 0 or fail, this user's role only
+    # has read on org metadata, not on financial data. That's a
+    # Sage-side configuration fix, not a code fix.
+    perm_probes = []
+    for label, obj, query, fields in [
+        ("GLENTRY — any financial activity readable?", "GLENTRY", "", "RECORDNO,ACCOUNTNO,AMOUNT"),
+        ("GLACCOUNT — chart of accounts readable?",    "GLACCOUNT", "", "RECORDNO,ACCOUNTNO,TITLE"),
+    ]:
+        try:
+            rows = _read_by_query(obj, query, fields, pagesize=5, max_pages=1)
+            perm_probes.append({
+                "label":  label,
+                "object": obj,
+                "via":    "readByQuery",
+                "ok":     True,
+                "count":  len(rows),
+                "sample": rows[:2],
+            })
+        except IntacctAPIError as e:
+            perm_probes.append({
+                "label":  label,
+                "object": obj,
+                "via":    "readByQuery",
+                "ok":     False,
+                "error":  str(e)[:300],
+            })
+
     return {
         "ok":            True,
         "probes":        out_probes,
         "schema":        schema_probes,
         "field_probes":  field_probes,
+        "perm_probes":   perm_probes,
         "hint": (
-            "Read `field_probes` to find which fields exist on GLACCOUNTBALANCE. "
-            "Each probe sends the field with a junk value; valid:true means the "
-            "field name is real (regardless of whether the value matched). The "
-            "first valid period-style field (PERIODNAME / REPORTINGPERIOD / "
-            "PERIOD / FISCALPERIOD) is what get_trial_balance should use."
+            "READING ORDER:\n"
+            "1. `perm_probes` first — if GLENTRY and GLACCOUNT both return\n"
+            "   0 rows or error, the user's role lacks read access to\n"
+            "   financial-data objects (org-metadata roles like Location\n"
+            "   admin do NOT include this).\n"
+            "2. `field_probes` shows which GLACCOUNTBALANCE field names exist.\n"
+            "3. Other probes confirm the entity / period dropdowns work."
         ),
     }
