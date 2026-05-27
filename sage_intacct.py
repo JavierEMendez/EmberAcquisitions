@@ -781,33 +781,59 @@ def get_trial_balance(entity_id: str, period_name: str,
 
     # Aggregate: signed_amount = AMOUNT * TR_TYPE per entry, then sum
     # by account. TR_TYPE = 1 (debit) or -1 (credit). Sum gives the
-    # standard signed TB balance (positive for debit-balance accounts,
-    # negative for credit-balance accounts); frp_mapping flips sign on
-    # Liabilities/Equity sections for display.
+    # standard signed TB balance; frp_mapping flips sign on Liab/Equity
+    # sections at display time.
     #
-    # State + date Python filtering DEFERRED — we got 0 rows after
-    # applying STATE='Posted' AND ENTRY_DATE<=period_end. Easier to
-    # diagnose with no filters: every fetched entry contributes to
-    # the rollup, and the BS shows what Sage actually has. Once values
-    # match the FRP we'll re-introduce the filters and tighten.
+    # Filters re-enabled now that the multi-location fan-out is in:
+    #   STATE       == 'Posted'  — formal closed TB excludes Draft /
+    #                              Submitted / Approved entries that
+    #                              show as huge inflations on AP etc.
+    #   ENTRY_DATE  <= period_end — "as of period end" balance, not
+    #                              "as of today".
+    # If a fetched entry is missing TR_TYPE we DROP it (rather than
+    # default to 1 = debit) — defaulting was inflating one-sided
+    # imports. AMOUNT alone, unsigned, contributes nothing to a TB.
     sums: dict[str, float] = {}
     state_counter: dict[str, int] = {}
+    skipped_no_tr_type = 0
+    posted_kept = posted_dropped = date_dropped = 0
     for e in entries:
         st = (e.get("STATE") or "").strip()
         if st:
             state_counter[st] = state_counter.get(st, 0) + 1
+        if st and st != "Posted":
+            posted_dropped += 1
+            continue
+        if period_end:
+            ed_str = (e.get("ENTRY_DATE") or "").strip()
+            if ed_str:
+                try:
+                    ed = datetime.strptime(ed_str, "%m/%d/%Y")
+                    if ed > period_end:
+                        date_dropped += 1
+                        continue
+                except ValueError:
+                    pass
         no = (e.get("ACCOUNTNO") or "").strip()
         if not no:
             continue
         amount = _f(e.get("AMOUNT"))
+        tr_type_raw = (e.get("TR_TYPE") or "").strip()
+        if not tr_type_raw:
+            skipped_no_tr_type += 1
+            continue
         try:
-            tr_type = int(float((e.get("TR_TYPE") or "1").strip()))
+            tr_type = int(float(tr_type_raw))
         except (TypeError, ValueError):
-            tr_type = 1
+            skipped_no_tr_type += 1
+            continue
         sums[no] = sums.get(no, 0.0) + amount * tr_type
+        posted_kept += 1
     log.info(
-        "get_trial_balance: %d entries → %d accounts; state counts: %s",
-        len(entries), len(sums), state_counter,
+        "get_trial_balance: %d entries → kept=%d  post-filtered=%d  date-filtered=%d "
+        "tr_type-missing=%d  → %d accounts; state counts: %s",
+        len(entries), posted_kept, posted_dropped, date_dropped,
+        skipped_no_tr_type, len(sums), state_counter,
     )
 
     # Join with the chart of accounts for titles (in-process cache).
