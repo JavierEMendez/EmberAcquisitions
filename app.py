@@ -2340,31 +2340,67 @@ def api_financials_calibrate():
         return jsonify({"error": f"Sage API error: {e}"}), 502
     per_day = getattr(sage_intacct.get_trial_balance,
                       "_last_per_when_created_sums", {}) or {}
-    result = sage_intacct.calibrate_when_created_cutoff(
+    excl_sums = getattr(sage_intacct.get_trial_balance,
+                        "_last_exclude_reason_sums", {}) or {}
+    # Forward calibration: which WHENCREATED cutoff minimizes loss?
+    forward = sage_intacct.calibrate_when_created_cutoff(
         accounts, per_day, targets,
     )
-    # Recompute the full BS at the optimal cutoff (or current state if
-    # no cutoff helps).
-    if result["best_cutoff"]:
+    # Inverse calibration: which subset of exclude-reasons, if RE-
+    # INCLUDED, minimizes loss? Useful when the forward calibration
+    # gives "no cutoff helps" — that signals our filter is too
+    # aggressive and the missing $$ lives in currently-excluded data.
+    inverse = sage_intacct.inverse_calibrate_exclude_reasons(
+        accounts, excl_sums, targets,
+    )
+    # Pick the better of the two calibrations.
+    use_inverse = inverse["loss_at_best"] < forward["loss_at_best"]
+    # Recompute the full BS at the chosen optimum.
+    if use_inverse and inverse["best_unexcluded"]:
+        # Apply un-exclusion: add back contributions from chosen reasons.
+        adj_accounts = []
+        adjust_map = {a["no"]: a["close"] for a in accounts}
+        for r in inverse["best_unexcluded"]:
+            for acct, contrib in excl_sums.get(r, {}).items():
+                adjust_map[acct] = adjust_map.get(acct, 0.0) + contrib
+        # Build adjusted account list preserving names.
+        name_by_no = {a["no"]: a.get("name", "") for a in accounts}
+        all_nos = set(adjust_map.keys()) | {a["no"] for a in accounts}
+        for no in all_nos:
+            adj_accounts.append({
+                "no":     no,
+                "name":   name_by_no.get(no, ""),
+                "open":   0.0,
+                "debit":  0.0,
+                "credit": 0.0,
+                "close":  adjust_map.get(no, 0.0),
+            })
+        bs = _fin_render_bs(adj_accounts)
+    elif forward["best_cutoff"]:
         cutoff_accounts = sage_intacct.get_trial_balance_with_cutoff(
-            accounts, per_day, result["best_cutoff"],
+            accounts, per_day, forward["best_cutoff"],
         )
         bs = _fin_render_bs(cutoff_accounts)
     else:
         bs = _fin_render_bs(accounts)
-    # Trim trace to the top-N dates closest to the best for visibility.
-    trace = result["trace"]
-    trace_sorted = sorted(trace, key=lambda x: x["loss"])[:20]
+    # Trim forward trace for visibility.
+    trace_sorted = sorted(forward["trace"], key=lambda x: x["loss"])[:20]
     return jsonify({
-        "entity":          entity,
-        "period":          period,
-        "best_cutoff":     result["best_cutoff"],
-        "loss_at_best":    result["loss_at_best"],
-        "loss_no_cutoff":  result["loss_no_cutoff"],
-        "balances_at_best": result["balances_at_best"],
-        "targets":         targets,
-        "trace_top20":     trace_sorted,
-        "balance_sheet":   bs,
+        "entity":              entity,
+        "period":              period,
+        "best_cutoff":         forward["best_cutoff"],
+        "loss_at_best":        forward["loss_at_best"],
+        "loss_no_cutoff":      forward["loss_no_cutoff"],
+        "balances_at_best":    forward["balances_at_best"],
+        "targets":             targets,
+        "trace_top20":         trace_sorted,
+        "inverse_best":        inverse["best_unexcluded"],
+        "inverse_loss":        inverse["loss_at_best"],
+        "inverse_baseline":    inverse["loss_baseline"],
+        "inverse_balances":    inverse["balances_at_best"],
+        "inverse_top_combos":  inverse["top_combos"],
+        "used":                "inverse" if use_inverse else ("forward" if forward["best_cutoff"] else "baseline"),
+        "balance_sheet":       bs,
     })
 
 

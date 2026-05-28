@@ -703,14 +703,22 @@ async function calibrateToFRP() {
     const banner = document.createElement('div');
     banner.className = 'fin-stmt-note';
     banner.style.cssText = 'background:#e8f5e9;border-left-color:#16a34a;';
-    let html = '<b>FRP calibration result:</b><br>';
-    html += 'Optimal WHENCREATED cutoff: <code>'
-          + escapeHtml(j.best_cutoff || '(no cutoff — current state best)')
-          + '</code><br>';
-    html += 'Total |actual - target| at best cutoff: <code>'
-          + fmtMoney(j.loss_at_best) + '</code>'
-          + ' &nbsp; (was <code>' + fmtMoney(j.loss_no_cutoff)
-          + '</code> with no cutoff)<br><br>';
+    let html = '<b>FRP calibration result:</b> <code>'
+             + escapeHtml((j.used || 'baseline').toUpperCase())
+             + '</code> calibration won.<br>';
+    html += 'Forward (WHENCREATED cutoff): <code>'
+          + escapeHtml(j.best_cutoff || '(no cutoff helps)')
+          + '</code> &nbsp; loss = <code>' + fmtMoney(j.loss_at_best) + '</code>'
+          + ' (baseline <code>' + fmtMoney(j.loss_no_cutoff) + '</code>)<br>';
+    if (Array.isArray(j.inverse_best)) {
+      const ub = j.inverse_best.length
+                  ? j.inverse_best.join(', ')
+                  : '(no relaxation helps)';
+      html += 'Inverse (un-exclude reasons): <code>' + escapeHtml(ub)
+            + '</code> &nbsp; loss = <code>' + fmtMoney(j.inverse_loss) + '</code>'
+            + ' (baseline <code>' + fmtMoney(j.inverse_baseline) + '</code>)<br>';
+    }
+    html += '<br>';
     html += '<b>Per-target reconciliation:</b>'
           + '<table style="margin-top:6px;border-collapse:collapse;font-size:12px;font-family:monospace;">'
           + '<thead><tr style="text-align:left;border-bottom:1px solid #b5e1b8;">'

@@ -909,6 +909,10 @@ def get_trial_balance(entity_id: str, period_name: str,
         return None
     placeholder_filtered: list[dict] = []  # name kept for backward-compat in diag
     exclude_reason_counts: dict[str, int] = {}
+    # Track per-(reason, account) signed contribution of every entry we
+    # EXCLUDE so the inverse-calibration can later test "what if we
+    # un-excluded reason X, would AP match FRP?".
+    exclude_reason_sums: dict[str, dict[str, float]] = {}
     sums: dict[str, float] = {}
     # per_loc_sums tracks each account's contribution by LOCATION so the
     # diagnostic can show "this $71M Land balance came $35M from loc A and
@@ -964,6 +968,21 @@ def get_trial_balance(entity_id: str, period_name: str,
                     "document":   (e.get("DOCUMENT") or "").strip(),
                     "reason":     excl_reason,
                 })
+            # Capture signed contribution per (reason, account) so the
+            # inverse calibration can test re-including individual
+            # reasons. Need amount * tr_type computed up-front since we
+            # 'continue' before the main aggregation runs them.
+            ex_acct = (e.get("ACCOUNTNO") or "").strip()
+            ex_amt  = _f(e.get("AMOUNT"))
+            ex_tr_raw = (e.get("TR_TYPE") or "").strip()
+            if ex_acct and ex_tr_raw:
+                try:
+                    ex_tr = int(float(ex_tr_raw))
+                    ex_signed = ex_amt * ex_tr
+                    rbucket = exclude_reason_sums.setdefault(excl_reason, {})
+                    rbucket[ex_acct] = rbucket.get(ex_acct, 0.0) + ex_signed
+                except (TypeError, ValueError):
+                    pass
             continue
         ed_str = (e.get("ENTRY_DATE") or "").strip()
         ed_obj = None
@@ -1053,6 +1072,7 @@ def get_trial_balance(entity_id: str, period_name: str,
     get_trial_balance._last_per_batchtitle_sums  = per_batchtitle_sums
     get_trial_balance._last_exclude_reason_counts = exclude_reason_counts
     get_trial_balance._last_per_when_created_sums = per_when_created_sums
+    get_trial_balance._last_exclude_reason_sums   = exclude_reason_sums
     log.info(
         "get_trial_balance: excluded JE counts by reason: %s (first %d entries retained for diag)",
         exclude_reason_counts, len(placeholder_filtered),
@@ -1168,6 +1188,70 @@ def calibrate_when_created_cutoff(
         "loss_no_cutoff":   loss_no_cutoff,
         "balances_at_best": best_balances,
         "trace":            trace,
+    }
+
+
+def inverse_calibrate_exclude_reasons(
+    accounts: list[dict],
+    exclude_reason_sums: dict[str, dict[str, float]],
+    targets: dict[str, float],
+) -> dict:
+    """Find which subset of currently-excluded reasons to RE-INCLUDE
+    such that the resulting balances best match FRP targets.
+
+    The forward calibration (calibrate_when_created_cutoff) only
+    excludes MORE — useful if our filter is too loose. This inverse
+    finds a relaxation — useful when (as in GPD March 2026) our filter
+    is too AGGRESSIVE: every WHENCREATED cutoff makes things worse,
+    meaning the missing balance lives inside currently-excluded
+    entries.
+
+    Brute-forces 2^N combinations of exclude reasons (where N =
+    number of distinct reasons). Each combo represents "un-exclude
+    these reasons" — i.e., add their contributions back to the
+    balances.
+    """
+    current = {a["no"]: a["close"] for a in accounts}
+    reasons = list(exclude_reason_sums.keys())
+    n = len(reasons)
+
+    def _loss(balances: dict) -> float:
+        return sum(abs(balances.get(a, 0.0) - t) for a, t in targets.items())
+
+    base_loss = _loss(current)
+    best_combo: tuple = ()
+    best_loss = base_loss
+    best_balances = dict(current)
+    all_evaluations = []
+
+    # 2^n combinations — n ≤ 7 in practice, so 128 max. Fine.
+    for mask in range(1 << n):
+        # Determine which reasons to un-exclude in this mask
+        unexcl = [reasons[i] for i in range(n) if (mask >> i) & 1]
+        balances = dict(current)
+        for r in unexcl:
+            for acct, contrib in exclude_reason_sums[r].items():
+                balances[acct] = balances.get(acct, 0.0) + contrib
+        loss = _loss(balances)
+        all_evaluations.append({
+            "unexcluded_reasons": unexcl,
+            "loss":               loss,
+            "balances":           {a: balances.get(a, 0.0) for a in targets},
+        })
+        if loss < best_loss:
+            best_loss     = loss
+            best_combo    = tuple(unexcl)
+            best_balances = balances
+
+    # Sort all evaluations by loss for the user to inspect.
+    all_evaluations.sort(key=lambda x: x["loss"])
+
+    return {
+        "best_unexcluded":  list(best_combo),
+        "loss_at_best":     best_loss,
+        "loss_baseline":    base_loss,
+        "balances_at_best": {a: best_balances.get(a, 0.0) for a in targets},
+        "top_combos":       all_evaluations[:20],
     }
 
 
