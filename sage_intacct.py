@@ -884,15 +884,15 @@ def get_trial_balance(entity_id: str, period_name: str,
         # Same workflow for Vendor Invoices AND Change Orders:
         ("non_summary", "3-vendor invoice", "vendor-invoice commit-reversal (X Batch)"),
         ("non_summary", "change order",     "Change Order commit-side (X Batch)"),
-        # Post-close reclassification + correction AJEs. The accountant
-        # books these AFTER the FRP cut-off, so Sage's TB report
-        # excludes them. Catches:
-        #   "Reclass PO: ..."
-        #   "Reclass Ember Group payable from AP"
-        #   "To reclassify related party payables from AP"
-        #   "Correcting entries - Posted to IJ in error."
-        ("contains",    "reclass",      "reclassification AJE"),
-        ("startswith",  "correcting",   "correcting / IJ-error fix AJE"),
+        # NOTE: "contains reclass" + "startswith correcting" patterns
+        # were tried and reverted — they caught hundreds of routine
+        # monthly reclassification batches that ARE legitimate
+        # bookkeeping (paired moves between AP/Related-Party,
+        # Contra-MUD adjustments, etc.). Excluding them broke many
+        # other BS lines that previously reconciled. The remaining
+        # ~$1.9M paired Dev/AP delta likely lives in a more specific
+        # subset of reclass batches that needs accountant input to
+        # identify.
     ]
     def _excluded_batch_reason(e: dict) -> Optional[str]:
         bt = (e.get("BATCHTITLE") or "").strip().lower()
