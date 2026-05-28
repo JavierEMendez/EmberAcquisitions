@@ -146,6 +146,12 @@
             Refresh from Sage
           </button>
         </div>
+        <div class="fin-control fin-control-actions">
+          <button id="fin-calibrate" class="fin-btn" disabled
+                  title="Reverse-engineer the FRP snapshot date by walking WHENCREATED cutoffs">
+            Calibrate to FRP
+          </button>
+        </div>
       </div>
       <div id="fin-status" class="fin-status"></div>
 
@@ -281,6 +287,7 @@ function onSelectionChange() {
   FIN.currentEntity = $('fin-entity').value;
   FIN.currentPeriod = $('fin-period').value;
   $('fin-refresh').disabled = !(FIN.currentEntity && FIN.currentPeriod);
+  $('fin-calibrate').disabled = !(FIN.currentEntity && FIN.currentPeriod);
   if (FIN.currentEntity && FIN.currentPeriod) {
     // Try to render from cache; if no cache, show empty state
     fetchBalanceSheet(false);
@@ -669,6 +676,86 @@ function escapeHtml(s) {
 }
 
 $('fin-refresh').addEventListener('click', () => fetchBalanceSheet(true));
+
+// "Calibrate to FRP" — POST to /api/financials/calibrate, which
+// reverse-engineers the snapshot WHENCREATED cutoff date from
+// hardcoded FRP target balances. Renders the resulting BS in-place.
+async function calibrateToFRP() {
+  if (!FIN.currentEntity || !FIN.currentPeriod) return;
+  setStatus('Calibrating to FRP snapshot date…', 'info');
+  $('fin-calibrate').disabled = true;
+  $('fin-refresh').disabled = true;
+  try {
+    const url = '/api/financials/calibrate'
+              + '?entity=' + encodeURIComponent(FIN.currentEntity)
+              + '&period=' + encodeURIComponent(FIN.currentPeriod);
+    const res = await fetch(url, { method: 'POST' });
+    const j = await res.json();
+    console.log('[financials] /api/financials/calibrate response:', j);
+    if (!res.ok) {
+      setStatus('Calibration failed: ' + (j.error || res.statusText), 'err');
+      return;
+    }
+    // Render the calibrated BS using the existing renderer.
+    FIN.lastPayload = j;
+    renderBalanceSheet(j);
+    // Build a calibration summary banner.
+    const banner = document.createElement('div');
+    banner.className = 'fin-stmt-note';
+    banner.style.cssText = 'background:#e8f5e9;border-left-color:#16a34a;';
+    let html = '<b>FRP calibration result:</b><br>';
+    html += 'Optimal WHENCREATED cutoff: <code>'
+          + escapeHtml(j.best_cutoff || '(no cutoff — current state best)')
+          + '</code><br>';
+    html += 'Total |actual - target| at best cutoff: <code>'
+          + fmtMoney(j.loss_at_best) + '</code>'
+          + ' &nbsp; (was <code>' + fmtMoney(j.loss_no_cutoff)
+          + '</code> with no cutoff)<br><br>';
+    html += '<b>Per-target reconciliation:</b>'
+          + '<table style="margin-top:6px;border-collapse:collapse;font-size:12px;font-family:monospace;">'
+          + '<thead><tr style="text-align:left;border-bottom:1px solid #b5e1b8;">'
+          +   '<th style="padding:2px 16px 2px 0;">account</th>'
+          +   '<th style="padding:2px 16px 2px 0;text-align:right;">target (signed)</th>'
+          +   '<th style="padding:2px 16px 2px 0;text-align:right;">at cutoff</th>'
+          +   '<th style="padding:2px 0;text-align:right;">diff</th>'
+          + '</tr></thead><tbody>';
+    for (const acct in j.targets) {
+      const t = j.targets[acct];
+      const b = j.balances_at_best[acct] ?? 0;
+      html += '<tr>'
+            + '<td style="padding:1px 16px 1px 0;">' + escapeHtml(acct) + '</td>'
+            + '<td style="padding:1px 16px 1px 0;text-align:right;">' + fmtMoney(t) + '</td>'
+            + '<td style="padding:1px 16px 1px 0;text-align:right;">' + fmtMoney(b) + '</td>'
+            + '<td style="padding:1px 0;text-align:right;">' + fmtMoney(b - t) + '</td>'
+            + '</tr>';
+    }
+    html += '</tbody></table>';
+    if (Array.isArray(j.trace_top20) && j.trace_top20.length) {
+      html += '<br><b>Top-20 cutoff candidates (lowest loss):</b>'
+            + '<table style="margin-top:6px;border-collapse:collapse;font-size:11px;font-family:monospace;">'
+            + '<thead><tr style="text-align:left;border-bottom:1px solid #b5e1b8;">'
+            +   '<th style="padding:2px 16px 2px 0;">cutoff</th>'
+            +   '<th style="padding:2px 0;text-align:right;">loss</th>'
+            + '</tr></thead><tbody>';
+      for (const t of j.trace_top20) {
+        html += '<tr>'
+              + '<td style="padding:1px 16px 1px 0;">' + escapeHtml(t.cutoff) + '</td>'
+              + '<td style="padding:1px 0;text-align:right;">' + fmtMoney(t.loss) + '</td>'
+              + '</tr>';
+      }
+      html += '</tbody></table>';
+    }
+    banner.innerHTML = html;
+    $('fin-bs-content').prepend(banner);
+    setStatus('Calibration complete.', 'ok');
+  } catch (e) {
+    setStatus('Calibration error: ' + e.message, 'err');
+  } finally {
+    $('fin-calibrate').disabled = false;
+    $('fin-refresh').disabled = false;
+  }
+}
+$('fin-calibrate').addEventListener('click', calibrateToFRP);
 
 // Boot
 loadEntities();

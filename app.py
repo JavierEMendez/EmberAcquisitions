@@ -2258,6 +2258,100 @@ def api_financials_refresh():
     })
 
 
+# ── FRP target snapshot used by the cutoff-date calibration ──
+# These are the authoritative GPD March 2026 FRP values we're trying
+# to reverse-engineer the snapshot date from. Targets are SIGNED close
+# balances per account (CR = negative). Picked accounts whose FRP
+# values we know directly from the workbook:
+#   16000 Land:                    35,570,385
+#   20030 Accounts payable:        -2,453,261  (CR balance)
+#   13015 Promissory note:          1,100,000
+#   30500 Retained earnings (GL):    -972,346  (note: FRP RE includes
+#                                                YTD-NI; we use GL
+#                                                30500 only as Phase 1
+#                                                doesn't roll IS in)
+#   20060 Retainage payable:       -1,625,628
+#   21015 Bond Payable - ST:       -3,869,000
+#   21016 Bond Payable - LT:      -55,240,000
+#   22010 Development loan:       -29,558,821
+#   16902 MUD Receivable - Bond:  -26,683,664
+#
+# AP is the strongest signal (it's where the snapshot-date entries land);
+# Land is a "shouldn't move" anchor; Retainage / Bond Payables / Dev
+# Loan anchor the no-cutoff baseline.
+FRP_TARGETS_BY_ENTITY_PERIOD = {
+    ("16 - GPD", "March 2026"): {
+        "16000":  35_570_385.0,
+        "20030":  -2_453_261.0,
+        "13015":   1_100_000.0,
+        "20060":  -1_625_628.0,
+        "21015":  -3_869_000.0,
+        "21016": -55_240_000.0,
+        "22010": -29_558_821.0,
+        "16902": -26_683_664.0,
+    },
+}
+
+
+@app.route("/api/financials/calibrate", methods=["POST"])
+@login_required
+def api_financials_calibrate():
+    """Reverse-engineer the FRP snapshot date.
+
+    Walks WHENCREATED cutoff dates from latest backward and finds the
+    one that minimizes total |actual - FRP_target| across the known
+    target accounts. Then recomputes the BS at that cutoff and returns
+    it alongside the cutoff date and per-target diff trace.
+    """
+    if not _can_view_financials():
+        return jsonify({"error": "forbidden"}), 403
+    entity = (request.args.get("entity") or "").strip()
+    period = (request.args.get("period") or "").strip()
+    if not entity or not period:
+        return jsonify({"error": "entity and period required"}), 400
+    targets = FRP_TARGETS_BY_ENTITY_PERIOD.get((entity, period))
+    if not targets:
+        return jsonify({
+            "error": f"no FRP targets configured for ({entity!r}, {period!r}); "
+                     "add to FRP_TARGETS_BY_ENTITY_PERIOD in app.py first.",
+        }), 400
+    # Pull TB (uses cache if available within this process — get_trial_balance
+    # has no DB cache lookup, but we just rendered the BS so the per-day
+    # data should be stashed on the function from the prior render).
+    try:
+        accounts = sage_intacct.get_trial_balance(entity, period)
+    except sage_intacct.IntacctAPIError as e:
+        return jsonify({"error": f"Sage API error: {e}"}), 502
+    per_day = getattr(sage_intacct.get_trial_balance,
+                      "_last_per_when_created_sums", {}) or {}
+    result = sage_intacct.calibrate_when_created_cutoff(
+        accounts, per_day, targets,
+    )
+    # Recompute the full BS at the optimal cutoff (or current state if
+    # no cutoff helps).
+    if result["best_cutoff"]:
+        cutoff_accounts = sage_intacct.get_trial_balance_with_cutoff(
+            accounts, per_day, result["best_cutoff"],
+        )
+        bs = _fin_render_bs(cutoff_accounts)
+    else:
+        bs = _fin_render_bs(accounts)
+    # Trim trace to the top-N dates closest to the best for visibility.
+    trace = result["trace"]
+    trace_sorted = sorted(trace, key=lambda x: x["loss"])[:20]
+    return jsonify({
+        "entity":          entity,
+        "period":          period,
+        "best_cutoff":     result["best_cutoff"],
+        "loss_at_best":    result["loss_at_best"],
+        "loss_no_cutoff":  result["loss_no_cutoff"],
+        "balances_at_best": result["balances_at_best"],
+        "targets":         targets,
+        "trace_top20":     trace_sorted,
+        "balance_sheet":   bs,
+    })
+
+
 @app.route("/api/financials/ping", methods=["GET"])
 @login_required
 def api_financials_ping():

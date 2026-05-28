@@ -914,6 +914,12 @@ def get_trial_balance(entity_id: str, period_name: str,
     # diagnostic can show "this $71M Land balance came $35M from loc A and
     # $35M from loc B" — i.e., reveal parent+child double-posting visibly.
     per_loc_sums: dict[str, dict[str, float]] = {}
+    # per_when_created_sums: {YYYY-MM-DD: {account: signed_contribution}}
+    # — supports the FRP-cutoff calibration. If we don't know what
+    # WHENCREATED date the accountant generated the FRP on, we can
+    # binary-search dates and find the one that produces matching
+    # numbers.
+    per_when_created_sums: dict[str, dict[str, float]] = {}
     # per_year_sums: {account: {year: {"dr": x, "cr": y, "count": n}}}
     # — surfaces whether the same balance is being re-stated each fiscal
     # year (the strongest theory for the 2x Land doubling: opening BB
@@ -987,6 +993,17 @@ def get_trial_balance(entity_id: str, period_name: str,
         loc = (e.get("LOCATION") or "").strip() or "(unknown)"
         bucket = per_loc_sums.setdefault(no, {})
         bucket[loc] = bucket.get(loc, 0.0) + signed
+        # Bucket by WHENCREATED date (YYYY-MM-DD) for the calibration
+        # search. Format in source: "MM/DD/YYYY HH:MM:SS" or "MM/DD/YYYY".
+        wc_str = (e.get("WHENCREATED") or "").strip()
+        if wc_str:
+            try:
+                wc_dt = datetime.strptime(wc_str.split()[0], "%m/%d/%Y")
+                wc_day = wc_dt.strftime("%Y-%m-%d")
+                daybucket = per_when_created_sums.setdefault(wc_day, {})
+                daybucket[no] = daybucket.get(no, 0.0) + signed
+            except (ValueError, IndexError):
+                pass
         # Per-year DR/CR tally — using ENTRY_DATE's year, or "?" for
         # entries with no parseable date.
         yr = str(ed_obj.year) if ed_obj else "?"
@@ -1035,6 +1052,7 @@ def get_trial_balance(entity_id: str, period_name: str,
     get_trial_balance._last_placeholder_filtered = placeholder_filtered
     get_trial_balance._last_per_batchtitle_sums  = per_batchtitle_sums
     get_trial_balance._last_exclude_reason_counts = exclude_reason_counts
+    get_trial_balance._last_per_when_created_sums = per_when_created_sums
     log.info(
         "get_trial_balance: excluded JE counts by reason: %s (first %d entries retained for diag)",
         exclude_reason_counts, len(placeholder_filtered),
@@ -1060,6 +1078,127 @@ def get_trial_balance(entity_id: str, period_name: str,
             "close":  total,
         })
     return out
+
+
+def calibrate_when_created_cutoff(
+    accounts: list[dict],
+    per_when_created_sums: dict,
+    targets: dict[str, float],
+) -> dict:
+    """Reverse-engineer the FRP snapshot date.
+
+    Sage's TB report excludes entries created after the FRP snapshot
+    date. We don't know the date directly, but we can search for it:
+    for each candidate WHENCREATED cutoff D, compute the close balance
+    per account as if we'd filtered WHENCREATED > D. Find D that
+    minimizes the total |actual - target| across the supplied target
+    accounts.
+
+    Args:
+        accounts: result of get_trial_balance (current close balances).
+        per_when_created_sums: get_trial_balance._last_per_when_created_sums,
+            i.e., {YYYY-MM-DD: {account_no: signed_contribution}}.
+        targets: {account_no: target_signed_close} for accounts whose
+            FRP value we know.
+
+    Returns:
+        {
+          "best_cutoff":  "YYYY-MM-DD" or None,
+          "loss_at_best": float,
+          "loss_no_cutoff": float,
+          "balances_at_best": {account_no: signed_close},
+          "trace": [{"cutoff": "...", "loss": ..., "balances": {...}}, ...]
+            — every candidate date evaluated, for diagnostic.
+        }
+    """
+    # Current balances (no cutoff applied) — pull from accounts list.
+    current = {a["no"]: a["close"] for a in accounts}
+
+    def _loss(balances: dict) -> float:
+        return sum(abs(balances.get(a, 0.0) - t) for a, t in targets.items())
+
+    # Restrict to dates after period_end (cutoff < period_end doesn't
+    # make sense — the FRP is for "March 2026" so the snapshot is on or
+    # after March 31). Days from per_when_created_sums.keys() are
+    # WHEN entries were CREATED, can be any date in the system.
+    dates_desc = sorted(per_when_created_sums.keys(), reverse=True)
+    if not dates_desc:
+        return {
+            "best_cutoff":      None,
+            "loss_at_best":     _loss(current),
+            "loss_no_cutoff":   _loss(current),
+            "balances_at_best": {a: current.get(a, 0.0) for a in targets},
+            "trace":            [],
+        }
+
+    # Walk dates_desc, subtracting each day's contributions. At each
+    # step balances reflect "include only entries WHENCREATED <= D".
+    balances = {a: current.get(a, 0.0) for a in targets}
+    loss_no_cutoff = _loss(balances)
+    best_date    = None  # None means "no cutoff = current state"
+    best_loss    = loss_no_cutoff
+    best_balances = dict(balances)
+    trace: list[dict] = [{
+        "cutoff":   "(no cutoff)",
+        "loss":     loss_no_cutoff,
+        "balances": dict(balances),
+    }]
+    # dates_desc[0] is the latest day; cutoff = dates_desc[0] = "no cutoff".
+    # To exclude entries created on dates_desc[0], we subtract them →
+    # next cutoff = dates_desc[1].
+    for i in range(len(dates_desc) - 1):
+        day_to_exclude = dates_desc[i]
+        new_cutoff     = dates_desc[i + 1]
+        day_contribs   = per_when_created_sums[day_to_exclude]
+        for acct in targets:
+            balances[acct] -= day_contribs.get(acct, 0.0)
+        loss = _loss(balances)
+        trace.append({
+            "cutoff":   new_cutoff,
+            "loss":     loss,
+            "balances": dict(balances),
+        })
+        if loss < best_loss:
+            best_loss     = loss
+            best_date     = new_cutoff
+            best_balances = dict(balances)
+    return {
+        "best_cutoff":      best_date,
+        "loss_at_best":     best_loss,
+        "loss_no_cutoff":   loss_no_cutoff,
+        "balances_at_best": best_balances,
+        "trace":            trace,
+    }
+
+
+def get_trial_balance_with_cutoff(
+    accounts: list[dict],
+    per_when_created_sums: dict,
+    cutoff_yyyymmdd: str,
+) -> list[dict]:
+    """Recompute the TB applying an additional WHENCREATED <= cutoff
+    filter. Uses the per_when_created_sums data stashed by the latest
+    get_trial_balance call (no Sage round-trip)."""
+    # Reconstruct close balance from per-day buckets, keeping only
+    # days <= cutoff.
+    sums: dict[str, float] = {a["no"]: 0.0 for a in accounts}
+    for day, day_contribs in per_when_created_sums.items():
+        if day > cutoff_yyyymmdd:
+            continue
+        for acct, contrib in day_contribs.items():
+            sums[acct] = sums.get(acct, 0.0) + contrib
+    name_by_no = {a["no"]: a.get("name", "") for a in accounts}
+    return [
+        {
+            "no":     no,
+            "name":   name_by_no.get(no, ""),
+            "open":   0.0,
+            "debit":  0.0,
+            "credit": 0.0,
+            "close":  total,
+        }
+        for no, total in sums.items()
+    ]
 
 
 def _entity_location_set(entity_id: str) -> list[str]:
