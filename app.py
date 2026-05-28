@@ -2274,6 +2274,111 @@ def _api_financials_refresh_impl(entity: str, period: str):
     })
 
 
+@app.route("/api/financials/upload-tb", methods=["POST"])
+@login_required
+def api_financials_upload_tb():
+    """Upload Sage Intacct HTML-formatted .xls TB exports and render the
+    BS directly from them.
+
+    This sidesteps the entire GLENTRY-aggregation rabbit hole: Sage's
+    TB export is the canonical, pre-filtered source of truth (matches
+    FRP to the penny). User exports Current-Month and Current-YTD TBs
+    from the Sage UI, uploads here, we parse + cache + render.
+
+    Form fields:
+        monthly_tb: required, the Current-Month TB .xls file
+        ytd_tb:     optional (needed for IS/SCF in later phases),
+                    Current-YTD TB .xls file
+        period:     period name to cache under (e.g. "Month Ended March 2026")
+    """
+    if not _can_view_financials():
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        import tb_parser
+    except ImportError as e:
+        return jsonify({"error": f"tb_parser import failed: {e}"}), 500
+
+    monthly_file = request.files.get("monthly_tb")
+    if not monthly_file:
+        return jsonify({"error": "monthly_tb file is required"}), 400
+    period = (request.form.get("period") or "").strip()
+    if not period:
+        return jsonify({"error": "period is required"}), 400
+
+    try:
+        monthly_bytes = monthly_file.read()
+        monthly_entities = tb_parser.parse_tb_html(monthly_bytes)
+    except Exception as e:
+        return jsonify({"error": f"failed to parse monthly TB: {e}"}), 400
+    if not monthly_entities:
+        return jsonify({"error": "no entities found in monthly TB (expected HTML-formatted .xls)"}), 400
+
+    # Optional YTD file — parsed but only used in later phases (IS/SCF).
+    ytd_entities = {}
+    ytd_file = request.files.get("ytd_tb")
+    if ytd_file and ytd_file.filename:
+        try:
+            ytd_bytes = ytd_file.read()
+            ytd_entities = tb_parser.parse_tb_html(ytd_bytes)
+        except Exception as e:
+            return jsonify({"error": f"failed to parse YTD TB: {e}"}), 400
+
+    # Cache each entity's monthly accounts. Cache key is (sage_code, period).
+    cached_entities = []
+    for code, data in monthly_entities.items():
+        _fin_cache_put(code, period, data["accounts"])
+        cached_entities.append({
+            "sage_code":        code,
+            "full_name":        data["full_name"],
+            "reporting_period": data["reporting_period"],
+            "as_of_date":       data["as_of_date"],
+            "account_count":    len(data["accounts"]),
+        })
+    return jsonify({
+        "ok":              True,
+        "period":          period,
+        "monthly_count":   len(monthly_entities),
+        "ytd_count":       len(ytd_entities),
+        "cached_entities": cached_entities,
+    })
+
+
+@app.route("/api/financials/balance-sheet-tb", methods=["GET"])
+@login_required
+def api_financials_balance_sheet_tb():
+    """Render the BS for a cached TB-uploaded entity/period using the
+    frp_builder.py-derived predicates (different — and more accurate —
+    than the frp_mapping.py path used for GLENTRY-based data)."""
+    if not _can_view_financials():
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        import tb_parser
+    except ImportError as e:
+        return jsonify({"error": f"tb_parser import failed: {e}"}), 500
+    entity = (request.args.get("entity") or "").strip()
+    period = (request.args.get("period") or "").strip()
+    if not entity or not period:
+        return jsonify({"error": "entity and period required"}), 400
+    cache = _fin_cache_get(entity, period)
+    if not cache:
+        return jsonify({
+            "cached":  False,
+            "message": "No TB upload found for this entity/period.",
+        }), 200
+    v = tb_parser.compute_bs(cache["accounts"])
+    bs = tb_parser.render_bs(v)
+    fetched_at = cache["fetched_at"]
+    return jsonify({
+        "cached":        True,
+        "source":        "tb_upload",
+        "entity":        entity,
+        "period":        period,
+        "fetched_at":    fetched_at.isoformat() + "Z" if hasattr(fetched_at, "isoformat") else str(fetched_at),
+        "account_count": len(cache["accounts"]),
+        "balance_sheet": bs,
+    })
+
+
 # ── FRP target snapshot used by the cutoff-date calibration ──
 # These are the authoritative GPD March 2026 FRP values we're trying
 # to reverse-engineer the snapshot date from. Targets are SIGNED close

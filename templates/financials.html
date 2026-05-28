@@ -152,6 +152,47 @@
             Calibrate to FRP
           </button>
         </div>
+        <div class="fin-control fin-control-actions">
+          <button id="fin-upload-tb-trigger" class="fin-btn primary"
+                  title="Upload Sage's HTML-formatted .xls TB export (the canonical source).">
+            Upload TB Export
+          </button>
+        </div>
+      </div>
+      <div id="fin-upload-tb-panel" style="display:none;
+           background:var(--eax-bg-2); border:1px solid var(--eax-line);
+           border-radius:8px; padding:16px; margin-top:12px;">
+        <div style="font-weight:600; margin-bottom:8px;">
+          Upload Sage Intacct TB export (HTML-formatted .xls)
+        </div>
+        <div style="font-size:12px; color:var(--eax-muted); margin-bottom:12px;">
+          Export from Sage: Reports &rarr; Trial Balance &rarr; export as Excel.
+          Sage saves these as HTML wrapped in .xls. Pick the Current-Month TB
+          to render the BS; YTD optional for later phases.
+        </div>
+        <form id="fin-upload-tb-form" enctype="multipart/form-data">
+          <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-end;">
+            <div>
+              <label style="display:block; font-size:11px; font-weight:700;
+                     letter-spacing:0.22em; text-transform:uppercase;
+                     color:var(--eax-subtle); margin-bottom:6px;">
+                Current-Month TB (required)</label>
+              <input type="file" name="monthly_tb" accept=".xls,.html,.htm"
+                     required style="font-size:13px;">
+            </div>
+            <div>
+              <label style="display:block; font-size:11px; font-weight:700;
+                     letter-spacing:0.22em; text-transform:uppercase;
+                     color:var(--eax-subtle); margin-bottom:6px;">
+                YTD TB (optional)</label>
+              <input type="file" name="ytd_tb" accept=".xls,.html,.htm"
+                     style="font-size:13px;">
+            </div>
+            <button type="submit" class="fin-btn primary"
+                    style="margin-bottom:0;">Parse &amp; cache</button>
+          </div>
+        </form>
+        <div id="fin-upload-tb-status" style="font-size:12px; margin-top:10px;"></div>
       </div>
       <div id="fin-status" class="fin-status"></div>
 
@@ -299,6 +340,11 @@ function onSelectionChange() {
 }
 
 async function fetchBalanceSheet(forceRefresh) {
+  // If the user has uploaded a TB export (canonical source), route
+  // through the TB endpoint instead of the GLENTRY-derived one.
+  if (FIN.useTbUpload && !forceRefresh) {
+    return fetchBalanceSheetFromTBUpload();
+  }
   const e = FIN.currentEntity, p = FIN.currentPeriod;
   if (!e || !p) return;
   setStatus(forceRefresh ? 'Pulling trial balance from Sage…' : 'Loading…', 'info');
@@ -675,6 +721,34 @@ function escapeHtml(s) {
     c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+async function fetchBalanceSheetFromTBUpload() {
+  if (!FIN.currentEntity || !FIN.currentPeriod) return;
+  setStatus('Loading TB-upload BS…', 'info');
+  try {
+    const url = '/api/financials/balance-sheet-tb'
+              + '?entity=' + encodeURIComponent(FIN.currentEntity)
+              + '&period=' + encodeURIComponent(FIN.currentPeriod);
+    const res = await fetch(url);
+    const j = await res.json();
+    console.log('[financials] /api/financials/balance-sheet-tb response:', j);
+    if (!res.ok) {
+      setStatus('TB BS error: ' + (j.error || res.statusText), 'err');
+      return;
+    }
+    if (!j.cached) {
+      setStatus('No TB upload cached for this entity/period. Upload one above.', 'info');
+      $('fin-bs-content').style.display = 'none';
+      $('fin-bs-placeholder').style.display = '';
+      return;
+    }
+    FIN.lastPayload = j;
+    renderBalanceSheet(j);
+    setStatus('Rendered from uploaded TB.', 'ok');
+  } catch (e) {
+    setStatus('TB BS error: ' + e.message, 'err');
+  }
+}
+
 $('fin-refresh').addEventListener('click', () => fetchBalanceSheet(true));
 
 // "Calibrate to FRP" — POST to /api/financials/calibrate, which
@@ -792,6 +866,71 @@ async function calibrateToFRP() {
   }
 }
 $('fin-calibrate').addEventListener('click', calibrateToFRP);
+
+// ── TB-upload flow ────────────────────────────────────────────
+// The accountant exports Sage's HTML-formatted .xls TB and uploads it
+// here. We parse server-side via tb_parser.py and render the BS using
+// frp_builder.py's authoritative classification. Bypasses the entire
+// GLENTRY-aggregation rabbit hole.
+$('fin-upload-tb-trigger').addEventListener('click', () => {
+  const p = $('fin-upload-tb-panel');
+  p.style.display = (p.style.display === 'none') ? '' : 'none';
+});
+$('fin-upload-tb-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!FIN.currentPeriod) {
+    $('fin-upload-tb-status').innerHTML =
+      '<span style="color:var(--eax-bad);">Select a period in the dropdown first.</span>';
+    return;
+  }
+  $('fin-upload-tb-status').innerHTML =
+    '<span style="color:var(--eax-muted);">Parsing TB export…</span>';
+  const fd = new FormData(e.target);
+  fd.append('period', FIN.currentPeriod);
+  try {
+    const res = await fetch('/api/financials/upload-tb', {
+      method: 'POST', body: fd,
+    });
+    const j = await res.json();
+    console.log('[financials] /api/financials/upload-tb response:', j);
+    if (!res.ok) {
+      $('fin-upload-tb-status').innerHTML =
+        '<span style="color:var(--eax-bad);">Upload failed: '
+        + escapeHtml(j.error || res.statusText) + '</span>';
+      return;
+    }
+    // Build a quick summary of cached entities.
+    let summary = '<span style="color:var(--eax-good);">';
+    summary += 'Cached ' + j.monthly_count + ' monthly entit(ies)';
+    if (j.ytd_count) summary += ' + ' + j.ytd_count + ' YTD entit(ies)';
+    summary += ' under period <code>' + escapeHtml(j.period) + '</code>.';
+    if (Array.isArray(j.cached_entities) && j.cached_entities.length) {
+      summary += '<ul style="margin:6px 0 0 18px; font-size:11px;">';
+      for (const e of j.cached_entities) {
+        summary += '<li><code>' + escapeHtml(e.sage_code) + '</code> &mdash; '
+                + escapeHtml(e.full_name)
+                + ' &nbsp; <i>(' + e.account_count + ' accounts, as of '
+                + escapeHtml(e.as_of_date) + ')</i></li>';
+      }
+      summary += '</ul>';
+    }
+    summary += '<br>Now select an entity from the dropdown above to render its BS '
+            + 'from the uploaded TB.';
+    summary += '</span>';
+    $('fin-upload-tb-status').innerHTML = summary;
+    // Refresh the entity dropdown so newly-cached entities appear.
+    // Switch the BS fetch path to use the TB-upload endpoint when
+    // the user picks an entity.
+    FIN.useTbUpload = true;
+    if (FIN.currentEntity) {
+      fetchBalanceSheet(false);
+    }
+  } catch (err) {
+    $('fin-upload-tb-status').innerHTML =
+      '<span style="color:var(--eax-bad);">Upload error: '
+      + escapeHtml(err.message) + '</span>';
+  }
+});
 
 // Boot
 loadEntities();
