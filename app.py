@@ -2096,6 +2096,22 @@ def api_financials_refresh():
         return jsonify({"error": "entity and period required"}), 400
     if not sage_intacct.is_configured():
         return jsonify({"error": "Sage Intacct credentials not configured"}), 503
+    # Wrap everything in try/except so any runtime error returns a
+    # JSON payload instead of a Flask HTML error page (the latter
+    # is what's causing the "Unexpected token '<', '<html>'" error).
+    try:
+        return _api_financials_refresh_impl(entity, period)
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        app.logger.error("api_financials_refresh failed: %s\n%s", e, tb)
+        return jsonify({
+            "error": f"{type(e).__name__}: {e}",
+            "traceback": tb.splitlines()[-30:],  # last 30 lines for context
+        }), 500
+
+
+def _api_financials_refresh_impl(entity: str, period: str):
     try:
         accounts = sage_intacct.get_trial_balance(entity, period)
     except sage_intacct.IntacctConfigurationError as e:
