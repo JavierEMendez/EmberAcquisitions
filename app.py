@@ -2280,7 +2280,7 @@ def api_financials_refresh():
 # Land is a "shouldn't move" anchor; Retainage / Bond Payables / Dev
 # Loan anchor the no-cutoff baseline.
 FRP_TARGETS_BY_ENTITY_PERIOD = {
-    ("16 - GPD", "March 2026"): {
+    ("16 - GPD", "Month Ended March 2026"): {
         "16000":  35_570_385.0,
         "20030":  -2_453_261.0,
         "13015":   1_100_000.0,
