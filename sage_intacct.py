@@ -695,6 +695,40 @@ def _read_report(
     return {"rows": out_rows, "columns": out_cols, "error": None}
 
 
+def list_saved_reports() -> dict:
+    """Enumerate saved reports on this Sage instance so we can find an
+    already-saved TB report (or confirm none exists, in which case the
+    accountant needs to save one).
+
+    Sage Intacct exposes reports through several possible object names
+    depending on version/license. Probe each and return whichever ones
+    return rows.
+    """
+    candidates = [
+        # Most likely object names for "saved/custom reports"
+        "REPORT",
+        "SAVEDREPORT",
+        "CUSTOMREPORT",
+        "REPORTDEFINITION",
+        "GLREPORTDEFINITION",
+        "PLATFORM_REPORT",
+    ]
+    results = []
+    for obj in candidates:
+        attempt = {"object": obj}
+        try:
+            rows = _read_by_query(obj, "", "RECORDNO,NAME,REPORTID,DESCRIPTION",
+                                  pagesize=50, max_pages=1)
+            attempt["ok"]    = True
+            attempt["count"] = len(rows)
+            attempt["sample"] = rows[:20]
+        except IntacctAPIError as e:
+            attempt["ok"]    = False
+            attempt["error"] = str(e)[:400]
+        results.append(attempt)
+    return {"object_probes": results}
+
+
 def pull_tb_via_report(
     entity_id: str,
     period_name: str,

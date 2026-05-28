@@ -2274,6 +2274,26 @@ def _api_financials_refresh_impl(entity: str, period: str):
     })
 
 
+@app.route("/api/financials/list-reports", methods=["GET"])
+@login_required
+def api_financials_list_reports():
+    """List saved Sage reports so we can find an already-saved TB
+    report on this instance. Returns object-probe results — if any
+    object returns rows, those are the available reports."""
+    if not _can_view_financials():
+        return jsonify({"error": "forbidden"}), 403
+    if not sage_intacct.is_configured():
+        return jsonify({"error": "Sage Intacct credentials not configured"}), 503
+    try:
+        return jsonify(sage_intacct.list_saved_reports())
+    except Exception as e:
+        import traceback
+        return jsonify({
+            "error":     f"{type(e).__name__}: {e}",
+            "traceback": traceback.format_exc().splitlines()[-20:],
+        }), 500
+
+
 @app.route("/api/financials/pull-tb-report", methods=["POST"])
 @login_required
 def api_financials_pull_tb_report():
