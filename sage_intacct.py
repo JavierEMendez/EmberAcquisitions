@@ -879,12 +879,11 @@ def get_trial_balance(entity_id: str, period_name: str,
         ("contains",    " to cj_po",    "CJ_PO commitment-journal migration"),
         ("startswith",  "2-po",         "PO commitment open"),
         ("startswith",  "close po",     "PO commitment closure"),
-        # Change Order batches behave like 2-PO opens (DR WIP / CR AP
-        # for additional commitment under an existing PO). Only one
-        # entry observed in AP top 12, no Summary Entry pair, $2.25M
-        # CR — same signature as the commit-side patterns above.
-        ("startswith",  "change order", "Change Order commit-side"),
-        ("vinv_clear",  "",             "vendor-invoice commit-reversal (X Batch)"),
+        # "X Batch" without "Summary Entry" suffix = commit-reversal
+        # side. The "Summary Entry" sibling is the actual transaction.
+        # Same workflow for Vendor Invoices AND Change Orders:
+        ("non_summary", "3-vendor invoice", "vendor-invoice commit-reversal (X Batch)"),
+        ("non_summary", "change order",     "Change Order commit-side (X Batch)"),
     ]
     def _excluded_batch_reason(e: dict) -> Optional[str]:
         bt = (e.get("BATCHTITLE") or "").strip().lower()
@@ -895,8 +894,8 @@ def get_trial_balance(entity_id: str, period_name: str,
                 return why
             if mode == "startswith" and bt.startswith(pat):
                 return why
-            if mode == "vinv_clear":
-                if bt.startswith("3-vendor invoice") and not bt.endswith("summary entry"):
+            if mode == "non_summary":
+                if bt.startswith(pat) and not bt.endswith("summary entry"):
                     return why
         return None
     placeholder_filtered: list[dict] = []  # name kept for backward-compat in diag

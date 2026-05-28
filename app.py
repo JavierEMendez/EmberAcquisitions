@@ -2159,8 +2159,15 @@ def api_financials_refresh():
                                "_last_account_samples", {}) or {}
     bt_raw           = getattr(sage_intacct.get_trial_balance,
                                "_last_per_batchtitle_sums", {}) or {}
+    # Always include these "watch" accounts in the per-account detail
+    # regardless of |close|, so AP and other small-but-important
+    # accounts stay visible after the commit filter shrinks them.
+    PINNED_DETAIL_ACCOUNTS = {"20030"}  # Trade Payables
+    pinned_accts = [a for a in accounts_full if a["no"] in PINNED_DETAIL_ACCOUNTS]
+    rest_accts   = [a for a in accounts_full if a["no"] not in PINNED_DETAIL_ACCOUNTS]
+    detail_pool  = pinned_accts + rest_accts[:max(0, 30 - len(pinned_accts))]
     account_time_detail = []
-    for a in accounts_full[:30]:
+    for a in detail_pool:
         no = a["no"]
         yrs = per_year_raw.get(no, {})
         if not yrs:
