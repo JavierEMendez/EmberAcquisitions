@@ -695,6 +695,112 @@ def _read_report(
     return {"rows": out_rows, "columns": out_cols, "error": None}
 
 
+def _run_report(
+    report_name: str,
+    arguments: dict = None,
+    poll_seconds: int = 30,
+    poll_interval: float = 2.0,
+) -> dict:
+    """Invoke <runReport> (asynchronous variant of readReport).
+
+    Sage's <readReport> targets Report Writer reports. <runReport>
+    is the alternative path that historically also covers Memorized
+    Reports and some standard reports. Returns:
+        {'rows': [...], 'columns': [...], 'error': str-or-None}
+
+    Workflow:
+      1. POST <runReport> → returns a REPORTID (async job handle).
+      2. POST <getReportStatus> → poll until DONE.
+      3. POST <readReportResult> → fetch rows by the REPORTID.
+    Falls back to surfacing the original error if step 1 fails.
+    """
+    args_xml = ""
+    if arguments:
+        for k, v in arguments.items():
+            args_xml += f"<{_xml_escape(k)}>{_xml_escape(str(v))}</{_xml_escape(k)}>"
+    arguments_block = f"<arguments>{args_xml}</arguments>" if args_xml else ""
+
+    submit = (
+        f'<function controlid="{_new_control_id()}">'
+        "<runReport>"
+        f"<report>{_xml_escape(report_name)}</report>"
+        "<pagesize>1000</pagesize>"
+        f"{arguments_block}"
+        "</runReport>"
+        "</function>"
+    )
+    try:
+        root = _call(submit)
+    except IntacctAPIError as e:
+        return {"rows": [], "columns": [], "error": str(e)[:500]}
+
+    # The response should contain a REPORTID we can poll on.
+    report_id = None
+    for node in root.iter():
+        if node.tag.upper() in ("REPORTID", "REQUESTID", "JOBID"):
+            report_id = (node.text or "").strip()
+            if report_id:
+                break
+    if not report_id:
+        return {
+            "rows": [], "columns": [],
+            "error": f"runReport returned no REPORTID; raw: {ET.tostring(root).decode()[:500]}",
+        }
+
+    # Poll for status — simple linear polling.
+    waited = 0.0
+    while waited < poll_seconds:
+        time.sleep(poll_interval)
+        waited += poll_interval
+        status_xml = (
+            f'<function controlid="{_new_control_id()}">'
+            "<getReportStatus>"
+            f"<REPORTID>{_xml_escape(report_id)}</REPORTID>"
+            "</getReportStatus>"
+            "</function>"
+        )
+        try:
+            sroot = _call(status_xml)
+        except IntacctAPIError as e:
+            return {"rows": [], "columns": [], "error": f"getReportStatus failed: {e}"[:500]}
+        status_node = None
+        for n in sroot.iter():
+            if n.tag.upper() in ("STATUS", "REPORTSTATUS"):
+                status_node = n
+                break
+        status_val = (status_node.text or "").strip().upper() if status_node is not None else ""
+        if status_val in ("DONE", "COMPLETED", "COMPLETE", "SUCCESS"):
+            break
+        if status_val in ("FAILED", "ERROR", "CANCELLED"):
+            return {"rows": [], "columns": [], "error": f"runReport status={status_val}"}
+    else:
+        return {"rows": [], "columns": [], "error": f"runReport timed out after {poll_seconds}s waiting for completion"}
+
+    # Fetch results.
+    fetch_xml = (
+        f'<function controlid="{_new_control_id()}">'
+        "<readReportResult>"
+        f"<REPORTID>{_xml_escape(report_id)}</REPORTID>"
+        "</readReportResult>"
+        "</function>"
+    )
+    try:
+        froot = _call(fetch_xml)
+    except IntacctAPIError as e:
+        return {"rows": [], "columns": [], "error": f"readReportResult failed: {e}"[:500]}
+
+    data = froot.find("./operation/result/data")
+    rows = []
+    cols = []
+    if data is not None:
+        for row_node in list(data):
+            row_dict = {child.tag: (child.text or "") for child in row_node}
+            if not cols:
+                cols = list(row_dict.keys())
+            rows.append(row_dict)
+    return {"rows": rows, "columns": cols, "error": None}
+
+
 def list_saved_reports() -> dict:
     """Enumerate saved reports on this Sage instance so we can find an
     already-saved TB report (or confirm none exists, in which case the
@@ -784,47 +890,48 @@ def pull_tb_via_report(
     candidate_names = [n for n in candidate_names if not (n in seen or seen.add(n))]
 
     attempts: list[dict] = []
+    args = {
+        # Sage convention arg names — report definition controls
+        # which are honored. We pass several so the right one binds.
+        "REPORTINGPERIOD": period_name,
+        "OWNER":           entity_id,
+        "LOCATIONID":      entity_id,
+    }
     for name in candidate_names:
-        log.info("pull_tb_via_report: trying report name=%r", name)
-        result = _read_report(name, arguments={
-            # These argument names are Sage conventions; the report
-            # definition determines which are honored. We pass several
-            # so whichever maps gets used.
-            "REPORTINGPERIOD": period_name,
-            "OWNER":           entity_id,
-            "LOCATIONID":      entity_id,
-        })
-        attempt_info = {
-            "report_name": name,
-            "row_count":   len(result["rows"]),
-            "error":       result["error"],
-        }
-        attempts.append(attempt_info)
-        if result["error"]:
-            log.warning("readReport(%r) error: %s", name, result["error"])
-            continue
-        if not result["rows"]:
-            log.warning("readReport(%r) returned 0 rows", name)
-            continue
-
-        # Got rows — try to coerce them into the standard accounts
-        # shape. Column names vary by report definition, so we map
-        # case-insensitively against several likely synonyms.
-        accounts = _coerce_report_rows_to_accounts(result["rows"])
-        if accounts:
-            return {
-                "ok":          True,
+        for op_label, runner in [("readReport", _read_report),
+                                 ("runReport",  _run_report)]:
+            log.info("pull_tb_via_report: trying %s(%r)", op_label, name)
+            result = runner(name, arguments=args)
+            attempt_info = {
                 "report_name": name,
-                "accounts":    accounts,
-                "attempts":    attempts,
-                "message":     f"Pulled {len(accounts)} accounts from report {name!r}.",
+                "operation":   op_label,
+                "row_count":   len(result["rows"]),
+                "error":       result["error"],
             }
-        log.warning(
-            "readReport(%r) returned %d rows but none parseable as TB accounts; columns=%s",
-            name, len(result["rows"]), result["columns"],
-        )
-        attempt_info["parse_failed"] = True
-        attempt_info["columns"]      = result["columns"]
+            attempts.append(attempt_info)
+            if result["error"]:
+                log.warning("%s(%r) error: %s", op_label, name, result["error"])
+                continue
+            if not result["rows"]:
+                log.warning("%s(%r) returned 0 rows", op_label, name)
+                continue
+
+            accounts = _coerce_report_rows_to_accounts(result["rows"])
+            if accounts:
+                return {
+                    "ok":          True,
+                    "report_name": name,
+                    "operation":   op_label,
+                    "accounts":    accounts,
+                    "attempts":    attempts,
+                    "message":     f"Pulled {len(accounts)} accounts from {op_label}({name!r}).",
+                }
+            log.warning(
+                "%s(%r) returned %d rows but none parseable as TB accounts; columns=%s",
+                op_label, name, len(result["rows"]), result["columns"],
+            )
+            attempt_info["parse_failed"] = True
+            attempt_info["columns"]      = result["columns"]
 
     return {
         "ok":          False,
