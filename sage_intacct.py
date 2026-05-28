@@ -705,13 +705,20 @@ def list_saved_reports() -> dict:
     return rows.
     """
     candidates = [
-        # Most likely object names for "saved/custom reports"
+        # Most likely object names for "saved/custom reports". Sage UI
+        # labels them "Memorized Reports" — that's the canonical object.
+        "MEMORIZEDREPORT",
+        "MEMORIZED_REPORT",
+        "MEMORIZEDREPORTS",
         "REPORT",
         "SAVEDREPORT",
         "CUSTOMREPORT",
         "REPORTDEFINITION",
         "GLREPORTDEFINITION",
         "PLATFORM_REPORT",
+        # Possibly the underlying platform object
+        "MYI_REPORT",
+        "PLATFORM_MYI_REPORT",
     ]
     results = []
     for obj in candidates:
@@ -756,16 +763,25 @@ def pull_tb_via_report(
     primary = primary.strip()
     if primary:
         candidate_names.append(primary)
-    # Common fallback names. None are guaranteed to exist on a given
-    # instance — they're best-effort attempts before the accountant
-    # saves a custom report.
-    candidate_names.extend([
-        "API_TB",
-        "API Trial Balance",
-        "Trial Balance",
-        "GL Trial Balance",
-        "Standard Trial Balance",
-    ])
+    # Sage memorized reports live under the owner's namespace. Even when
+    # marked Public, API access may require an owner.name prefix.
+    # GPD-March-2026 setup: accountant pbraud memorized "API_TB" as
+    # Public. Try multiple addressing forms before giving up.
+    owner_envs = (
+        os.getenv("INTACCT_TB_REPORT_OWNER") or "pbraud"  # accountant username from screenshot
+    ).strip()
+    raw = ["API_TB", "API Trial Balance", "Trial Balance",
+           "GL Trial Balance", "Standard Trial Balance"]
+    for n in raw:
+        candidate_names.append(n)
+        if owner_envs:
+            # Owner-prefixed variants Sage docs suggest for cross-user
+            # access to memorized reports
+            candidate_names.append(f"{owner_envs}.{n}")
+            candidate_names.append(f"{owner_envs}/{n}")
+    # de-dupe preserving order
+    seen = set()
+    candidate_names = [n for n in candidate_names if not (n in seen or seen.add(n))]
 
     attempts: list[dict] = []
     for name in candidate_names:
