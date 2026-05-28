@@ -407,6 +407,36 @@ function renderBalanceSheet(payload) {
           + escapeHtml(JSON.stringify(d.sub_locations_queried))
           + '</code>';
   }
+  // Placeholder JEs excluded. These are accountant AJEs (BATCHTITLE /
+  // DESCRIPTION / DOCUMENT contains "placeholder") that lock in
+  // estimated balances pending real docs — they're double-counts of
+  // real history and Sage's TB report excludes them.
+  if (Array.isArray(d.placeholder_filtered) && d.placeholder_filtered.length) {
+    html += '<br><br><b>Placeholder JEs excluded ('
+          + d.placeholder_filtered.length + ' shown, may be more):</b>'
+          + '<table style="margin-top:6px;border-collapse:collapse;font-size:11px;font-family:monospace;">'
+          + '<thead><tr style="text-align:left;border-bottom:1px solid #d4a574;">'
+          +   '<th style="padding:2px 12px 2px 0;">acct</th>'
+          +   '<th style="padding:2px 12px 2px 0;">date</th>'
+          +   '<th style="padding:2px 12px 2px 0;text-align:right;">amount</th>'
+          +   '<th style="padding:2px 12px 2px 0;text-align:right;">tr_type</th>'
+          +   '<th style="padding:2px 12px 2px 0;">batchtitle</th>'
+          +   '<th style="padding:2px 12px 2px 0;">batch_no</th>'
+          +   '<th style="padding:2px 0;">description</th>'
+          + '</tr></thead><tbody>';
+    for (const e of d.placeholder_filtered) {
+      html += '<tr>'
+            + '<td style="padding:1px 12px 1px 0;">' + escapeHtml(e.accountno) + '</td>'
+            + '<td style="padding:1px 12px 1px 0;">' + escapeHtml(e.entry_date) + '</td>'
+            + '<td style="padding:1px 12px 1px 0;text-align:right;">' + fmtMoney(e.amount) + '</td>'
+            + '<td style="padding:1px 12px 1px 0;text-align:right;">' + escapeHtml(e.tr_type) + '</td>'
+            + '<td style="padding:1px 12px 1px 0;">' + escapeHtml(e.batchtitle) + '</td>'
+            + '<td style="padding:1px 12px 1px 0;">' + escapeHtml(e.batch_no) + '</td>'
+            + '<td style="padding:1px 0;">' + escapeHtml(e.description) + '</td>'
+            + '</tr>';
+    }
+    html += '</tbody></table>';
+  }
   // Full classified account list, sorted by abs(close) desc. Lets us
   // see at a glance every account that contributes to the BS and what
   // FRP line item it mapped into.

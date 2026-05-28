@@ -848,6 +848,27 @@ def get_trial_balance(entity_id: str, period_name: str,
     # If a fetched entry is missing TR_TYPE we DROP it (rather than
     # default to 1 = debit) — defaulting was inflating one-sided
     # imports. AMOUNT alone, unsigned, contributes nothing to a TB.
+    # Placeholder-JE filter. The accountant uses BATCHTITLE / DESCRIPTION
+    # / DOCUMENT = "Placeholder Commitment" (and similar) for AJEs that
+    # lock in estimated balances pending real documentation. These are
+    # NOT meant to be summed into the official TB — Sage's built-in TB
+    # report excludes them, but raw GLENTRY does not, so we double-count.
+    #
+    # Match is case-insensitive substring on any of the three fields.
+    # If false negatives appear (real entries getting filtered) we can
+    # tighten this to e.g. exact match on BATCHTITLE or convert to a
+    # configurable allow-list.
+    PLACEHOLDER_NEEDLES = ("placeholder",)
+    def _is_placeholder(e: dict) -> bool:
+        for fld in ("BATCHTITLE", "DESCRIPTION", "DOCUMENT"):
+            v = (e.get(fld) or "").strip().lower()
+            if not v:
+                continue
+            for needle in PLACEHOLDER_NEEDLES:
+                if needle in v:
+                    return True
+        return False
+    placeholder_filtered: list[dict] = []
     sums: dict[str, float] = {}
     # per_loc_sums tracks each account's contribution by LOCATION so the
     # diagnostic can show "this $71M Land balance came $35M from loc A and
@@ -871,6 +892,21 @@ def get_trial_balance(entity_id: str, period_name: str,
             state_counter[st] = state_counter.get(st, 0) + 1
         if st and st != "Posted":
             posted_dropped += 1
+            continue
+        if _is_placeholder(e):
+            # Track the first 25 filtered entries so the diagnostic can
+            # show the user EXACTLY what was excluded and why.
+            if len(placeholder_filtered) < 25:
+                placeholder_filtered.append({
+                    "accountno":  (e.get("ACCOUNTNO") or "").strip(),
+                    "entry_date": (e.get("ENTRY_DATE") or "").strip(),
+                    "amount":     _f(e.get("AMOUNT")),
+                    "tr_type":    (e.get("TR_TYPE") or "").strip(),
+                    "batchtitle": (e.get("BATCHTITLE") or "").strip(),
+                    "batch_no":   (e.get("BATCH_NO") or "").strip(),
+                    "description": (e.get("DESCRIPTION") or "").strip(),
+                    "document":   (e.get("DOCUMENT") or "").strip(),
+                })
             continue
         ed_str = (e.get("ENTRY_DATE") or "").strip()
         ed_obj = None
@@ -935,6 +971,12 @@ def get_trial_balance(entity_id: str, period_name: str,
     get_trial_balance._last_per_location_sums = per_loc_sums
     get_trial_balance._last_per_year_sums    = per_year_sums
     get_trial_balance._last_account_samples  = per_account_samples
+    get_trial_balance._last_placeholder_filtered = placeholder_filtered
+    log.info(
+        "get_trial_balance: placeholder JEs filtered=%d (first %d retained for diag)",
+        sum(1 for e in entries if _is_placeholder(e)),
+        len(placeholder_filtered),
+    )
     log.info(
         "get_trial_balance: %d entries → kept=%d  post-filtered=%d  date-filtered=%d "
         "tr_type-missing=%d  → %d accounts; state counts: %s",

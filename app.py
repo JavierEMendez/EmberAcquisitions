@@ -2184,6 +2184,8 @@ def api_financials_refresh():
         sub_locs = sage_intacct._entity_location_set(entity)
     except Exception:
         sub_locs = [entity]
+    placeholder_filtered = getattr(sage_intacct.get_trial_balance,
+                                   "_last_placeholder_filtered", []) or []
     diagnostic = {
         "filter_value_used":     entity,
         "sub_locations_queried": sub_locs,
@@ -2191,6 +2193,7 @@ def api_financials_refresh():
         "accounts_full":         accounts_full,
         "per_location_balances": per_location_balances,
         "account_time_detail":   account_time_detail,
+        "placeholder_filtered":  placeholder_filtered,
     }
     if not accounts:
         sample_locs = getattr(sage_intacct.get_trial_balance,
