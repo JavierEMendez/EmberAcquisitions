@@ -2171,17 +2171,17 @@ def api_financials_refresh():
              for y, v in yrs.items()],
             key=lambda x: x["year"],
         )
-        # by_batchtitle sorted by abs(net) desc, top 12 only so the
-        # payload stays small. Each row = a JE batch grouping that
-        # contributed to this account — the AJE pattern we're hunting
-        # will pop out as the biggest contributor.
+        # by_batchtitle sorted by abs(net) desc, top 25 so we see more
+        # of the tail. Each row = a JE batch grouping that contributed
+        # to this account — the AJE pattern we're hunting will pop out
+        # as the biggest contributor.
         bts = bt_raw.get(no, {})
         by_bt = sorted(
             [{"batchtitle": bt, "dr": v["dr"], "cr": v["cr"],
               "net": v["dr"] - v["cr"], "count": v["count"]}
              for bt, v in bts.items()],
             key=lambda x: -abs(x["net"]),
-        )[:12]
+        )[:25]
         account_time_detail.append({
             "no":             no,
             "name":           a["name"],

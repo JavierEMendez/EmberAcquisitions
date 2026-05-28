@@ -874,12 +874,17 @@ def get_trial_balance(entity_id: str, period_name: str,
     #                   actual bill entries).
     EXCLUDE_BATCH_PATTERNS = [
         # (mode, pattern, reason)
-        ("contains",    "placeholder", "placeholder AJE"),
-        ("contains",    "commitment",  "commitment batch (open/move/true-up)"),
-        ("contains",    " to cj_po",   "CJ_PO commitment-journal migration"),
-        ("startswith",  "2-po",        "PO commitment open"),
-        ("startswith",  "close po",    "PO commitment closure"),
-        ("vinv_clear",  "",            "vendor-invoice commit-reversal (X Batch)"),
+        ("contains",    "placeholder",  "placeholder AJE"),
+        ("contains",    "commitment",   "commitment batch (open/move/true-up)"),
+        ("contains",    " to cj_po",    "CJ_PO commitment-journal migration"),
+        ("startswith",  "2-po",         "PO commitment open"),
+        ("startswith",  "close po",     "PO commitment closure"),
+        # Change Order batches behave like 2-PO opens (DR WIP / CR AP
+        # for additional commitment under an existing PO). Only one
+        # entry observed in AP top 12, no Summary Entry pair, $2.25M
+        # CR — same signature as the commit-side patterns above.
+        ("startswith",  "change order", "Change Order commit-side"),
+        ("vinv_clear",  "",             "vendor-invoice commit-reversal (X Batch)"),
     ]
     def _excluded_batch_reason(e: dict) -> Optional[str]:
         bt = (e.get("BATCHTITLE") or "").strip().lower()
