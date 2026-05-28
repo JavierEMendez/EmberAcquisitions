@@ -848,45 +848,50 @@ def get_trial_balance(entity_id: str, period_name: str,
     # If a fetched entry is missing TR_TYPE we DROP it (rather than
     # default to 1 = debit) — defaulting was inflating one-sided
     # imports. AMOUNT alone, unsigned, contributes nothing to a TB.
-    # Commitment-side JE filter. Two distinct patterns this catches:
+    # Commitment-side JE filter. Sage Intacct's construction-PO
+    # workflow posts in (up to) four steps that all hit WIP/AP:
+    #   1. 2-PO open commitment:                  DR WIP / CR AP
+    #   2. 3-Vendor Invoice ... Batch:            DR AP  / CR WIP  ← commit-reversal
+    #   3. 3-Vendor Invoice ... Batch Summary:    DR WIP / CR AP   ← THE ACTUAL BILL
+    #   4. Move COMMITMENTS to CJ_VI / CJ_PO:     DR AP  / CR WIP  ← cleanup
+    # Sage's TB report counts only step 3 (the actual bill). Raw
+    # GLENTRY counts all four; if we don't strip 1, 2, and 4 we
+    # double-count by the value of every open commitment.
     #
-    # 1. PLACEHOLDER AJEs (BATCHTITLE = "Placeholder Commitment") —
-    #    accountant locks in an estimated balance pending real docs.
-    #    Already-discovered example: a $35.57M 12/31/2025 entry that
-    #    duplicated the entire Land balance.
+    # Plus PLACEHOLDER AJEs ("Placeholder Commitment" — back-dated
+    # year-end JEs the accountant uses to lock in estimated balances).
     #
-    # 2. COMMITMENT-TRACKING JEs (construction PO workflow):
-    #    - "2-PO DEV: ..." opens a commitment: DR WIP / CR AP for a
-    #       future obligation under a Purchase Order.
-    #    - "3-Vendor Invoice ..." books the ACTUAL bill: DR WIP / CR AP.
-    #    - "Move COMMITMENTS ..." / "Close PO ..." reverse the
-    #       commitment side once the actual arrives.
-    #    Sage's TB report counts only the actuals (#2 in the chain).
-    #    Raw GLENTRY counts every step, so we double-book by the value
-    #    of OUTSTANDING commitments — $78-80M of inflation each on
-    #    Development WIP and Trade Payables on this entity.
+    # Matching is case-insensitive against BATCHTITLE ONLY. Restricting
+    # to BATCHTITLE avoids false-positives we'd get from substring
+    # hits in DESCRIPTION/DOCUMENT on legitimate bills.
     #
-    # Patterns are matched case-insensitively against BATCHTITLE,
-    # DESCRIPTION, and DOCUMENT. "contains" = substring; "startswith"
-    # = prefix (used where we need to be more specific to avoid
-    # catching real vendor-invoice batch names).
+    # Modes:
+    #   "contains"    — substring match anywhere in BATCHTITLE
+    #   "startswith"  — BATCHTITLE begins with pattern
+    #   "vinv_clear"  — special: starts with "3-vendor invoice" AND
+    #                   does NOT end with "summary entry" (catches
+    #                   the commit-reversal side without touching the
+    #                   actual bill entries).
     EXCLUDE_BATCH_PATTERNS = [
         # (mode, pattern, reason)
-        ("contains",   "placeholder", "placeholder AJE"),
-        ("contains",   "commit",      "commitment batch"),
-        ("contains",   "cj_po",       "commitment journal PO move"),
-        ("startswith", "2-po",        "PO commitment open"),
-        ("startswith", "close po",    "PO commitment closure"),
+        ("contains",    "placeholder", "placeholder AJE"),
+        ("contains",    "commitment",  "commitment batch (open/move/true-up)"),
+        ("contains",    " to cj_po",   "CJ_PO commitment-journal migration"),
+        ("startswith",  "2-po",        "PO commitment open"),
+        ("startswith",  "close po",    "PO commitment closure"),
+        ("vinv_clear",  "",            "vendor-invoice commit-reversal (X Batch)"),
     ]
     def _excluded_batch_reason(e: dict) -> Optional[str]:
-        for fld in ("BATCHTITLE", "DESCRIPTION", "DOCUMENT"):
-            v = (e.get(fld) or "").strip().lower()
-            if not v:
-                continue
-            for mode, pat, why in EXCLUDE_BATCH_PATTERNS:
-                if mode == "contains" and pat in v:
-                    return why
-                if mode == "startswith" and v.startswith(pat):
+        bt = (e.get("BATCHTITLE") or "").strip().lower()
+        if not bt:
+            return None
+        for mode, pat, why in EXCLUDE_BATCH_PATTERNS:
+            if mode == "contains" and pat in bt:
+                return why
+            if mode == "startswith" and bt.startswith(pat):
+                return why
+            if mode == "vinv_clear":
+                if bt.startswith("3-vendor invoice") and not bt.endswith("summary entry"):
                     return why
         return None
     placeholder_filtered: list[dict] = []  # name kept for backward-compat in diag
