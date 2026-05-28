@@ -650,13 +650,15 @@ def _read_report(
 
     for page in range(max_pages):
         if result_id is None:
+            # readReport schema (per Sage XL03000003 errors when we
+            # included <returnDef>): <report>, <waitTime>, <pagesize>,
+            # and (optional) <arguments> only. No <returnDef>.
             content = (
                 f'<function controlid="{_new_control_id()}">'
                 "<readReport>"
                 f"<report>{_xml_escape(report_name)}</report>"
                 f"<waitTime>{int(wait_seconds)}</waitTime>"
                 f"<pagesize>{int(page_size)}</pagesize>"
-                "<returnDef>false</returnDef>"
                 f"{arguments_block}"
                 "</readReport>"
                 "</function>"
