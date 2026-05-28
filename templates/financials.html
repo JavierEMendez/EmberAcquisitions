@@ -407,6 +407,32 @@ function renderBalanceSheet(payload) {
           + escapeHtml(JSON.stringify(d.sub_locations_queried))
           + '</code>';
   }
+  // GLOBAL by-BATCHTITLE summary across every account. Useful when
+  // an account of interest (e.g. AP after filter) drops out of the
+  // per-account top-N. Whatever AJE pattern still inflates the BS
+  // will show up here as a giant DR or CR batchtitle.
+  if (Array.isArray(d.by_batchtitle_global) && d.by_batchtitle_global.length) {
+    html += '<br><br><b>Global by-BATCHTITLE summary (top '
+          + d.by_batchtitle_global.length + ' by |net|, ALL accounts):</b>'
+          + '<table style="margin-top:6px;border-collapse:collapse;font-size:11px;font-family:monospace;">'
+          + '<thead><tr style="text-align:left;border-bottom:1px solid #d4a574;">'
+          +   '<th style="padding:2px 16px 2px 0;">batchtitle</th>'
+          +   '<th style="padding:2px 16px 2px 0;text-align:right;">DR</th>'
+          +   '<th style="padding:2px 16px 2px 0;text-align:right;">CR</th>'
+          +   '<th style="padding:2px 16px 2px 0;text-align:right;">net</th>'
+          +   '<th style="padding:2px 0;text-align:right;">#entries</th>'
+          + '</tr></thead><tbody>';
+    for (const b of d.by_batchtitle_global) {
+      html += '<tr>'
+            + '<td style="padding:1px 16px 1px 0;">' + escapeHtml(b.batchtitle) + '</td>'
+            + '<td style="padding:1px 16px 1px 0;text-align:right;">' + fmtMoney(b.dr) + '</td>'
+            + '<td style="padding:1px 16px 1px 0;text-align:right;">' + fmtMoney(b.cr) + '</td>'
+            + '<td style="padding:1px 16px 1px 0;text-align:right;">' + fmtMoney(b.net) + '</td>'
+            + '<td style="padding:1px 0;text-align:right;">' + b.count + '</td>'
+            + '</tr>';
+    }
+    html += '</tbody></table>';
+  }
   // Commitment / placeholder JE exclusion summary. Total counts by
   // reason — placeholder, commitment, PO open, PO closure, CJ_PO move.
   // Followed by a sample of up-to-25 actual filtered entries.

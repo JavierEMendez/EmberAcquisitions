@@ -2160,7 +2160,7 @@ def api_financials_refresh():
     bt_raw           = getattr(sage_intacct.get_trial_balance,
                                "_last_per_batchtitle_sums", {}) or {}
     account_time_detail = []
-    for a in accounts_full[:15]:
+    for a in accounts_full[:30]:
         no = a["no"]
         yrs = per_year_raw.get(no, {})
         if not yrs:
@@ -2202,6 +2202,23 @@ def api_financials_refresh():
                                    "_last_placeholder_filtered", []) or []
     exclude_reason_counts = getattr(sage_intacct.get_trial_balance,
                                     "_last_exclude_reason_counts", {}) or {}
+    # Global by-BATCHTITLE rollup across every account. Useful when an
+    # account we care about (e.g., AP after the commit filter) drops
+    # out of the top-30 list. Whatever AJE pattern is still inflating
+    # the BS will show up here as a giant DR or CR batchtitle.
+    bt_global: dict = {}
+    for acct_no, by_bt in bt_raw.items():
+        for bt, v in by_bt.items():
+            agg = bt_global.setdefault(bt, {"dr": 0.0, "cr": 0.0, "count": 0})
+            agg["dr"]    += v["dr"]
+            agg["cr"]    += v["cr"]
+            agg["count"] += v["count"]
+    by_batchtitle_global = sorted(
+        [{"batchtitle": bt, "dr": v["dr"], "cr": v["cr"],
+          "net": v["dr"] - v["cr"], "count": v["count"]}
+         for bt, v in bt_global.items()],
+        key=lambda x: -abs(x["net"]),
+    )[:40]
     diagnostic = {
         "filter_value_used":      entity,
         "sub_locations_queried":  sub_locs,
@@ -2209,6 +2226,7 @@ def api_financials_refresh():
         "accounts_full":          accounts_full,
         "per_location_balances":  per_location_balances,
         "account_time_detail":    account_time_detail,
+        "by_batchtitle_global":   by_batchtitle_global,
         "placeholder_filtered":   placeholder_filtered,
         "exclude_reason_counts":  exclude_reason_counts,
     }
