@@ -879,6 +879,12 @@ def get_trial_balance(entity_id: str, period_name: str,
     # year (the strongest theory for the 2x Land doubling: opening BB
     # journal entries replaying cumulative balances).
     per_year_sums: dict[str, dict[str, dict[str, float]]] = {}
+    # per_batchtitle_sums: {account: {batchtitle: {"dr": x, "cr": y, "count": n}}}
+    # — surfaces which JE batches are driving each account's balance.
+    # The Placeholder filter caught one pattern; this'll reveal the
+    # next one (Dev+AP each over by ~$80M after Placeholder removal —
+    # there's another paired-AJE convention in use).
+    per_batchtitle_sums: dict[str, dict[str, dict[str, float]]] = {}
     # per_account_samples: {account: [{entry_date, amount, tr_type, signed, state}]}
     # capped at 8 per account so the payload stays bounded.
     per_account_samples: dict[str, list[dict]] = {}
@@ -946,6 +952,16 @@ def get_trial_balance(entity_id: str, period_name: str,
         else:
             ybuck["cr"] += amount
         ybuck["count"] += 1
+        # Per-BATCHTITLE DR/CR tally so we can see "of this $83M AP
+        # balance, $X came from batch 'Foo' and $Y from 'Bar'".
+        bt = (e.get("BATCHTITLE") or "(none)").strip() or "(blank)"
+        btbuckets = per_batchtitle_sums.setdefault(no, {})
+        bbuck = btbuckets.setdefault(bt, {"dr": 0.0, "cr": 0.0, "count": 0})
+        if tr_type > 0:
+            bbuck["dr"] += amount
+        else:
+            bbuck["cr"] += amount
+        bbuck["count"] += 1
         # Up to 8 sample raw entries per account — sorted later by date
         # client-side via inspection if needed; capture order of arrival.
         slist = per_account_samples.setdefault(no, [])
@@ -972,6 +988,7 @@ def get_trial_balance(entity_id: str, period_name: str,
     get_trial_balance._last_per_year_sums    = per_year_sums
     get_trial_balance._last_account_samples  = per_account_samples
     get_trial_balance._last_placeholder_filtered = placeholder_filtered
+    get_trial_balance._last_per_batchtitle_sums  = per_batchtitle_sums
     log.info(
         "get_trial_balance: placeholder JEs filtered=%d (first %d retained for diag)",
         sum(1 for e in entries if _is_placeholder(e)),

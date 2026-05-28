@@ -2157,6 +2157,8 @@ def api_financials_refresh():
                                "_last_per_year_sums", {}) or {}
     samples_raw      = getattr(sage_intacct.get_trial_balance,
                                "_last_account_samples", {}) or {}
+    bt_raw           = getattr(sage_intacct.get_trial_balance,
+                               "_last_per_batchtitle_sums", {}) or {}
     account_time_detail = []
     for a in accounts_full[:15]:
         no = a["no"]
@@ -2169,13 +2171,25 @@ def api_financials_refresh():
              for y, v in yrs.items()],
             key=lambda x: x["year"],
         )
+        # by_batchtitle sorted by abs(net) desc, top 12 only so the
+        # payload stays small. Each row = a JE batch grouping that
+        # contributed to this account — the AJE pattern we're hunting
+        # will pop out as the biggest contributor.
+        bts = bt_raw.get(no, {})
+        by_bt = sorted(
+            [{"batchtitle": bt, "dr": v["dr"], "cr": v["cr"],
+              "net": v["dr"] - v["cr"], "count": v["count"]}
+             for bt, v in bts.items()],
+            key=lambda x: -abs(x["net"]),
+        )[:12]
         account_time_detail.append({
-            "no":        no,
-            "name":      a["name"],
-            "close":     a["close"],
-            "mapped_to": a["mapped_to"],
-            "by_year":   by_year,
-            "samples":   samples_raw.get(no, []),
+            "no":             no,
+            "name":           a["name"],
+            "close":          a["close"],
+            "mapped_to":      a["mapped_to"],
+            "by_year":        by_year,
+            "by_batchtitle":  by_bt,
+            "samples":        samples_raw.get(no, []),
         })
     # Resolve what sub-locations get queried so we can see the fan-out
     # in the diagnostic (helps when only the parent's name is visible

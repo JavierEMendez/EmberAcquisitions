@@ -502,6 +502,31 @@ function renderBalanceSheet(payload) {
             + escapeHtml(a.name || '(empty)')
             + ' &nbsp; <i>(close = ' + fmtMoney(a.close) + ', mapped &rarr; '
             + escapeHtml(a.mapped_to) + ')</i>';
+      // By-BATCHTITLE breakdown — top 12 batches by |net| contribution.
+      // The remaining AJE pattern inflating Dev+AP each by ~$80M will
+      // surface here as the biggest batchtitle contributor.
+      if (Array.isArray(a.by_batchtitle) && a.by_batchtitle.length) {
+        html += '<div style="margin-top:6px;margin-left:16px;color:#666;">'
+              + 'by BATCHTITLE (top ' + a.by_batchtitle.length + '):</div>'
+              + '<table style="margin-left:16px;border-collapse:collapse;">'
+              + '<thead><tr style="text-align:left;border-bottom:1px solid #d4a574;">'
+              +   '<th style="padding:2px 16px 2px 0;">batchtitle</th>'
+              +   '<th style="padding:2px 16px 2px 0;text-align:right;">DR</th>'
+              +   '<th style="padding:2px 16px 2px 0;text-align:right;">CR</th>'
+              +   '<th style="padding:2px 16px 2px 0;text-align:right;">net</th>'
+              +   '<th style="padding:2px 0;text-align:right;">#entries</th>'
+              + '</tr></thead><tbody>';
+        for (const b of a.by_batchtitle) {
+          html += '<tr>'
+                + '<td style="padding:1px 16px 1px 0;">' + escapeHtml(b.batchtitle) + '</td>'
+                + '<td style="padding:1px 16px 1px 0;text-align:right;">' + fmtMoney(b.dr) + '</td>'
+                + '<td style="padding:1px 16px 1px 0;text-align:right;">' + fmtMoney(b.cr) + '</td>'
+                + '<td style="padding:1px 16px 1px 0;text-align:right;">' + fmtMoney(b.net) + '</td>'
+                + '<td style="padding:1px 0;text-align:right;">' + b.count + '</td>'
+                + '</tr>';
+        }
+        html += '</tbody></table>';
+      }
       // By-year DR/CR
       if (Array.isArray(a.by_year) && a.by_year.length) {
         html += '<table style="margin-top:4px;margin-left:16px;border-collapse:collapse;">'
