@@ -407,12 +407,28 @@ function renderBalanceSheet(payload) {
           + escapeHtml(JSON.stringify(d.sub_locations_queried))
           + '</code>';
   }
-  // Placeholder JEs excluded. These are accountant AJEs (BATCHTITLE /
-  // DESCRIPTION / DOCUMENT contains "placeholder") that lock in
-  // estimated balances pending real docs — they're double-counts of
-  // real history and Sage's TB report excludes them.
+  // Commitment / placeholder JE exclusion summary. Total counts by
+  // reason — placeholder, commitment, PO open, PO closure, CJ_PO move.
+  // Followed by a sample of up-to-25 actual filtered entries.
+  if (d.exclude_reason_counts && Object.keys(d.exclude_reason_counts).length) {
+    html += '<br><br><b>Excluded JE counts by reason:</b>'
+          + '<table style="margin-top:4px;border-collapse:collapse;font-size:11px;font-family:monospace;">'
+          + '<thead><tr style="text-align:left;border-bottom:1px solid #d4a574;">'
+          +   '<th style="padding:2px 24px 2px 0;">reason</th>'
+          +   '<th style="padding:2px 0;text-align:right;">count</th>'
+          + '</tr></thead><tbody>';
+    const sortedReasons = Object.entries(d.exclude_reason_counts)
+      .sort((a, b) => b[1] - a[1]);
+    for (const [reason, cnt] of sortedReasons) {
+      html += '<tr>'
+            + '<td style="padding:1px 24px 1px 0;">' + escapeHtml(reason) + '</td>'
+            + '<td style="padding:1px 0;text-align:right;">' + cnt + '</td>'
+            + '</tr>';
+    }
+    html += '</tbody></table>';
+  }
   if (Array.isArray(d.placeholder_filtered) && d.placeholder_filtered.length) {
-    html += '<br><br><b>Placeholder JEs excluded ('
+    html += '<br><b>Sample excluded JEs ('
           + d.placeholder_filtered.length + ' shown, may be more):</b>'
           + '<table style="margin-top:6px;border-collapse:collapse;font-size:11px;font-family:monospace;">'
           + '<thead><tr style="text-align:left;border-bottom:1px solid #d4a574;">'
@@ -422,7 +438,8 @@ function renderBalanceSheet(payload) {
           +   '<th style="padding:2px 12px 2px 0;text-align:right;">tr_type</th>'
           +   '<th style="padding:2px 12px 2px 0;">batchtitle</th>'
           +   '<th style="padding:2px 12px 2px 0;">batch_no</th>'
-          +   '<th style="padding:2px 0;">description</th>'
+          +   '<th style="padding:2px 12px 2px 0;">description</th>'
+          +   '<th style="padding:2px 0;">reason</th>'
           + '</tr></thead><tbody>';
     for (const e of d.placeholder_filtered) {
       html += '<tr>'
@@ -432,7 +449,8 @@ function renderBalanceSheet(payload) {
             + '<td style="padding:1px 12px 1px 0;text-align:right;">' + escapeHtml(e.tr_type) + '</td>'
             + '<td style="padding:1px 12px 1px 0;">' + escapeHtml(e.batchtitle) + '</td>'
             + '<td style="padding:1px 12px 1px 0;">' + escapeHtml(e.batch_no) + '</td>'
-            + '<td style="padding:1px 0;">' + escapeHtml(e.description) + '</td>'
+            + '<td style="padding:1px 12px 1px 0;">' + escapeHtml(e.description) + '</td>'
+            + '<td style="padding:1px 0;">' + escapeHtml(e.reason || '') + '</td>'
             + '</tr>';
     }
     html += '</tbody></table>';

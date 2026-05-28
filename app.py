@@ -2200,14 +2200,17 @@ def api_financials_refresh():
         sub_locs = [entity]
     placeholder_filtered = getattr(sage_intacct.get_trial_balance,
                                    "_last_placeholder_filtered", []) or []
+    exclude_reason_counts = getattr(sage_intacct.get_trial_balance,
+                                    "_last_exclude_reason_counts", {}) or {}
     diagnostic = {
-        "filter_value_used":     entity,
-        "sub_locations_queried": sub_locs,
-        "account_count":         len(accounts),
-        "accounts_full":         accounts_full,
-        "per_location_balances": per_location_balances,
-        "account_time_detail":   account_time_detail,
-        "placeholder_filtered":  placeholder_filtered,
+        "filter_value_used":      entity,
+        "sub_locations_queried":  sub_locs,
+        "account_count":          len(accounts),
+        "accounts_full":          accounts_full,
+        "per_location_balances":  per_location_balances,
+        "account_time_detail":    account_time_detail,
+        "placeholder_filtered":   placeholder_filtered,
+        "exclude_reason_counts":  exclude_reason_counts,
     }
     if not accounts:
         sample_locs = getattr(sage_intacct.get_trial_balance,

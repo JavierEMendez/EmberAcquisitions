@@ -848,27 +848,49 @@ def get_trial_balance(entity_id: str, period_name: str,
     # If a fetched entry is missing TR_TYPE we DROP it (rather than
     # default to 1 = debit) — defaulting was inflating one-sided
     # imports. AMOUNT alone, unsigned, contributes nothing to a TB.
-    # Placeholder-JE filter. The accountant uses BATCHTITLE / DESCRIPTION
-    # / DOCUMENT = "Placeholder Commitment" (and similar) for AJEs that
-    # lock in estimated balances pending real documentation. These are
-    # NOT meant to be summed into the official TB — Sage's built-in TB
-    # report excludes them, but raw GLENTRY does not, so we double-count.
+    # Commitment-side JE filter. Two distinct patterns this catches:
     #
-    # Match is case-insensitive substring on any of the three fields.
-    # If false negatives appear (real entries getting filtered) we can
-    # tighten this to e.g. exact match on BATCHTITLE or convert to a
-    # configurable allow-list.
-    PLACEHOLDER_NEEDLES = ("placeholder",)
-    def _is_placeholder(e: dict) -> bool:
+    # 1. PLACEHOLDER AJEs (BATCHTITLE = "Placeholder Commitment") —
+    #    accountant locks in an estimated balance pending real docs.
+    #    Already-discovered example: a $35.57M 12/31/2025 entry that
+    #    duplicated the entire Land balance.
+    #
+    # 2. COMMITMENT-TRACKING JEs (construction PO workflow):
+    #    - "2-PO DEV: ..." opens a commitment: DR WIP / CR AP for a
+    #       future obligation under a Purchase Order.
+    #    - "3-Vendor Invoice ..." books the ACTUAL bill: DR WIP / CR AP.
+    #    - "Move COMMITMENTS ..." / "Close PO ..." reverse the
+    #       commitment side once the actual arrives.
+    #    Sage's TB report counts only the actuals (#2 in the chain).
+    #    Raw GLENTRY counts every step, so we double-book by the value
+    #    of OUTSTANDING commitments — $78-80M of inflation each on
+    #    Development WIP and Trade Payables on this entity.
+    #
+    # Patterns are matched case-insensitively against BATCHTITLE,
+    # DESCRIPTION, and DOCUMENT. "contains" = substring; "startswith"
+    # = prefix (used where we need to be more specific to avoid
+    # catching real vendor-invoice batch names).
+    EXCLUDE_BATCH_PATTERNS = [
+        # (mode, pattern, reason)
+        ("contains",   "placeholder", "placeholder AJE"),
+        ("contains",   "commit",      "commitment batch"),
+        ("contains",   "cj_po",       "commitment journal PO move"),
+        ("startswith", "2-po",        "PO commitment open"),
+        ("startswith", "close po",    "PO commitment closure"),
+    ]
+    def _excluded_batch_reason(e: dict) -> Optional[str]:
         for fld in ("BATCHTITLE", "DESCRIPTION", "DOCUMENT"):
             v = (e.get(fld) or "").strip().lower()
             if not v:
                 continue
-            for needle in PLACEHOLDER_NEEDLES:
-                if needle in v:
-                    return True
-        return False
-    placeholder_filtered: list[dict] = []
+            for mode, pat, why in EXCLUDE_BATCH_PATTERNS:
+                if mode == "contains" and pat in v:
+                    return why
+                if mode == "startswith" and v.startswith(pat):
+                    return why
+        return None
+    placeholder_filtered: list[dict] = []  # name kept for backward-compat in diag
+    exclude_reason_counts: dict[str, int] = {}
     sums: dict[str, float] = {}
     # per_loc_sums tracks each account's contribution by LOCATION so the
     # diagnostic can show "this $71M Land balance came $35M from loc A and
@@ -899,7 +921,11 @@ def get_trial_balance(entity_id: str, period_name: str,
         if st and st != "Posted":
             posted_dropped += 1
             continue
-        if _is_placeholder(e):
+        excl_reason = _excluded_batch_reason(e)
+        if excl_reason:
+            exclude_reason_counts[excl_reason] = (
+                exclude_reason_counts.get(excl_reason, 0) + 1
+            )
             # Track the first 25 filtered entries so the diagnostic can
             # show the user EXACTLY what was excluded and why.
             if len(placeholder_filtered) < 25:
@@ -912,6 +938,7 @@ def get_trial_balance(entity_id: str, period_name: str,
                     "batch_no":   (e.get("BATCH_NO") or "").strip(),
                     "description": (e.get("DESCRIPTION") or "").strip(),
                     "document":   (e.get("DOCUMENT") or "").strip(),
+                    "reason":     excl_reason,
                 })
             continue
         ed_str = (e.get("ENTRY_DATE") or "").strip()
@@ -989,10 +1016,10 @@ def get_trial_balance(entity_id: str, period_name: str,
     get_trial_balance._last_account_samples  = per_account_samples
     get_trial_balance._last_placeholder_filtered = placeholder_filtered
     get_trial_balance._last_per_batchtitle_sums  = per_batchtitle_sums
+    get_trial_balance._last_exclude_reason_counts = exclude_reason_counts
     log.info(
-        "get_trial_balance: placeholder JEs filtered=%d (first %d retained for diag)",
-        sum(1 for e in entries if _is_placeholder(e)),
-        len(placeholder_filtered),
+        "get_trial_balance: excluded JE counts by reason: %s (first %d entries retained for diag)",
+        exclude_reason_counts, len(placeholder_filtered),
     )
     log.info(
         "get_trial_balance: %d entries → kept=%d  post-filtered=%d  date-filtered=%d "
