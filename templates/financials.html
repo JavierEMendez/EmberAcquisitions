@@ -719,25 +719,53 @@ async function calibrateToFRP() {
             + ' (baseline <code>' + fmtMoney(j.inverse_baseline) + '</code>)<br>';
     }
     html += '<br>';
-    html += '<b>Per-target reconciliation:</b>'
+    // Pick the balances of whichever calibration won.
+    const winning_balances = (j.used === 'inverse' && j.inverse_balances)
+                             ? j.inverse_balances
+                             : j.balances_at_best;
+    html += '<b>Per-target reconciliation (at WINNING calibration):</b>'
           + '<table style="margin-top:6px;border-collapse:collapse;font-size:12px;font-family:monospace;">'
           + '<thead><tr style="text-align:left;border-bottom:1px solid #b5e1b8;">'
           +   '<th style="padding:2px 16px 2px 0;">account</th>'
           +   '<th style="padding:2px 16px 2px 0;text-align:right;">target (signed)</th>'
-          +   '<th style="padding:2px 16px 2px 0;text-align:right;">at cutoff</th>'
+          +   '<th style="padding:2px 16px 2px 0;text-align:right;">at best</th>'
           +   '<th style="padding:2px 0;text-align:right;">diff</th>'
           + '</tr></thead><tbody>';
     for (const acct in j.targets) {
       const t = j.targets[acct];
-      const b = j.balances_at_best[acct] ?? 0;
-      html += '<tr>'
+      const b = winning_balances[acct] ?? 0;
+      const diff = b - t;
+      const color = Math.abs(diff) < 1 ? 'color:#16a34a;' : '';
+      html += '<tr style="' + color + '">'
             + '<td style="padding:1px 16px 1px 0;">' + escapeHtml(acct) + '</td>'
             + '<td style="padding:1px 16px 1px 0;text-align:right;">' + fmtMoney(t) + '</td>'
             + '<td style="padding:1px 16px 1px 0;text-align:right;">' + fmtMoney(b) + '</td>'
-            + '<td style="padding:1px 0;text-align:right;">' + fmtMoney(b - t) + '</td>'
+            + '<td style="padding:1px 0;text-align:right;">' + fmtMoney(diff) + '</td>'
             + '</tr>';
     }
     html += '</tbody></table>';
+    // Top-20 inverse combos (each row = a SET of un-excluded reasons,
+    // sorted by total loss). Reveals whether any other 2-3 combo gets
+    // even closer than the winner.
+    if (Array.isArray(j.inverse_top_combos) && j.inverse_top_combos.length) {
+      html += '<br><b>Inverse calibration — top combinations '
+            + '(un-excluded reasons → loss):</b>'
+            + '<table style="margin-top:6px;border-collapse:collapse;font-size:11px;font-family:monospace;">'
+            + '<thead><tr style="text-align:left;border-bottom:1px solid #b5e1b8;">'
+            +   '<th style="padding:2px 16px 2px 0;">un-excluded reasons</th>'
+            +   '<th style="padding:2px 0;text-align:right;">loss</th>'
+            + '</tr></thead><tbody>';
+      for (const c of j.inverse_top_combos) {
+        const r = c.unexcluded_reasons.length
+                    ? c.unexcluded_reasons.join(', ')
+                    : '(none — current filter)';
+        html += '<tr>'
+              + '<td style="padding:1px 16px 1px 0;">' + escapeHtml(r) + '</td>'
+              + '<td style="padding:1px 0;text-align:right;">' + fmtMoney(c.loss) + '</td>'
+              + '</tr>';
+      }
+      html += '</tbody></table>';
+    }
     if (Array.isArray(j.trace_top20) && j.trace_top20.length) {
       html += '<br><b>Top-20 cutoff candidates (lowest loss):</b>'
             + '<table style="margin-top:6px;border-collapse:collapse;font-size:11px;font-family:monospace;">'
