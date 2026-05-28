@@ -2274,6 +2274,65 @@ def _api_financials_refresh_impl(entity: str, period: str):
     })
 
 
+@app.route("/api/financials/pull-tb-report", methods=["POST"])
+@login_required
+def api_financials_pull_tb_report():
+    """Pull a Trial Balance live from Sage via readReport. Bypasses
+    GLENTRY aggregation by invoking the canonical TB report directly."""
+    if not _can_view_financials():
+        return jsonify({"error": "forbidden"}), 403
+    entity = (request.args.get("entity") or "").strip()
+    period = (request.args.get("period") or "").strip()
+    if not entity or not period:
+        return jsonify({"error": "entity and period required"}), 400
+    if not sage_intacct.is_configured():
+        return jsonify({"error": "Sage Intacct credentials not configured"}), 503
+    try:
+        result = sage_intacct.pull_tb_via_report(entity, period)
+    except sage_intacct.IntacctAPIError as e:
+        return jsonify({"error": f"Sage API error: {e}"}), 502
+    except Exception as e:
+        return jsonify({
+            "error":     f"{type(e).__name__}: {e}",
+            "ok":        False,
+        }), 500
+    if not result.get("ok"):
+        # Surface the per-report-name attempts so the user (or sysadmin)
+        # can see why each candidate failed. Most likely the accountant
+        # needs to save a custom report — explain that in the message.
+        return jsonify({
+            "ok":      False,
+            "error":   result.get("message"),
+            "attempts": result.get("attempts", []),
+        }), 200
+    # Success — cache and render.
+    accounts = result["accounts"]
+    _fin_cache_put(entity, period, accounts)
+    # Render via the TB-upload-style code path (frp_builder predicates),
+    # since the report rows come pre-aggregated by Sage exactly like an
+    # uploaded TB would.
+    try:
+        import tb_parser
+        v  = tb_parser.compute_bs(accounts)
+        bs = tb_parser.render_bs(v)
+    except Exception as e:
+        return jsonify({
+            "ok":      False,
+            "error":   f"Parsed report but BS render failed: {type(e).__name__}: {e}",
+        }), 500
+    return jsonify({
+        "ok":            True,
+        "source":        "readReport",
+        "report_name":   result["report_name"],
+        "entity":        entity,
+        "period":        period,
+        "fetched_at":    datetime.datetime.utcnow().isoformat() + "Z",
+        "account_count": len(accounts),
+        "balance_sheet": bs,
+        "attempts":      result["attempts"],
+    })
+
+
 @app.route("/api/financials/upload-tb", methods=["POST"])
 @login_required
 def api_financials_upload_tb():

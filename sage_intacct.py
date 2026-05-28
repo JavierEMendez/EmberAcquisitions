@@ -36,6 +36,7 @@ Public API:
 from __future__ import annotations
 
 import os
+import re
 import time
 import uuid
 import logging
@@ -612,6 +613,242 @@ def _read_by_query(
         if not result_id or remaining <= 0:
             break
     return out
+
+
+# ─── readReport — invoke a saved Sage report via API ─────────────────────────
+#
+# This is the path Sage's own UI uses for the Trial Balance report. We
+# call <readReport> with the report's name + parameters, Sage runs it
+# server-side, and returns the rows. Bypasses the entire GLENTRY-
+# aggregation problem because the report IS the canonical TB.
+#
+# Catch: <readReport> works only with REPORTS THAT ARE SAVED in Sage.
+# Standard built-in reports might not be invokable by their UI name
+# alone — they typically need to be re-saved as a custom report with
+# a known path. So we try a list of candidate names and the first one
+# that returns rows wins. If none work, the accountant needs to save
+# a custom TB report in Sage UI named "API_TB" (or set
+# INTACCT_TB_REPORT_NAME env var to match whatever they named it).
+def _read_report(
+    report_name: str,
+    arguments: dict = None,
+    page_size: int = 1000,
+    max_pages: int = 50,
+    wait_seconds: int = 30,
+) -> dict:
+    """Invoke <readReport> for `report_name` with the given arguments.
+    Returns {'rows': [...], 'columns': [...], 'error': str-or-None}."""
+    args_xml = ""
+    if arguments:
+        for k, v in arguments.items():
+            args_xml += f"<{_xml_escape(k)}>{_xml_escape(str(v))}</{_xml_escape(k)}>"
+    arguments_block = f"<arguments>{args_xml}</arguments>" if args_xml else ""
+
+    out_rows: list[dict] = []
+    out_cols: list[str] = []
+    result_id: Optional[str] = None
+
+    for page in range(max_pages):
+        if result_id is None:
+            content = (
+                f'<function controlid="{_new_control_id()}">'
+                "<readReport>"
+                f"<report>{_xml_escape(report_name)}</report>"
+                f"<waitTime>{int(wait_seconds)}</waitTime>"
+                f"<pagesize>{int(page_size)}</pagesize>"
+                "<returnDef>false</returnDef>"
+                f"{arguments_block}"
+                "</readReport>"
+                "</function>"
+            )
+        else:
+            content = (
+                f'<function controlid="{_new_control_id()}">'
+                f"<readMore><resultId>{_xml_escape(result_id)}</resultId></readMore>"
+                "</function>"
+            )
+        try:
+            root = _call(content)
+        except IntacctAPIError as e:
+            return {"rows": out_rows, "columns": out_cols, "error": str(e)[:500]}
+
+        data = root.find("./operation/result/data")
+        if data is None:
+            break
+        result_id = data.attrib.get("resultId") or None
+        try:
+            remaining = int(data.attrib.get("numremaining", "0") or "0")
+        except ValueError:
+            remaining = 0
+
+        for row_node in list(data):
+            row_dict = {child.tag: (child.text or "") for child in row_node}
+            if not out_cols:
+                out_cols = list(row_dict.keys())
+            out_rows.append(row_dict)
+
+        if not result_id or remaining <= 0:
+            break
+
+    return {"rows": out_rows, "columns": out_cols, "error": None}
+
+
+def pull_tb_via_report(
+    entity_id: str,
+    period_name: str,
+    report_name_override: Optional[str] = None,
+) -> dict:
+    """Pull a Trial Balance directly from Sage's report engine.
+
+    Returns:
+        {
+          'ok':          bool,
+          'report_name': str-or-None,  — which report name succeeded
+          'accounts':    list-of-dicts (num/name/opening/debit/credit/closing),
+          'attempts':    list of {report_name, status, error/row_count},
+          'message':     str (human summary).
+        }
+
+    Tries report_name_override (or INTACCT_TB_REPORT_NAME env var) first,
+    then a list of fallbacks. The accountant should save a custom TB
+    report in Sage UI named API_TB (or whatever matches the env var)
+    with the appropriate reporting-period parameter so this becomes
+    reliable. Until then we attempt common names.
+    """
+    candidate_names: list[str] = []
+    primary = report_name_override or os.getenv("INTACCT_TB_REPORT_NAME") or ""
+    primary = primary.strip()
+    if primary:
+        candidate_names.append(primary)
+    # Common fallback names. None are guaranteed to exist on a given
+    # instance — they're best-effort attempts before the accountant
+    # saves a custom report.
+    candidate_names.extend([
+        "API_TB",
+        "API Trial Balance",
+        "Trial Balance",
+        "GL Trial Balance",
+        "Standard Trial Balance",
+    ])
+
+    attempts: list[dict] = []
+    for name in candidate_names:
+        log.info("pull_tb_via_report: trying report name=%r", name)
+        result = _read_report(name, arguments={
+            # These argument names are Sage conventions; the report
+            # definition determines which are honored. We pass several
+            # so whichever maps gets used.
+            "REPORTINGPERIOD": period_name,
+            "OWNER":           entity_id,
+            "LOCATIONID":      entity_id,
+        })
+        attempt_info = {
+            "report_name": name,
+            "row_count":   len(result["rows"]),
+            "error":       result["error"],
+        }
+        attempts.append(attempt_info)
+        if result["error"]:
+            log.warning("readReport(%r) error: %s", name, result["error"])
+            continue
+        if not result["rows"]:
+            log.warning("readReport(%r) returned 0 rows", name)
+            continue
+
+        # Got rows — try to coerce them into the standard accounts
+        # shape. Column names vary by report definition, so we map
+        # case-insensitively against several likely synonyms.
+        accounts = _coerce_report_rows_to_accounts(result["rows"])
+        if accounts:
+            return {
+                "ok":          True,
+                "report_name": name,
+                "accounts":    accounts,
+                "attempts":    attempts,
+                "message":     f"Pulled {len(accounts)} accounts from report {name!r}.",
+            }
+        log.warning(
+            "readReport(%r) returned %d rows but none parseable as TB accounts; columns=%s",
+            name, len(result["rows"]), result["columns"],
+        )
+        attempt_info["parse_failed"] = True
+        attempt_info["columns"]      = result["columns"]
+
+    return {
+        "ok":          False,
+        "report_name": None,
+        "accounts":    [],
+        "attempts":    attempts,
+        "message": (
+            "No saved Sage report returned a parseable Trial Balance. "
+            "Have your Sage administrator save a custom TB report in Sage UI "
+            "(name it 'API_TB' or set INTACCT_TB_REPORT_NAME) with the "
+            "Owner/Reporting Period as a runtime parameter, then retry."
+        ),
+    }
+
+
+def _coerce_report_rows_to_accounts(rows: list[dict]) -> list[dict]:
+    """Map report rows (with unknown column naming) to the standard
+    account dict shape used elsewhere: num/name/opening/debit/credit/closing."""
+    if not rows:
+        return []
+
+    def _f(s):
+        if not s:
+            return 0.0
+        s = str(s).strip()
+        neg = s.startswith("(") and s.endswith(")")
+        s = s.strip("()").replace(",", "").replace("$", "")
+        try:
+            return -float(s) if neg else float(s)
+        except (TypeError, ValueError):
+            return 0.0
+
+    # Build lookup of column name -> canonical key. We compare lowercase
+    # without spaces/underscores to be lenient about Sage's naming
+    # variations across report definitions.
+    def _norm(s):
+        return re.sub(r"[\s_]+", "", s.strip().lower())
+
+    synonyms = {
+        "num":     {"accountno", "accountnumber", "accountnum", "accno", "account",
+                    "glaccountno", "glaccountnumber"},
+        "name":    {"accountname", "accounttitle", "name", "title", "description"},
+        "opening": {"openingbalance", "beginningbalance", "beginbalance", "openingbal", "openbal"},
+        "debit":   {"debit", "debits", "totaldebits", "currentdebit"},
+        "credit":  {"credit", "credits", "totalcredits", "currentcredit"},
+        "closing": {"closingbalance", "endingbalance", "endbalance", "closingbal",
+                    "closeBal".lower(), "currentbalance", "balance"},
+    }
+
+    first_row = rows[0]
+    col_map: dict[str, str] = {}
+    for col in first_row.keys():
+        n = _norm(col)
+        for canonical, alts in synonyms.items():
+            if n in alts:
+                col_map[canonical] = col
+                break
+
+    # Need at minimum num + closing to be useful.
+    if "num" not in col_map or "closing" not in col_map:
+        return []
+
+    accounts = []
+    for r in rows:
+        num = (r.get(col_map.get("num", "")) or "").strip()
+        if not num or not num[0].isdigit():
+            continue
+        accounts.append({
+            "num":     num,
+            "name":    (r.get(col_map.get("name", "")) or "").strip() if "name" in col_map else "",
+            "opening": _f(r.get(col_map.get("opening", ""))) if "opening" in col_map else 0.0,
+            "debit":   _f(r.get(col_map.get("debit", "")))   if "debit"   in col_map else 0.0,
+            "credit":  _f(r.get(col_map.get("credit", ""))) if "credit"   in col_map else 0.0,
+            "closing": _f(r.get(col_map.get("closing", ""))),
+        })
+    return accounts
 
 
 # ─── Public API ──────────────────────────────────────────────────────────────

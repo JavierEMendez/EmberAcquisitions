@@ -153,8 +153,14 @@
           </button>
         </div>
         <div class="fin-control fin-control-actions">
-          <button id="fin-upload-tb-trigger" class="fin-btn primary"
-                  title="Upload Sage's HTML-formatted .xls TB export (the canonical source).">
+          <button id="fin-pull-tb-report" class="fin-btn primary" disabled
+                  title="Pull the Trial Balance directly from Sage's report engine — no upload needed.">
+            Pull TB from Sage
+          </button>
+        </div>
+        <div class="fin-control fin-control-actions">
+          <button id="fin-upload-tb-trigger" class="fin-btn"
+                  title="Fallback: upload Sage's HTML-formatted .xls TB export.">
             Upload TB Export
           </button>
         </div>
@@ -329,6 +335,7 @@ function onSelectionChange() {
   FIN.currentPeriod = $('fin-period').value;
   $('fin-refresh').disabled = !(FIN.currentEntity && FIN.currentPeriod);
   $('fin-calibrate').disabled = !(FIN.currentEntity && FIN.currentPeriod);
+  $('fin-pull-tb-report').disabled = !(FIN.currentEntity && FIN.currentPeriod);
   if (FIN.currentEntity && FIN.currentPeriod) {
     // Try to render from cache; if no cache, show empty state
     fetchBalanceSheet(false);
@@ -866,6 +873,57 @@ async function calibrateToFRP() {
   }
 }
 $('fin-calibrate').addEventListener('click', calibrateToFRP);
+
+// "Pull TB from Sage" — invoke Sage's readReport API to get the
+// canonical TB live, no upload needed.
+async function pullTbFromSage() {
+  if (!FIN.currentEntity || !FIN.currentPeriod) return;
+  setStatus('Pulling Trial Balance from Sage report engine…', 'info');
+  $('fin-pull-tb-report').disabled = true;
+  $('fin-refresh').disabled = true;
+  try {
+    const url = '/api/financials/pull-tb-report'
+              + '?entity=' + encodeURIComponent(FIN.currentEntity)
+              + '&period=' + encodeURIComponent(FIN.currentPeriod);
+    const res = await fetch(url, { method: 'POST' });
+    const j = await res.json();
+    console.log('[financials] /api/financials/pull-tb-report response:', j);
+    if (!j.ok) {
+      // Show the per-report-name attempts so it's clear why each failed.
+      let msg = j.error || 'unknown error';
+      if (Array.isArray(j.attempts) && j.attempts.length) {
+        msg += '<br><br><b>Attempts:</b><table style="margin-top:6px;font-size:11px;font-family:monospace;border-collapse:collapse;">'
+            + '<thead><tr style="text-align:left;border-bottom:1px solid #d4a574;">'
+            +   '<th style="padding:2px 16px 2px 0;">report</th>'
+            +   '<th style="padding:2px 16px 2px 0;">rows</th>'
+            +   '<th style="padding:2px 0;">error</th>'
+            + '</tr></thead><tbody>';
+        for (const a of j.attempts) {
+          msg += '<tr>'
+              + '<td style="padding:1px 16px 1px 0;">' + escapeHtml(a.report_name) + '</td>'
+              + '<td style="padding:1px 16px 1px 0;">' + (a.row_count || 0) + '</td>'
+              + '<td style="padding:1px 0;">' + escapeHtml((a.error || '').slice(0, 200) || '(no error, but unparseable)') + '</td>'
+              + '</tr>';
+        }
+        msg += '</tbody></table>';
+      }
+      setStatus('Sage report pull failed.', 'err');
+      $('fin-bs-content').innerHTML = '<div class="fin-stmt-note" style="background:#fff4e8;border-left-color:#f59e0b;">' + msg + '</div>';
+      $('fin-bs-placeholder').style.display = 'none';
+      $('fin-bs-content').style.display = '';
+      return;
+    }
+    FIN.lastPayload = j;
+    renderBalanceSheet(j);
+    setStatus('Pulled live from Sage report: ' + j.report_name, 'ok');
+  } catch (e) {
+    setStatus('Pull error: ' + e.message, 'err');
+  } finally {
+    $('fin-pull-tb-report').disabled = false;
+    $('fin-refresh').disabled = false;
+  }
+}
+$('fin-pull-tb-report').addEventListener('click', pullTbFromSage);
 
 // ── TB-upload flow ────────────────────────────────────────────
 // The accountant exports Sage's HTML-formatted .xls TB and uploads it
