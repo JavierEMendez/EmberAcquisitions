@@ -876,23 +876,30 @@ def get_trial_balance(entity_id: str, period_name: str,
         # (mode, pattern, reason)
         ("contains",    "placeholder",  "placeholder AJE"),
         ("contains",    "commitment",   "commitment batch (open/move/true-up)"),
-        ("contains",    " to cj_po",    "CJ_PO commitment-journal migration"),
         ("startswith",  "2-po",         "PO commitment open"),
-        ("startswith",  "close po",     "PO commitment closure"),
         # "X Batch" without "Summary Entry" suffix = commit-reversal
         # side. The "Summary Entry" sibling is the actual transaction.
-        # Same workflow for Vendor Invoices AND Change Orders:
         ("non_summary", "3-vendor invoice", "vendor-invoice commit-reversal (X Batch)"),
-        ("non_summary", "change order",     "Change Order commit-side (X Batch)"),
-        # NOTE: "contains reclass" + "startswith correcting" patterns
-        # were tried and reverted — they caught hundreds of routine
-        # monthly reclassification batches that ARE legitimate
-        # bookkeeping (paired moves between AP/Related-Party,
-        # Contra-MUD adjustments, etc.). Excluding them broke many
-        # other BS lines that previously reconciled. The remaining
-        # ~$1.9M paired Dev/AP delta likely lives in a more specific
-        # subset of reclass batches that needs accountant input to
-        # identify.
+        # NOTE: previously also excluded "startswith close po",
+        # "contains  to cj_po", and "non_summary change order".
+        # The inverse calibration against GPD March 2026 FRP found
+        # that un-excluding those 3 reasons cuts loss in half
+        # (1.89M → 1.10M) without disturbing any of the 7 anchor
+        # accounts (Land, Bonds, Dev Loan, MUD Receivable, etc.).
+        # Interpretation: PO closures, CJ_PO migrations, and Change
+        # Orders are real construction events that the FRP includes.
+        # Only true commitment OPENS (2-PO, placeholder, vendor-invoice
+        # X Batch clearing, and "Move COMMITMENTS" batches) should
+        # stay excluded.
+        #
+        # The remaining 1.10M of AP shortfall after this relaxation
+        # appears to be a finer-grained pattern we can't catch
+        # without accountant input on the specific batch convention.
+        #
+        # Also tried and reverted: "contains reclass" + "startswith
+        # correcting" — those caught hundreds of legitimate routine
+        # monthly reclassification batches and broke many other BS
+        # lines that previously reconciled.
     ]
     def _excluded_batch_reason(e: dict) -> Optional[str]:
         bt = (e.get("BATCHTITLE") or "").strip().lower()
