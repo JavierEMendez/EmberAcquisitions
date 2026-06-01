@@ -235,11 +235,42 @@ def is_re_invest(p):
     return False
 
 
+def _normalize_account(a: dict) -> dict:
+    """Coerce different account-dict shapes to the canonical TB shape
+    {num, name, opening, debit, credit, closing}.
+
+    The repo has two account-dict formats in circulation:
+      - frp_builder.py / tb_parser native:  num / opening / closing
+      - sage_intacct.get_trial_balance:     no  / open    / close
+
+    Either can wind up in the cache (TB upload vs Refresh-from-Sage),
+    so every entry point through tb_parser normalizes defensively.
+    """
+    return {
+        "num":     a.get("num")     or a.get("no")    or "",
+        "name":    a.get("name", ""),
+        "opening": a.get("opening") if "opening" in a else a.get("open",  0.0) or 0.0,
+        "debit":   a.get("debit",  0.0) or 0.0,
+        "credit":  a.get("credit", 0.0) or 0.0,
+        "closing": a.get("closing") if "closing" in a else a.get("close", 0.0) or 0.0,
+    }
+
+
+def _normalize_accounts(accounts: list[dict]) -> list[dict]:
+    return [_normalize_account(a) for a in (accounts or [])]
+
+
 def sum_accounts(accounts: list[dict], predicate, field: str = "closing") -> float:
     total = 0.0
     for a in accounts:
-        if predicate(get_prefix(a["num"])):
-            total += a[field]
+        if predicate(get_prefix(a.get("num") or a.get("no") or "")):
+            # Fallback for old-format keys.
+            v = a.get(field)
+            if v is None and field == "closing":
+                v = a.get("close", 0.0)
+            elif v is None and field == "opening":
+                v = a.get("open", 0.0)
+            total += (v or 0.0)
     return total
 
 
@@ -276,7 +307,12 @@ def compute_bs(accounts: list[dict]) -> "OrderedDict[str, float]":
     positive for display. Retained Earnings includes the YTD income-
     statement roll-up plus account 30500 + 30550 — this is what
     closes the footing the GLENTRY approach left $7.5M open.
+
+    Accounts can arrive in either TB-format (num/closing) or
+    GLENTRY-format (no/close); we normalize defensively up front so
+    either source caches transparently.
     """
+    accounts = _normalize_accounts(accounts)
     def gs(predicate): return sum_accounts(accounts, predicate, "closing")
 
     other_cl = sum(
@@ -343,6 +379,8 @@ def compute_is(monthly_accounts: list[dict],
     """Roll up TB account changes into the canonical FRP income-
     statement shape. Returns each line keyed by short name, value =
     {'monthly': float, 'ytd': float}."""
+    monthly_accounts = _normalize_accounts(monthly_accounts)
+    ytd_accounts     = _normalize_accounts(ytd_accounts)
     def both(predicate, flip=False):
         return {
             "monthly": change(monthly_accounts, predicate, flip),
@@ -475,6 +513,8 @@ def compute_scf(monthly_accounts: list[dict],
     Each line: change in balance from period open to close, in cash-
     flow direction (assets decrease = cash in, liabilities increase
     = cash in)."""
+    monthly_accounts = _normalize_accounts(monthly_accounts)
+    ytd_accounts     = _normalize_accounts(ytd_accounts)
     def both(predicate):
         return {
             "monthly": cash_change(monthly_accounts, predicate),

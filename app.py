@@ -2428,22 +2428,35 @@ def api_financials_upload_tb():
         except Exception as e:
             return jsonify({"error": f"failed to parse YTD TB: {e}"}), 400
 
-    # Cache each entity. If a matching YTD entity exists (same sage_code),
-    # cache both monthly + YTD together so IS/SCF have what they need.
+    # Cache each entity under its TB sage_code (e.g. "DEV_GPD LLC")
+    # AND — if the form supplied the user-selected entity_id from the
+    # dropdown (e.g. "E_Grand Prairie Development LLC") — also under
+    # that key, so the dashboard's current selection finds the data.
+    # The sage_code Sage uses on the TB header doesn't match the
+    # entity-LOCATIONID Sage uses in list_entities, so we cache under
+    # both to make either lookup work.
+    selected_entity = (request.form.get("entity") or "").strip()
     cached_entities = []
     for code, data in monthly_entities.items():
         ytd_accts = None
         ytd_info  = ytd_entities.get(code)
         if ytd_info:
             ytd_accts = ytd_info["accounts"]
+        # Primary: cache under the TB header's sage_code.
         _fin_cache_put(code, period, data["accounts"], accounts_ytd=ytd_accts)
+        # Mirror: when the dropdown's entity is set and isn't the same
+        # as the sage_code, ALSO cache under that key.
+        if selected_entity and selected_entity != code:
+            _fin_cache_put(selected_entity, period, data["accounts"],
+                           accounts_ytd=ytd_accts)
         cached_entities.append({
-            "sage_code":        code,
-            "full_name":        data["full_name"],
-            "reporting_period": data["reporting_period"],
-            "as_of_date":       data["as_of_date"],
-            "account_count":    len(data["accounts"]),
+            "sage_code":         code,
+            "full_name":         data["full_name"],
+            "reporting_period":  data["reporting_period"],
+            "as_of_date":        data["as_of_date"],
+            "account_count":     len(data["accounts"]),
             "ytd_account_count": len(ytd_accts) if ytd_accts else 0,
+            "mirror_key":        selected_entity if (selected_entity and selected_entity != code) else None,
         })
     return jsonify({
         "ok":              True,
