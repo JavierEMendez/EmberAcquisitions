@@ -205,10 +205,8 @@
       {# ── Statement tabs ──────────────────────────────────── #}
       <div class="fin-tabnav">
         <button class="fin-tab is-active" data-statement="balance-sheet">Balance Sheet</button>
-        <button class="fin-tab is-disabled" data-statement="income-statement" disabled
-                title="Coming in Phase 2">Income Statement</button>
-        <button class="fin-tab is-disabled" data-statement="cash-flows" disabled
-                title="Coming in Phase 3">Statement of Cash Flows</button>
+        <button class="fin-tab" data-statement="income-statement">Income Statement</button>
+        <button class="fin-tab" data-statement="cash-flows">Statement of Cash Flows</button>
         <button class="fin-tab is-disabled" data-statement="export-excel" disabled
                 title="Coming in Phase 4">⬇ Excel</button>
         <button class="fin-tab is-disabled" data-statement="export-pdf" disabled
@@ -271,6 +269,7 @@ const FIN = {
   periods:  [],
   currentEntity: '',
   currentPeriod: '',
+  activeTab:    'balance-sheet',  // 'balance-sheet' | 'income-statement' | 'cash-flows'
   sageConfigured: {{ 'true' if sage_configured else 'false' }},
 };
 
@@ -727,6 +726,241 @@ function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g,
     c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+
+// ── Tab switching + IS / SCF rendering ─────────────────────────
+//
+// All three statements (BS, IS, SCF) render into #fin-bs-content. The
+// active tab determines which fetch endpoint we hit + which renderer
+// runs. BS uses GET /api/financials/balance-sheet or the TB-upload
+// equivalent; IS and SCF always use the TB-upload endpoints (no
+// GLENTRY-based path for those — IS/SCF logic only lives in tb_parser).
+async function fetchAndRenderActiveTab() {
+  if (!FIN.currentEntity || !FIN.currentPeriod) return;
+  if (FIN.activeTab === 'balance-sheet') {
+    return fetchBalanceSheet(false);
+  }
+  if (FIN.activeTab === 'income-statement') {
+    return fetchIncomeStatement();
+  }
+  if (FIN.activeTab === 'cash-flows') {
+    return fetchCashFlows();
+  }
+}
+
+async function fetchIncomeStatement() {
+  setStatus('Loading Income Statement…', 'info');
+  try {
+    const url = '/api/financials/income-statement-tb'
+              + '?entity=' + encodeURIComponent(FIN.currentEntity)
+              + '&period=' + encodeURIComponent(FIN.currentPeriod);
+    const res = await fetch(url);
+    const j = await res.json();
+    console.log('[financials] /api/financials/income-statement-tb response:', j);
+    if (!res.ok) {
+      setStatus('IS error: ' + (j.error || res.statusText), 'err');
+      return;
+    }
+    if (!j.cached) {
+      showStatementPlaceholder('Income Statement', j.message
+        || 'Upload a Current-Month and YTD TB to render the Income Statement.');
+      return;
+    }
+    renderIncomeStatement(j);
+    setStatus('Income Statement rendered.', 'ok');
+  } catch (e) {
+    setStatus('IS error: ' + e.message, 'err');
+  }
+}
+
+async function fetchCashFlows() {
+  setStatus('Loading Statement of Cash Flows…', 'info');
+  try {
+    const url = '/api/financials/cash-flows-tb'
+              + '?entity=' + encodeURIComponent(FIN.currentEntity)
+              + '&period=' + encodeURIComponent(FIN.currentPeriod);
+    const res = await fetch(url);
+    const j = await res.json();
+    console.log('[financials] /api/financials/cash-flows-tb response:', j);
+    if (!res.ok) {
+      setStatus('SCF error: ' + (j.error || res.statusText), 'err');
+      return;
+    }
+    if (!j.cached) {
+      showStatementPlaceholder('Statement of Cash Flows', j.message
+        || 'Upload a Current-Month and YTD TB to render the SCF.');
+      return;
+    }
+    renderCashFlows(j);
+    setStatus('Statement of Cash Flows rendered.', 'ok');
+  } catch (e) {
+    setStatus('SCF error: ' + e.message, 'err');
+  }
+}
+
+function showStatementPlaceholder(statementName, message) {
+  $('fin-bs-placeholder').style.display = 'none';
+  $('fin-bs-content').style.display = '';
+  $('fin-bs-content').innerHTML =
+    '<div class="fin-stmt-head">'
+    + '<div class="fin-stmt-name">' + escapeHtml(statementName) + '</div>'
+    + '</div>'
+    + '<div class="fin-stmt-note" style="background:#fff4e8;border-left-color:#f59e0b;">'
+    + escapeHtml(message)
+    + '</div>';
+}
+
+// Render IS with two value columns (Current Month, YTD).
+function renderIncomeStatement(payload) {
+  const is_ = payload.income_statement;
+  if (!is_ || !is_.structure) {
+    setStatus('No income-statement data in response.', 'err');
+    return;
+  }
+  const entityName = (FIN.entities.find(e => e.id === payload.entity) || {}).name || payload.entity;
+  const monthlyLbl = is_.monthly_label || 'Current Month';
+  const ytdLbl     = is_.ytd_label     || 'Year To Date';
+  let html = '<div class="fin-stmt-head">';
+  html +=   '<div class="fin-stmt-entity">' + escapeHtml(entityName) + '</div>';
+  html +=   '<div class="fin-stmt-name">Income Statement</div>';
+  html +=   '<div class="fin-stmt-period">' + escapeHtml(payload.period) + '</div>';
+  html += '</div>';
+  html += '<table class="fin-stmt-table">';
+  html +=   '<thead><tr><th></th>'
+        +   '<th class="num">' + escapeHtml(monthlyLbl) + '</th>'
+        +   '<th class="num">' + escapeHtml(ytdLbl) + '</th></tr></thead>';
+  html += '<tbody>';
+  for (const sec of is_.structure) {
+    html += '<tr class="section"><td>' + escapeHtml(sec.section) + '</td><td></td><td></td></tr>';
+    for (const sub of sec.subsections) {
+      html += '<tr class="subsection"><td>' + escapeHtml(sub.subsection) + '</td><td></td><td></td></tr>';
+      for (const li of sub.line_items) {
+        html += '<tr class="lineitem">'
+              + '<td>' + escapeHtml(li.line_item) + '</td>'
+              + '<td class="num">' + fmtMoney(li.value) + '</td>'
+              + '<td class="num">' + fmtMoney(li.value_ytd) + '</td></tr>';
+      }
+      html += '<tr class="subtotal"><td>Total ' + escapeHtml(sub.subsection) + '</td>'
+            + '<td class="num">' + fmtMoney(sub.total) + '</td>'
+            + '<td class="num">' + fmtMoney(sub.total_ytd) + '</td></tr>';
+    }
+    html += '<tr class="section-total"><td>Total ' + escapeHtml(sec.section) + '</td>'
+          + '<td class="num">' + fmtMoney(sec.total) + '</td>'
+          + '<td class="num">' + fmtMoney(sec.total_ytd) + '</td></tr>';
+  }
+  // Net Income row
+  if (is_.net_income) {
+    html += '<tr class="section-total"><td><b>NET INCOME</b></td>'
+          + '<td class="num"><b>' + fmtMoney(is_.net_income.monthly) + '</b></td>'
+          + '<td class="num"><b>' + fmtMoney(is_.net_income.ytd) + '</b></td></tr>';
+  }
+  html += '</tbody></table>';
+  $('fin-bs-content').innerHTML = html;
+  $('fin-bs-placeholder').style.display = 'none';
+  $('fin-bs-content').style.display = '';
+  updateDataDates(payload);
+}
+
+// Render SCF with two value columns.
+function renderCashFlows(payload) {
+  const scf = payload.cash_flows;
+  if (!scf || !scf.structure) {
+    setStatus('No cash-flow data in response.', 'err');
+    return;
+  }
+  const entityName = (FIN.entities.find(e => e.id === payload.entity) || {}).name || payload.entity;
+  const monthlyLbl = scf.monthly_label || 'Current Month';
+  const ytdLbl     = scf.ytd_label     || 'Year To Date';
+  let html = '<div class="fin-stmt-head">';
+  html +=   '<div class="fin-stmt-entity">' + escapeHtml(entityName) + '</div>';
+  html +=   '<div class="fin-stmt-name">Statement of Cash Flows</div>';
+  html +=   '<div class="fin-stmt-period">' + escapeHtml(payload.period) + '</div>';
+  html += '</div>';
+  html += '<table class="fin-stmt-table">';
+  html +=   '<thead><tr><th></th>'
+        +   '<th class="num">' + escapeHtml(monthlyLbl) + '</th>'
+        +   '<th class="num">' + escapeHtml(ytdLbl) + '</th></tr></thead>';
+  html += '<tbody>';
+  for (const sec of scf.structure) {
+    html += '<tr class="section"><td>' + escapeHtml(sec.section) + '</td><td></td><td></td></tr>';
+    for (const sub of sec.subsections) {
+      for (const li of sub.line_items) {
+        // Only render lines with non-zero monthly OR YTD value to
+        // match frp_builder.py's behavior (hide empty lines).
+        if (Math.abs(li.value || 0) < 0.5 && Math.abs(li.value_ytd || 0) < 0.5) continue;
+        html += '<tr class="lineitem">'
+              + '<td>' + escapeHtml(li.line_item) + '</td>'
+              + '<td class="num">' + fmtMoney(li.value) + '</td>'
+              + '<td class="num">' + fmtMoney(li.value_ytd) + '</td></tr>';
+      }
+    }
+    html += '<tr class="section-total"><td>Net ' + escapeHtml(sec.section.replace(/^Cash Flows from /, '')) + '</td>'
+          + '<td class="num">' + fmtMoney(sec.total) + '</td>'
+          + '<td class="num">' + fmtMoney(sec.total_ytd) + '</td></tr>';
+  }
+  // Summary block.
+  if (scf.net_change) {
+    html += '<tr class="subtotal"><td>Net Change in Cash</td>'
+          + '<td class="num">' + fmtMoney(scf.net_change.monthly) + '</td>'
+          + '<td class="num">' + fmtMoney(scf.net_change.ytd) + '</td></tr>';
+  }
+  if (scf.cash_beg) {
+    html += '<tr class="lineitem"><td>Cash, Beginning of Period</td>'
+          + '<td class="num">' + fmtMoney(scf.cash_beg.monthly) + '</td>'
+          + '<td class="num">' + fmtMoney(scf.cash_beg.ytd) + '</td></tr>';
+  }
+  if (scf.cash_end) {
+    html += '<tr class="section-total"><td>Cash, End of Period</td>'
+          + '<td class="num">' + fmtMoney(scf.cash_end.monthly) + '</td>'
+          + '<td class="num">' + fmtMoney(scf.cash_end.ytd) + '</td></tr>';
+  }
+  if (scf.footing) {
+    html += '<tr class="footing"><td>Footing Check (should be 0)</td>'
+          + '<td class="num">' + fmtMoney(scf.footing.monthly) + '</td>'
+          + '<td class="num">' + fmtMoney(scf.footing.ytd) + '</td></tr>';
+  }
+  html += '</tbody></table>';
+  $('fin-bs-content').innerHTML = html;
+  $('fin-bs-placeholder').style.display = 'none';
+  $('fin-bs-content').style.display = '';
+  updateDataDates(payload);
+}
+
+function updateDataDates(payload) {
+  const dd = $('fin-data-dates');
+  if (!dd) return;
+  const fetched = payload.fetched_at
+                ? new Date(payload.fetched_at).toLocaleString()
+                : '—';
+  dd.innerHTML =
+      '<span class="ddf-item"><span class="ddf-lbl">Period</span><span class="ddf-val">'
+    + escapeHtml(payload.period) + '</span></span>'
+    + '<span class="ddf-sep">·</span>'
+    + '<span class="ddf-item"><span class="ddf-lbl">Source</span><span class="ddf-val">'
+    + escapeHtml(payload.source || 'cache') + '</span></span>'
+    + '<span class="ddf-sep">·</span>'
+    + '<span class="ddf-item"><span class="ddf-lbl">Last Fetched</span><span class="ddf-val">'
+    + escapeHtml(fetched) + '</span></span>';
+  dd.style.display = '';
+}
+
+// Tab click handler — switch active tab + render its statement.
+function setupTabHandlers() {
+  document.querySelectorAll('.fin-tab[data-statement]').forEach(btn => {
+    if (btn.disabled || btn.classList.contains('is-disabled')) return;
+    btn.addEventListener('click', () => {
+      const target = btn.getAttribute('data-statement');
+      if (!target || target === FIN.activeTab) return;
+      // Visual: clear active class on all, set on clicked
+      document.querySelectorAll('.fin-tab[data-statement]').forEach(
+        b => b.classList.remove('is-active')
+      );
+      btn.classList.add('is-active');
+      FIN.activeTab = target;
+      fetchAndRenderActiveTab();
+    });
+  });
+}
+setupTabHandlers();
 
 async function fetchBalanceSheetFromTBUpload() {
   if (!FIN.currentEntity || !FIN.currentPeriod) return;

@@ -215,11 +215,56 @@ def is_other_current_liab(p):
     return (20000 <= p <= 21999) and p not in CAPTURED_LIAB_ACCTS
 
 
+def is_other_op_liab(p):
+    # Same predicate as is_other_current_liab; named separately to
+    # match frp_builder.py's distinction (used in SCF working-capital
+    # changes section).
+    return (20000 <= p <= 21999) and p not in CAPTURED_LIAB_ACCTS
+
+
+def is_re_invest(p):
+    """RE Development Expenditures for SCF investing. Excludes contras
+    (those are non-cash bookkeeping moves)."""
+    if 15000 <= p <= 15999: return True
+    if 16001 <= p <= 16799: return True
+    if 16851 <= p <= 16899: return True
+    if 16903 <= p <= 16999: return True
+    if 17000 <= p <= 17999: return True
+    if 18000 <= p <= 18999 and p != 18020: return True
+    if 19001 <= p <= 19999: return True
+    return False
+
+
 def sum_accounts(accounts: list[dict], predicate, field: str = "closing") -> float:
     total = 0.0
     for a in accounts:
         if predicate(get_prefix(a["num"])):
             total += a[field]
+    return total
+
+
+def change(accounts: list[dict], predicate, flip: bool = False) -> float:
+    """Sum (closing - opening) over matching accounts. `flip=True`
+    negates the result (used for revenue accounts which have CR
+    balances — flip to positive for display)."""
+    total = 0.0
+    for a in accounts:
+        if predicate(get_prefix(a["num"])):
+            chg = a["closing"] - a["opening"]
+            total += -chg if flip else chg
+    return total
+
+
+def cash_change(accounts: list[dict], predicate) -> float:
+    """Sum (opening - closing) over matching accounts — the SCF
+    convention used by frp_builder.py. For assets: positive when
+    asset DECREASED (cash inflow). For liabilities: positive when
+    liability INCREASED (cash inflow). Result rolls up into the
+    correct cash-flow direction."""
+    total = 0.0
+    for a in accounts:
+        if predicate(get_prefix(a["num"])):
+            total += a["opening"] - a["closing"]
     return total
 
 
@@ -284,6 +329,289 @@ def compute_bs(accounts: list[dict]) -> "OrderedDict[str, float]":
     v["total_eq"]     = v["members_eq"] + v["retained"]
     v["total_liab_eq"] = v["total_liab"] + v["total_eq"]
     return v
+
+
+# ─── Income Statement (Monthly + YTD) ─────────────────────────────
+#
+# IS uses change-in-balance (closing - opening) rather than absolute
+# closing balance. Each line is computed twice: once from the
+# Current-Month TB (gives monthly activity) and once from the YTD TB
+# (gives year-to-date activity). Revenue accounts have CR balances so
+# flip=True for display positive.
+def compute_is(monthly_accounts: list[dict],
+               ytd_accounts: list[dict]) -> "OrderedDict[str, dict]":
+    """Roll up TB account changes into the canonical FRP income-
+    statement shape. Returns each line keyed by short name, value =
+    {'monthly': float, 'ytd': float}."""
+    def both(predicate, flip=False):
+        return {
+            "monthly": change(monthly_accounts, predicate, flip),
+            "ytd":     change(ytd_accounts,     predicate, flip),
+        }
+    v: "OrderedDict[str, dict]" = OrderedDict()
+    # Revenue — flipped (CR balance → positive display)
+    v["lot_sales"]     = both(lambda p: 40000 <= p <= 40999,          flip=True)
+    v["mkt_fee"]       = both(lambda p: p == 41020,                   flip=True)
+    v["fence"]         = both(lambda p: p == 41001,                   flip=True)
+    v["dev_income"]    = both(lambda p: 42000 <= p <= 46999,          flip=True)
+    # Expenses — NOT flipped (DR balance, positive value = real expense)
+    v["cos"]           = both(lambda p: 50000 <= p <= 59999)
+    v["mkt_exp"]       = both(lambda p: 70001 <= p <= 70039)
+    v["ga"]            = both(lambda p: (60000 <= p <= 69999) or (70040 <= p <= 79999))
+    # Other Income (Expense)
+    v["int_income"]    = both(lambda p: p == 90031,                   flip=True)
+    franchise_tax      = both(lambda p: p == 80015)
+    # Franchise tax is an expense — display negative under Other Income
+    v["franchise_tax"] = {"monthly": -franchise_tax["monthly"],
+                          "ytd":     -franchise_tax["ytd"]}
+    # Subtotals
+    def add(*keys):
+        return {
+            "monthly": sum(v[k]["monthly"] for k in keys if k in v),
+            "ytd":     sum(v[k]["ytd"]     for k in keys if k in v),
+        }
+    v["total_re_rev"]  = add("lot_sales", "mkt_fee", "fence")
+    v["total_op_rev"]  = add("total_re_rev", "dev_income")
+    v["total_rev"]     = add("total_op_rev")
+    v["total_op_exp"]  = add("cos", "mkt_exp", "ga")
+    v["total_exp"]     = add("total_op_exp")
+    v["total_other"]   = add("int_income", "franchise_tax")
+    v["net_income"]    = {
+        "monthly": v["total_rev"]["monthly"] - v["total_exp"]["monthly"] + v["total_other"]["monthly"],
+        "ytd":     v["total_rev"]["ytd"]     - v["total_exp"]["ytd"]     + v["total_other"]["ytd"],
+    }
+    return v
+
+
+def render_is(v: dict, monthly_label: str = "Current Month",
+              ytd_label: str = "Year To Date") -> dict:
+    """Emit IS in the BS-template's structure shape so the frontend
+    renders both with the same JS path. Each line gets BOTH a
+    monthly and YTD value."""
+    def L(name, key, indent=0):
+        return {
+            "line_item": name,
+            "value":     v[key]["monthly"],
+            "value_ytd": v[key]["ytd"],
+            "indent":    indent,
+        }
+
+    structure = [
+        {
+            "section": "Revenue",
+            "total":   v["total_rev"]["monthly"],
+            "total_ytd": v["total_rev"]["ytd"],
+            "subsections": [
+                {
+                    "subsection": "Real Estate Revenue",
+                    "total":      v["total_re_rev"]["monthly"],
+                    "total_ytd":  v["total_re_rev"]["ytd"],
+                    "line_items": [
+                        L("Lot Sales Revenue",     "lot_sales"),
+                        L("Marketing Fee Income",  "mkt_fee"),
+                        L("Fence Credits",         "fence"),
+                    ],
+                },
+                {
+                    "subsection": "Development & Management Income",
+                    "total":      v["dev_income"]["monthly"],
+                    "total_ytd":  v["dev_income"]["ytd"],
+                    "line_items": [
+                        L("Development/Management Income", "dev_income"),
+                    ],
+                },
+            ],
+        },
+        {
+            "section": "Expenses",
+            "total":   v["total_exp"]["monthly"],
+            "total_ytd": v["total_exp"]["ytd"],
+            "subsections": [
+                {
+                    "subsection": "Operating Expenses",
+                    "total":      v["total_op_exp"]["monthly"],
+                    "total_ytd":  v["total_op_exp"]["ytd"],
+                    "line_items": [
+                        L("Cost of Sales - Real Estate", "cos"),
+                        L("Marketing and Advertising",   "mkt_exp"),
+                        L("General & Administrative",    "ga"),
+                    ],
+                },
+            ],
+        },
+        {
+            "section": "Other Income (Expense), Net",
+            "total":   v["total_other"]["monthly"],
+            "total_ytd": v["total_other"]["ytd"],
+            "subsections": [
+                {
+                    "subsection": "Other",
+                    "total":      v["total_other"]["monthly"],
+                    "total_ytd":  v["total_other"]["ytd"],
+                    "line_items": [
+                        L("Interest Income", "int_income"),
+                        L("Franchise Tax",   "franchise_tax"),
+                    ],
+                },
+            ],
+        },
+    ]
+    return {
+        "statement":     "Income Statement",
+        "monthly_label": monthly_label,
+        "ytd_label":     ytd_label,
+        "structure":     structure,
+        "net_income": {
+            "monthly": v["net_income"]["monthly"],
+            "ytd":     v["net_income"]["ytd"],
+        },
+    }
+
+
+# ─── Statement of Cash Flows (Monthly + YTD, indirect method) ─────
+def compute_scf(monthly_accounts: list[dict],
+                ytd_accounts: list[dict]) -> "OrderedDict[str, dict]":
+    """Indirect-method SCF, per frp_builder.py's roadmap methodology.
+    Each line: change in balance from period open to close, in cash-
+    flow direction (assets decrease = cash in, liabilities increase
+    = cash in)."""
+    def both(predicate):
+        return {
+            "monthly": cash_change(monthly_accounts, predicate),
+            "ytd":     cash_change(ytd_accounts,     predicate),
+        }
+    v: "OrderedDict[str, dict]" = OrderedDict()
+    # Operating Activities
+    v["ni"]            = both(is_income_stmt)
+    v["wip_reclass"]   = both(is_contra_sales)
+    v["mud_adj"]       = both(lambda p: p == 16902)
+    v["recv_chg"]      = both(is_receivables)
+    v["prep_chg"]      = both(is_prepaids)
+    v["ap_chg"]        = both(lambda p: p == 20030)
+    v["ret_chg"]       = both(lambda p: p == 20060)
+    v["tax_chg"]       = both(lambda p: p == 20108)
+    v["rp_chg"]        = both(lambda p: p in RELATED_PARTY_ACCTS)
+    v["earn_chg"]      = both(lambda p: p == 21060)
+    v["def_chg"]       = both(lambda p: p == 20020)
+    v["other_op_chg"]  = both(is_other_op_liab)
+    # Investing Activities
+    v["re_dev"]        = both(is_re_invest)
+    v["land_purch"]    = both(is_land)
+    v["bond_cash"]     = both(is_restricted_bonds)
+    v["ppe_chg"]       = both(is_ppe)
+    v["prom_chg"]      = both(is_promissory)
+    # Financing Activities
+    v["loan_chg"]      = both(is_dev_loan)
+    v["bond_st_chg"]   = both(lambda p: p == 21015)
+    v["bond_lt_chg"]   = both(is_bond_lt)
+    v["mem_chg"]       = both(is_members_eq)
+
+    def add(*keys):
+        return {
+            "monthly": sum(v[k]["monthly"] for k in keys if k in v),
+            "ytd":     sum(v[k]["ytd"]     for k in keys if k in v),
+        }
+    v["net_op"]  = add("ni", "wip_reclass", "mud_adj", "recv_chg", "prep_chg",
+                       "ap_chg", "ret_chg", "tax_chg", "rp_chg", "earn_chg",
+                       "def_chg", "other_op_chg")
+    v["net_inv"] = add("re_dev", "land_purch", "bond_cash", "ppe_chg", "prom_chg")
+    v["net_fin"] = add("loan_chg", "bond_st_chg", "bond_lt_chg", "mem_chg")
+    v["net_change"] = add("net_op", "net_inv", "net_fin")
+
+    # Cash beginning / ending — pull straight from the monthly TB
+    # for monthly view; YTD uses YTD TB so opening = Jan 1.
+    v["cash_beg"]  = {
+        "monthly": sum_accounts(monthly_accounts, is_cash, "opening"),
+        "ytd":     sum_accounts(ytd_accounts,     is_cash, "opening"),
+    }
+    cash_end_val = sum_accounts(monthly_accounts, is_cash, "closing")
+    v["cash_end"]  = {"monthly": cash_end_val, "ytd": cash_end_val}
+    # Footing: beg + net_change == end
+    v["footing"]   = {
+        "monthly": v["cash_beg"]["monthly"] + v["net_change"]["monthly"] - v["cash_end"]["monthly"],
+        "ytd":     v["cash_beg"]["ytd"]     + v["net_change"]["ytd"]     - v["cash_end"]["ytd"],
+    }
+    return v
+
+
+def render_scf(v: dict, monthly_label: str = "Current Month",
+               ytd_label: str = "Year To Date") -> dict:
+    """Emit SCF in the same structure shape as BS/IS."""
+    def L(name, key):
+        return {
+            "line_item": name,
+            "value":     v[key]["monthly"],
+            "value_ytd": v[key]["ytd"],
+        }
+    structure = [
+        {
+            "section": "Cash Flows from Operating Activities",
+            "total":   v["net_op"]["monthly"],
+            "total_ytd": v["net_op"]["ytd"],
+            "subsections": [{
+                "subsection": "Operating",
+                "total":      v["net_op"]["monthly"],
+                "total_ytd":  v["net_op"]["ytd"],
+                "line_items": [
+                    L("Net Income (Loss)",                              "ni"),
+                    L("Cost of Sales - WIP Reclassification (non-cash)", "wip_reclass"),
+                    L("MUD Receivable - Bond Proceeds Adj (non-cash)",   "mud_adj"),
+                    L("Changes in Receivables",                          "recv_chg"),
+                    L("Changes in Prepaid Expenses",                     "prep_chg"),
+                    L("Changes in Accounts Payable",                     "ap_chg"),
+                    L("Changes in Retainage Payable",                    "ret_chg"),
+                    L("Changes in Taxes Payable",                        "tax_chg"),
+                    L("Changes in Related Party Payables",               "rp_chg"),
+                    L("Changes in Earnest Money Deposits",               "earn_chg"),
+                    L("Changes in Deferred Revenue",                     "def_chg"),
+                    L("Changes in Other Operating Liabilities",          "other_op_chg"),
+                ],
+            }],
+        },
+        {
+            "section": "Cash Flows from Investing Activities",
+            "total":   v["net_inv"]["monthly"],
+            "total_ytd": v["net_inv"]["ytd"],
+            "subsections": [{
+                "subsection": "Investing",
+                "total":      v["net_inv"]["monthly"],
+                "total_ytd":  v["net_inv"]["ytd"],
+                "line_items": [
+                    L("Real Estate Development Expenditures",  "re_dev"),
+                    L("Purchases of Land",                     "land_purch"),
+                    L("Changes in Restricted Cash (Bond Funds)", "bond_cash"),
+                    L("Purchases of PP&E",                     "ppe_chg"),
+                    L("Changes in Promissory Note",            "prom_chg"),
+                ],
+            }],
+        },
+        {
+            "section": "Cash Flows from Financing Activities",
+            "total":   v["net_fin"]["monthly"],
+            "total_ytd": v["net_fin"]["ytd"],
+            "subsections": [{
+                "subsection": "Financing",
+                "total":      v["net_fin"]["monthly"],
+                "total_ytd":  v["net_fin"]["ytd"],
+                "line_items": [
+                    L("Net Borrowings/(Repayments) - Development Loan", "loan_chg"),
+                    L("Changes in Bond Payable - Short Term",           "bond_st_chg"),
+                    L("Changes in Bond Payable - Long Term, Net",       "bond_lt_chg"),
+                    L("Member Contributions/Distributions",             "mem_chg"),
+                ],
+            }],
+        },
+    ]
+    return {
+        "statement":     "Statement of Cash Flows",
+        "monthly_label": monthly_label,
+        "ytd_label":     ytd_label,
+        "structure":     structure,
+        "net_change":    v["net_change"],
+        "cash_beg":      v["cash_beg"],
+        "cash_end":      v["cash_end"],
+        "footing":       v["footing"],
+    }
 
 
 # ─── Render BS in the shape the /financials template expects ──────

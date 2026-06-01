@@ -300,8 +300,13 @@ def init_db():
             fetched_at   TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
             fetched_by   INTEGER       REFERENCES users(id),
             accounts     JSONB         NOT NULL,
+            accounts_ytd JSONB,
             PRIMARY KEY (entity_id, period_name)
         );
+        -- Backfill `accounts_ytd` column for existing schemas that
+        -- pre-date Phase 2 (IS/SCF need YTD-TB data alongside monthly).
+        ALTER TABLE intacct_tb_cache
+            ADD COLUMN IF NOT EXISTS accounts_ytd JSONB;
         CREATE INDEX IF NOT EXISTS intacct_tb_cache_fetched_idx
             ON intacct_tb_cache (fetched_at DESC);
         -- Lightweight summary view for the archive rail so the page
@@ -1951,10 +1956,11 @@ def _can_view_financials() -> bool:
 
 
 def _fin_cache_get(entity_id: str, period_name: str):
-    """Return cached TB rows + fetched_at, or None if no cache exists."""
+    """Return cached TB rows + fetched_at, or None if no cache exists.
+    Includes accounts_ytd if a Phase 2 YTD upload populated it."""
     conn = get_db(); cur = conn.cursor()
     cur.execute(
-        "SELECT accounts, fetched_at, fetched_by "
+        "SELECT accounts, accounts_ytd, fetched_at, fetched_by "
         "FROM intacct_tb_cache WHERE entity_id = %s AND period_name = %s",
         (entity_id, period_name)
     )
@@ -1962,22 +1968,41 @@ def _fin_cache_get(entity_id: str, period_name: str):
     if not row:
         return None
     return {
-        "accounts":   row["accounts"] or [],
-        "fetched_at": row["fetched_at"],
-        "fetched_by": row.get("fetched_by"),
+        "accounts":     row["accounts"] or [],
+        "accounts_ytd": row.get("accounts_ytd") or [],
+        "fetched_at":   row["fetched_at"],
+        "fetched_by":   row.get("fetched_by"),
     }
 
 
-def _fin_cache_put(entity_id: str, period_name: str, accounts: list):
+def _fin_cache_put(entity_id: str, period_name: str, accounts: list,
+                   accounts_ytd: list = None):
+    """Upsert monthly accounts and (optionally) YTD accounts into the
+    cache. Passing accounts_ytd=None preserves whatever YTD data is
+    already cached; pass an empty list explicitly to clear it."""
     conn = get_db(); cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO intacct_tb_cache (entity_id, period_name, accounts, fetched_at, fetched_by)
-        VALUES (%s, %s, %s, NOW(), %s)
-        ON CONFLICT (entity_id, period_name) DO UPDATE
-          SET accounts   = EXCLUDED.accounts,
-              fetched_at = NOW(),
-              fetched_by = EXCLUDED.fetched_by
-    """, (entity_id, period_name, json.dumps(accounts), session.get("user_id")))
+    if accounts_ytd is None:
+        # Don't touch accounts_ytd; preserve whatever's there.
+        cur.execute("""
+            INSERT INTO intacct_tb_cache (entity_id, period_name, accounts, fetched_at, fetched_by)
+            VALUES (%s, %s, %s, NOW(), %s)
+            ON CONFLICT (entity_id, period_name) DO UPDATE
+              SET accounts   = EXCLUDED.accounts,
+                  fetched_at = NOW(),
+                  fetched_by = EXCLUDED.fetched_by
+        """, (entity_id, period_name, json.dumps(accounts), session.get("user_id")))
+    else:
+        cur.execute("""
+            INSERT INTO intacct_tb_cache
+                (entity_id, period_name, accounts, accounts_ytd, fetched_at, fetched_by)
+            VALUES (%s, %s, %s, %s, NOW(), %s)
+            ON CONFLICT (entity_id, period_name) DO UPDATE
+              SET accounts     = EXCLUDED.accounts,
+                  accounts_ytd = EXCLUDED.accounts_ytd,
+                  fetched_at   = NOW(),
+                  fetched_by   = EXCLUDED.fetched_by
+        """, (entity_id, period_name, json.dumps(accounts),
+              json.dumps(accounts_ytd), session.get("user_id")))
     conn.commit(); cur.close(); conn.close()
 
 
@@ -2392,7 +2417,8 @@ def api_financials_upload_tb():
     if not monthly_entities:
         return jsonify({"error": "no entities found in monthly TB (expected HTML-formatted .xls)"}), 400
 
-    # Optional YTD file — parsed but only used in later phases (IS/SCF).
+    # YTD file — required for IS and SCF (Phase 2 & 3). BS can render
+    # without it, but uploading both at once is the normal workflow.
     ytd_entities = {}
     ytd_file = request.files.get("ytd_tb")
     if ytd_file and ytd_file.filename:
@@ -2402,16 +2428,22 @@ def api_financials_upload_tb():
         except Exception as e:
             return jsonify({"error": f"failed to parse YTD TB: {e}"}), 400
 
-    # Cache each entity's monthly accounts. Cache key is (sage_code, period).
+    # Cache each entity. If a matching YTD entity exists (same sage_code),
+    # cache both monthly + YTD together so IS/SCF have what they need.
     cached_entities = []
     for code, data in monthly_entities.items():
-        _fin_cache_put(code, period, data["accounts"])
+        ytd_accts = None
+        ytd_info  = ytd_entities.get(code)
+        if ytd_info:
+            ytd_accts = ytd_info["accounts"]
+        _fin_cache_put(code, period, data["accounts"], accounts_ytd=ytd_accts)
         cached_entities.append({
             "sage_code":        code,
             "full_name":        data["full_name"],
             "reporting_period": data["reporting_period"],
             "as_of_date":       data["as_of_date"],
             "account_count":    len(data["accounts"]),
+            "ytd_account_count": len(ytd_accts) if ytd_accts else 0,
         })
     return jsonify({
         "ok":              True,
@@ -2419,6 +2451,90 @@ def api_financials_upload_tb():
         "monthly_count":   len(monthly_entities),
         "ytd_count":       len(ytd_entities),
         "cached_entities": cached_entities,
+    })
+
+
+@app.route("/api/financials/income-statement-tb", methods=["GET"])
+@login_required
+def api_financials_income_statement_tb():
+    """Render IS for a cached TB-uploaded entity/period. Requires both
+    Current-Month and YTD accounts (uploaded together via the upload
+    endpoint). Returns the same JSON shape as the BS endpoint plus
+    each line carries both monthly and YTD values."""
+    if not _can_view_financials():
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        import tb_parser
+    except ImportError as e:
+        return jsonify({"error": f"tb_parser import failed: {e}"}), 500
+    entity = (request.args.get("entity") or "").strip()
+    period = (request.args.get("period") or "").strip()
+    if not entity or not period:
+        return jsonify({"error": "entity and period required"}), 400
+    cache = _fin_cache_get(entity, period)
+    if not cache or not cache["accounts"]:
+        return jsonify({
+            "cached":  False,
+            "message": "No TB upload found for this entity/period. "
+                       "Upload both Current-Month and YTD TBs first.",
+        }), 200
+    if not cache.get("accounts_ytd"):
+        return jsonify({
+            "cached":  False,
+            "message": "Monthly TB cached, but no YTD TB uploaded yet — "
+                       "IS needs both. Re-upload with the YTD file too.",
+        }), 200
+    v  = tb_parser.compute_is(cache["accounts"], cache["accounts_ytd"])
+    is_payload = tb_parser.render_is(v)
+    fetched_at = cache["fetched_at"]
+    return jsonify({
+        "cached":          True,
+        "source":          "tb_upload",
+        "entity":          entity,
+        "period":          period,
+        "fetched_at":      fetched_at.isoformat() + "Z" if hasattr(fetched_at, "isoformat") else str(fetched_at),
+        "income_statement": is_payload,
+    })
+
+
+@app.route("/api/financials/cash-flows-tb", methods=["GET"])
+@login_required
+def api_financials_cash_flows_tb():
+    """Render Statement of Cash Flows for a cached TB-uploaded
+    entity/period. Indirect method, mirrors frp_builder.py's SCF.
+    Requires both Current-Month and YTD accounts."""
+    if not _can_view_financials():
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        import tb_parser
+    except ImportError as e:
+        return jsonify({"error": f"tb_parser import failed: {e}"}), 500
+    entity = (request.args.get("entity") or "").strip()
+    period = (request.args.get("period") or "").strip()
+    if not entity or not period:
+        return jsonify({"error": "entity and period required"}), 400
+    cache = _fin_cache_get(entity, period)
+    if not cache or not cache["accounts"]:
+        return jsonify({
+            "cached":  False,
+            "message": "No TB upload found for this entity/period.",
+        }), 200
+    if not cache.get("accounts_ytd"):
+        return jsonify({
+            "cached":  False,
+            "message": "Monthly TB cached, but no YTD TB uploaded yet — "
+                       "SCF needs both.",
+        }), 200
+    v  = tb_parser.compute_scf(cache["accounts"], cache["accounts_ytd"])
+    scf = tb_parser.render_scf(v)
+    fetched_at = cache["fetched_at"]
+    return jsonify({
+        "cached":     True,
+        "source":     "tb_upload",
+        "entity":     entity,
+        "period":     period,
+        "fetched_at": fetched_at.isoformat() + "Z" if hasattr(fetched_at, "isoformat") else str(fetched_at),
+        "cash_flows": scf,
     })
 
 
