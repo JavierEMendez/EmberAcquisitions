@@ -2467,6 +2467,72 @@ def api_financials_upload_tb():
     })
 
 
+@app.route("/api/financials/download-frp", methods=["GET"])
+@login_required
+def api_financials_download_frp():
+    """Build and return a 3-sheet FRP .xlsx (BS / IS / SCF) for the
+    given cached entity+period. Output matches the format the
+    accountant's frp_builder.py produces, so users can download the
+    same workbook the accounting team distributes."""
+    if not _can_view_financials():
+        return jsonify({"error": "forbidden"}), 403
+    try:
+        import frp_excel
+    except ImportError as e:
+        return jsonify({"error": f"frp_excel import failed: {e}"}), 500
+    entity = (request.args.get("entity") or "").strip()
+    period = (request.args.get("period") or "").strip()
+    entity_name = (request.args.get("entity_name") or "").strip() or entity
+    if not entity or not period:
+        return jsonify({"error": "entity and period required"}), 400
+    cache = _fin_cache_get(entity, period)
+    if not cache or not cache["accounts"]:
+        return jsonify({"error": "no cached TB for this entity/period — upload first"}), 404
+
+    # Derive a human-readable date label from the period name. The
+    # period names look like "Month Ended March 2026" — we convert
+    # to "March 31, 2026" to match the FRP workbook format. Falls
+    # back to the period name itself if parsing fails.
+    date_label = period
+    try:
+        import re as _re, calendar
+        m = _re.search(r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})",
+                       period)
+        if m:
+            month_name = m.group(1)
+            year       = int(m.group(2))
+            month_num  = ["January","February","March","April","May","June","July",
+                          "August","September","October","November","December"
+                          ].index(month_name) + 1
+            last_day   = calendar.monthrange(year, month_num)[1]
+            date_label = f"{month_name} {last_day}, {year}"
+    except Exception:
+        pass
+
+    try:
+        buf = frp_excel.build_workbook(
+            entity_name,
+            cache["accounts"],
+            cache.get("accounts_ytd") or [],
+            date_label,
+        )
+    except Exception as e:
+        import traceback
+        app.logger.error("FRP excel build failed: %s\n%s", e, traceback.format_exc())
+        return jsonify({"error": f"FRP build failed: {type(e).__name__}: {e}"}), 500
+
+    # Filename sanitized to filesystem-safe characters.
+    import re as _re2
+    safe_name = _re2.sub(r"[^A-Za-z0-9 ._-]", "_", entity_name).strip()
+    filename = f"{safe_name} - {date_label} FRP.xlsx"
+    return send_file(
+        buf,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
 @app.route("/api/financials/income-statement-tb", methods=["GET"])
 @login_required
 def api_financials_income_statement_tb():

@@ -207,8 +207,8 @@
         <button class="fin-tab is-active" data-statement="balance-sheet">Balance Sheet</button>
         <button class="fin-tab" data-statement="income-statement">Income Statement</button>
         <button class="fin-tab" data-statement="cash-flows">Statement of Cash Flows</button>
-        <button class="fin-tab is-disabled" data-statement="export-excel" disabled
-                title="Coming in Phase 4">⬇ Excel</button>
+        <button class="fin-tab" id="fin-download-frp"
+                title="Download a 3-sheet FRP .xlsx (BS / IS / SCF) — matches the accountant's distribution format.">⬇ Download FRP</button>
         <button class="fin-tab is-disabled" data-statement="export-pdf" disabled
                 title="Coming in Phase 5">⬇ PDF</button>
       </div>
@@ -961,6 +961,28 @@ function setupTabHandlers() {
   });
 }
 setupTabHandlers();
+
+// "Download FRP" — synthesize a 3-sheet .xlsx server-side and stream
+// it to the user. Reuses the cached TB data, no extra Sage hit.
+const downloadFrpBtn = document.getElementById('fin-download-frp');
+if (downloadFrpBtn) {
+  downloadFrpBtn.addEventListener('click', () => {
+    if (!FIN.currentEntity || !FIN.currentPeriod) {
+      setStatus('Pick an entity and period before downloading.', 'err');
+      return;
+    }
+    const entityName = (FIN.entities.find(e => e.id === FIN.currentEntity) || {}).name
+                     || FIN.currentEntity;
+    const url = '/api/financials/download-frp'
+              + '?entity='      + encodeURIComponent(FIN.currentEntity)
+              + '&period='      + encodeURIComponent(FIN.currentPeriod)
+              + '&entity_name=' + encodeURIComponent(entityName);
+    // Plain anchor navigation triggers download; if server returns
+    // JSON error the user sees it in a new tab. We could intercept
+    // and parse but keeping it simple while we validate.
+    window.location.href = url;
+  });
+}
 
 async function fetchBalanceSheetFromTBUpload() {
   if (!FIN.currentEntity || !FIN.currentPeriod) return;
