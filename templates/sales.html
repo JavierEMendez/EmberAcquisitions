@@ -588,6 +588,43 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
       <div class="chart-grid full">
         <div class="chart-card"><div class="chart-title">Homes/Month — YTD vs Annual Target</div><div class="chart-wrap"><canvas id="c-pace"></canvas></div></div>
       </div>
+
+      <!-- Phase 6: 2026 Goal vs YTD Actual (driven by UW Modeled totals) -->
+      <div class="section-title">2026 Sales Goal vs YTD Actual <span class="sub">Modeled targets from Underwriting tab</span></div>
+      <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
+        <div class="kpi-card acc-gpd"><div class="kpi-label">GPD — Goal vs Actual</div><div class="kpi-value" id="exec-goal-gpd">—</div><div class="kpi-sub" id="exec-goal-gpd-sub">no goal set</div></div>
+        <div class="kpi-card acc-hld"><div class="kpi-label">Highlands — Goal vs Actual</div><div class="kpi-value" id="exec-goal-hld">—</div><div class="kpi-sub" id="exec-goal-hld-sub">no goal set</div></div>
+        <div class="kpi-card acc-wrg"><div class="kpi-label">Windrose — Goal vs Actual</div><div class="kpi-value" id="exec-goal-wrg">—</div><div class="kpi-sub" id="exec-goal-wrg-sub">no goal set</div></div>
+      </div>
+
+      <!-- Phase 6: Inventory snapshot (from Starts data) -->
+      <div class="section-title">Inventory — Latest Snapshot <span class="sub">Total inventory across all lot/builder rows</span></div>
+      <div class="kpi-grid" style="grid-template-columns:repeat(2,1fr)">
+        <div class="kpi-card acc-gpd"><div class="kpi-label">GPD — Inventory</div><div class="kpi-value" id="exec-inv-gpd">—</div><div class="kpi-sub" id="exec-inv-gpd-sub">awaiting Starts data</div></div>
+        <div class="kpi-card acc-wrg"><div class="kpi-label">Windrose — Inventory</div><div class="kpi-value" id="exec-inv-wrg">—</div><div class="kpi-sub" id="exec-inv-wrg-sub">awaiting Starts data</div></div>
+      </div>
+
+      <!-- Phase 6: Trailing 13-month net sales -->
+      <div class="section-title">Net Sales — Trailing 13 Months</div>
+      <div class="chart-grid full">
+        <div class="chart-card">
+          <div class="chart-title">GPD · Highlands · WRG — Last 13 months</div>
+          <div class="chart-wrap tall"><canvas id="c-exec-trend"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Phase 6: Attention flags -->
+      <div class="section-title">Attention</div>
+      <div class="chart-card" style="padding:18px 22px">
+        <ul id="exec-flags" style="margin:0;padding-left:20px;font-size:13px;line-height:1.75;color:var(--eax-ink-2)">
+          <li style="color:var(--eax-subtle);list-style:none;font-style:italic">No flags — data loading…</li>
+        </ul>
+      </div>
+
+      <!-- Phase 6: Pipsy sync footer -->
+      <div style="text-align:center;color:var(--eax-subtle);font-size:11px;margin-top:18px;letter-spacing:0.04em">
+        Pipsy sync · <span id="exec-sync-stamp">—</span>
+      </div>
       </div><!-- /tab-exec -->
 
       <!-- ═══════════════════════ TAB: THE GRAND PRAIRIE (TGP = GPD + HLD) ═══════════════════════ -->
@@ -1779,6 +1816,7 @@ function renderAll(data) {
 
   // Cancellations tab
   renderCancels(data);
+  renderExecExtras(data);
 
   // Starts & Inventory tab
   renderStarts(data);
@@ -1969,6 +2007,163 @@ function renderProj(data) {
 }
 
 // ── CANCELLATIONS TAB ─────────────────────────────────────────────────────────
+// ─── Phase 6: Executive Summary extras ────────────────────────────
+// Goal-vs-Actual KPIs (driven by UW data), Inventory KPIs (from
+// Starts), Trailing-13-Month chart, Attention flags, Pipsy sync stamp.
+// Called from renderAll() after the main payload renders.
+async function renderExecExtras(data) {
+  // 5. Pipsy sync stamp — easiest. Just the generated_at timestamp.
+  const sync = document.getElementById('exec-sync-stamp');
+  if (sync) sync.textContent = fmtTimestamp(data.generated_at) || '—';
+
+  // 3. Inventory snapshot — sum the latest "Total Inventory" row
+  //    in each community's starts data.
+  function totalInventoryFromStarts(starts) {
+    if (!starts || !starts.rows || !starts.months || !starts.months.length) return null;
+    const lastIdx = starts.months.length - 1;
+    let total = 0;
+    starts.rows.forEach(r => {
+      if ((r.metric || '').toLowerCase() === 'total inventory') {
+        const v = (r.vals || [])[lastIdx];
+        if (typeof v === 'number') total += v;
+      }
+    });
+    return total;
+  }
+  const gpdInv = totalInventoryFromStarts(data.communities?.gpd?.starts);
+  const wrgInv = totalInventoryFromStarts(data.communities?.wrg?.starts);
+  function paintInv(prefix, val) {
+    const v = document.getElementById('exec-inv-' + prefix);
+    const s = document.getElementById('exec-inv-' + prefix + '-sub');
+    if (val == null) {
+      if (v) v.textContent = '—';
+      if (s) s.textContent = 'awaiting Starts data';
+    } else {
+      if (v) v.textContent = fmtN(val);
+      if (s) s.textContent = 'sum of latest Total Inventory row';
+    }
+  }
+  paintInv('gpd', gpdInv);
+  paintInv('wrg', wrgInv);
+
+  // 1. Trailing-13-month chart: stack GPD + Highlands as "TGP" and WRG.
+  //    Take the last 13 months from each community's months list.
+  (function renderTrend() {
+    const id = 'c-exec-trend';
+    _destroy(id);
+    const el = document.getElementById(id);
+    if (!el) return;
+    const tC = themeColors();
+    function last13(c) {
+      const ms = (c.months || []).slice(-13);
+      return { months: ms, vals: ms.map(m => c.net_monthly[m] != null ? c.net_monthly[m] : 0) };
+    }
+    const gpdT = last13(data.communities.gpd);
+    const hldT = last13(data.communities.hld);
+    const wrgT = last13(data.communities.wrg);
+    // Use TGP months as the x-axis (gpd + hld typically share months).
+    const labels = gpdT.months.map(monthLabelFromKey);
+    // Combined TGP for one line, WRG for another.
+    const tgpData = gpdT.months.map((m, i) =>
+      (gpdT.vals[i] || 0) + (data.communities.hld.net_monthly[m] != null ? data.communities.hld.net_monthly[m] : 0)
+    );
+    _charts[id] = new Chart(el, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'TGP (GPD + Hld)', data: tgpData, borderColor: '#F25929', backgroundColor: '#F2592933',
+            borderWidth: 2.5, tension: 0.25, pointRadius: 3, pointHoverRadius: 5, fill: true },
+          { label: 'Windrose Green', data: wrgT.vals, borderColor: '#4a90e2', backgroundColor: '#4a90e233',
+            borderWidth: 2.5, tension: 0.25, pointRadius: 3, pointHoverRadius: 5, fill: true },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { color: tC.legend, font: { size: 11 }, boxWidth: 14 } },
+          tooltip: { backgroundColor: tC.ttBg, titleColor: tC.ttTitle, bodyColor: tC.ttBody, borderColor: tC.ttBorder, borderWidth: 1, padding: 9 },
+        },
+        scales: {
+          x: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 10 } }, grid: { color: tC.grid } },
+          y: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 10 } }, grid: { color: tC.grid }, beginAtZero: true },
+        },
+      },
+    });
+  })();
+
+  // 4. Attention flags — simple rule-based bullets.
+  const flagsEl = document.getElementById('exec-flags');
+  if (flagsEl) {
+    const flags = [];
+    const gpd = data.communities.gpd, hld = data.communities.hld, wrg = data.communities.wrg;
+    function paceFlag(c, label, target) {
+      if (c.ytd_pace != null && target) {
+        const ratio = c.ytd_pace / target;
+        if (ratio < 0.8) flags.push(`${label} YTD pace is ${(ratio * 100).toFixed(0)}% of target (${fmtPace(c.ytd_pace)}/mo vs ${target}/mo).`);
+      }
+    }
+    paceFlag(gpd, 'GPD',       data.targets?.gpd_monthly);
+    paceFlag(hld, 'Highlands', data.targets?.hld_monthly);
+    paceFlag(wrg, 'Windrose',  data.targets?.wrg_monthly);
+    function cancelFlag(c, label) {
+      if (c.canc_ytd && c.gross_total) {
+        // Use YTD cancels vs YTD gross approximation: gross_total is LOP,
+        // but the warning is more about an unusually heavy YTD cancel
+        // count vs current pace. Flag if YTD cancels > 30% of YTD nets.
+        if (c.ytd_net && c.canc_ytd > c.ytd_net * 0.3) {
+          flags.push(`${label} cancellations are heavy (${c.canc_ytd} YTD vs ${c.ytd_net} net).`);
+        }
+      }
+    }
+    cancelFlag(gpd, 'GPD');
+    cancelFlag(hld, 'Highlands');
+    cancelFlag(wrg, 'Windrose');
+    if (!flags.length) {
+      flagsEl.innerHTML = '<li style="color:var(--eax-good);list-style:none;font-style:italic">All communities tracking on or above target. No flags.</li>';
+    } else {
+      flagsEl.innerHTML = flags.map(f =>
+        '<li style="margin-bottom:4px"><span style="color:var(--eax-bad);font-weight:600;margin-right:6px">●</span>' + escapeHtml(f) + '</li>'
+      ).join('');
+    }
+  }
+
+  // 2. Goal-vs-Actual KPI row — fetch UW Modeled totals and compare
+  //    to per-community YTD net. Failure is silent (no goal set =
+  //    leave the "—" placeholder).
+  try {
+    const res = await fetch('/api/uw-data');
+    if (!res.ok) return;
+    const uw = await res.json();
+    if (!uw || !uw.sections) return;
+    // UW data is GPD-only at the moment; sum modeled NET SALES across
+    // sections. Future-proof: when WRG is added in #8 we'll surface
+    // that too. For now, GPD gets the model + Highlands keeps "—".
+    let gpdGoal = 0;
+    const cur = new Date().getFullYear();
+    (uw.sections || []).forEach(sec => {
+      const ms = (sec.metric_data || {})['net sales'];
+      if (!ms) return;
+      // Sum the current-year monthly modeled sales.
+      Object.entries(ms).forEach(([ym, n]) => {
+        if (ym.startsWith(String(cur))) gpdGoal += Number(n || 0);
+      });
+    });
+    if (gpdGoal > 0) {
+      const gpdActual = data.communities.gpd.ytd_net || 0;
+      const pct = ((gpdActual / gpdGoal) * 100).toFixed(0);
+      const v = document.getElementById('exec-goal-gpd');
+      const s = document.getElementById('exec-goal-gpd-sub');
+      if (v) v.textContent = fmtN(gpdActual) + ' / ' + fmtN(gpdGoal);
+      if (s) s.textContent = `${pct}% of 2026 model · ${fmtN(gpdGoal - gpdActual)} to go`;
+      if (v) v.className = 'kpi-value ' + (gpdActual >= gpdGoal ? 'green' : (gpdActual >= gpdGoal * 0.8 ? '' : 'red'));
+    }
+  } catch (e) {
+    // Silent — no UW data uploaded yet is fine.
+  }
+}
+
 function renderCancels(data) {
   const gpd = data.communities.gpd, hld = data.communities.hld, wrg = data.communities.wrg;
   const year = data.current_year;
