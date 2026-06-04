@@ -211,7 +211,27 @@ a:hover{text-decoration:underline}
   border-radius:12px;
   padding:20px 22px;
   box-shadow:var(--eax-shadow-card);
+  position:relative;
 }
+/* Fullscreen toggle (sales-port #10) — appears on hover, fixed top-right. */
+.chart-card .expand-btn{
+  position:absolute;top:10px;right:10px;
+  background:transparent;border:1px solid var(--eax-line);color:var(--eax-muted);
+  border-radius:6px;padding:4px 9px;cursor:pointer;
+  font-family:'DM Sans',sans-serif;font-size:10.5px;font-weight:600;letter-spacing:0.04em;
+  opacity:0;transition:opacity 120ms ease,background 120ms ease,color 120ms ease;
+}
+.chart-card:hover .expand-btn,.chart-card.fullscreen .expand-btn{opacity:1;}
+.chart-card .expand-btn:hover{background:var(--eax-line);color:var(--eax-ink);}
+.chart-card.fullscreen{
+  position:fixed;inset:0;
+  width:100vw;height:100vh;
+  z-index:9999;border-radius:0;padding:32px 44px;
+  overflow:auto;box-shadow:none;
+  background:var(--eax-surface);
+}
+.chart-card.fullscreen .chart-wrap{height:calc(100vh - 130px) !important;}
+.chart-card.fullscreen canvas{max-height:none !important;}
 .chart-title{
   font-family:'Plus Jakarta Sans',sans-serif;
   font-size:10px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;
@@ -1014,9 +1034,18 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
 
       <!-- ═══════════════════════ TAB: BOHLKE REPORT ═══════════════════════ -->
       <div id="tab-bohlke" class="tab-content">
-      <div class="section-title">
-        Bohlke Competitive-Set Report
-        <span class="sub" id="bohlke-meta">—</span>
+      <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <div>
+          Bohlke Competitive-Set Report
+          <span class="sub" id="bohlke-meta">—</span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button id="bohlke-export-btn" onclick="exportBohlkeReport()"
+                  style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif"
+                  title="Download the full Bohlke report as a multi-sheet xlsx">
+            Export Excel
+          </button>
+        </div>
       </div>
 
       {% if is_admin %}
@@ -4613,6 +4642,172 @@ function _initialTab() {
     document.getElementById('meta-updated').textContent = 'Error loading data';
   }
 })();
+
+// ── Chart fullscreen toggle (sales-port #10) ────────────────────────────────
+// Adds an "⛶ Expand" button to every .chart-card on the page (auto-injected
+// so we don't have to touch 49 markup sites). Click toggles a `.fullscreen`
+// class that goes position:fixed/inset:0; Escape exits. Charts are
+// re-resized after the transition so Chart.js refits to the new canvas.
+function toggleFullscreen(card) {
+  if (!card) return;
+  const btn = card.querySelector('.expand-btn');
+  const isFs = card.classList.toggle('fullscreen');
+  if (btn) btn.textContent = isFs ? '✕ Close' : '⛶ Expand';
+  document.body.style.overflow = isFs ? 'hidden' : '';
+  // Chart.js needs a resize hint once the new dimensions settle.
+  setTimeout(() => {
+    window.dispatchEvent(new Event('resize'));
+    if (window._charts) {
+      Object.values(window._charts).forEach(c => { try { c && c.resize(); } catch (e) {} });
+    }
+  }, 60);
+}
+(function wireChartFullscreen() {
+  function inject() {
+    document.querySelectorAll('.chart-card').forEach(card => {
+      if (card.querySelector(':scope > .expand-btn')) return;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'expand-btn';
+      btn.textContent = '⛶ Expand';
+      btn.title = 'Expand to fullscreen';
+      btn.addEventListener('click', () => toggleFullscreen(card));
+      card.prepend(btn);
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', inject);
+  } else {
+    inject();
+  }
+  // Escape exits fullscreen from anywhere on the page.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const fs = document.querySelector('.chart-card.fullscreen');
+    if (fs) toggleFullscreen(fs);
+  });
+})();
+
+// ── Bohlke Excel export (sales-port #10) ────────────────────────────────────
+// Builds a multi-sheet xlsx from the live _BOHLKE_DATA and ships it as
+// "GPD_Bohlke_Report_Export.xlsx". Sheets are emitted only when their
+// source array has rows so unused features (TGP plans, ISD totals, etc.)
+// don't ship blank tabs. Reuses the SheetJS CDN already loaded for #8.
+function exportBohlkeReport() {
+  if (typeof XLSX === 'undefined') {
+    alert('Excel library not loaded — refresh the page and try again.'); return;
+  }
+  const d = window._BOHLKE_DATA;
+  if (!d || !Array.isArray(d.yearly) || !d.yearly.length) {
+    alert('No Bohlke data to export. Ask an admin to upload the latest report first.');
+    return;
+  }
+  const wb = XLSX.utils.book_new();
+  const addSheet = (name, rows) => {
+    if (!Array.isArray(rows) || rows.length < 2) return;
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), name);
+  };
+
+  // 1. Yearly Totals
+  const yrRows = [['Year','Total Permits','Avg Home Size','Avg Base Price','Avg PPSF','30yr Rate','Events']];
+  (d.yearly || []).forEach(y => yrRows.push([
+    y.year, y.total, y.avgSize, y.avgPrice, y.avgPPSF,
+    y.rate30yr != null ? (Number(y.rate30yr) / 100) : null, y.events || '',
+  ]));
+  addSheet('Yearly Totals', yrRows);
+
+  // 2. Waller ISD Comps (summary)
+  if (Array.isArray(d.comps) && d.comps.length) {
+    const cRows = [['Community','Type','2023 Permits','2024 Permits','2025 Permits','YoY % Chg','Avg Size 2025','Avg Price 2025','Avg PPSF 2025']];
+    d.comps.slice().sort((a,b) => (b.p25||0) - (a.p25||0)).forEach(c => {
+      const yoy = c.p24 ? ((c.p25 - c.p24) / c.p24) : null;
+      cRows.push([c.community, c.mpc, c.p23, c.p24, c.p25, yoy, c.size25, c.price25, c.ppsf25]);
+    });
+    const cSheet = XLSX.utils.aoa_to_sheet(cRows);
+    // Format the YoY column (col F) as percentage for readable output.
+    for (let i = 1; i < cRows.length; i++) {
+      if (cRows[i][5] !== null && cRows[i][5] !== undefined) {
+        cSheet['F' + (i + 1)] = { v: cRows[i][5], t: 'n', z: '0.0%' };
+      }
+    }
+    XLSX.utils.book_append_sheet(wb, cSheet, 'Waller ISD Comps');
+  }
+
+  // 3. Waller Comps Detail (builder-level)
+  if (Array.isArray(d.waller_comps) && d.waller_comps.length) {
+    const wRows = [['Community','Type','Builder','2023 Permits','2024 Permits','2025 Permits','Avg Size 2023','Avg Size 2024','Avg Size 2025','Avg Price 2023','Avg Price 2024','Avg Price 2025','Avg PPSF 2023','Avg PPSF 2024','Avg PPSF 2025']];
+    d.waller_comps.forEach(w => wRows.push([w.community, w.mpc, w.builder, w.p23, w.p24, w.p25, w.size23, w.size24, w.size25, w.price23, w.price24, w.price25, w.ppsf23, w.ppsf24, w.ppsf25]));
+    addSheet('Waller Comps Detail', wRows);
+  }
+
+  // 4. GPD Builders
+  if (Array.isArray(d.tgp_builders) && d.tgp_builders.length) {
+    const bRows = [['Builder','2025 Permits','Avg PPSF']];
+    d.tgp_builders.forEach(b => bRows.push([b.builder, b.permits, b.avgPPSF]));
+    addSheet('GPD Builders', bRows);
+  }
+
+  // 5. GPD Plans
+  if (Array.isArray(d.tgp_plans) && d.tgp_plans.length) {
+    const pRows = [['Builder','Floor Plan','Size Band','Home Size','Config','Home Width','Avg Base Price','Avg PPSF','2025 Total','Q1','Q2','Q3','Q4']];
+    d.tgp_plans.forEach(p => pRows.push([p.builder, p.plan, p.sizeBand, p.homeSize, p.config, p.homeWidth, p.avgPrice, p.avgPPSF, p.total2025, p.q1, p.q2, p.q3, p.q4]));
+    addSheet('GPD 2025 Plans', pRows);
+  }
+
+  // 6. ISD Totals (all school districts)
+  if (Array.isArray(d.isd_totals) && d.isd_totals.length) {
+    const years = Object.keys(d.isd_totals[0]).filter(k => k !== 'isd').sort();
+    const iRows = [['School District', ...years]];
+    d.isd_totals.forEach(r => iRows.push([r.isd, ...years.map(y => r[y] || 0)]));
+    addSheet('ISD Totals', iRows);
+  }
+
+  // 7. All ISD Comps (every district x community combo)
+  if (Array.isArray(d.all_isd_comps) && d.all_isd_comps.length) {
+    const aRows = [['ISD','Community','Type','2023 Permits','2024 Permits','2025 Permits','Avg Size 2023','Avg Size 2024','Avg Size 2025','Avg Price 2023','Avg Price 2024','Avg Price 2025','Avg PPSF 2023','Avg PPSF 2024','Avg PPSF 2025']];
+    d.all_isd_comps.forEach(c => aRows.push([c.isd, c.community, c.mpc, c.p23, c.p24, c.p25, c.size23, c.size24, c.size25, c.price23, c.price24, c.price25, c.ppsf23, c.ppsf24, c.ppsf25]));
+    addSheet('All ISD Comps', aRows);
+  }
+
+  // 8. All MPCS (every community x builder)
+  if (Array.isArray(d.all_mpcs) && d.all_mpcs.length) {
+    const mRows = [['ISD','Community','Lot Size','Type','Builder','2023 Permits','2024 Permits','2025 Permits','Avg Size 2023','Avg Size 2024','Avg Size 2025','Avg Price 2023','Avg Price 2024','Avg Price 2025','Avg PPSF 2023','Avg PPSF 2024','Avg PPSF 2025']];
+    d.all_mpcs.forEach(m => mRows.push([m.isd, m.community, m.lotSize, m.projType, m.builder, m.p23, m.p24, m.p25, m.size23, m.size24, m.size25, m.price23, m.price24, m.price25, m.ppsf23, m.ppsf24, m.ppsf25]));
+    addSheet('All MPCS Builders', mRows);
+  }
+
+  // 9. Waller 2025 Size Distribution
+  if (Array.isArray(d.waller_size_dist) && d.waller_size_dist.length) {
+    const allBands = new Set();
+    d.waller_size_dist.forEach(s => Object.keys(s.bands || {}).forEach(b => allBands.add(b)));
+    const bandArr = [...allBands].sort();
+    const sRows = [['Community','MPC','Builder','2025 Total', ...bandArr]];
+    d.waller_size_dist.forEach(s => sRows.push([s.community, s.mpc, s.builder, s.total, ...bandArr.map(b => (s.bands || {})[b] || 0)]));
+    addSheet('Waller Size Dist', sRows);
+  }
+
+  // 10. Waller 2025 Price Distribution
+  if (Array.isArray(d.waller_price_dist) && d.waller_price_dist.length) {
+    const allBands = new Set();
+    d.waller_price_dist.forEach(s => Object.keys(s.bands || {}).forEach(b => allBands.add(b)));
+    const bandArr = [...allBands].sort();
+    const pRows = [['Community','MPC','Builder','2025 Total', ...bandArr]];
+    d.waller_price_dist.forEach(s => pRows.push([s.community, s.mpc, s.builder, s.total, ...bandArr.map(b => (s.bands || {})[b] || 0)]));
+    addSheet('Waller Price Dist', pRows);
+  }
+
+  // 11. Waller 2025 Top Config
+  if (Array.isArray(d.waller_top_config) && d.waller_top_config.length) {
+    const allBands = new Set();
+    d.waller_top_config.forEach(c => Object.keys(c.priceBands || {}).forEach(b => allBands.add(b)));
+    const bandArr = [...allBands].sort();
+    const tRows = [['Size Band / HW','Config','2025 Total', ...bandArr]];
+    d.waller_top_config.forEach(c => tRows.push([c.sizeBand, c.config, c.total, ...bandArr.map(b => (c.priceBands || {})[b] || 0)]));
+    addSheet('Waller Top Config', tRows);
+  }
+
+  XLSX.writeFile(wb, 'GPD_Bohlke_Report_Export.xlsx');
+}
 </script>
 </body>
 </html>
