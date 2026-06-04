@@ -282,6 +282,13 @@ table.starts td.lot-start{border-top:1px solid var(--eax-line-2);}
 table.starts tr.metric-sold td{color:var(--eax-muted);}
 table.starts tr.metric-net td{color:var(--eax-good);font-weight:600;}
 table.starts tr.metric-total td{font-weight:600;color:var(--eax-ink);}
+table.starts td[contenteditable="true"]{background:var(--eax-good-soft, rgba(88,180,122,0.12));outline:1px dashed var(--eax-good, #58b47a);outline-offset:-2px;cursor:text;}
+/* Starts editor (sales-port #9) — Add / Delete week + Edit Cells controls. */
+.starts-btn-add,.starts-btn-del,.starts-btn-edit{padding:6px 12px;font-size:12px;font-weight:600;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-family:'DM Sans',sans-serif;background:var(--surface);color:var(--text);}
+.starts-btn-add:hover,.starts-btn-del:hover,.starts-btn-edit:hover{border-color:var(--accent);}
+.starts-btn-add{color:var(--eax-good, #58b47a);}
+.starts-btn-del{color:var(--eax-bad, #e06f6f);}
+.starts-btn-edit[data-on="1"]{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);}
 
 /* Status pill + refresh button — match the canonical .fin-btn /
    status-pill patterns from /financials. */
@@ -948,10 +955,28 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
         <div class="kpi-card acc-wrg"><div class="kpi-label">WRG Total Inventory</div><div class="kpi-value" id="st-wrg-inv">—</div><div class="kpi-sub" id="st-wrg-drive">Last Drive: —</div></div>
       </div>
 
-      <div class="section-title">GPD — Starts by Drive Date</div>
+      <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <span>GPD — Starts by Drive Date <span class="sub" id="starts-gpd-meta"></span></span>
+        {% if is_admin %}
+        <div style="display:flex;gap:6px;align-items:center">
+          <button onclick="addStartsWeek('gpd')"  class="starts-btn-add">+ Add Week</button>
+          <button onclick="deleteStartsWeek('gpd')" class="starts-btn-del">− Delete Week</button>
+          <button id="starts-edit-btn-gpd" onclick="toggleStartsEdit('gpd')" class="starts-btn-edit">Edit Cells</button>
+        </div>
+        {% endif %}
+      </div>
       <div class="starts-card"><table class="starts" id="t-starts-gpd-full"></table></div>
 
-      <div class="section-title">Windrose Green — Starts by Drive Date</div>
+      <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <span>Windrose Green — Starts by Drive Date <span class="sub" id="starts-wrg-meta"></span></span>
+        {% if is_admin %}
+        <div style="display:flex;gap:6px;align-items:center">
+          <button onclick="addStartsWeek('wrg')"  class="starts-btn-add">+ Add Week</button>
+          <button onclick="deleteStartsWeek('wrg')" class="starts-btn-del">− Delete Week</button>
+          <button id="starts-edit-btn-wrg" onclick="toggleStartsEdit('wrg')" class="starts-btn-edit">Edit Cells</button>
+        </div>
+        {% endif %}
+      </div>
       <div class="starts-card"><table class="starts" id="t-starts-wrg-full"></table></div>
       </div><!-- /tab-starts -->
 
@@ -2304,8 +2329,205 @@ function renderStarts(data) {
   document.getElementById('st-wrg-inv').textContent   = fmtN(totalInventory(wrg.starts));
   document.getElementById('st-wrg-drive').textContent = 'Last Drive: ' + lastDriveLabel(wrg.starts);
 
-  if (gpd.starts) renderStartsTable('t-starts-gpd-full', gpd.starts);
-  if (wrg.starts) renderStartsTable('t-starts-wrg-full', wrg.starts);
+  // The "full" tables in the Starts tab go through the editable path so
+  // admins can add/delete weeks and edit cell values. State is seeded from
+  // the Pipsy-derived defaults; if /api/starts has a saved override it
+  // wins via hydrateStartsFromServer (called shortly after this).
+  // (The per-community GPD/WRG tabs already render the read-only
+  // 't-starts-gpd' / 't-starts-wrg' tables via renderCommunity.)
+  _STARTS_STATE.gpd = gpd.starts ? JSON.parse(JSON.stringify(gpd.starts)) : null;
+  _STARTS_STATE.wrg = wrg.starts ? JSON.parse(JSON.stringify(wrg.starts)) : null;
+  renderStartsFull('gpd');
+  renderStartsFull('wrg');
+  hydrateStartsFromServer();
+}
+
+// ── EDITABLE STARTS (sales-port #9) ───────────────────────────────────────────
+// State shape (per property):  { months: [..], dates: [..], rows: [{lot, bld,
+// sec, del, metric, vals: [..]}] }. Identical to data.communities.X.starts so
+// the editor can seed itself from Pipsy then accept edits + extra weeks on
+// top. Pipsy-driven rows ("Homes Sold", "Cancellations", "Net Sales") are
+// locked during cell-edit — see _STARTS_PIPSY_METRICS.
+window._STARTS_STATE = { gpd: null, wrg: null };
+const _STARTS_PIPSY_METRICS = new Set(['homes sold', 'cancellations', 'net sales']);
+
+function _startsDriveDate(s) {
+  // The starts data uses month labels in the existing 'months' array. For
+  // newly-added weeks, we keep a parallel 'dates' string for the column
+  // sub-label. Older Pipsy-derived starts only have 'months'; we fall back
+  // to empty string when dates is missing.
+  return Array.isArray(s.dates) ? s.dates : [];
+}
+
+function renderStartsFull(prop) {
+  const tableId = (prop === 'wrg') ? 't-starts-wrg-full' : 't-starts-gpd-full';
+  const s = _STARTS_STATE[prop];
+  const tbl = document.getElementById(tableId);
+  if (!tbl) return;
+  if (!s || !Array.isArray(s.rows) || !Array.isArray(s.months)) { tbl.innerHTML = ''; return; }
+  const months = s.months;
+  const dates  = _startsDriveDate(s);
+  const rows   = s.rows;
+  const editing = !!_STARTS_EDIT[prop];
+
+  let html = '<thead><tr><th>Lot</th><th>Builder</th><th>Section / Metric</th><th>Delivery</th>';
+  months.forEach((m, i) => {
+    const sub = dates[i] ? `<br><span style="font-weight:400;font-size:.75rem;opacity:.8">${dates[i]}</span>` : '';
+    html += `<th>${m}${sub}</th>`;
+  });
+  html += '</tr></thead><tbody>';
+  let lastKey = null;
+  rows.forEach((r, rowIdx) => {
+    const key = r.lot + '|' + r.bld;
+    const isFirst = (key !== lastKey);
+    const ml = (r.metric || '').toLowerCase();
+    let cls = '';
+    if (ml === 'homes sold' || ml === 'cancellations') cls = 'metric-sold';
+    else if (ml === 'net sales') cls = 'metric-net';
+    else if (ml === 'total inventory') cls = 'metric-total';
+    const isPipsyRow = _STARTS_PIPSY_METRICS.has(ml);
+    const lotCell = isFirst
+      ? `<td class="lot-start"><span class="badge ${LOT_BADGE[String(r.lot)]||'badge-blue'}">${r.lot}'</span></td>`
+      : '<td></td>';
+    const bldCell = isFirst ? `<td>${r.bld}</td>` : '<td></td>';
+    const midLabel = ml === 'completed homes' ? (r.sec || r.metric) : r.metric;
+    const delCell  = isFirst ? `<td>${r.del || ''}</td>` : '<td></td>';
+    html += `<tr class="${cls}${isFirst ? ' lot-start' : ''}">${lotCell}${bldCell}<td>${midLabel}</td>${delCell}`;
+    (r.vals || []).forEach((v, colIdx) => {
+      const editable = editing && !isPipsyRow;
+      const editAttrs = editable ? ` contenteditable="true" data-edit="${rowIdx},${colIdx}"` : '';
+      const cellVal = (v === '' || v == null) ? '' : v;
+      html += `<td${editAttrs}>${cellVal}</td>`;
+    });
+    html += '</tr>';
+    lastKey = key;
+  });
+  html += '</tbody>';
+  tbl.innerHTML = html;
+  // Refresh the small meta label next to the section title.
+  const meta = document.getElementById('starts-' + prop + '-meta');
+  if (meta) meta.textContent = '· ' + months.length + ' drives · ' + rows.length + ' lot-rows';
+}
+
+const _STARTS_EDIT = { gpd: false, wrg: false };
+
+function addStartsWeek(prop) {
+  const s = _STARTS_STATE[prop];
+  if (!s) { alert('No starts data yet.'); return; }
+  const month = (prompt('Month label for new column (e.g. "Apr 26"):') || '').trim();
+  if (!month) return;
+  const date = (prompt('Drive date for new column (MM/DD/YY):') || '').trim();
+  if (date && !/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(date)) {
+    alert('Date must look like MM/DD/YY, e.g. 04/07/26'); return;
+  }
+  s.months = (s.months || []).concat([month]);
+  s.dates  = (s.dates  || []).concat([date]);
+  (s.rows || []).forEach(r => { r.vals = (r.vals || []).concat([0]); });
+  renderStartsFull(prop);
+  saveStartsToServer();
+}
+
+function deleteStartsWeek(prop) {
+  const s = _STARTS_STATE[prop];
+  if (!s || !s.months || !s.months.length) { alert('No columns to delete.'); return; }
+  const last = s.months[s.months.length - 1];
+  const lastDate = (s.dates && s.dates[s.dates.length - 1]) || '';
+  if (!confirm(`Delete the last column "${last}${lastDate ? ' (' + lastDate + ')' : ''}" from ${prop.toUpperCase()}?`)) return;
+  s.months.pop();
+  if (Array.isArray(s.dates)) s.dates.pop();
+  (s.rows || []).forEach(r => { if (Array.isArray(r.vals)) r.vals.pop(); });
+  renderStartsFull(prop);
+  saveStartsToServer();
+}
+
+function toggleStartsEdit(prop) {
+  const btn = document.getElementById('starts-edit-btn-' + prop);
+  const on = _STARTS_EDIT[prop];
+  if (on) {
+    // Committing edits — diff each contenteditable cell into _STARTS_STATE.
+    const tbl = document.getElementById('t-starts-' + prop + '-full');
+    const s = _STARTS_STATE[prop];
+    if (tbl && s && s.rows) {
+      tbl.querySelectorAll('td[data-edit]').forEach(td => {
+        const [rowIdx, colIdx] = td.dataset.edit.split(',').map(Number);
+        const r = s.rows[rowIdx];
+        if (!r) return;
+        const raw = td.textContent.trim();
+        const parsed = raw === '' ? '' : (isNaN(Number(raw)) ? raw : Number(raw));
+        r.vals[colIdx] = parsed;
+      });
+    }
+    _STARTS_EDIT[prop] = false;
+    if (btn) { btn.dataset.on = '0'; btn.textContent = 'Edit Cells'; }
+    renderStartsFull(prop);
+    saveStartsToServer();
+  } else {
+    _STARTS_EDIT[prop] = true;
+    if (btn) { btn.dataset.on = '1'; btn.textContent = 'Done Editing'; }
+    renderStartsFull(prop);
+  }
+}
+
+let _startsSaveInFlight = false;
+let _startsSavePending = false;
+async function saveStartsToServer() {
+  // Coalesce rapid Add/Edit calls — if a save is already in flight, mark
+  // pending and re-fire once it completes. Stops Add Week + Edit toggles
+  // from racing each other.
+  if (_startsSaveInFlight) { _startsSavePending = true; return; }
+  _startsSaveInFlight = true;
+  try {
+    const body = JSON.stringify({
+      data: {
+        gpd: _STARTS_STATE.gpd || null,
+        wrg: _STARTS_STATE.wrg || null,
+      },
+    });
+    const res = await fetch('/api/starts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      console.warn('starts save failed:', res.status, txt);
+    }
+  } catch (e) {
+    console.warn('starts save errored:', e);
+  } finally {
+    _startsSaveInFlight = false;
+    if (_startsSavePending) {
+      _startsSavePending = false;
+      saveStartsToServer();
+    }
+  }
+}
+
+async function hydrateStartsFromServer() {
+  // Replace _STARTS_STATE with the saved payload if one exists. The
+  // saved version is the user's source of truth (includes added weeks +
+  // cell overrides). Pipsy-derived defaults loaded by renderStarts() are
+  // only used the first time a community is ever rendered.
+  try {
+    const res = await fetch('/api/starts');
+    if (!res.ok) return;
+    const j = await res.json();
+    if (!j || !j.hasData || !j.data) return;
+    let touched = false;
+    ['gpd','wrg'].forEach(p => {
+      const saved = j.data[p];
+      if (saved && Array.isArray(saved.months) && Array.isArray(saved.rows)) {
+        _STARTS_STATE[p] = saved;
+        touched = true;
+      }
+    });
+    if (touched) {
+      renderStartsFull('gpd');
+      renderStartsFull('wrg');
+    }
+  } catch (e) {
+    // Silent — falling back to Pipsy-only defaults is acceptable.
+  }
 }
 
 // ── SALES BY WEEK TAB ─────────────────────────────────────────────────────────

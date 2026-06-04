@@ -10998,6 +10998,65 @@ def uw_data():
     return jsonify(payload)
 
 
+@app.route("/api/starts", methods=["GET", "POST"])
+@login_required
+def starts_data():
+    """Editable starts matrix per community (GPD/WRG).
+
+    GET returns the latest saved payload `{ gpd, wrg, uploaded_at }`,
+    where each community is `{ months: [..], dates: [..], rows: [{lot,
+    bld, sec, del, metric, vals: [..]}], cellEdits?: {...} }`. Empty
+    object if nothing has been saved.
+
+    POST (admin only) replaces the saved payload. Sent body:
+    `{ data: { gpd: {...}, wrg: {...} } }`. The body envelope matches
+    /api/underwriting on the coworker dashboard so the same hydrate
+    pattern works.
+    """
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("sales", True):
+        return jsonify({"error": "Access denied"}), 403
+
+    if request.method == "GET":
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("""
+            SELECT data, uploaded_at, uploaded_by
+            FROM reports
+            WHERE report_type = 'starts'
+            ORDER BY uploaded_at DESC
+            LIMIT 1
+        """)
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if not row:
+            return jsonify({"hasData": False, "data": {"gpd": None, "wrg": None}, "uploaded_at": None})
+        payload = row["data"]
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        return jsonify({
+            "hasData": True,
+            "data": payload if isinstance(payload, dict) else {"gpd": None, "wrg": None},
+            "uploaded_at": row["uploaded_at"].isoformat() if row["uploaded_at"] else None,
+            "uploaded_by": row["uploaded_by"],
+        })
+
+    # POST — admin only. Saves the full payload (single-row, latest wins).
+    if not session.get("is_admin"):
+        return jsonify({"error": "Admin only"}), 403
+    body = request.get_json(silent=True) or {}
+    data = body.get("data")
+    if not isinstance(data, dict):
+        return jsonify({"error": "Missing data object"}), 400
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM reports WHERE report_type = 'starts'")
+    cur.execute(
+        "INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+        ("starts", json.dumps(data), session["user_id"]),
+    )
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True})
+
+
 @app.route("/api/uw-template")
 @login_required
 def uw_template():
