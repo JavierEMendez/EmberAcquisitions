@@ -668,6 +668,56 @@ def _build_dashboard_data():
         d = min(r["date"] for r in records)
         return d.strftime("%b %Y")
 
+    # Cancellation breakdowns for the Cancellations tab. Three rollups:
+    #   - top_builder_product: rows = builder×lot, cols = per-community
+    #     counts + total. Sorted total desc, top 10.
+    #   - top_builders:        rows = builder,    cols = per-community counts + total.
+    #   - top_lot_types:       rows = lot,        cols = per-community counts + total.
+    # Coworker had these as hardcoded tables (their dashboard regenerates
+    # the HTML nightly); we compute live from cancellation records.
+    def _build_cancel_breakdowns(by_community: dict) -> dict:
+        bp: dict = {}   # (builder, lot) -> {community: count}
+        bb: dict = {}   # builder        -> {community: count}
+        bl: dict = {}   # lot            -> {community: count}
+        for comm, cancels in by_community.items():
+            for c in cancels:
+                b   = c.get("builder")  or "Unknown"
+                lot = str(c.get("lot_type") or "—")
+                bp.setdefault((b, lot), {}).setdefault(comm, 0)
+                bp[(b, lot)][comm] += 1
+                bb.setdefault(b, {}).setdefault(comm, 0)
+                bb[b][comm] += 1
+                bl.setdefault(lot, {}).setdefault(comm, 0)
+                bl[lot][comm] += 1
+        def _row_with_total(key_pairs, key_label_fn):
+            out = []
+            for k, by_c in key_pairs:
+                gpd_n = by_c.get("gpd", 0)
+                hld_n = by_c.get("hld", 0)
+                wrg_n = by_c.get("wrg", 0)
+                tot   = gpd_n + hld_n + wrg_n
+                row = key_label_fn(k)
+                row.update({"gpd": gpd_n, "hld": hld_n, "wrg": wrg_n, "total": tot})
+                out.append(row)
+            return sorted(out, key=lambda r: -r["total"])
+        return {
+            "top_builder_product": _row_with_total(
+                bp.items(),
+                lambda k: {"builder": k[0], "lot": k[1]},
+            )[:10],
+            "top_builders": _row_with_total(
+                bb.items(),
+                lambda k: {"builder": k},
+            )[:15],
+            "top_lot_types": _row_with_total(
+                bl.items(),
+                lambda k: {"lot": k},
+            ),
+        }
+    cancel_breakdowns = _build_cancel_breakdowns({
+        "gpd": gpd_cancel, "hld": hld_cancel, "wrg": wrg_cancel,
+    })
+
     # Emit the timestamp as an ISO 8601 UTC string. The browser formats it in
     # the user's local timezone — Railway runs in UTC, so a naive strftime here
     # bakes in the wrong wall-clock for anyone outside UTC (e.g. Houston is
@@ -677,6 +727,7 @@ def _build_dashboard_data():
         "current_year": current_year,
         "current_month": current_month,
         "targets": TARGETS,
+        "cancel_breakdowns": cancel_breakdowns,
         "communities": {
             "gpd": {
                 "name": "The Grand Prairie",

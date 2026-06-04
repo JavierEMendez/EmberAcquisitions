@@ -776,6 +776,39 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
         </div>
       </div>
 
+      <!-- Top Builder + Product (cross-community matrix) -->
+      <div class="section-title">Top Builder + Product by Cancellations
+        <span class="sub">All communities · top 10</span>
+      </div>
+      <div class="table-card">
+        <table class="summary" id="t-cancels-bp"><thead><tr>
+          <th>Builder &mdash; Lot Type</th>
+          <th class="num">GPD</th><th class="num">Hld</th><th class="num">WRG</th><th class="num">Total</th>
+        </tr></thead><tbody></tbody></table>
+      </div>
+
+      <!-- Top Builders + Top Lot Types (side-by-side) -->
+      <div class="chart-grid">
+        <div>
+          <div class="section-title" style="margin-top:14px">Top Builders by Cancellations</div>
+          <div class="table-card">
+            <table class="summary" id="t-cancels-builders"><thead><tr>
+              <th>Builder</th>
+              <th class="num">GPD</th><th class="num">Hld</th><th class="num">WRG</th><th class="num">Total</th>
+            </tr></thead><tbody></tbody></table>
+          </div>
+        </div>
+        <div>
+          <div class="section-title" style="margin-top:14px">Top Lot Types by Cancellations</div>
+          <div class="table-card">
+            <table class="summary" id="t-cancels-lots"><thead><tr>
+              <th>Lot Type</th>
+              <th class="num">GPD</th><th class="num">Hld</th><th class="num">WRG</th><th class="num">Total</th>
+            </tr></thead><tbody></tbody></table>
+          </div>
+        </div>
+      </div>
+
       <div class="section-title">Recent GPD Cancellations <span class="sub">Most recent 5</span></div>
       <div class="table-card">
         <table class="cancel-table" id="t-cancels-dedicated"><thead><tr>
@@ -1834,6 +1867,35 @@ function renderCancels(data) {
 
   // Recent GPD cancellations table (same data as GPD tab — kept in both places per request)
   renderCancelTable('t-cancels-dedicated', gpd.recent_cancels || []);
+
+  // ── Top Builder × Product / Top Builders / Top Lot Types tables ──
+  // Server pre-aggregates these in sales_parser._build_cancel_breakdowns;
+  // we just render. All three tables share the same row shape:
+  //   {builder?, lot?, gpd, hld, wrg, total}
+  const bd = data.cancel_breakdowns || {};
+  function _renderBreakdownTable(tableId, rows, firstColFn) {
+    const tbody = document.querySelector('#' + tableId + ' tbody');
+    if (!tbody) return;
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--eax-subtle);padding:14px">No cancellations yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(r =>
+      '<tr>'
+      + '<td>' + firstColFn(r) + '</td>'
+      + '<td class="num">' + (r.gpd || 0) + '</td>'
+      + '<td class="num">' + (r.hld || 0) + '</td>'
+      + '<td class="num">' + (r.wrg || 0) + '</td>'
+      + '<td class="num"><strong>' + (r.total || 0) + '</strong></td>'
+      + '</tr>'
+    ).join('');
+  }
+  _renderBreakdownTable('t-cancels-bp', bd.top_builder_product || [],
+    r => (r.builder || '—') + ' &mdash; ' + (r.lot || '—'));
+  _renderBreakdownTable('t-cancels-builders', bd.top_builders || [],
+    r => (r.builder || '—'));
+  _renderBreakdownTable('t-cancels-lots', bd.top_lot_types || [],
+    r => (r.lot || '—'));
 }
 
 // ── STARTS & INVENTORY TAB ────────────────────────────────────────────────────
