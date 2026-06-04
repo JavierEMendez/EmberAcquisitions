@@ -43,50 +43,63 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;hei
   overflow-y:auto;background:var(--eax-bg-2);
   display:flex;flex-direction:column;
 }
-/* Header: matches the .logo-sub treatment used on /ember-capital
-   and other primary sidebars — small uppercase letter-spaced label,
-   centered, subtle gray. Bottom hairline separates from the items. */
+/* Header: matches the /ember-capital cockpit treatment — small
+   accent eyebrow, large uppercase page title, muted subtitle. */
 .cs-nav-head{
-  padding:16px 18px 14px;
-  border-bottom:1px solid var(--eax-line);
-  text-align:center;
+  padding:28px 24px 16px;
+}
+.cs-nav-eyebrow{
+  font-family:'Plus Jakarta Sans',sans-serif;
+  font-size:9.5px;font-weight:500;letter-spacing:0.24em;
+  text-transform:uppercase;color:var(--eax-accent);
+  margin-bottom:6px;
 }
 .cs-nav-title{
   font-family:'Plus Jakarta Sans',sans-serif;
-  font-size:10px;font-weight:700;letter-spacing:0.2em;
-  text-transform:uppercase;color:var(--eax-subtle);
+  font-size:26px;font-weight:700;letter-spacing:-0.02em;
+  text-transform:uppercase;color:var(--eax-ink);
+  line-height:1.05;margin:4px 0 6px;
+}
+.cs-nav-sub{
+  font-size:11px;color:var(--eax-muted);margin:0;
 }
 .cs-nav-section{
-  padding:16px 18px 4px;font-size:10px;line-height:1.2;
-  color:var(--eax-subtle);letter-spacing:0.22em;text-transform:uppercase;
-  margin-top:8px;font-weight:700;
+  padding:18px 24px 6px;
+  font-family:'Plus Jakarta Sans',sans-serif;
+  font-size:9px;font-weight:600;letter-spacing:0.22em;
+  text-transform:uppercase;color:var(--eax-subtle);
+  margin-top:8px;
 }
-/* Items — 40% larger than the primary-sidebar items (per design
-   request). padding 9→13 / 14→20, font 13→18, icon 16→22, gap 10→14. */
+
+/* Items — KPI-label-sized: Plus Jakarta Sans, uppercase, letter-
+   spaced. Buttons read as compact navigation labels, matching the
+   visual weight of the .kpi .label treatment on /ember-capital. */
 .cs-nav-item{
-  display:flex;align-items:center;gap:14px;
-  padding:13px 20px;cursor:pointer;border-radius:10px;
-  margin:2px 10px;transition:all .15s;
-  color:var(--eax-muted);font-size:18px;line-height:1.2;
-  text-decoration:none;font-weight:500;
+  display:flex;align-items:center;gap:10px;
+  padding:10px 16px;cursor:pointer;border-radius:8px;
+  margin:1px 12px;transition:all .15s;
+  color:var(--eax-muted);
+  font-family:'Plus Jakarta Sans',sans-serif;
+  font-size:11px;font-weight:600;letter-spacing:0.16em;
+  text-transform:uppercase;line-height:1.25;
+  text-decoration:none;
 }
 .cs-nav-item:hover{background:var(--eax-accent-soft);color:var(--eax-ink);text-decoration:none;}
 .cs-nav-item.active{
-  background:var(--eax-surface);color:var(--eax-ink);font-weight:600;
+  background:var(--eax-surface);color:var(--eax-ink);
   border:1px solid var(--eax-line);position:relative;
 }
 .cs-nav-item.active::before{
-  content:"";position:absolute;left:-1px;top:10px;bottom:10px;
+  content:"";position:absolute;left:-1px;top:8px;bottom:8px;
   width:2px;background:var(--eax-accent);border-radius:2px;
 }
-.cs-nav-item .icon{width:22px;height:22px;opacity:.7;flex-shrink:0;}
+.cs-nav-item .icon{width:14px;height:14px;opacity:.6;flex-shrink:0;}
 .cs-nav-item.active .icon{opacity:1;color:var(--eax-accent);}
 
-/* Community accent stripes — proportionally scaled with the larger
-   nav items. Kept the original classnames so showTab() doesn't
-   change. */
+/* Community accent stripes (4px-wide left-side color marker).
+   Same classnames as before so showTab() doesn't change. */
 .cs-nav-item .tab-accent{
-  width:4px;height:22px;border-radius:2px;
+  width:3px;height:14px;border-radius:2px;
   background:transparent;flex-shrink:0;
 }
 .cs-nav-item.active .tab-accent{background:var(--eax-accent);}
@@ -418,7 +431,9 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
      ── #}
   <aside class="cs-nav">
     <div class="cs-nav-head">
-      <div class="cs-nav-title">Sales Tracker</div>
+      <div class="cs-nav-eyebrow">Sales · {{ period_label or 'Live' }}</div>
+      <h1 class="cs-nav-title">Community Sales</h1>
+      <p class="cs-nav-sub">Per-community sales, permits &amp; UW pacing.</p>
     </div>
 
     <a href="#exec" class="cs-nav-item" data-tab="exec">
