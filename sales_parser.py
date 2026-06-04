@@ -26,6 +26,7 @@ import time
 import urllib.request
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 # ─── Pipsy GraphQL API ────────────────────────────────────────────────────────
 
@@ -85,6 +86,91 @@ def fetch_sales_records(property_id: int, cancels: bool = False) -> list:
     )
     data = graphql_query(q)
     return data.get("sales", [])
+
+
+def fetch_lot_records(property_id: int) -> list:
+    """Fetch all lots for a property via Pipsy's `lots()` query. Used by
+    the Underwriting Actuals overlay — each lot's takedown_date + section
+    drives the "lot takedowns by section/month" actuals series."""
+    q = "{ lots(property: [%d]) { id section takedown_date } }" % property_id
+    data = graphql_query(q)
+    return data.get("lots", [])
+
+
+def _ts_to_ct_ym(ts) -> Optional[str]:
+    """Convert a Pipsy timestamp (epoch seconds, possibly stringified) to
+    a YYYY-MM key in America/Chicago. Returns None on bad input. Pinning
+    to CT (not UTC) so late-evening CT events don't spill into next month."""
+    if ts is None:
+        return None
+    try:
+        ts_num = int(float(ts))
+    except (TypeError, ValueError):
+        return None
+    # Try zoneinfo (stdlib 3.9+); fall back to pytz; final fallback is UTC.
+    try:
+        from zoneinfo import ZoneInfo
+        dt = datetime.fromtimestamp(ts_num, tz=ZoneInfo("America/Chicago"))
+    except Exception:
+        try:
+            import pytz
+            dt = datetime.fromtimestamp(ts_num, tz=pytz.timezone("America/Chicago"))
+        except Exception:
+            dt = datetime.utcfromtimestamp(ts_num)
+    return dt.strftime("%Y-%m")
+
+
+def pipsy_home_sales_by_section(property_id: int) -> dict:
+    """Aggregate net home sales (gross − cancel) by section + YYYY-MM.
+
+    Returns {"Section N": {"YYYY-MM": net_count, ...}, ...}.
+    Zero-net cells are stripped to match the legacy update_dashboard.py
+    output shape. Used by the Underwriting Actuals overlay (#8) to plot
+    actuals against UW Modeled net sales.
+    """
+    gross = fetch_sales_records(property_id, cancels=False)
+    cancel = fetch_sales_records(property_id, cancels=True)
+    result: dict = {}
+    def _bump(sec, ym, delta):
+        if not sec or not ym:
+            return
+        key = "Section " + str(sec).strip()
+        result.setdefault(key, {})
+        result[key][ym] = result[key].get(ym, 0) + delta
+    for s in gross:
+        ym = _ts_to_ct_ym(s.get("sale_date"))
+        _bump(s.get("section"), ym, 1)
+    for c in cancel:
+        ym = _ts_to_ct_ym(c.get("cancel_date"))
+        _bump(c.get("section"), ym, -1)
+    # Strip zero cells + empty sections (matches coworker output).
+    for sec in list(result.keys()):
+        for ym in list(result[sec].keys()):
+            if result[sec][ym] == 0:
+                del result[sec][ym]
+        if not result[sec]:
+            del result[sec]
+    return result
+
+
+def pipsy_lot_takedowns_by_section(property_id: int) -> dict:
+    """Aggregate lot takedowns by section + YYYY-MM of takedown_date.
+
+    Returns {"Section N": {"YYYY-MM": count, ...}, ...}. Same shape as
+    pipsy_home_sales_by_section but built from the `lots()` query
+    instead of `sales()`. Drives the Lot Takedowns metric in the UW
+    actuals overlay."""
+    lots = fetch_lot_records(property_id)
+    result: dict = {}
+    for lot in lots:
+        ym = _ts_to_ct_ym(lot.get("takedown_date"))
+        sec = lot.get("section")
+        if not sec or not ym:
+            continue
+        key = "Section " + str(sec).strip()
+        result.setdefault(key, {})
+        result[key][ym] = result[key].get(ym, 0) + 1
+    return result
 
 
 # ─── Configuration (targets + static builder data) ────────────────────────────

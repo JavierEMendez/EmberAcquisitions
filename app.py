@@ -14,7 +14,11 @@ from calc import calculate
 from report_parser import parse_dashboard
 from macro_parser import parse_macro
 from data_puller import run_pull
-from sales_parser import get_sales_dashboard_data
+from sales_parser import (
+    get_sales_dashboard_data,
+    pipsy_home_sales_by_section,
+    pipsy_lot_takedowns_by_section,
+)
 from bohlke_parser import parse_bohlke
 from waller_parser import parse_waller_monthly
 from hpermits_parser import parse_hpermits
@@ -10656,6 +10660,66 @@ def sales_data():
         return jsonify(data)
     except RuntimeError as e:
         # Missing API token or Pipsy error — surface a clear message
+        return jsonify({"error": str(e)}), 503
+    except Exception as e:
+        return jsonify({"error": f"Unexpected error: {e}"}), 500
+
+
+def _parse_pipsy_property() -> int:
+    """Resolve the ?property= query param to a numeric Pipsy property id.
+    Accepts the numeric ids directly (1=GPD, 2=WRG, 3=HLD) or the short
+    codes 'gpd'/'wrg'/'hld'. Defaults to GPD when unset/invalid so the
+    legacy single-property callers don't break."""
+    raw = (request.args.get("property") or "1").strip().lower()
+    aliases = {"gpd": 1, "wrg": 2, "hld": 3}
+    if raw in aliases:
+        return aliases[raw]
+    try:
+        n = int(raw)
+        return n if n in (1, 2, 3) else 1
+    except ValueError:
+        return 1
+
+
+@app.route("/api/pipsy/home-sales")
+@login_required
+def pipsy_home_sales():
+    """Net home sales (gross − cancel) bucketed by section + YYYY-MM.
+
+    Used by the UW Actuals overlay: returns
+    `{ "property": N, "sales": { "Section 1": { "2025-03": 4, ... } } }`.
+    Same gate as /api/sales-data — admins or any user whose page_access
+    grants the sales tab."""
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("sales", True):
+        return jsonify({"error": "Access denied"}), 403
+    prop = _parse_pipsy_property()
+    try:
+        data = pipsy_home_sales_by_section(prop)
+        return jsonify({"property": prop, "sales": data})
+    except RuntimeError as e:
+        # Missing API token / GraphQL error — same shape as /api/sales-data
+        return jsonify({"error": str(e)}), 503
+    except Exception as e:
+        return jsonify({"error": f"Unexpected error: {e}"}), 500
+
+
+@app.route("/api/pipsy/lot-takedowns")
+@login_required
+def pipsy_lot_takedowns():
+    """Lot takedowns bucketed by section + YYYY-MM of takedown_date.
+
+    Used by the UW Actuals overlay: returns
+    `{ "property": N, "takedowns": { "Section 1": { "2025-03": 2 } } }`.
+    Same access gate as /api/pipsy/home-sales."""
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("sales", True):
+        return jsonify({"error": "Access denied"}), 403
+    prop = _parse_pipsy_property()
+    try:
+        data = pipsy_lot_takedowns_by_section(prop)
+        return jsonify({"property": prop, "takedowns": data})
+    except RuntimeError as e:
         return jsonify({"error": str(e)}), 503
     except Exception as e:
         return jsonify({"error": f"Unexpected error: {e}"}), 500
