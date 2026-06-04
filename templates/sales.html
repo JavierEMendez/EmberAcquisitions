@@ -30,7 +30,72 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;hei
 #app{display:flex;height:100vh;overflow:hidden}
 /* ── SIDEBAR (canonical — matches /returns) ── */
 #sidebar{width:240px;background:var(--eax-bg-2);border-right:1px solid var(--eax-line);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
-#main-content{flex:1;overflow-y:auto;padding:24px 32px}
+#main-content{flex:1;display:flex;overflow:hidden;background:var(--eax-bg)}
+
+/* ── SECONDARY NAV — sub-page navigator for Community Sales.
+   Mirrors the /returns two-pane pattern (.rw-nav): primary
+   #sidebar holds app/dashboard nav, this pane holds the
+   page-internal sections (communities, planning, market, finance).
+   Width is a bit narrower than /returns since these are just
+   labels (no per-project KPI summaries). ── */
+.cs-nav{
+  width:260px;flex-shrink:0;border-right:1px solid var(--eax-line);
+  overflow-y:auto;background:var(--eax-bg-2);
+  display:flex;flex-direction:column;
+}
+.cs-nav-head{padding:18px 18px 14px;border-bottom:1px solid var(--eax-line);}
+.cs-nav-eyebrow{
+  font-family:'Plus Jakarta Sans',sans-serif;
+  font-size:10px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;
+  color:var(--eax-accent);margin-bottom:6px;
+}
+.cs-nav-title{
+  font-family:'Plus Jakarta Sans',sans-serif;
+  font-weight:700;font-size:18px;letter-spacing:-0.015em;line-height:1.15;
+  color:var(--eax-ink);
+}
+.cs-nav-section{
+  padding:14px 18px 4px;font-size:9px;line-height:1.2;
+  color:var(--eax-subtle);letter-spacing:0.22em;text-transform:uppercase;
+  margin-top:6px;font-weight:700;
+}
+.cs-nav-item{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 14px;cursor:pointer;border-radius:8px;
+  margin:1px 10px;transition:all .15s;
+  color:var(--eax-muted);font-size:13px;line-height:1.2;
+  text-decoration:none;font-weight:500;
+}
+.cs-nav-item:hover{background:var(--eax-accent-soft);color:var(--eax-ink);text-decoration:none;}
+.cs-nav-item.active{
+  background:var(--eax-surface);color:var(--eax-ink);font-weight:600;
+  border:1px solid var(--eax-line);position:relative;
+}
+.cs-nav-item.active::before{
+  content:"";position:absolute;left:-1px;top:8px;bottom:8px;
+  width:2px;background:var(--eax-accent);border-radius:2px;
+}
+.cs-nav-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0;}
+.cs-nav-item.active .icon{opacity:1;color:var(--eax-accent);}
+
+/* Community accent stripes (kept consistent with the old in-line
+   .tab-accent classnames so showTab() doesn't need changes) */
+.cs-nav-item .tab-accent{
+  width:3px;height:16px;border-radius:2px;
+  background:transparent;flex-shrink:0;
+}
+.cs-nav-item.active .tab-accent{background:var(--eax-accent);}
+.cs-nav-item .tab-accent.tgp{background:rgba(242,89,41,.7);}
+.cs-nav-item .tab-accent.gpd{background:rgba(74,144,226,.7);}
+.cs-nav-item .tab-accent.hld{background:rgba(88,180,122,.7);}
+.cs-nav-item .tab-accent.wrg{background:rgba(224,122,62,.7);}
+.cs-nav-item.active .tab-accent.tgp{background:var(--eax-accent);}
+.cs-nav-item.active .tab-accent.gpd{background:#4a90e2;}
+.cs-nav-item.active .tab-accent.hld{background:#58b47a;}
+.cs-nav-item.active .tab-accent.wrg{background:#e07a3e;}
+
+/* Inner scroll area for the actual dashboard content */
+.cs-page{flex:1;min-width:0;overflow-y:auto;padding:24px 32px;}
 .sidebar-logo{padding:16px 18px 14px;border-bottom:1px solid var(--eax-line)}
 .logo-img{width:100%;max-width:160px;height:auto;display:block;margin:0 auto}
 .logo-sub{font-size:10px;color:var(--eax-subtle);letter-spacing:0.2em;text-transform:uppercase;margin-top:8px;text-align:center;font-weight:700}
@@ -223,83 +288,98 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
     </a>
     {% endif %}
 
-    <a href="#exec" class="sidebar-item" data-tab="exec">
+    <div style="flex:1"></div>
+    {% include "_partials/_sidebar_foot.html" %}
+  </nav>
+
+  {# ── SECONDARY NAV — Community Sales sub-pages.
+        Mirrors the /returns two-pane pattern. Click handlers
+        live in the existing showTab() JS (which keys off
+        data-tab and now also catches .cs-nav-item).
+     ── #}
+  <aside class="cs-nav">
+    <div class="cs-nav-head">
+      <div class="cs-nav-eyebrow">COMMUNITY SALES</div>
+      <div class="cs-nav-title">Sales Tracker</div>
+    </div>
+
+    <a href="#exec" class="cs-nav-item" data-tab="exec">
       <span class="tab-accent"></span>
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l3-3 4 4 5-6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Executive Summary
     </a>
-    <a href="#tgp" class="sidebar-item" data-tab="tgp">
+    <a href="#tgp" class="cs-nav-item" data-tab="tgp">
       <span class="tab-accent tgp"></span>
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 9l9-6 9 6v11a1 1 0 01-1 1h-5a1 1 0 01-1-1v-5h-4v5a1 1 0 01-1 1H4a1 1 0 01-1-1V9z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       The Grand Prairie
     </a>
-    <a href="#gpd" class="sidebar-item" data-tab="gpd">
+    <a href="#gpd" class="cs-nav-item" data-tab="gpd">
       <span class="tab-accent gpd"></span>
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 9l9-6 9 6v11a1 1 0 01-1 1h-5a1 1 0 01-1-1v-5h-4v5a1 1 0 01-1 1H4a1 1 0 01-1-1V9z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Grand Prairie Dev
     </a>
-    <a href="#hld" class="sidebar-item" data-tab="hld">
+    <a href="#hld" class="cs-nav-item" data-tab="hld">
       <span class="tab-accent hld"></span>
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 9l9-6 9 6v11a1 1 0 01-1 1h-5a1 1 0 01-1-1v-5h-4v5a1 1 0 01-1 1H4a1 1 0 01-1-1V9z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Highlands
     </a>
-    <a href="#wrg" class="sidebar-item" data-tab="wrg">
+    <a href="#wrg" class="cs-nav-item" data-tab="wrg">
       <span class="tab-accent wrg"></span>
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 9l9-6 9 6v11a1 1 0 01-1 1h-5a1 1 0 01-1-1v-5h-4v5a1 1 0 01-1 1H4a1 1 0 01-1-1V9z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Windrose Green
     </a>
 
-    <div class="sidebar-section">Planning</div>
-    <a href="#proj" class="sidebar-item" data-tab="proj">
+    <div class="cs-nav-section">Planning</div>
+    <a href="#proj" class="cs-nav-item" data-tab="proj">
       <span class="tab-accent"></span>
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       2026 Projections
     </a>
-    <a href="#cancels" class="sidebar-item" data-tab="cancels">
+    <a href="#cancels" class="cs-nav-item" data-tab="cancels">
       <span class="tab-accent"></span>
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="1.5"/><path d="M4.93 4.93l14.14 14.14" stroke-width="1.5" stroke-linecap="round"/></svg>
       Cancellations
     </a>
-    <a href="#starts" class="sidebar-item" data-tab="starts">
+    <a href="#starts" class="cs-nav-item" data-tab="starts">
       <span class="tab-accent"></span>
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M2 20h20M5 20V8l7-5 7 5v12M9 20v-6h6v6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Starts &amp; Inventory
     </a>
-    <a href="#weekly" class="sidebar-item" data-tab="weekly">
+    <a href="#weekly" class="cs-nav-item" data-tab="weekly">
       <span class="tab-accent"></span>
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2" stroke-width="1.5"/><path d="M3 10h18M8 2v4M16 2v4" stroke-width="1.5" stroke-linecap="round"/></svg>
       Sales by Week
     </a>
 
-    <div class="sidebar-section">Market</div>
-    <a href="#bohlke" class="sidebar-item" data-tab="bohlke">
+    <div class="cs-nav-section">Market</div>
+    <a href="#bohlke" class="cs-nav-item" data-tab="bohlke">
       <span class="tab-accent"></span>
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l4-4 4 4 5-5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Bohlke Report
     </a>
-    <a href="#waller" class="sidebar-item" data-tab="waller">
+    <a href="#waller" class="cs-nav-item" data-tab="waller">
       <span class="tab-accent"></span>
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2" stroke-width="1.5"/><path d="M3 10h18M8 2v4M16 2v4M7 14h4M7 17h6" stroke-width="1.5" stroke-linecap="round"/></svg>
       Waller Permits
     </a>
-    <a href="#hpermits" class="sidebar-item" data-tab="hpermits">
+    <a href="#hpermits" class="cs-nav-item" data-tab="hpermits">
       <span class="tab-accent"></span>
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Houston Permits
     </a>
 
-    <div class="sidebar-section">Finance</div>
-    <a href="#uw" class="sidebar-item" data-tab="uw">
+    <div class="cs-nav-section">Finance</div>
+    <a href="#uw" class="cs-nav-item" data-tab="uw">
       <span class="tab-accent"></span>
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 2v20M5 6h10a3 3 0 010 6H9a3 3 0 000 6h10" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Underwriting
     </a>
 
     <div style="flex:1"></div>
-    {% include "_partials/_sidebar_foot.html" %}
-  </nav>
+  </aside>
 
   <div id="main-content">
+    <div class="cs-page">
     <div class="top-bar">
       <h1>Community Sales Tracker</h1>
       <div class="top-right" style="display:flex;align-items:center;gap:10px">
@@ -924,9 +1004,10 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
       </div><!-- /tab-uw -->
 
       <div style="height:40px"></div>
-    </div>
-  </div>
-</div>
+    </div><!-- /(legacy inner wrapper) -->
+  </div><!-- /cs-page -->
+  </div><!-- /main-content -->
+</div><!-- /app -->
 
 {% include "_partials/_account_modal.html" %}
 
@@ -1011,17 +1092,23 @@ const TAB_TITLES = {
 };
 const TABS = Object.keys(TAB_TITLES);
 
+// Tab buttons now live in the secondary .cs-nav-item rail. We also
+// keep the legacy .sidebar-item[data-tab] selector working in case
+// any deep-linked code or partials still depend on it — both are
+// query-selected together below.
+const _TAB_SELECTOR = '.cs-nav-item[data-tab], .sidebar-item[data-tab]';
+
 function showTab(id, opts) {
   if (!TABS.includes(id)) id = 'exec';
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.sidebar-item[data-tab]').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll(_TAB_SELECTOR).forEach(el => el.classList.remove('active'));
   const panel = document.getElementById('tab-' + id);
-  const link  = document.querySelector('.sidebar-item[data-tab="' + id + '"]');
+  const links = document.querySelectorAll(_TAB_SELECTOR + '[data-tab="' + id + '"]');
   if (panel) panel.classList.add('active');
-  if (link)  link.classList.add('active');
+  links.forEach(l => l.classList.add('active'));
 
   // Update page title in top bar
-  const h1 = document.querySelector('#main-content .top-bar h1');
+  const h1 = document.querySelector('.cs-page .top-bar h1, #main-content .top-bar h1');
   if (h1) h1.textContent = TAB_TITLES[id];
   document.title = TAB_TITLES[id] + ' — Community Sales';
 
@@ -1031,9 +1118,9 @@ function showTab(id, opts) {
     else location.hash = id;
   }
 
-  // Scroll main content to top
-  const main = document.getElementById('main-content');
-  if (main) main.scrollTop = 0;
+  // Scroll the cs-page (or legacy #main-content) container to top
+  const scroller = document.querySelector('.cs-page') || document.getElementById('main-content');
+  if (scroller) scroller.scrollTop = 0;
 
   // Charts inside freshly visible panel may have been sized at 0 while hidden
   setTimeout(() => {
@@ -1041,8 +1128,9 @@ function showTab(id, opts) {
   }, 40);
 }
 
-// Wire tab clicks
-document.querySelectorAll('.sidebar-item[data-tab]').forEach(a => {
+// Wire tab clicks on every tab link (both new .cs-nav-item and any
+// legacy .sidebar-item[data-tab] still in the DOM).
+document.querySelectorAll(_TAB_SELECTOR).forEach(a => {
   a.addEventListener('click', function(e) {
     e.preventDefault();
     showTab(this.dataset.tab);
