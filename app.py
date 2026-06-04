@@ -10895,27 +10895,75 @@ def hpermits_data():
     return jsonify(data)
 
 
+def _UW_EMPTY_PROP():
+    return {"home_sales": {}, "lot_takedowns": {}, "bem": {}, "section_lots": {}, "sheet_names": []}
+
+
+def _normalize_uw_payload(raw) -> dict:
+    """Normalize whatever's in the DB to the per-property shape
+    `{ gpd: {...}, wrg: {...} }`. Legacy rows were stored flat (the GPD-only
+    era) — we lift those into the gpd slot so old uploads keep rendering.
+    """
+    if isinstance(raw, str):
+        raw = json.loads(raw)
+    if not isinstance(raw, dict):
+        return {"gpd": _UW_EMPTY_PROP(), "wrg": _UW_EMPTY_PROP()}
+    # Detect new (per-property) shape: has a 'gpd' or 'wrg' key with a dict value.
+    looks_nested = any(
+        isinstance(raw.get(k), dict) and {"home_sales", "lot_takedowns", "bem"} & set(raw.get(k, {}).keys())
+        for k in ("gpd", "wrg")
+    )
+    if looks_nested:
+        return {
+            "gpd": {**_UW_EMPTY_PROP(), **(raw.get("gpd") or {})},
+            "wrg": {**_UW_EMPTY_PROP(), **(raw.get("wrg") or {})},
+        }
+    # Legacy flat -> gpd
+    legacy = {**_UW_EMPTY_PROP(), **{k: raw.get(k) for k in _UW_EMPTY_PROP() if k in raw}}
+    return {"gpd": legacy, "wrg": _UW_EMPTY_PROP()}
+
+
+def _uw_property_from_request() -> str:
+    """Resolve the ?property= form/query param to 'gpd' or 'wrg'. Default
+    gpd so legacy uploaders that don't pass the param keep working."""
+    raw = (request.values.get("property") or "gpd").strip().lower()
+    return "wrg" if raw == "wrg" else "gpd"
+
+
 @app.route("/api/upload-uw", methods=["POST"])
 @login_required
 def upload_uw():
-    """Admin-only — accepts the raw 'UW Performance Export' xlsx and stores
-    the parsed JSON in reports (report_type='uw_performance')."""
+    """Admin-only — accepts the raw 'UW Performance Export' xlsx for the
+    property indicated by `?property=gpd|wrg` (default gpd). Parses the
+    workbook, merges into the existing per-property payload (so uploading
+    GPD doesn't wipe WRG and vice versa), and saves under
+    report_type='uw_performance'."""
     if not session.get("is_admin"):
         return jsonify({"error": "Admin only"}), 403
     f = request.files.get("file")
     if not f:
         return jsonify({"error": "No file"}), 400
+    prop = _uw_property_from_request()
     try:
         data = parse_uw(f.read())
     except Exception as e:
         return jsonify({"error": str(e)}), 400
     conn = get_db(); cur = conn.cursor()
+    # Load the existing payload so we merge instead of clobbering the other property.
+    cur.execute(
+        "SELECT data FROM reports WHERE report_type = 'uw_performance' "
+        "ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    row = cur.fetchone()
+    existing = _normalize_uw_payload(row["data"] if row else None)
+    existing[prop] = data  # Full replacement for the uploaded property
     cur.execute("DELETE FROM reports WHERE report_type = 'uw_performance'")
     cur.execute("INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
-                ("uw_performance", json.dumps(data), session["user_id"]))
+                ("uw_performance", json.dumps(existing), session["user_id"]))
     conn.commit(); cur.close(); conn.close()
     return jsonify({
         "ok": True,
+        "property": prop,
         "home_sales_sections":   len(data.get("home_sales", {})),
         "lot_takedowns_sections": len(data.get("lot_takedowns", {})),
         "bem_sections":          len(data.get("bem", {})),
@@ -10925,7 +10973,9 @@ def upload_uw():
 @app.route("/api/uw-data")
 @login_required
 def uw_data():
-    """Return the latest stored UW Performance report, or an empty shell."""
+    """Return the latest stored UW Performance report, normalized to the
+    per-property shape `{ gpd: {...}, wrg: {...}, uploaded_at }`. Always
+    returns both slots — empty shells if a property hasn't been uploaded."""
     pa = session.get("page_access") or {}
     if not session.get("is_admin") and not pa.get("sales", True):
         return jsonify({"error": "Access denied"}), 403
@@ -10941,14 +10991,31 @@ def uw_data():
     cur.close(); conn.close()
     if not row:
         return jsonify({
-            "home_sales": {}, "lot_takedowns": {}, "bem": {},
-            "section_lots": {}, "sheet_names": [], "uploaded_at": None,
+            "gpd": _UW_EMPTY_PROP(), "wrg": _UW_EMPTY_PROP(), "uploaded_at": None,
         })
-    data = row["data"]
-    if isinstance(data, str):
-        data = json.loads(data)
-    data["uploaded_at"] = row["uploaded_at"].isoformat() if row["uploaded_at"] else None
-    return jsonify(data)
+    payload = _normalize_uw_payload(row["data"])
+    payload["uploaded_at"] = row["uploaded_at"].isoformat() if row["uploaded_at"] else None
+    return jsonify(payload)
+
+
+@app.route("/api/uw-template")
+@login_required
+def uw_template():
+    """Serve the blank UW Performance Export template xlsx so admins can
+    download it, fill it in, and re-upload. Same file for GPD and WRG —
+    only the section list differs, and the parser reads sheet labels."""
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("sales", True):
+        return jsonify({"error": "Access denied"}), 403
+    prop = _uw_property_from_request()
+    from flask import send_from_directory
+    template_dir = os.path.join(app.root_path, "static", "uw_templates")
+    filename = "UW Performance Export.xlsx"
+    return send_from_directory(
+        template_dir, filename,
+        as_attachment=True,
+        download_name=f"UW Performance Export - {prop.upper()}.xlsx",
+    )
 
 
 # ─── Health endpoint (sales-dashboard parity item #1) ────────────────────────

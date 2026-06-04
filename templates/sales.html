@@ -9,6 +9,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<!-- SheetJS — used by Export Actuals (xlsx) on the Underwriting tab. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -1293,16 +1295,30 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
       <div id="tab-uw" class="tab-content">
       <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
         <div>
-          Underwriting Performance — GPD
+          <span id="uw-panel-title">Underwriting Performance — GPD</span>
           <span class="sub" id="uw-meta">—</span>
         </div>
-        <div style="display:flex;gap:8px;align-items:center">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <select id="uw-prop"
+                  style="padding:6px 12px;font-size:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:6px;cursor:pointer;font-family:'DM Sans',sans-serif">
+            <option value="gpd" selected>GPD</option>
+            <option value="wrg">WRG</option>
+          </select>
           <select id="uw-metric"
                   style="padding:6px 12px;font-size:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:6px;cursor:pointer;font-family:'DM Sans',sans-serif">
             <option value="homeSales" selected>Home Sales</option>
             <option value="lotTakedowns">Lot Takedowns</option>
             <option value="bem">BEM ($)</option>
           </select>
+          <button id="uw-export-template-btn" onclick="downloadUwTemplate()"
+                  style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">
+            Export Template
+          </button>
+          <button id="uw-export-actuals-btn" onclick="exportUwActuals()"
+                  style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif"
+                  title="Export Pipsy actuals (Home Sales + Lot Takedowns) for both communities as a 4-sheet xlsx">
+            Export Actuals
+          </button>
           {% if is_admin %}
           <input type="file" id="uw-file" accept=".xlsx,.xls" style="display:none">
           <button id="uw-upload-btn" onclick="document.getElementById('uw-file').click()"
@@ -2136,29 +2152,33 @@ async function renderExecExtras(data) {
     const res = await fetch('/api/uw-data');
     if (!res.ok) return;
     const uw = await res.json();
-    if (!uw || !uw.sections) return;
-    // UW data is GPD-only at the moment; sum modeled NET SALES across
-    // sections. Future-proof: when WRG is added in #8 we'll surface
-    // that too. For now, GPD gets the model + Highlands keeps "—".
-    let gpdGoal = 0;
-    const cur = new Date().getFullYear();
-    (uw.sections || []).forEach(sec => {
-      const ms = (sec.metric_data || {})['net sales'];
-      if (!ms) return;
-      // Sum the current-year monthly modeled sales.
-      Object.entries(ms).forEach(([ym, n]) => {
-        if (ym.startsWith(String(cur))) gpdGoal += Number(n || 0);
+    if (!uw) return;
+    // Sum current-year UW Modeled home sales by property. Both GPD and
+    // WRG are tracked; the dashboard only renders goals for the ones
+    // that actually have an upload (gpdGoal > 0 / wrgGoal > 0).
+    const yr = String(new Date().getFullYear());
+    const sumCurYear = (homeSales) => {
+      let total = 0;
+      Object.values(homeSales || {}).forEach(mo => {
+        Object.entries(mo || {}).forEach(([ym, n]) => {
+          if (ym.startsWith(yr)) total += Number(n || 0);
+        });
       });
-    });
-    if (gpdGoal > 0) {
-      const gpdActual = data.communities.gpd.ytd_net || 0;
-      const pct = ((gpdActual / gpdGoal) * 100).toFixed(0);
-      const v = document.getElementById('exec-goal-gpd');
-      const s = document.getElementById('exec-goal-gpd-sub');
-      if (v) v.textContent = fmtN(gpdActual) + ' / ' + fmtN(gpdGoal);
-      if (s) s.textContent = `${pct}% of 2026 model · ${fmtN(gpdGoal - gpdActual)} to go`;
-      if (v) v.className = 'kpi-value ' + (gpdActual >= gpdGoal ? 'green' : (gpdActual >= gpdGoal * 0.8 ? '' : 'red'));
-    }
+      return total;
+    };
+    const gpdGoal = sumCurYear((uw.gpd || {}).home_sales);
+    const wrgGoal = sumCurYear((uw.wrg || {}).home_sales);
+    const paintGoal = (id, goal, actual) => {
+      if (!goal) return;
+      const pct = ((actual / goal) * 100).toFixed(0);
+      const v = document.getElementById(id);
+      const s = document.getElementById(id + '-sub');
+      if (v) v.textContent = fmtN(actual) + ' / ' + fmtN(goal);
+      if (s) s.textContent = `${pct}% of ${yr} model · ${fmtN(goal - actual)} to go`;
+      if (v) v.className = 'kpi-value ' + (actual >= goal ? 'green' : (actual >= goal * 0.8 ? '' : 'red'));
+    };
+    paintGoal('exec-goal-gpd', gpdGoal, data.communities.gpd.ytd_net || 0);
+    paintGoal('exec-goal-wrg', wrgGoal, data.communities.wrg.ytd_net || 0);
   } catch (e) {
     // Silent — no UW data uploaded yet is fine.
   }
@@ -3625,17 +3645,19 @@ function renderHPermits(data) {
 }
 
 // ── UNDERWRITING TAB ───────────────────────────────────────────────────────────
-async function loadUW() {
-  try {
-    const res = await fetch('/api/uw-data');
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
-    window._UW_DATA = data;
-    renderUW(data);
-  } catch (e) {
-    const m = document.getElementById('uw-meta');
-    if (m) m.textContent = 'Error: ' + e.message;
-  }
+// State shape:
+//   window._UW_DATA    = { gpd: {home_sales, lot_takedowns, bem, section_lots, sheet_names},
+//                          wrg: {...same...}, uploaded_at }
+//   window._UW_ACTUALS = { gpd: { homeSales: {sec:{ym:n}}, lotTakedowns: {sec:{ym:n}} },
+//                          wrg: {...same...} }
+// Modeled comes from /api/uw-data (per-property xlsx upload). Actuals come
+// from /api/pipsy/home-sales and /api/pipsy/lot-takedowns. BEM has no
+// actuals stream — past months in the export are the actuals.
+const _UW_PROP_IDS = { gpd: 1, wrg: 2 };  // Pipsy property ids
+
+function _uwProp() {
+  const sel = document.getElementById('uw-prop');
+  return (sel && sel.value === 'wrg') ? 'wrg' : 'gpd';
 }
 
 function _uwMetric() {
@@ -3643,11 +3665,29 @@ function _uwMetric() {
   return (sel && sel.value) || 'homeSales';
 }
 
-function _uwModeled(data) {
+function _uwPropData() {
+  const prop = _uwProp();
+  return ((window._UW_DATA || {})[prop]) || {};
+}
+
+function _uwPropActuals(metric) {
+  const prop = _uwProp();
+  const a = ((window._UW_ACTUALS || {})[prop]) || {};
+  if (metric === 'homeSales')    return a.homeSales    || {};
+  if (metric === 'lotTakedowns') return a.lotTakedowns || {};
+  return {};   // BEM has no actuals
+}
+
+function _uwModeled() {
+  const data = _uwPropData();
   const m = _uwMetric();
-  if (m === 'lotTakedowns') return { data: data.lot_takedowns || {}, label: 'Lot Takedowns', isCurrency: false };
-  if (m === 'bem')          return { data: data.bem            || {}, label: 'BEM ($)',      isCurrency: true  };
-  return                           { data: data.home_sales     || {}, label: 'Home Sales',   isCurrency: false };
+  let modeled, label, isCurrency;
+  if (m === 'lotTakedowns') { modeled = data.lot_takedowns || {}; label = 'Lot Takedowns'; isCurrency = false; }
+  else if (m === 'bem')     { modeled = data.bem            || {}; label = 'BEM ($)';      isCurrency = true;  }
+  else                      { modeled = data.home_sales     || {}; label = 'Home Sales';   isCurrency = false; }
+  const actuals = _uwPropActuals(m);
+  const hasActualsStream = m !== 'bem';
+  return { modeled, actuals, label, isCurrency, hasActualsStream, metric: m };
 }
 
 function _uwFmt(v, isCurrency) {
@@ -3657,12 +3697,66 @@ function _uwFmt(v, isCurrency) {
 
 function _normSection(s) { return String(s).replace(/[^0-9]/g, ''); }
 
-function renderUW(data) {
+// Sum a nested section-by-month map across all sections into a flat
+// {YYYY-MM: total} map. Used by both annual and monthly rollups.
+function _uwSumByMonth(nested) {
+  const out = {};
+  Object.values(nested || {}).forEach(mo => {
+    Object.entries(mo || {}).forEach(([k, v]) => {
+      out[k] = (out[k] || 0) + (Number(v) || 0);
+    });
+  });
+  return out;
+}
+
+async function loadUW() {
+  // Fetch UW upload data + Pipsy actuals for both properties in parallel.
+  // Individual failures are non-fatal — the overlay just hides for that
+  // property/stream if the request 5xx'd.
+  const safeJson = async (resp) => {
+    if (!resp || !resp.ok) return null;
+    try { return await resp.json(); } catch (e) { return null; }
+  };
+  try {
+    const [uwR, gHsR, gLtR, wHsR, wLtR] = await Promise.all([
+      fetch('/api/uw-data'),
+      fetch('/api/pipsy/home-sales?property=1'),
+      fetch('/api/pipsy/lot-takedowns?property=1'),
+      fetch('/api/pipsy/home-sales?property=2'),
+      fetch('/api/pipsy/lot-takedowns?property=2'),
+    ]);
+    const uw  = (await safeJson(uwR)) || {};
+    const gHs = (await safeJson(gHsR)) || {};
+    const gLt = (await safeJson(gLtR)) || {};
+    const wHs = (await safeJson(wHsR)) || {};
+    const wLt = (await safeJson(wLtR)) || {};
+    window._UW_DATA = {
+      gpd: uw.gpd || {},
+      wrg: uw.wrg || {},
+      uploaded_at: uw.uploaded_at || null,
+    };
+    window._UW_ACTUALS = {
+      gpd: { homeSales: gHs.sales || {},     lotTakedowns: gLt.takedowns || {} },
+      wrg: { homeSales: wHs.sales || {},     lotTakedowns: wLt.takedowns || {} },
+    };
+    renderUW();
+  } catch (e) {
+    const m = document.getElementById('uw-meta');
+    if (m) m.textContent = 'Error: ' + e.message;
+  }
+}
+
+function renderUW() {
+  const prop = _uwProp();
+  const propUpper = prop.toUpperCase();
+  const data = _uwPropData();
   const empty = document.getElementById('uw-empty');
   const content = document.getElementById('uw-content');
   const meta = document.getElementById('uw-meta');
+  const title = document.getElementById('uw-panel-title');
+  if (title) title.textContent = 'Underwriting Performance — ' + propUpper;
 
-  const hasAny = data && (
+  const hasAny = (
     Object.keys(data.home_sales || {}).length ||
     Object.keys(data.lot_takedowns || {}).length ||
     Object.keys(data.bem || {}).length
@@ -3670,24 +3764,25 @@ function renderUW(data) {
   if (!hasAny) {
     if (empty) empty.style.display = 'block';
     if (content) content.style.display = 'none';
-    if (meta) meta.textContent = 'No data uploaded';
+    if (meta) meta.textContent = 'No data uploaded for ' + propUpper;
     return;
   }
   if (empty) empty.style.display = 'none';
   if (content) content.style.display = 'block';
 
-  if (data.uploaded_at) {
-    const d = new Date(data.uploaded_at);
+  const uploadedAt = (window._UW_DATA || {}).uploaded_at;
+  if (uploadedAt) {
+    const d = new Date(uploadedAt);
     const hsCount = Object.keys(data.home_sales || {}).length;
-    meta.textContent = 'Last uploaded ' + d.toLocaleDateString() + ' · ' + hsCount + ' sections';
-  } else {
-    meta.textContent = '';
+    if (meta) meta.textContent = propUpper + ' · Last uploaded ' + d.toLocaleDateString() + ' · ' + hsCount + ' sections';
+  } else if (meta) {
+    meta.textContent = propUpper;
   }
 
-  renderUWKPIs(data);
-  renderUWAnnual(data);
-  renderUWMonthly(data);
-  renderUWSection(data);
+  renderUWKPIs();
+  renderUWAnnual();
+  renderUWMonthly();
+  renderUWSection();
 
   setTimeout(() => {
     ['c-uw-annual','c-uw-monthly'].forEach(id => {
@@ -3696,76 +3791,104 @@ function renderUW(data) {
   }, 40);
 }
 
-function renderUWKPIs(data) {
-  const { data: modeled, label, isCurrency } = _uwModeled(data);
+function renderUWKPIs() {
+  const { modeled, actuals, label, isCurrency, hasActualsStream } = _uwModeled();
+  const data = _uwPropData();
+  const modByMonth = _uwSumByMonth(modeled);
+  const actByMonth = _uwSumByMonth(actuals);
   const byYear = {};
-  Object.values(modeled).forEach(mo => {
-    Object.entries(mo).forEach(([k, v]) => {
-      const y = k.split('-')[0];
-      byYear[y] = (byYear[y] || 0) + v;
-    });
+  Object.entries(modByMonth).forEach(([k, v]) => {
+    const y = k.split('-')[0];
+    byYear[y] = (byYear[y] || 0) + v;
+  });
+  const actByYear = {};
+  Object.entries(actByMonth).forEach(([k, v]) => {
+    const y = k.split('-')[0];
+    actByYear[y] = (actByYear[y] || 0) + v;
   });
   const years = Object.keys(byYear).sort();
   const total = years.reduce((s, y) => s + byYear[y], 0);
   const thisYear = String(new Date().getFullYear());
-  const nextYear = String(new Date().getFullYear() + 1);
 
+  // KPI 1 — Total Modeled (lifetime)
   document.getElementById('uw-k1-label').textContent = label + ' — Total Modeled';
   document.getElementById('uw-k1').textContent = _uwFmt(total, isCurrency);
   document.getElementById('uw-k1-sub').textContent = years.length
     ? (years[0] + '–' + years[years.length-1] + ' · ' + Object.keys(modeled).length + ' sections')
     : '';
 
-  document.getElementById('uw-k2-label').textContent = thisYear + ' Modeled';
-  document.getElementById('uw-k2').textContent = _uwFmt(byYear[thisYear] || 0, isCurrency);
-  document.getElementById('uw-k2-sub').textContent = label;
+  // KPI 2 — Current-year UW vs Actual variance
+  const curMod = byYear[thisYear] || 0;
+  const curAct = actByYear[thisYear] || 0;
+  document.getElementById('uw-k2-label').textContent = thisYear + ' UW Modeled';
+  document.getElementById('uw-k2').textContent = _uwFmt(curMod, isCurrency);
+  if (hasActualsStream) {
+    const diff = curAct - curMod;
+    const sign = diff >= 0 ? '+' : '';
+    document.getElementById('uw-k2-sub').textContent =
+      'Actual ' + _uwFmt(curAct, isCurrency) + ' · ' + sign + _uwFmt(diff, isCurrency) + ' vs model';
+  } else {
+    document.getElementById('uw-k2-sub').textContent = label;
+  }
 
+  // KPI 3 — Next-year modeled (forward-looking, no actuals yet)
+  const nextYear = String(new Date().getFullYear() + 1);
   document.getElementById('uw-k3-label').textContent = nextYear + ' Modeled';
   document.getElementById('uw-k3').textContent = _uwFmt(byYear[nextYear] || 0, isCurrency);
   document.getElementById('uw-k3-sub').textContent = label;
 
-  const hsCount = Object.keys(data.home_sales || {}).length;
+  // KPI 4 — Sections modeled + lot-size coverage
+  const hsCount  = Object.keys(data.home_sales  || {}).length;
   const bemCount = Object.keys(data.bem || {}).length;
   document.getElementById('uw-k4').textContent = hsCount;
   document.getElementById('uw-k4-sub').textContent =
     bemCount + ' sections with BEM · ' + Object.keys(data.section_lots || {}).length + ' lot sizes mapped';
 }
 
-function renderUWAnnual(data) {
-  const { data: modeled, label, isCurrency } = _uwModeled(data);
+function renderUWAnnual() {
+  const { modeled, actuals, label, isCurrency, hasActualsStream } = _uwModeled();
   const yearSet = new Set();
   Object.values(modeled).forEach(mo => Object.keys(mo).forEach(k => yearSet.add(k.split('-')[0])));
+  Object.values(actuals).forEach(mo => Object.keys(mo).forEach(k => yearSet.add(k.split('-')[0])));
   const years = [...yearSet].sort();
-  const byYear = {};
-  years.forEach(y => byYear[y] = 0);
-  Object.values(modeled).forEach(mo => {
-    Object.entries(mo).forEach(([k, v]) => {
-      const y = k.split('-')[0];
-      if (byYear[y] !== undefined) byYear[y] += v;
-    });
-  });
+  const byYear = {}; years.forEach(y => byYear[y] = 0);
+  Object.values(modeled).forEach(mo => Object.entries(mo).forEach(([k, v]) => {
+    const y = k.split('-')[0]; if (byYear[y] !== undefined) byYear[y] += v;
+  }));
+  const actByYear = {}; years.forEach(y => actByYear[y] = 0);
+  Object.values(actuals).forEach(mo => Object.entries(mo).forEach(([k, v]) => {
+    const y = k.split('-')[0]; if (actByYear[y] !== undefined) actByYear[y] += v;
+  }));
+  const showActuals = hasActualsStream && years.some(y => (actByYear[y] || 0) !== 0);
 
   const tC = themeColors();
+  const datasets = [{
+    label: 'UW Modeled',
+    data: years.map(y => byYear[y] || 0),
+    backgroundColor: 'rgba(200,169,110,0.45)',
+    borderColor: '#c8a96e', borderWidth: 1, borderRadius: 3,
+  }];
+  if (showActuals) {
+    datasets.push({
+      label: 'Actual (Pipsy)',
+      data: years.map(y => actByYear[y] || 0),
+      backgroundColor: 'rgba(88,180,122,0.55)',
+      borderColor: '#58b47a', borderWidth: 1, borderRadius: 3,
+    });
+  }
   _destroy('c-uw-annual');
   _charts['c-uw-annual'] = new Chart(document.getElementById('c-uw-annual'), {
     type: 'bar',
-    data: {
-      labels: years,
-      datasets: [{
-        label: 'UW Modeled',
-        data: years.map(y => byYear[y] || 0),
-        backgroundColor: 'rgba(200,169,110,0.45)',
-        borderColor: '#c8a96e', borderWidth: 1, borderRadius: 3,
-      }],
-    },
+    data: { labels: years, datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: {
-        legend: { display: false },
+        legend: { display: showActuals, position: 'top',
+                  labels: { color: tC.tick, font: { size: 11 }, usePointStyle: true, boxWidth: 8 } },
         tooltip: {
           backgroundColor: tC.ttBg, titleColor: tC.ttTitle, bodyColor: tC.ttBody,
           borderColor: tC.ttBorder, borderWidth: 1, padding: 9,
-          callbacks: { label: (ctx) => 'UW: ' + _uwFmt(ctx.parsed.y, isCurrency) },
+          callbacks: { label: (ctx) => ctx.dataset.label + ': ' + _uwFmt(ctx.parsed.y, isCurrency) },
         },
       },
       scales: {
@@ -3778,21 +3901,49 @@ function renderUWAnnual(data) {
     },
   });
 
-  // Annual table
-  document.getElementById('uw-annual-uw-th').textContent = label + ' (UW)';
+  // Annual table — add Actual + Variance columns when overlay is active.
+  const thRow = document.querySelector('#t-uw-annual thead tr');
+  if (thRow) {
+    if (showActuals) {
+      thRow.innerHTML = '<th style="text-align:left">Year</th>' +
+        '<th>' + label + ' (UW)</th>' +
+        '<th>Actual</th>' +
+        '<th>Variance</th>';
+    } else {
+      thRow.innerHTML = '<th style="text-align:left">Year</th>' +
+        '<th id="uw-annual-uw-th">' + label + ' (UW)</th>';
+    }
+  }
   const tbody = document.querySelector('#t-uw-annual tbody');
-  let total = 0;
+  let totalMod = 0, totalAct = 0;
   tbody.innerHTML = years.map(y => {
-    const v = byYear[y] || 0; total += v;
-    return `<tr><td style="text-align:left;font-weight:600">${y}</td><td>${_uwFmt(v, isCurrency)}</td></tr>`;
+    const m = byYear[y] || 0; const a = actByYear[y] || 0;
+    totalMod += m; totalAct += a;
+    if (showActuals) {
+      const v = a - m;
+      const vColor = v >= 0 ? 'var(--eax-good, #58b47a)' : 'var(--eax-bad, #e06f6f)';
+      const sign = v >= 0 ? '+' : '';
+      return `<tr><td style="text-align:left;font-weight:600">${y}</td>` +
+             `<td>${_uwFmt(m, isCurrency)}</td>` +
+             `<td>${_uwFmt(a, isCurrency)}</td>` +
+             `<td style="color:${vColor}">${sign}${_uwFmt(v, isCurrency)}</td></tr>`;
+    }
+    return `<tr><td style="text-align:left;font-weight:600">${y}</td><td>${_uwFmt(m, isCurrency)}</td></tr>`;
   }).join('') +
-  `<tr style="border-top:2px solid var(--border);font-weight:700"><td style="text-align:left">Total</td><td>${_uwFmt(total, isCurrency)}</td></tr>`;
+  (showActuals
+    ? `<tr style="border-top:2px solid var(--border);font-weight:700"><td style="text-align:left">Total</td>` +
+      `<td>${_uwFmt(totalMod, isCurrency)}</td>` +
+      `<td>${_uwFmt(totalAct, isCurrency)}</td>` +
+      (() => { const v = totalAct - totalMod; const c = v >= 0 ? 'var(--eax-good, #58b47a)' : 'var(--eax-bad, #e06f6f)'; const s = v >= 0 ? '+' : ''; return `<td style="color:${c}">${s}${_uwFmt(v, isCurrency)}</td>`; })() +
+      '</tr>'
+    : `<tr style="border-top:2px solid var(--border);font-weight:700"><td style="text-align:left">Total</td><td>${_uwFmt(totalMod, isCurrency)}</td></tr>`);
 }
 
-function renderUWMonthly(data) {
-  const { data: modeled, label, isCurrency } = _uwModeled(data);
+function renderUWMonthly() {
+  const { modeled, actuals, label, isCurrency, hasActualsStream } = _uwModeled();
   const yearSet = new Set();
   Object.values(modeled).forEach(mo => Object.keys(mo).forEach(k => yearSet.add(k.split('-')[0])));
+  Object.values(actuals).forEach(mo => Object.keys(mo).forEach(k => yearSet.add(k.split('-')[0])));
   const years = [...yearSet].sort();
 
   const sel = document.getElementById('uw-monthly-year');
@@ -3800,20 +3951,26 @@ function renderUWMonthly(data) {
     const thisYear = String(new Date().getFullYear());
     sel.innerHTML = '<option value="all">All Years</option>' +
       years.map(y => `<option value="${y}"${y === thisYear ? ' selected' : ''}>${y}</option>`).join('');
-    sel.onchange = () => renderUWMonthly(window._UW_DATA);
+    sel.onchange = renderUWMonthly;
   }
   const filterYear = sel ? sel.value : 'all';
-
   const monthSet = new Set();
   Object.values(modeled).forEach(mo => Object.keys(mo).forEach(k => {
     if (filterYear === 'all' || k.startsWith(filterYear)) monthSet.add(k);
   }));
+  Object.values(actuals).forEach(mo => Object.keys(mo).forEach(k => {
+    if (filterYear === 'all' || k.startsWith(filterYear)) monthSet.add(k);
+  }));
   const months = [...monthSet].sort();
-  const byMonth = {};
-  months.forEach(m => byMonth[m] = 0);
-  Object.values(modeled).forEach(mo => {
-    Object.entries(mo).forEach(([k, v]) => { if (byMonth[k] !== undefined) byMonth[k] += v; });
-  });
+  const byMonth = {}; months.forEach(m => byMonth[m] = 0);
+  Object.values(modeled).forEach(mo => Object.entries(mo).forEach(([k, v]) => {
+    if (byMonth[k] !== undefined) byMonth[k] += v;
+  }));
+  const actByMonth = {}; months.forEach(m => actByMonth[m] = 0);
+  Object.values(actuals).forEach(mo => Object.entries(mo).forEach(([k, v]) => {
+    if (actByMonth[k] !== undefined) actByMonth[k] += v;
+  }));
+  const showActuals = hasActualsStream && months.some(m => (actByMonth[m] || 0) !== 0);
 
   const mAbbr = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const labels = months.map(m => {
@@ -3822,26 +3979,33 @@ function renderUWMonthly(data) {
   });
 
   const tC = themeColors();
+  const datasets = [{
+    label: 'UW Modeled',
+    data: months.map(m => byMonth[m] || 0),
+    backgroundColor: 'rgba(200,169,110,0.45)',
+    borderColor: '#c8a96e', borderWidth: 1, borderRadius: 2,
+  }];
+  if (showActuals) {
+    datasets.push({
+      label: 'Actual (Pipsy)',
+      data: months.map(m => actByMonth[m] || 0),
+      backgroundColor: 'rgba(88,180,122,0.55)',
+      borderColor: '#58b47a', borderWidth: 1, borderRadius: 2,
+    });
+  }
   _destroy('c-uw-monthly');
   _charts['c-uw-monthly'] = new Chart(document.getElementById('c-uw-monthly'), {
     type: 'bar',
-    data: {
-      labels,
-      datasets: [{
-        label: 'UW Modeled',
-        data: months.map(m => byMonth[m] || 0),
-        backgroundColor: 'rgba(200,169,110,0.45)',
-        borderColor: '#c8a96e', borderWidth: 1, borderRadius: 2,
-      }],
-    },
+    data: { labels, datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: {
-        legend: { display: false },
+        legend: { display: showActuals, position: 'top',
+                  labels: { color: tC.tick, font: { size: 11 }, usePointStyle: true, boxWidth: 8 } },
         tooltip: {
           backgroundColor: tC.ttBg, titleColor: tC.ttTitle, bodyColor: tC.ttBody,
           borderColor: tC.ttBorder, borderWidth: 1, padding: 9,
-          callbacks: { label: (ctx) => 'UW: ' + _uwFmt(ctx.parsed.y, isCurrency) },
+          callbacks: { label: (ctx) => ctx.dataset.label + ': ' + _uwFmt(ctx.parsed.y, isCurrency) },
         },
       },
       scales: {
@@ -3855,11 +4019,13 @@ function renderUWMonthly(data) {
   });
 }
 
-function renderUWSection(data) {
-  const { data: modeled, isCurrency } = _uwModeled(data);
+function renderUWSection() {
+  const { modeled, actuals, isCurrency, hasActualsStream } = _uwModeled();
+  const data = _uwPropData();
   const lotMap = data.section_lots || {};
   const allMonths = new Set();
   Object.values(modeled).forEach(mo => Object.keys(mo).forEach(k => allMonths.add(k)));
+  Object.values(actuals).forEach(mo => Object.keys(mo).forEach(k => allMonths.add(k)));
   const yearSet = new Set();
   allMonths.forEach(k => yearSet.add(k.split('-')[0]));
   const years = [...yearSet].sort();
@@ -3869,10 +4035,9 @@ function renderUWSection(data) {
     const thisYear = String(new Date().getFullYear());
     sel.innerHTML = '<option value="all">All Years</option>' +
       years.map(y => `<option value="${y}"${y === thisYear ? ' selected' : ''}>${y}</option>`).join('');
-    sel.onchange = () => renderUWSection(window._UW_DATA);
+    sel.onchange = renderUWSection;
   }
   const filterYear = sel ? sel.value : 'all';
-
   const months = [...allMonths].filter(k => filterYear === 'all' || k.startsWith(filterYear)).sort();
   const wrap = document.getElementById('uw-section-wrap');
   if (months.length === 0) {
@@ -3884,51 +4049,179 @@ function renderUWSection(data) {
     const [y, mo] = m.split('-');
     return mAbbr[parseInt(mo, 10) - 1] + ' ' + y.slice(-2);
   });
-  const sections = Object.keys(modeled).sort((a, b) => {
-    const na = parseInt(a.replace(/[^0-9]/g, ''), 10) || 0;
-    const nb = parseInt(b.replace(/[^0-9]/g, ''), 10) || 0;
-    return na - nb;
+
+  // Normalize sections by numeric key so "Section 1" / "Section 01" / "1" merge.
+  const modeledByNum = {}, actualsByNum = {}, lotByNum = {};
+  Object.entries(modeled).forEach(([sec, mo]) => {
+    const n = _normSection(sec); if (!n) return;
+    modeledByNum[n] = modeledByNum[n] || {};
+    Object.entries(mo).forEach(([k, v]) => { modeledByNum[n][k] = (modeledByNum[n][k] || 0) + v; });
   });
+  Object.entries(actuals).forEach(([sec, mo]) => {
+    const n = _normSection(sec); if (!n) return;
+    actualsByNum[n] = actualsByNum[n] || {};
+    Object.entries(mo).forEach(([k, v]) => { actualsByNum[n][k] = (actualsByNum[n][k] || 0) + v; });
+  });
+  Object.entries(lotMap).forEach(([sec, v]) => {
+    const n = _normSection(sec); if (!n || lotByNum[n]) return;
+    const s = v == null ? '' : String(v).trim();
+    if (s && s.toLowerCase() !== 'nan') lotByNum[n] = s;
+  });
+
+  const showActuals = hasActualsStream && Object.keys(actualsByNum).length > 0;
+  const sectionNums = [...new Set([...Object.keys(modeledByNum), ...Object.keys(actualsByNum)])]
+    .sort((a, b) => (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0));
 
   let html = '<table class="pace-tbl" style="font-size:12px;white-space:nowrap"><thead><tr>';
   html += '<th style="text-align:left;position:sticky;left:0;background:var(--surface);z-index:1">Section</th>';
   html += '<th style="text-align:left">Lot</th>';
+  if (showActuals) html += '<th style="text-align:left">Row</th>';
   monthLabels.forEach(l => { html += `<th>${l}</th>`; });
   html += '<th style="font-weight:700">Total</th></tr></thead><tbody>';
 
-  let grandTotal = 0;
-  const monthTotals = months.map(() => 0);
-  sections.forEach(sec => {
-    const lot = lotMap[sec] || '';
-    let rowTotal = 0;
-    html += `<tr><td style="text-align:left;font-weight:600;position:sticky;left:0;background:var(--surface);z-index:1">${sec}</td>`;
-    html += `<td style="text-align:left;color:var(--text-dim)">${lot}</td>`;
-    months.forEach((m, i) => {
-      const v = (modeled[sec] || {})[m] || 0;
-      rowTotal += v;
-      monthTotals[i] += v;
+  const colTotalsMod = months.map(() => 0);
+  const colTotalsAct = months.map(() => 0);
+  let grandMod = 0, grandAct = 0;
+
+  sectionNums.forEach(n => {
+    const lot = lotByNum[n] || '';
+    let rowMod = 0;
+    const modRow = months.map((m, i) => {
+      const v = (modeledByNum[n] || {})[m] || 0;
+      rowMod += v; colTotalsMod[i] += v;
+      return v;
+    });
+    grandMod += rowMod;
+    const rowspan = showActuals ? ' rowspan="2"' : '';
+    html += `<tr><td${rowspan} style="text-align:left;font-weight:600;position:sticky;left:0;background:var(--surface);z-index:1">Section ${n}</td>` +
+            `<td${rowspan} style="text-align:left;color:var(--text-dim)">${lot}</td>`;
+    if (showActuals) html += '<td style="color:var(--text-dim)">UW</td>';
+    modRow.forEach(v => {
       html += `<td style="color:${v ? 'var(--text)' : 'var(--text-dim)'}">${v ? _uwFmt(v, isCurrency) : '—'}</td>`;
     });
-    grandTotal += rowTotal;
-    html += `<td style="font-weight:600">${_uwFmt(rowTotal, isCurrency)}</td></tr>`;
+    html += `<td style="font-weight:600">${_uwFmt(rowMod, isCurrency)}</td></tr>`;
+    if (showActuals) {
+      let rowAct = 0;
+      html += '<tr><td style="color:var(--text-dim)">Actual</td>';
+      months.forEach((m, i) => {
+        const v = (actualsByNum[n] || {})[m] || 0;
+        rowAct += v; colTotalsAct[i] += v;
+        html += `<td style="color:${v ? 'var(--eax-good, #58b47a)' : 'var(--text-dim)'}">${v ? _uwFmt(v, isCurrency) : '—'}</td>`;
+      });
+      grandAct += rowAct;
+      html += `<td style="font-weight:600">${_uwFmt(rowAct, isCurrency)}</td></tr>`;
+    }
   });
-  html += `<tr style="border-top:2px solid var(--border);font-weight:700;background:var(--bg)">`;
-  html += `<td style="text-align:left;position:sticky;left:0;background:var(--bg);z-index:1" colspan="2">Total</td>`;
-  monthTotals.forEach(v => { html += `<td>${_uwFmt(v, isCurrency)}</td>`; });
-  html += `<td>${_uwFmt(grandTotal, isCurrency)}</td></tr>`;
+
+  // Totals row(s)
+  html += `<tr style="border-top:2px solid var(--border);font-weight:700;background:var(--bg)">` +
+          `<td style="text-align:left;position:sticky;left:0;background:var(--bg);z-index:1" colspan="2">Total</td>`;
+  if (showActuals) html += '<td>UW</td>';
+  colTotalsMod.forEach(v => { html += `<td>${_uwFmt(v, isCurrency)}</td>`; });
+  html += `<td>${_uwFmt(grandMod, isCurrency)}</td></tr>`;
+  if (showActuals) {
+    html += `<tr style="font-weight:700;background:var(--bg)"><td style="position:sticky;left:0;background:var(--bg);z-index:1" colspan="2"></td><td>Actual</td>`;
+    colTotalsAct.forEach(v => { html += `<td>${_uwFmt(v, isCurrency)}</td>`; });
+    html += `<td>${_uwFmt(grandAct, isCurrency)}</td></tr>`;
+  }
   html += '</tbody></table>';
   wrap.innerHTML = html;
 }
 
-// Wire metric dropdown to re-render all UW views
-(function wireUWMetric() {
-  const sel = document.getElementById('uw-metric');
-  if (sel) sel.addEventListener('change', () => {
-    // Reset year filters so they rebuild for the new metric's year range
+// ── Export Template + Export Actuals (Sales-dashboard parity #8) ────────────
+// Export Template downloads the blank UW Performance Export xlsx for the
+// active property. Export Actuals builds a 4-sheet workbook of Pipsy actuals
+// (GPD/WRG × Home Sales / Lot Takedowns) for pasting into the pro-forma.
+function downloadUwTemplate() {
+  const prop = _uwProp();
+  // Hard-redirect rather than fetch -> blob to keep filename + browser save dialog.
+  window.location.assign('/api/uw-template?property=' + prop);
+}
+
+function exportUwActuals() {
+  if (typeof XLSX === 'undefined') {
+    alert('Excel library not loaded — refresh the page and try again.');
+    return;
+  }
+  const MABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  // Build a 2-D sheet array from a nested {section: {ym: count}} map.
+  // Columns span from Jan of the earliest year through the current month.
+  // Total excludes the in-progress month so a partial month doesn't skew it.
+  function buildSheetAoa(nested) {
+    const sections = Object.keys(nested || {});
+    if (!sections.length) return [['Section', 'Total', '(no data)']];
+    const yearSet = new Set();
+    sections.forEach(s => Object.keys(nested[s] || {}).forEach(k => {
+      const y = Number((k || '').split('-')[0]); if (!isNaN(y)) yearSet.add(y);
+    }));
+    if (!yearSet.size) return [['Section', 'Total', '(no data)']];
+    const years = [...yearSet].sort((a, b) => a - b);
+    const now = new Date();
+    const curY = now.getFullYear();
+    const curM = now.getMonth() + 1;
+    const minY = years[0];
+    const maxY = Math.min(years[years.length - 1], curY);
+    const curKey = curY + '-' + String(curM).padStart(2, '0');
+    const cols = [];
+    for (let y = minY; y <= maxY; y++) {
+      const monthEnd = (y === curY) ? curM : 12;
+      for (let m = 1; m <= monthEnd; m++) {
+        cols.push({ key: y + '-' + String(m).padStart(2, '0'), label: MABBR[m - 1] + ' ' + y });
+      }
+    }
+    const header = ['Section', 'Total', ...cols.map(c => c.label)];
+    const secSort = (a, b) => {
+      const na = Number(String(a).replace(/[^0-9]/g, ''));
+      const nb = Number(String(b).replace(/[^0-9]/g, ''));
+      if (!isNaN(na) && !isNaN(nb) && na !== nb) return na - nb;
+      return String(a).localeCompare(String(b));
+    };
+    const sortedSecs = sections.slice().sort(secSort);
+    const rows = [header];
+    const colTotals = cols.map(() => 0);
+    let grandTotal = 0;
+    sortedSecs.forEach(sec => {
+      const mo = nested[sec] || {};
+      let rowTotal = 0;
+      const monthVals = cols.map((c, i) => {
+        const v = Number(mo[c.key]) || 0;
+        colTotals[i] += v;
+        if (c.key !== curKey) rowTotal += v;
+        return v;
+      });
+      grandTotal += rowTotal;
+      rows.push([sec, rowTotal, ...monthVals]);
+    });
+    rows.push(['Total', grandTotal, ...colTotals]);
+    return rows;
+  }
+  const A = window._UW_ACTUALS || { gpd: {}, wrg: {} };
+  const wb = XLSX.utils.book_new();
+  [
+    { sheet: 'GPD Home Sales',     data: (A.gpd || {}).homeSales },
+    { sheet: 'GPD Lot Takedowns',  data: (A.gpd || {}).lotTakedowns },
+    { sheet: 'WRG Home Sales',     data: (A.wrg || {}).homeSales },
+    { sheet: 'WRG Lot Takedowns',  data: (A.wrg || {}).lotTakedowns },
+  ].forEach(({ sheet, data }) => {
+    const ws = XLSX.utils.aoa_to_sheet(buildSheetAoa(data));
+    XLSX.utils.book_append_sheet(wb, ws, sheet);
+  });
+  const now = new Date();
+  const stamp = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') +
+                '-' + String(now.getDate()).padStart(2, '0');
+  XLSX.writeFile(wb, 'UW Actuals Export - ' + stamp + '.xlsx');
+}
+
+// Wire metric + property dropdowns to re-render all UW views.
+(function wireUWControls() {
+  const metric = document.getElementById('uw-metric');
+  const prop   = document.getElementById('uw-prop');
+  const resetYearSelects = () => {
     const y1 = document.getElementById('uw-monthly-year'); if (y1) y1.innerHTML = '';
     const y2 = document.getElementById('uw-section-year'); if (y2) y2.innerHTML = '';
-    if (window._UW_DATA) renderUW(window._UW_DATA);
-  });
+  };
+  if (metric) metric.addEventListener('change', () => { resetYearSelects(); renderUW(); });
+  if (prop)   prop.addEventListener('change',   () => { resetYearSelects(); renderUW(); });
 })();
 
 {% if is_admin %}
@@ -4001,17 +4294,19 @@ function renderUWSection(data) {
   input.addEventListener('change', async function() {
     const f = this.files[0];
     if (!f) return;
+    const prop = _uwProp();   // 'gpd' or 'wrg' — picked from the property selector
     const fd = new FormData(); fd.append('file', f);
     if (btn) { btn.disabled = true; }
     msgEl.style.color = 'var(--text-dim)';
-    msgEl.textContent = 'Uploading ' + f.name + '…';
+    msgEl.textContent = 'Uploading ' + f.name + ' for ' + prop.toUpperCase() + '…';
     try {
-      const res = await fetch('/api/upload-uw', { method: 'POST', body: fd });
+      const res = await fetch('/api/upload-uw?property=' + prop, { method: 'POST', body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Upload failed');
       msgEl.style.color = '#58b47a';
       msgEl.textContent = 'Imported ' + data.home_sales_sections + ' home-sale sections, ' +
-        data.lot_takedowns_sections + ' lot-takedown sections, ' + data.bem_sections + ' BEM sections.';
+        data.lot_takedowns_sections + ' lot-takedown sections, ' + data.bem_sections + ' BEM sections for ' +
+        (data.property || prop).toUpperCase() + '.';
       await loadUW();
       setTimeout(() => { msgEl.textContent = ''; }, 4000);
     } catch (e) {
