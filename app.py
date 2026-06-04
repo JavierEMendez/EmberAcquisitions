@@ -10887,6 +10887,30 @@ def uw_data():
     return jsonify(data)
 
 
+# ─── Health endpoint (sales-dashboard parity item #1) ────────────────────────
+# Trivial liveness probe for uptime monitoring. Returns 200 OK with a
+# tiny JSON body. Doesn't touch the DB or Sage — intentionally cheap.
+@app.route("/api/health")
+def api_health():
+    return jsonify({"status": "ok"})
+
+
+# ─── Nightly sales-data refresh (sales-dashboard parity item #2) ─────────────
+# Warms the in-memory Pipsy cache so the first morning page-view of
+# /sales doesn't pay the cold-start cost (~10–20 sec to pull six
+# GraphQL pages across the three properties).
+def _refresh_sales_cache():
+    """Background job — force-pull fresh sales data from Pipsy and
+    discard the result. The cache inside sales_parser stays warm
+    for the next request. Logs+swallows exceptions so a Pipsy outage
+    can't kill the scheduler thread."""
+    try:
+        get_sales_dashboard_data(force_refresh=True)
+        print("[scheduler] sales cache refreshed from Pipsy")
+    except Exception as e:
+        print(f"[scheduler] sales cache refresh failed: {e}")
+
+
 # ─── SCHEDULER ────────────────────────────────────────────────────────────────
 def _start_scheduler():
     try:
@@ -10905,9 +10929,19 @@ def _start_scheduler():
             _send_monthly_emails, "cron",
             day=1, hour=9, minute=0,
             timezone=tz,
+            id="monthly_reports",
+        )
+        # Daily Pipsy sales-data refresh at 06:30 America/Chicago,
+        # so the first morning page-view of /sales hits a warm cache.
+        scheduler.add_job(
+            _refresh_sales_cache, "cron",
+            hour=6, minute=30,
+            timezone=tz,
+            id="sales_cache_daily",
         )
         scheduler.start()
-        print("APScheduler started — monthly report job scheduled for 1st of each month at 09:00 America/Chicago")
+        print("APScheduler started — monthly reports (1st @ 09:00 CT) + "
+              "sales cache warm-up (daily @ 06:30 CT)")
     except Exception as e:
         print(f"Scheduler failed to start: {e}")
 
