@@ -39,31 +39,35 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;hei
    Width is a bit narrower than /returns since these are just
    labels (no per-project KPI summaries). ── */
 .cs-nav{
-  width:260px;flex-shrink:0;border-right:1px solid var(--eax-line);
+  width:300px;flex-shrink:0;border-right:1px solid var(--eax-line);
   overflow-y:auto;background:var(--eax-bg-2);
   display:flex;flex-direction:column;
 }
-.cs-nav-head{padding:18px 18px 14px;border-bottom:1px solid var(--eax-line);}
-.cs-nav-eyebrow{
-  font-family:'Plus Jakarta Sans',sans-serif;
-  font-size:10px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;
-  color:var(--eax-accent);margin-bottom:6px;
+/* Header: matches the .logo-sub treatment used on /ember-capital
+   and other primary sidebars — small uppercase letter-spaced label,
+   centered, subtle gray. Bottom hairline separates from the items. */
+.cs-nav-head{
+  padding:16px 18px 14px;
+  border-bottom:1px solid var(--eax-line);
+  text-align:center;
 }
 .cs-nav-title{
   font-family:'Plus Jakarta Sans',sans-serif;
-  font-weight:700;font-size:18px;letter-spacing:-0.015em;line-height:1.15;
-  color:var(--eax-ink);
+  font-size:10px;font-weight:700;letter-spacing:0.2em;
+  text-transform:uppercase;color:var(--eax-subtle);
 }
 .cs-nav-section{
-  padding:14px 18px 4px;font-size:9px;line-height:1.2;
+  padding:16px 18px 4px;font-size:10px;line-height:1.2;
   color:var(--eax-subtle);letter-spacing:0.22em;text-transform:uppercase;
-  margin-top:6px;font-weight:700;
+  margin-top:8px;font-weight:700;
 }
+/* Items — 40% larger than the primary-sidebar items (per design
+   request). padding 9→13 / 14→20, font 13→18, icon 16→22, gap 10→14. */
 .cs-nav-item{
-  display:flex;align-items:center;gap:10px;
-  padding:9px 14px;cursor:pointer;border-radius:8px;
-  margin:1px 10px;transition:all .15s;
-  color:var(--eax-muted);font-size:13px;line-height:1.2;
+  display:flex;align-items:center;gap:14px;
+  padding:13px 20px;cursor:pointer;border-radius:10px;
+  margin:2px 10px;transition:all .15s;
+  color:var(--eax-muted);font-size:18px;line-height:1.2;
   text-decoration:none;font-weight:500;
 }
 .cs-nav-item:hover{background:var(--eax-accent-soft);color:var(--eax-ink);text-decoration:none;}
@@ -72,16 +76,17 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;hei
   border:1px solid var(--eax-line);position:relative;
 }
 .cs-nav-item.active::before{
-  content:"";position:absolute;left:-1px;top:8px;bottom:8px;
+  content:"";position:absolute;left:-1px;top:10px;bottom:10px;
   width:2px;background:var(--eax-accent);border-radius:2px;
 }
-.cs-nav-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0;}
+.cs-nav-item .icon{width:22px;height:22px;opacity:.7;flex-shrink:0;}
 .cs-nav-item.active .icon{opacity:1;color:var(--eax-accent);}
 
-/* Community accent stripes (kept consistent with the old in-line
-   .tab-accent classnames so showTab() doesn't need changes) */
+/* Community accent stripes — proportionally scaled with the larger
+   nav items. Kept the original classnames so showTab() doesn't
+   change. */
 .cs-nav-item .tab-accent{
-  width:3px;height:16px;border-radius:2px;
+  width:4px;height:22px;border-radius:2px;
   background:transparent;flex-shrink:0;
 }
 .cs-nav-item.active .tab-accent{background:var(--eax-accent);}
@@ -109,69 +114,183 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;hei
 a{color:var(--accent);text-decoration:none}
 a:hover{text-decoration:underline}
 
-.top-bar{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:8px}
-.top-bar h1{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:24px;color:var(--text)}
-.top-right .meta{font-size:12px;color:var(--text-muted)}
+/* Top bar — match the eyebrow + title treatment used on
+   /returns and /financials. The "Community Sales Tracker" h1 sits
+   on its own row above the meta (status pill, refresh, timestamp). */
+.top-bar{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px}
+.top-bar h1{
+  font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;
+  font-size:32px;letter-spacing:-0.02em;line-height:1.1;
+  color:var(--eax-ink);
+}
+.top-right .meta{font-size:12px;color:var(--eax-muted);font-variant-numeric:tabular-nums;}
 
-.section-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:18px;color:var(--accent);margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px}
-.section-title .sub{font-size:12px;color:var(--text-dim);font-family:'DM Sans',sans-serif;letter-spacing:0;text-transform:none}
-.community-heading{font-family:'Plus Jakarta Sans',sans-serif;font-weight:500;font-size:22px;color:var(--text);margin:36px 0 4px;display:flex;align-items:baseline;gap:10px}
-.community-heading .tag{font-size:11px;color:var(--text-muted);background:rgba(242,89,41,.08);padding:3px 8px;border-radius:4px;letter-spacing:.05em;font-weight:400}
+/* Section titles — uppercase eyebrow style, accent-colored, matches
+   the eyebrow patterns used elsewhere in the app. */
+.section-title{
+  font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;
+  font-size:11px;letter-spacing:0.22em;text-transform:uppercase;
+  color:var(--eax-accent);
+  margin:32px 0 14px;padding-bottom:8px;
+  border-bottom:1px solid var(--eax-line);
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+}
+.section-title .sub{
+  font-size:11px;color:var(--eax-subtle);font-family:'DM Sans',sans-serif;
+  letter-spacing:0;text-transform:none;font-weight:500;
+}
 
-/* KPI grid */
-.kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:8px}
+/* Per-community heading — large display font, tag pill aligned baseline. */
+.community-heading{
+  font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;
+  font-size:24px;letter-spacing:-0.015em;line-height:1.15;
+  color:var(--eax-ink);
+  margin:36px 0 6px;
+  display:flex;align-items:baseline;gap:12px;
+}
+.community-heading .tag{
+  font-size:10px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;
+  color:var(--eax-accent);background:var(--eax-accent-soft);
+  padding:4px 10px;border-radius:999px;
+}
+
+/* KPI grid — matches /returns .rw-kpis spec: 28px values in Plus
+   Jakarta Sans 700, 9px/700/0.22em uppercase eyebrow labels,
+   tabular-nums, accent color for primary metrics. */
+.kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:12px}
 @media(max-width:1400px){.kpi-grid{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:700px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}
-.kpi-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px 16px}
-.kpi-label{font-size:10px;color:var(--text-muted);letter-spacing:.07em;text-transform:uppercase;margin-bottom:6px}
-.kpi-value{font-size:22px;font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;color:var(--text)}
-.kpi-sub{font-size:11px;color:var(--text-dim);margin-top:3px}
-.kpi-value.green{color:var(--teal)} .kpi-value.red{color:var(--red)} .kpi-value.amber{color:#d4a76a}
+.kpi-card{
+  background:var(--eax-surface);
+  border:1px solid var(--eax-line);
+  border-radius:12px;
+  padding:18px 20px;
+  box-shadow:var(--eax-shadow-card);
+}
+.kpi-label{
+  font-family:'Plus Jakarta Sans',sans-serif;
+  font-size:9px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;
+  color:var(--eax-muted);margin-bottom:8px;
+}
+.kpi-value{
+  font-family:'Plus Jakarta Sans',sans-serif;
+  font-size:26px;font-weight:700;letter-spacing:-0.02em;line-height:1.1;
+  color:var(--eax-ink);
+  font-variant-numeric:tabular-nums;
+}
+.kpi-sub{font-size:11px;color:var(--eax-subtle);margin-top:4px;font-variant-numeric:tabular-nums;}
+.kpi-value.green{color:var(--eax-good);}
+.kpi-value.red{color:var(--eax-bad);}
+.kpi-value.amber{color:#d4a76a;}
 
-/* Charts */
-.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:4px}
-.chart-grid.full{grid-template-columns:1fr}
-.chart-grid.three{grid-template-columns:repeat(3,1fr)}
-@media(max-width:1100px){.chart-grid.three{grid-template-columns:1fr}.chart-grid{grid-template-columns:1fr}}
-.chart-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px 20px}
-.chart-title{font-size:11px;color:var(--text-muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:14px}
-.chart-wrap{position:relative;height:220px}
-.chart-wrap.tall{height:300px}
-.chart-wrap.short{height:180px}
+/* Charts — same surface treatment as KPI cards: 12px radius, ink-10
+   hairline, paper shadow. Chart titles get the canonical 9/700/0.22
+   eyebrow label. */
+.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:12px;}
+.chart-grid.full{grid-template-columns:1fr;}
+.chart-grid.three{grid-template-columns:repeat(3,1fr);}
+@media(max-width:1100px){.chart-grid.three{grid-template-columns:1fr;}.chart-grid{grid-template-columns:1fr;}}
+.chart-card{
+  background:var(--eax-surface);
+  border:1px solid var(--eax-line);
+  border-radius:12px;
+  padding:20px 22px;
+  box-shadow:var(--eax-shadow-card);
+}
+.chart-title{
+  font-family:'Plus Jakarta Sans',sans-serif;
+  font-size:10px;font-weight:700;letter-spacing:0.22em;text-transform:uppercase;
+  color:var(--eax-muted);margin-bottom:16px;
+}
+.chart-wrap{position:relative;height:220px;}
+.chart-wrap.tall{height:300px;}
+.chart-wrap.short{height:180px;}
 
-/* Tables */
-.table-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin:12px 0 8px;overflow-x:auto}
-.table-card h3{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:14px;color:var(--text);margin-bottom:10px}
-table.summary{width:100%;border-collapse:collapse;font-size:12px}
-table.summary th,table.summary td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--border)}
-table.summary th:first-child,table.summary td:first-child{text-align:left}
-table.summary th{font-weight:500;color:var(--text-muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;background:var(--surface);position:sticky;top:0}
-table.summary td{color:var(--text)}
-table.summary tr.totals-row td{font-weight:600;color:var(--text);background:rgba(242,89,41,.04);border-top:1px solid var(--border-light)}
-table.summary tr.lot-sep td{background:rgba(242,89,41,.02);border-top:1px solid var(--border-light)}
-.badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:500;border:1px solid}
-.badge-blue  {background:rgba(74,144,226,.1);color:#6fa7e0;border-color:rgba(74,144,226,.3)}
-.badge-green {background:rgba(80,180,120,.1);color:#58b47a;border-color:rgba(80,180,120,.3)}
-.badge-orange{background:rgba(224,122,62,.1);color:#e09466;border-color:rgba(224,122,62,.3)}
-.badge-red   {background:rgba(229,62,62,.1);color:#e86c6c;border-color:rgba(229,62,62,.3)}
+/* Tables — match financials .fin-stmt-table surface treatment. */
+.table-card{
+  background:var(--eax-surface);
+  border:1px solid var(--eax-line);
+  border-radius:12px;
+  padding:18px 22px;
+  margin:14px 0 12px;
+  overflow-x:auto;
+  box-shadow:var(--eax-shadow-card);
+}
+.table-card h3{
+  font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;
+  font-size:14px;color:var(--eax-ink-2);margin-bottom:14px;letter-spacing:-0.005em;
+}
+table.summary{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums;}
+table.summary th,table.summary td{padding:8px 12px;text-align:right;border-bottom:1px solid var(--eax-line);}
+table.summary th:first-child,table.summary td:first-child{text-align:left;}
+table.summary th{
+  font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;
+  color:var(--eax-subtle);
+  font-size:10px;text-transform:uppercase;letter-spacing:0.18em;
+  background:var(--eax-bg-2);position:sticky;top:0;
+}
+table.summary td{color:var(--eax-ink-2);}
+table.summary tr.totals-row td{
+  font-weight:700;color:var(--eax-ink);
+  background:var(--eax-accent-soft);
+  border-top:2px solid var(--eax-line-2);
+}
+table.summary tr.lot-sep td{
+  background:rgba(242,89,41,0.03);
+  border-top:1px solid var(--eax-line-2);
+}
+.badge{display:inline-block;padding:3px 9px;border-radius:999px;font-size:10px;font-weight:600;border:1px solid;letter-spacing:0.04em;}
+.badge-blue  {background:rgba(74,144,226,.10);color:#4a90e2;border-color:rgba(74,144,226,.30);}
+.badge-green {background:rgba(80,180,120,.10);color:var(--eax-good);border-color:rgba(80,180,120,.30);}
+.badge-orange{background:rgba(224,122,62,.10);color:#e07a3e;border-color:rgba(224,122,62,.30);}
+.badge-red   {background:rgba(229,62,62,.10);color:var(--eax-bad);border-color:rgba(229,62,62,.30);}
 
-.starts-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin:12px 0;overflow-x:auto}
-table.starts{width:100%;border-collapse:collapse;font-size:11.5px;min-width:680px}
-table.starts th,table.starts td{padding:6px 9px;border-bottom:1px solid var(--border);text-align:right}
+.starts-card{
+  background:var(--eax-surface);
+  border:1px solid var(--eax-line);
+  border-radius:12px;
+  padding:18px 22px;margin:14px 0;
+  overflow-x:auto;
+  box-shadow:var(--eax-shadow-card);
+}
+table.starts{width:100%;border-collapse:collapse;font-size:12px;min-width:680px;font-variant-numeric:tabular-nums;}
+table.starts th,table.starts td{padding:7px 11px;border-bottom:1px solid var(--eax-line);text-align:right;}
 table.starts th:first-child,table.starts th:nth-child(2),table.starts th:nth-child(3),table.starts th:nth-child(4),
-table.starts td:first-child,table.starts td:nth-child(2),table.starts td:nth-child(3),table.starts td:nth-child(4){text-align:left}
-table.starts th{font-weight:500;color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;background:var(--surface)}
-table.starts td.lot-start{border-top:1px solid var(--border-light)}
-table.starts tr.metric-sold td{color:var(--text-muted)}
-table.starts tr.metric-net td{color:var(--teal);font-weight:500}
-table.starts tr.metric-total td{font-weight:500}
+table.starts td:first-child,table.starts td:nth-child(2),table.starts td:nth-child(3),table.starts td:nth-child(4){text-align:left;}
+table.starts th{
+  font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;
+  color:var(--eax-subtle);
+  font-size:10px;text-transform:uppercase;letter-spacing:0.18em;
+  background:var(--eax-bg-2);
+}
+table.starts td.lot-start{border-top:1px solid var(--eax-line-2);}
+table.starts tr.metric-sold td{color:var(--eax-muted);}
+table.starts tr.metric-net td{color:var(--eax-good);font-weight:600;}
+table.starts tr.metric-total td{font-weight:600;color:var(--eax-ink);}
 
-/* Refresh / status chip */
-.status-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:14px;font-size:11px;background:rgba(31,122,77,.1);color:var(--teal);border:1px solid rgba(31,122,77,.25)}
-.status-pill.err{background:rgba(229,62,62,.1);color:#e86c6c;border-color:rgba(229,62,62,.25)}
-.refresh-btn{padding:5px 12px;border-radius:5px;font-size:11px;cursor:pointer;border:1px solid var(--border);background:none;color:var(--text-muted);font-family:'DM Sans',sans-serif;transition:all .15s;display:inline-flex;align-items:center;gap:6px}
-.refresh-btn:hover{border-color:var(--teal);color:var(--teal)}
-.refresh-btn:disabled{opacity:.5;cursor:not-allowed}
+/* Status pill + refresh button — match the canonical .fin-btn /
+   status-pill patterns from /financials. */
+.status-pill{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:5px 12px;border-radius:999px;font-size:11px;font-weight:600;
+  background:rgba(31,122,77,.10);color:var(--eax-good);
+  border:1px solid rgba(31,122,77,.25);
+  letter-spacing:0.02em;
+}
+.status-pill.err{
+  background:rgba(229,62,62,.10);color:var(--eax-bad);
+  border-color:rgba(229,62,62,.25);
+}
+.refresh-btn{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:6px 14px;border-radius:8px;
+  font-size:12px;font-weight:600;font-family:'DM Sans',sans-serif;
+  background:transparent;color:var(--eax-muted);
+  border:1px solid var(--eax-line-2);
+  cursor:pointer;transition:all .15s;
+}
+.refresh-btn:hover{border-color:var(--eax-accent);color:var(--eax-accent);}
+.refresh-btn:disabled{opacity:.5;cursor:not-allowed;}
 
 /* Loading / error states */
 .load-state{text-align:center;padding:60px 20px;color:var(--text-dim)}
@@ -299,7 +418,6 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
      ── #}
   <aside class="cs-nav">
     <div class="cs-nav-head">
-      <div class="cs-nav-eyebrow">COMMUNITY SALES</div>
       <div class="cs-nav-title">Sales Tracker</div>
     </div>
 
