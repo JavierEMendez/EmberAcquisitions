@@ -915,7 +915,14 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
         </div>
 
         <!-- Community comps table -->
-        <div class="section-title">Waller ISD Communities — 2023-2025 Permits</div>
+        <div class="section-title">
+          Waller ISD Communities — 2023-2025 Permits
+          <span class="sub">
+            <input type="text" id="bk-comps-search" placeholder="Search community…"
+                   oninput="filterBkCompsTable()"
+                   style="padding:5px 10px;border:1px solid var(--eax-line-2);background:var(--eax-bg-2);color:var(--eax-ink);border-radius:6px;font-size:11px;min-width:200px;outline:none;font-family:'DM Sans',sans-serif;">
+          </span>
+        </div>
         <div class="starts-card" style="overflow-x:auto">
           <table class="pace-tbl" id="t-bk-comps">
             <thead><tr>
@@ -928,6 +935,80 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
               <th>Avg Size</th>
               <th>Avg Price</th>
               <th>PPSF</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <!-- ALL ISD roll-up table (Phase 4b) -->
+        <div class="section-title">
+          All ISD Communities — 2023-2025 Permits
+          <span class="sub">
+            <input type="text" id="bk-isd-search" placeholder="Search ISD or community…"
+                   oninput="filterBkIsdTable()"
+                   style="padding:5px 10px;border:1px solid var(--eax-line-2);background:var(--eax-bg-2);color:var(--eax-ink);border-radius:6px;font-size:11px;min-width:240px;outline:none;font-family:'DM Sans',sans-serif;">
+          </span>
+        </div>
+        <div class="starts-card" style="overflow-x:auto">
+          <table class="pace-tbl" id="t-bk-all-isd">
+            <thead><tr>
+              <th style="text-align:left">ISD</th>
+              <th style="text-align:left">Community</th>
+              <th>Type</th>
+              <th>'23</th>
+              <th>'24</th>
+              <th>'25</th>
+              <th>YoY</th>
+              <th>Avg Size</th>
+              <th>Avg Price</th>
+              <th>PPSF</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <!-- ISD-level permit trend chart (Phase 4b) -->
+        <div class="section-title">ISD Permit Trends — Yearly Totals by School District</div>
+        <div class="chart-grid full">
+          <div class="chart-card">
+            <div class="chart-title">Top 8 ISDs by 2025 Permits</div>
+            <div class="chart-wrap tall"><canvas id="c-bk-isd-trends"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Waller size + price distributions (Phase 4b) -->
+        <div class="section-title">Waller ISD — 2025 Home Size &amp; Price Distributions</div>
+        <div class="chart-grid">
+          <div class="chart-card">
+            <div class="chart-title">Home-size Distribution (2025 Waller Permits)</div>
+            <div class="chart-wrap tall"><canvas id="c-bk-size-dist"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">Price Distribution (2025 Waller Permits)</div>
+            <div class="chart-wrap tall"><canvas id="c-bk-price-dist"></canvas></div>
+          </div>
+        </div>
+
+        <!-- TGP 2025 Plans table (Phase 4b) -->
+        <div class="section-title">
+          TGP 2025 Builder Plans
+          <span class="sub" id="bk-tgp-plans-meta">—</span>
+        </div>
+        <div class="starts-card" style="overflow-x:auto">
+          <table class="pace-tbl" id="t-bk-tgp-plans">
+            <thead><tr>
+              <th style="text-align:left">Builder</th>
+              <th style="text-align:left">Plan</th>
+              <th>Size Band</th>
+              <th>Home Size</th>
+              <th>Config</th>
+              <th>Avg Price</th>
+              <th>Avg PPSF</th>
+              <th>2025 Total</th>
+              <th>Q1</th>
+              <th>Q2</th>
+              <th>Q3</th>
+              <th>Q4</th>
             </tr></thead>
             <tbody></tbody>
           </table>
@@ -2463,12 +2544,198 @@ function renderBohlke(data) {
     <td style="text-align:left;color:var(--text-dim);font-size:12px">${y.events || ''}</td>
   </tr>`).join('');
 
+  // ─── Phase 4b additions ────────────────────────────────────
+  renderBkAllIsdTable(data.all_isd_comps || []);
+  renderBkIsdTrends(data.isd_totals || [], tC);
+  renderBkSizeDist(data.waller_size_dist || [], tC);
+  renderBkPriceDist(data.waller_price_dist || [], tC);
+  renderBkTgpPlans(data.tgp_plans || []);
+
   // Resize charts in case we rendered while hidden
   setTimeout(() => {
-    ['c-bk-yearly','c-bk-share','c-bk-builders'].forEach(id => {
+    ['c-bk-yearly','c-bk-share','c-bk-builders',
+     'c-bk-isd-trends','c-bk-size-dist','c-bk-price-dist'].forEach(id => {
       if (_charts[id]) { try { _charts[id].resize(); } catch(e){} }
     });
   }, 40);
+}
+
+// ─── Phase 4b: All-ISD search table ────────────────────────────
+// Renders coworker's bulkAllIsdTable. Filter is wired via
+// filterBkIsdTable(); search matches against ISD + community text.
+function renderBkAllIsdTable(rows) {
+  const tbody = document.querySelector('#t-bk-all-isd tbody');
+  if (!tbody) return;
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--eax-subtle);padding:14px">No ISD-level data in this upload.</td></tr>';
+    return;
+  }
+  // Sort by 2025 permits desc, then ISD/community alpha.
+  const sorted = rows.slice().sort((a, b) =>
+    (b.p25 || 0) - (a.p25 || 0)
+    || (a.isd || '').localeCompare(b.isd || '')
+    || (a.community || '').localeCompare(b.community || '')
+  );
+  tbody.innerHTML = sorted.map(c => {
+    const yoy = (c.p24 && c.p25) ? Math.round((c.p25 / c.p24 - 1) * 100) : null;
+    const yoyStr = yoy == null ? '—'
+                                : (yoy >= 0 ? '+' : '') + yoy + '%';
+    const yoyCls = yoy == null ? '' : (yoy >= 0 ? 'color:var(--eax-good)' : 'color:var(--eax-bad)');
+    return `<tr>
+      <td style="text-align:left;color:var(--eax-muted)">${escapeHtml(c.isd || '')}</td>
+      <td style="text-align:left;font-weight:600">${escapeHtml(c.community || '')}</td>
+      <td>${c.mpc && c.mpc !== 'NON' ? '<span class="badge badge-orange">'+escapeHtml(c.mpc)+'</span>' : '<span class="badge badge-blue">SUB</span>'}</td>
+      <td>${(c.p23 || 0).toLocaleString()}</td>
+      <td>${(c.p24 || 0).toLocaleString()}</td>
+      <td><strong>${(c.p25 || 0).toLocaleString()}</strong></td>
+      <td style="${yoyCls}">${yoyStr}</td>
+      <td>${c.size25 ? Math.round(c.size25).toLocaleString() + ' sf' : '—'}</td>
+      <td>${c.price25 ? '$' + Math.round(c.price25).toLocaleString() : '—'}</td>
+      <td>${c.ppsf25 ? '$' + c.ppsf25.toFixed(2) : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Search filter functions — wired via oninput on the search inputs.
+function filterBkCompsTable() {
+  const q = (document.getElementById('bk-comps-search')?.value || '').toLowerCase().trim();
+  document.querySelectorAll('#t-bk-comps tbody tr').forEach(tr => {
+    tr.style.display = !q || tr.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+function filterBkIsdTable() {
+  const q = (document.getElementById('bk-isd-search')?.value || '').toLowerCase().trim();
+  document.querySelectorAll('#t-bk-all-isd tbody tr').forEach(tr => {
+    tr.style.display = !q || tr.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+// ─── Phase 4b: ISD yearly trends (top-8 chart) ─────────────────
+function renderBkIsdTrends(rows, tC) {
+  _destroy('c-bk-isd-trends');
+  const el = document.getElementById('c-bk-isd-trends');
+  if (!el || !rows.length) return;
+  // Year columns are stringified ints in the data; pick all numeric keys.
+  const allKeys = new Set();
+  rows.forEach(r => Object.keys(r).forEach(k => { if (/^\d{4}$/.test(k)) allKeys.add(k); }));
+  const yearLabels = Array.from(allKeys).sort();
+  // Total per ISD = sum across all years; pick top 8.
+  const top = rows.slice()
+    .map(r => ({...r, _tot: yearLabels.reduce((s, y) => s + (r[y] || 0), 0)}))
+    .sort((a, b) => b._tot - a._tot)
+    .slice(0, 8);
+  const palette = ['#F25929', '#4a90e2', '#58b47a', '#e07a3e', '#d4a76a', '#a585d3', '#5fb8c8', '#c25c84'];
+  const datasets = top.map((r, i) => ({
+    label: r.isd,
+    data:  yearLabels.map(y => r[y] || 0),
+    borderColor: palette[i % palette.length],
+    backgroundColor: palette[i % palette.length] + '22',
+    borderWidth: 2, tension: 0.25, pointRadius: 2.5, pointHoverRadius: 5,
+  }));
+  _charts['c-bk-isd-trends'] = new Chart(el, {
+    type: 'line',
+    data: { labels: yearLabels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: tC.legend, font: { size: 10 }, boxWidth: 12 } },
+        tooltip: {
+          backgroundColor: tC.ttBg, titleColor: tC.ttTitle, bodyColor: tC.ttBody,
+          borderColor: tC.ttBorder, borderWidth: 1, padding: 9,
+        },
+      },
+      scales: {
+        x: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 10 } }, grid: { color: tC.grid } },
+        y: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 10 }, callback: v => v.toLocaleString() }, grid: { color: tC.grid }, beginAtZero: true },
+      },
+    },
+  });
+}
+
+// ─── Phase 4b: Size / Price distribution stacked bars ─────────────
+// Both charts share the same shape: per-builder rows with a `bands`
+// dict {bandLabel: count}. We aggregate across builders, sum into
+// bands, and render a single horizontal bar per band.
+function _renderDistChart(canvasId, rows, color, tC) {
+  _destroy(canvasId);
+  const el = document.getElementById(canvasId);
+  if (!el || !rows.length) return;
+  const bandTotals = {};
+  rows.forEach(r => {
+    Object.entries(r.bands || {}).forEach(([band, n]) => {
+      bandTotals[band] = (bandTotals[band] || 0) + (n || 0);
+    });
+  });
+  // Sort bands by their leading numeric value where possible (e.g. "1,500-1,799")
+  const bands = Object.keys(bandTotals).sort((a, b) => {
+    const na = parseInt(a.replace(/[^0-9]/g, ''), 10) || 0;
+    const nb = parseInt(b.replace(/[^0-9]/g, ''), 10) || 0;
+    return na - nb;
+  });
+  _charts[canvasId] = new Chart(el, {
+    type: 'bar',
+    data: {
+      labels: bands,
+      datasets: [{
+        label: 'Homes',
+        data:  bands.map(b => bandTotals[b]),
+        backgroundColor: color + 'cc',
+        borderColor: color,
+        borderWidth: 1, borderRadius: 3,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: tC.ttBg, titleColor: tC.ttTitle, bodyColor: tC.ttBody,
+          borderColor: tC.ttBorder, borderWidth: 1, padding: 9,
+        },
+      },
+      scales: {
+        x: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 9 }, maxRotation: 60, minRotation: 45 }, grid: { color: tC.grid } },
+        y: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 10 }, callback: v => v.toLocaleString() }, grid: { color: tC.grid }, beginAtZero: true },
+      },
+    },
+  });
+}
+function renderBkSizeDist(rows, tC)  { _renderDistChart('c-bk-size-dist',  rows, '#4a90e2', tC); }
+function renderBkPriceDist(rows, tC) { _renderDistChart('c-bk-price-dist', rows, '#58b47a', tC); }
+
+// ─── Phase 4b: TGP 2025 Builder Plans table ───────────────────
+function renderBkTgpPlans(rows) {
+  const tbody = document.querySelector('#t-bk-tgp-plans tbody');
+  const meta  = document.getElementById('bk-tgp-plans-meta');
+  if (!tbody) return;
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--eax-subtle);padding:14px">No TGP plans data in this upload.</td></tr>';
+    if (meta) meta.textContent = '';
+    return;
+  }
+  // Sort by 2025 total desc.
+  const sorted = rows.slice().sort((a, b) => (b.total2025 || 0) - (a.total2025 || 0));
+  if (meta) meta.textContent = `${sorted.length} plan${sorted.length === 1 ? '' : 's'}`;
+  tbody.innerHTML = sorted.map(p => `<tr>
+    <td style="text-align:left;font-weight:600">${escapeHtml(p.builder || '')}</td>
+    <td style="text-align:left;color:var(--eax-muted)">${escapeHtml(p.plan || '')}</td>
+    <td>${escapeHtml(p.sizeBand || '—')}</td>
+    <td>${p.homeSize ? Math.round(p.homeSize).toLocaleString() + ' sf' : '—'}</td>
+    <td>${escapeHtml(p.config || '—')}</td>
+    <td>${p.avgPrice ? '$' + Math.round(p.avgPrice).toLocaleString() : '—'}</td>
+    <td>${p.avgPPSF ? '$' + p.avgPPSF.toFixed(2) : '—'}</td>
+    <td><strong>${(p.total2025 || 0).toLocaleString()}</strong></td>
+    <td>${(p.q1 || 0).toLocaleString()}</td>
+    <td>${(p.q2 || 0).toLocaleString()}</td>
+    <td>${(p.q3 || 0).toLocaleString()}</td>
+    <td>${(p.q4 || 0).toLocaleString()}</td>
+  </tr>`).join('');
 }
 
 // ── WALLER MONTHLY TAB ─────────────────────────────────────────────────────────
