@@ -661,6 +661,34 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
         </tr></thead><tbody></tbody></table>
       </div>
 
+      <!-- Phase 5: lot-type + avg pace -->
+      <div class="chart-grid">
+        <div class="chart-card">
+          <div class="chart-title">Sales by Lot Type <span style="color:var(--eax-subtle);text-transform:none;letter-spacing:0">— LOP</span></div>
+          <div class="chart-wrap tall"><canvas id="c-gpd-lot"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">Avg Monthly Pace <span style="color:var(--eax-subtle);text-transform:none;letter-spacing:0">— 2024 vs 2025 vs 2026 YTD</span></div>
+          <div class="chart-wrap tall"><canvas id="c-gpd-pace"></canvas></div>
+        </div>
+      </div>
+      <!-- Phase 5: stacked builder-monthly -->
+      <div class="section-title">Monthly Net Sales by Builder</div>
+      <div class="chart-grid full">
+        <div class="chart-card">
+          <div class="chart-title">Net Sales per Month — Stacked by Builder</div>
+          <div class="chart-wrap tall"><canvas id="c-gpd-bm"></canvas></div>
+        </div>
+      </div>
+      <!-- Phase 5: YoY seasonality -->
+      <div class="section-title">Year-over-Year Seasonality</div>
+      <div class="chart-grid full">
+        <div class="chart-card">
+          <div class="chart-title">Homes Sold per Month — One Line per Year</div>
+          <div class="chart-wrap tall"><canvas id="c-gpd-yoy"></canvas></div>
+        </div>
+      </div>
+
       <div class="section-title">Starts &amp; Inventory <span class="sub">Completed, sold, under construction &amp; vacant lots per drive date</span></div>
       <div class="starts-card"><table class="starts" id="t-starts-gpd"></table></div>
 
@@ -694,6 +722,34 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
           <th>Builder</th><th>Lot</th><th>LOP Net</th><th>% of LOP</th><th>YTD Pace</th><th>Avg Price</th>
         </tr></thead><tbody></tbody></table>
       </div>
+
+      <!-- Phase 5: lot-type + avg pace -->
+      <div class="chart-grid">
+        <div class="chart-card">
+          <div class="chart-title">Sales by Lot Type <span style="color:var(--eax-subtle);text-transform:none;letter-spacing:0">— LOP</span></div>
+          <div class="chart-wrap tall"><canvas id="c-hld-lot"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">Avg Monthly Pace <span style="color:var(--eax-subtle);text-transform:none;letter-spacing:0">— 2024 vs 2025 vs 2026 YTD</span></div>
+          <div class="chart-wrap tall"><canvas id="c-hld-pace"></canvas></div>
+        </div>
+      </div>
+      <!-- Phase 5: stacked builder-monthly -->
+      <div class="section-title">Monthly Net Sales by Builder</div>
+      <div class="chart-grid full">
+        <div class="chart-card">
+          <div class="chart-title">Net Sales per Month — Stacked by Builder</div>
+          <div class="chart-wrap tall"><canvas id="c-hld-bm"></canvas></div>
+        </div>
+      </div>
+      <!-- Phase 5: YoY seasonality -->
+      <div class="section-title">Year-over-Year Seasonality</div>
+      <div class="chart-grid full">
+        <div class="chart-card">
+          <div class="chart-title">Homes Sold per Month — One Line per Year</div>
+          <div class="chart-wrap tall"><canvas id="c-hld-yoy"></canvas></div>
+        </div>
+      </div>
       </div><!-- /tab-hld -->
 
       <!-- ═══════════════════════ TAB: WRG ═══════════════════════ -->
@@ -717,6 +773,34 @@ table.pace-tbl tr.pace-hld td:first-child{color:#58b47a}
         <table class="summary" id="t-wrg"><thead><tr>
           <th>Builder</th><th>Lot</th><th>LOP Net</th><th>% of LOP</th><th>YTD Pace</th><th>Avg Price</th>
         </tr></thead><tbody></tbody></table>
+      </div>
+
+      <!-- Phase 5: lot-type + avg pace -->
+      <div class="chart-grid">
+        <div class="chart-card">
+          <div class="chart-title">Sales by Lot Type <span style="color:var(--eax-subtle);text-transform:none;letter-spacing:0">— LOP</span></div>
+          <div class="chart-wrap tall"><canvas id="c-wrg-lot"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">Avg Monthly Pace <span style="color:var(--eax-subtle);text-transform:none;letter-spacing:0">— 2024 vs 2025 vs 2026 YTD</span></div>
+          <div class="chart-wrap tall"><canvas id="c-wrg-pace"></canvas></div>
+        </div>
+      </div>
+      <!-- Phase 5: stacked builder-monthly -->
+      <div class="section-title">Monthly Net Sales by Builder</div>
+      <div class="chart-grid full">
+        <div class="chart-card">
+          <div class="chart-title">Net Sales per Month — Stacked by Builder</div>
+          <div class="chart-wrap tall"><canvas id="c-wrg-bm"></canvas></div>
+        </div>
+      </div>
+      <!-- Phase 5: YoY seasonality -->
+      <div class="section-title">Year-over-Year Seasonality</div>
+      <div class="chart-grid full">
+        <div class="chart-card">
+          <div class="chart-title">Homes Sold per Month — One Line per Year</div>
+          <div class="chart-wrap tall"><canvas id="c-wrg-yoy"></canvas></div>
+        </div>
       </div>
 
       <div class="section-title">Starts &amp; Inventory <span class="sub">Completed, sold, under construction &amp; vacant lots per drive date</span></div>
@@ -2139,6 +2223,11 @@ function renderCommunity(prefix, c, target, year) {
     {label: 'Net Sales', data: netData, color: PALETTE[1]},
   ]);
 
+  // Phase 5: per-community detail charts (lot type, avg pace,
+  // stacked builder-monthly, YoY seasonality). All four pull from
+  // data already in the payload (c.at, c.bm_net, c.net_monthly).
+  renderCommunityDetail(prefix, c);
+
   // Weekly chart — stacked gross/cancel + net line
   if (c.weekly && c.weekly.labels.length) {
     const id = 'c-' + prefix + '-weekly';
@@ -2168,6 +2257,215 @@ function renderCommunity(prefix, c, target, year) {
           y: { border: { color: t.grid }, ticks: { color: t.tick, font: { size: 9 } }, grid: { color: t.grid } }
         }
       }
+    });
+  }
+}
+
+// ─── Phase 5: per-community detail charts ─────────────────────────
+// Renders four additional charts on every community tab:
+//   c-{prefix}-lot   — sales by lot type (donut)
+//   c-{prefix}-pace  — avg monthly pace, 2024 vs 2025 vs 2026 YTD
+//   c-{prefix}-bm    — net sales per month, stacked by builder
+//   c-{prefix}-yoy   — homes sold per month, one line per year
+// All four pull from data already in c (at / bm_net / net_monthly /
+// months). No additional server data required.
+const _LOT_PALETTE = {
+  '40': '#4a90e2', '45': '#58b47a', '50': '#e07a3e', '60': '#c25c84',
+  '55': '#d4a76a', '65': '#a585d3', '70': '#5fb8c8', '80': '#c8a96e',
+};
+function _colorForLot(lot) {
+  return _LOT_PALETTE[String(lot)] || '#888';
+}
+
+function renderCommunityDetail(prefix, c) {
+  const tC = themeColors();
+
+  // 1. Sales by lot type (donut).
+  // c.at is keyed "lot|builder" → {tg, tc, tn}; sum tn within each lot.
+  const lotTotals = {};
+  Object.entries(c.at || {}).forEach(([key, v]) => {
+    const lot = String(key.split('|')[0] || '');
+    lotTotals[lot] = (lotTotals[lot] || 0) + (v.tn || 0);
+  });
+  const lotLabels = Object.keys(lotTotals).sort();
+  const lotData   = lotLabels.map(l => lotTotals[l]);
+  const lotColors = lotLabels.map(_colorForLot);
+  const lotId = 'c-' + prefix + '-lot';
+  _destroy(lotId);
+  const lotEl = document.getElementById(lotId);
+  if (lotEl && lotData.some(v => v > 0)) {
+    _charts[lotId] = new Chart(lotEl, {
+      type: 'doughnut',
+      data: {
+        labels: lotLabels.map(l => 'Lot ' + l),
+        datasets: [{ data: lotData, backgroundColor: lotColors, borderWidth: 0 }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'right', labels: { color: tC.legend, font: { size: 11 }, boxWidth: 12 } },
+          tooltip: {
+            backgroundColor: tC.ttBg, titleColor: tC.ttTitle, bodyColor: tC.ttBody,
+            borderColor: tC.ttBorder, borderWidth: 1, padding: 9,
+            callbacks: {
+              label: (ctx) => {
+                const tot = lotData.reduce((s, v) => s + v, 0);
+                const pct = tot ? ((ctx.parsed / tot) * 100).toFixed(1) : '0';
+                return ctx.label + ': ' + ctx.parsed.toLocaleString() + ' (' + pct + '%)';
+              },
+            },
+          },
+        },
+        cutout: '55%',
+      },
+    });
+  }
+
+  // 2. Avg monthly pace (2024 / 2025 / 2026 YTD).
+  // From c.months (sorted asc) + c.net_monthly. For each year, compute
+  // average across the months we have data for.
+  const months = c.months || [];
+  const byYear = {};   // yr → [vals]
+  months.forEach(m => {
+    const v = c.net_monthly[m];
+    if (v != null) {
+      const yr = parseInt(String(m).split('-')[0], 10);
+      if (!byYear[yr]) byYear[yr] = [];
+      byYear[yr].push(v);
+    }
+  });
+  const targetYears = [2024, 2025, 2026];
+  const monthLabels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const yearSeries = targetYears.map((yr, i) => {
+    // Per-month series; missing months become null (Chart skips them).
+    const seriesData = monthLabels.map((_, mIdx) => {
+      const key = yr + '-' + String(mIdx + 1).padStart(2, '0');
+      return c.net_monthly[key] != null ? c.net_monthly[key] : null;
+    });
+    return {
+      label: String(yr),
+      data: seriesData,
+      borderColor: ['#4a90e2', '#58b47a', '#F25929'][i],
+      backgroundColor: ['#4a90e244', '#58b47a44', '#F2592944'][i],
+      borderWidth: 2.5, tension: 0.25, pointRadius: 3, pointHoverRadius: 6,
+      spanGaps: false,
+    };
+  });
+  const paceId = 'c-' + prefix + '-pace';
+  _destroy(paceId);
+  const paceEl = document.getElementById(paceId);
+  if (paceEl) {
+    _charts[paceId] = new Chart(paceEl, {
+      type: 'line',
+      data: { labels: monthLabels, datasets: yearSeries },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { color: tC.legend, font: { size: 11 }, boxWidth: 14 } },
+          tooltip: { backgroundColor: tC.ttBg, titleColor: tC.ttTitle, bodyColor: tC.ttBody, borderColor: tC.ttBorder, borderWidth: 1, padding: 9 },
+        },
+        scales: {
+          x: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 10 } }, grid: { color: tC.grid } },
+          y: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 10 } }, grid: { color: tC.grid }, beginAtZero: true },
+        },
+      },
+    });
+  }
+
+  // 3. Stacked builder-monthly (net sales per month, one stack per builder).
+  // c.bm_net keyed "lot|builder" → { ym: { tg, tc, tn } }.
+  const bmId = 'c-' + prefix + '-bm';
+  _destroy(bmId);
+  const bmEl = document.getElementById(bmId);
+  if (bmEl && c.bm_net && months.length) {
+    // Builder totals across LOP for ordering and color
+    const builderTotals = {};
+    Object.entries(c.bm_net).forEach(([key, ymDict]) => {
+      const builder = key.split('|').slice(1).join('|');
+      const t = Object.values(ymDict).reduce((s, v) => s + (v.tn || 0), 0);
+      builderTotals[builder] = (builderTotals[builder] || 0) + t;
+    });
+    const topBuilders = Object.keys(builderTotals)
+      .sort((a, b) => builderTotals[b] - builderTotals[a])
+      .slice(0, 8);
+    const bmPalette = ['#4a90e2','#58b47a','#e07a3e','#c25c84','#d4a76a','#a585d3','#5fb8c8','#c8a96e'];
+    const bmDatasets = topBuilders.map((builder, i) => {
+      // Sum the builder's value at each month across all lots.
+      const data = months.map(m => {
+        let v = 0;
+        Object.entries(c.bm_net).forEach(([key, ymDict]) => {
+          if (key.split('|').slice(1).join('|') === builder && ymDict[m]) {
+            v += ymDict[m].tn || 0;
+          }
+        });
+        return v;
+      });
+      return {
+        label: builder,
+        data,
+        backgroundColor: bmPalette[i] + 'cc',
+        borderColor: bmPalette[i],
+        borderWidth: 1, stack: 's',
+      };
+    });
+    _charts[bmId] = new Chart(bmEl, {
+      type: 'bar',
+      data: { labels: months.map(monthLabelFromKey), datasets: bmDatasets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: tC.legend, font: { size: 10 }, boxWidth: 10 } },
+          tooltip: { mode: 'index', intersect: false, backgroundColor: tC.ttBg, titleColor: tC.ttTitle, bodyColor: tC.ttBody, borderColor: tC.ttBorder, borderWidth: 1, padding: 9 },
+        },
+        scales: {
+          x: { stacked: true, border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 9 }, maxRotation: 60, autoSkip: true }, grid: { display: false } },
+          y: { stacked: true, border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 10 } }, grid: { color: tC.grid }, beginAtZero: true },
+        },
+      },
+    });
+  }
+
+  // 4. YoY seasonality (one line per year, x-axis Jan-Dec).
+  const yoyId = 'c-' + prefix + '-yoy';
+  _destroy(yoyId);
+  const yoyEl = document.getElementById(yoyId);
+  if (yoyEl) {
+    const yrs = Object.keys(byYear).map(Number).sort();
+    const yoyPalette = ['#888', '#aaa', '#4a90e2', '#58b47a', '#F25929'];
+    const yoyDatasets = yrs.map((yr, i) => {
+      const seriesData = monthLabels.map((_, mIdx) => {
+        const key = yr + '-' + String(mIdx + 1).padStart(2, '0');
+        return c.net_monthly[key] != null ? c.net_monthly[key] : null;
+      });
+      const color = yoyPalette[Math.min(i, yoyPalette.length - 1)];
+      // Newer years get progressively stronger color/weight.
+      const isCurrent = (yr === yrs[yrs.length - 1]);
+      return {
+        label: String(yr),
+        data: seriesData,
+        borderColor: color,
+        backgroundColor: color + '22',
+        borderWidth: isCurrent ? 2.5 : 1.5,
+        tension: 0.25, pointRadius: isCurrent ? 3 : 2, pointHoverRadius: 5,
+        spanGaps: false,
+      };
+    });
+    _charts[yoyId] = new Chart(yoyEl, {
+      type: 'line',
+      data: { labels: monthLabels, datasets: yoyDatasets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { color: tC.legend, font: { size: 11 }, boxWidth: 14 } },
+          tooltip: { backgroundColor: tC.ttBg, titleColor: tC.ttTitle, bodyColor: tC.ttBody, borderColor: tC.ttBorder, borderWidth: 1, padding: 9 },
+        },
+        scales: {
+          x: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 10 } }, grid: { color: tC.grid } },
+          y: { border: { color: tC.grid }, ticks: { color: tC.tick, font: { size: 10 } }, grid: { color: tC.grid }, beginAtZero: true },
+        },
+      },
     });
   }
 }
