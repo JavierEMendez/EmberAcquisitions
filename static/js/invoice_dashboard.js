@@ -1070,6 +1070,136 @@
     fileInput.addEventListener('change', e => {
       if (e.target.files && e.target.files[0]) handleFileSelection(e.target.files[0]);
     });
+
+    // ── Topbar Excel / PDF exports ─────────────────────────────
+    // Both buttons were stubbed as <a href="#"> with no handlers since
+    // launch (commit 08c171d9). Excel is built from window.INVOICE_D
+    // via SheetJS; PDF is window.print() driven by the @media print
+    // stylesheet in invoice_dashboard.html.
+    on('inv-export-excel', 'click', exportInvoicesExcel);
+    on('inv-export-pdf',   'click', exportInvoicesPdf);
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // EXPORT — Excel (multi-sheet) + PDF (browser print)
+  // ──────────────────────────────────────────────────────────
+  function _fmtPeriodFilename() {
+    // Build a stable "YYYY-MM-DD" stamp from window.INVOICE_D.report_date.
+    // Falls back to today's date string if the field is missing.
+    const raw = (D && D.report_date) || '';
+    // raw is like "May 8, 2026" — Date.parse handles it cross-browser.
+    const dt = raw ? new Date(raw) : new Date();
+    if (!isFinite(+dt)) return 'invoices';
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    const d = String(dt.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + d;
+  }
+
+  function exportInvoicesExcel() {
+    if (typeof XLSX === 'undefined') {
+      alert('Excel library failed to load. Reload the page and try again.');
+      return;
+    }
+    if (!D || !Array.isArray(D.records) || !D.records.length) {
+      alert('No invoice data yet — upload a Stampli export first.');
+      return;
+    }
+    const wb = XLSX.utils.book_new();
+    const addSheet = (name, rows) => {
+      if (!Array.isArray(rows) || rows.length < 2) return;
+      // Sheet names cap at 31 chars in xlsx; trim defensively.
+      const safe = String(name).slice(0, 31);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), safe);
+    };
+
+    // 1. Invoices — every record, flattened.
+    const invHeader = [
+      'Entity', 'Vendor', 'Invoice No.', 'Status', 'Paid', 'GL Account',
+      'Description', 'Invoice Date', 'Processing Date', 'Due Date', 'Payment Date',
+      'Amount ($)', 'Days to Pay', 'Lag (proc - inv days)',
+    ];
+    const invRows = [invHeader];
+    D.records.forEach(r => {
+      invRows.push([
+        r.entity || '', r.vendor || '', r.invoice_no || '', r.status || '',
+        r.is_paid ? 'Yes' : 'No', r.gl || '', r.description || '',
+        r.invoice_date || '', r.processing_date || '',
+        r.due_date || '', r.payment_date || '',
+        Number(r.amount) || 0,
+        (r.days_to_pay == null ? '' : Number(r.days_to_pay)),
+        (r.lag_days   == null ? '' : Number(r.lag_days)),
+      ]);
+    });
+    addSheet('Invoices', invRows);
+
+    // 2. GL Summary
+    if (Array.isArray(D.gl_accounts) && D.gl_accounts.length) {
+      const glRows = [['GL Account', 'Invoice Count', 'Total ($)']];
+      D.gl_accounts.forEach(g => glRows.push([g.gl || '', g.count || 0, Number(g.total) || 0]));
+      addSheet('GL Summary', glRows);
+    }
+
+    // 3. Vendor Summary — Ember + CCDL on one sheet (entity column tags rows).
+    const venRows = [['Entity', 'Vendor', 'Total ($)']];
+    (D.vendor_ember || []).forEach(v => venRows.push(['Ember Group LLC',  v.vendor, Number(v.total) || 0]));
+    (D.vendor_ccdl  || []).forEach(v => venRows.push(['CCDL Ventures LLC', v.vendor, Number(v.total) || 0]));
+    addSheet('Vendor Summary', venRows);
+
+    // 4. Monthly Roll-up (Invoice basis)
+    if (Array.isArray(D.months_inv) && D.months_inv.length) {
+      const mRows = [['Month', 'Ember Count', 'Ember Total ($)', 'Ember Paid ($)', 'Ember Not Paid ($)',
+                      'CCDL Count', 'CCDL Total ($)', 'CCDL Paid ($)', 'CCDL Not Paid ($)']];
+      D.months_inv.forEach(k => {
+        const m = (D.monthly_inv || {})[k] || {};
+        const e = m.ember || {}, c = m.ccdl || {};
+        mRows.push([m.label || k, e.count || 0, e.total || 0, e.paid || 0, e.not_paid || 0,
+                                  c.count || 0, c.total || 0, c.paid || 0, c.not_paid || 0]);
+      });
+      addSheet('Monthly (Invoice Date)', mRows);
+    }
+
+    // 5. Monthly Roll-up (Processing basis)
+    if (Array.isArray(D.months_proc) && D.months_proc.length) {
+      const mRows = [['Month', 'Ember Count', 'Ember Total ($)', 'Ember Paid ($)', 'Ember Not Paid ($)',
+                      'CCDL Count', 'CCDL Total ($)', 'CCDL Paid ($)', 'CCDL Not Paid ($)']];
+      D.months_proc.forEach(k => {
+        const m = (D.monthly_proc || {})[k] || {};
+        const e = m.ember || {}, c = m.ccdl || {};
+        mRows.push([m.label || k, e.count || 0, e.total || 0, e.paid || 0, e.not_paid || 0,
+                                  c.count || 0, c.total || 0, c.paid || 0, c.not_paid || 0]);
+      });
+      addSheet('Monthly (Processing)', mRows);
+    }
+
+    // 6. YTD Totals
+    if (D.ytd) {
+      const ytdRows = [['Metric', 'Ember Group', 'CCDL Ventures', 'Combined']];
+      const tally = (k) => [D.ytd.ember && D.ytd.ember[k], D.ytd.ccdl && D.ytd.ccdl[k], D.ytd.combined && D.ytd.combined[k]];
+      ytdRows.push(['Invoice Count', ...tally('count')]);
+      ytdRows.push(['Total ($)',     ...tally('total')]);
+      ytdRows.push(['Paid ($)',      ...tally('paid')]);
+      ytdRows.push(['Not Paid ($)',  ...tally('not_paid')]);
+      ytdRows.push(['Avg Days to Pay', ...tally('avg_days_to_pay')]);
+      ytdRows.push(['Avg Lag (days)',  ...tally('avg_lag')]);
+      addSheet('YTD Totals', ytdRows);
+    }
+
+    const stamp = _fmtPeriodFilename();
+    XLSX.writeFile(wb, 'Invoice_Dashboard_' + stamp + '.xlsx');
+  }
+
+  function exportInvoicesPdf() {
+    // Save current title so the print dialog suggests a sensible filename.
+    // Browsers default the save name to document.title.
+    const stamp = _fmtPeriodFilename();
+    const original = document.title;
+    document.title = 'Invoice_Dashboard_' + stamp;
+    // Defer one frame so the title update flushes before the print dialog opens.
+    requestAnimationFrame(() => {
+      try { window.print(); }
+      finally { setTimeout(() => { document.title = original; }, 500); }
+    });
   }
 
   // ──────────────────────────────────────────────────────────
