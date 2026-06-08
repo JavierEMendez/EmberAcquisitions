@@ -676,6 +676,7 @@
                 <tr class="investor-detail" data-detail-for="{{ v.id }}" hidden>
                   <td colspan="8">
                     <div class="inv-detail-sub">Positions</div>
+                    <div class="cashflow-scroll">
                     <table class="inv-pos-table">
                       <thead>
                         <tr>
@@ -704,6 +705,7 @@
                         {% endfor %}
                       </tbody>
                     </table>
+                    </div>
 
                     <div class="inv-detail-sub">Quarterly forecast cashflow by project</div>
                     {% if inv.quarters %}

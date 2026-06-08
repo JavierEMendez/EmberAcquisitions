@@ -634,7 +634,7 @@
   font-weight: 700; color: var(--cap-accent);
   margin: 0 0 6px;
 }
-.inv-pos-table + .inv-detail-sub { margin-top: 18px; }
+.cashflow-scroll + .inv-detail-sub { margin-top: 18px; }
 .inv-detail-note { font-size: 10px; color: var(--cap-muted); margin-top: 6px; line-height: 1.4; }
 .cashflow-scroll { overflow-x: auto; }
 .inv-cashflow-table {
@@ -668,7 +668,7 @@
   border-radius: 4px; padding: 1px 4px; margin-left: 4px;
 }
 .inv-pos-table {
-  width: 100%;
+  width: auto;
   border-collapse: collapse;
   font-size: 11px;
   margin: 0;
@@ -676,12 +676,14 @@
 .inv-pos-table th {
   font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase;
   font-weight: 600; color: var(--cap-subtle);
-  padding: 7px 10px;
+  padding: 7px 12px;
   border-bottom: 1px solid var(--cap-line);
+  white-space: nowrap;
 }
 .inv-pos-table td {
-  padding: 6px 10px;
+  padding: 6px 12px;
   border-bottom: 1px solid var(--cap-line);
+  white-space: nowrap;
   color: var(--cap-ink);
   font-variant-numeric: tabular-nums;
 }
