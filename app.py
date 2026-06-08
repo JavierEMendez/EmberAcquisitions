@@ -3997,6 +3997,14 @@ def _canon_vehicle_key(name: str) -> str:
     return " ".join(keep)
 
 
+def _clean_project_label(name: str) -> str:
+    """Drop a trailing equity-class parenthetical (e.g. 'LightHaven (Preferred
+    Equity)' -> 'LightHaven') so a position's Class column isn't echoed in the
+    project name and common/preferred rows don't look duplicated."""
+    out = re.sub(r"\s*\([^)]*equity[^)]*\)\s*$", "", name or "", flags=re.I).strip()
+    return out or (name or "")
+
+
 def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
                          src_months: list | None = None) -> dict:
     """Aggregate cap-table positions into per-vehicle portfolios scaled by
@@ -4223,7 +4231,7 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
         for j in range(n_q):
             v["q_forecast"][j] += q_buckets[j]
         v["positions"].append({
-            "project":      pj["name"],
+            "project":      _clean_project_label(pj["name"]),
             "equity_class": equity_class,
             "pct":          round(pct * 100, 4),
             "committed":    int(round(contribution)),
@@ -4273,6 +4281,22 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
         })
 
     investors.sort(key=lambda r: r["committed"], reverse=True)
+
+    # ── Keep the forecast cashflow readable ───────────────────────────
+    # Real-estate holds can span many years; showing every future quarter
+    # makes the in-row table absurdly wide. Show the next MAX_FUTURE_Q
+    # quarters individually and roll everything beyond into one "Later"
+    # bucket so the table stays scannable without endless scrolling.
+    MAX_FUTURE_Q = 8
+    if n_q > MAX_FUTURE_Q:
+        def _collapse(arr: list) -> list:
+            return arr[:MAX_FUTURE_Q] + [sum(arr[MAX_FUTURE_Q:])]
+        quarter_labels = quarter_labels[:MAX_FUTURE_Q] + ["Later"]
+        for inv in investors:
+            inv["q_forecast"] = _collapse(inv["q_forecast"])
+            for p in inv["positions"]:
+                p["q_forecast"] = _collapse(p["q_forecast"])
+        n_q = MAX_FUTURE_Q + 1
 
     # ── Match coverage (both directions) ──────────────────────────────
     # Returns side: which active returns projects do the cap tables cover,
