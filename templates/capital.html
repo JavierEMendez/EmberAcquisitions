@@ -705,27 +705,37 @@
                       </tbody>
                     </table>
 
-                    <div class="inv-detail-sub">Quarterly forecast cashflow</div>
+                    <div class="inv-detail-sub">Quarterly forecast cashflow by project</div>
                     {% if inv.quarters %}
                     <div class="cashflow-scroll">
                       <table class="inv-cashflow-table">
                         <thead>
                           <tr>
+                            <th class="left">Project</th>
                             <th class="right good">To Date</th>
                             {% for q in inv.quarters %}<th class="right">{{ q }}</th>{% endfor %}
                             <th class="right accent">Forecast Total</th>
                           </tr>
                         </thead>
                         <tbody>
+                          {% for p in v.positions %}
                           <tr>
-                            <td class="right num good">{{ fmt_money_raw(v.distributions_to_date) }}</td>
-                            {% for qv in v.q_forecast %}<td class="right num">{{ fmt_money_raw(qv) }}</td>{% endfor %}
-                            <td class="right num accent">{{ fmt_money_raw(v.distributions_forecast) }}</td>
+                            <td class="left">{{ p.project }}{% if p.equity_class == 'preferred' %} <span class="cf-class">Pref</span>{% endif %}</td>
+                            <td class="right num good">{{ fmt_money_raw(p.dist_to_date) }}</td>
+                            {% for qv in p.q_forecast %}<td class="right num">{{ fmt_money_raw(qv) }}</td>{% endfor %}
+                            <td class="right num accent">{{ fmt_money_raw(p.dist_forecast) }}</td>
+                          </tr>
+                          {% endfor %}
+                          <tr class="cf-total">
+                            <td class="left bold">Total</td>
+                            <td class="right num bold good">{{ fmt_money_raw(v.distributions_to_date) }}</td>
+                            {% for qv in v.q_forecast %}<td class="right num bold">{{ fmt_money_raw(qv) }}</td>{% endfor %}
+                            <td class="right num bold accent">{{ fmt_money_raw(v.distributions_forecast) }}</td>
                           </tr>
                         </tbody>
                       </table>
                     </div>
-                    <div class="inv-detail-note">Future quarters bucketed from project monthly cashflows, scaled to this vehicle's ownership %; quarter totals tie to the Forecast column.</div>
+                    <div class="inv-detail-note">Future quarters bucketed from each project's monthly cashflows, scaled to this vehicle's ownership %; row totals tie to the Forecast column.</div>
                     {% else %}
                     <div class="inv-detail-note">No future quarters in the current returns horizon.</div>
                     {% endif %}

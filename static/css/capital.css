@@ -656,9 +656,17 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.inv-cashflow-table .left { text-align: left; }
 .inv-cashflow-table .right { text-align: right; min-width: 84px; }
 .inv-cashflow-table td.good, .inv-cashflow-table th.good { color: var(--cap-good); }
 .inv-cashflow-table td.accent, .inv-cashflow-table th.accent { color: var(--cap-accent); font-weight: 700; }
+.inv-cashflow-table .cf-total td { border-top: 1px solid var(--cap-line); }
+.inv-cashflow-table .bold { font-weight: 700; }
+.cf-class {
+  font-size: 8px; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--cap-muted); border: 1px solid var(--cap-line);
+  border-radius: 4px; padding: 1px 4px; margin-left: 4px;
+}
 .inv-pos-table {
   width: 100%;
   border-collapse: collapse;

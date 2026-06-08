@@ -4230,6 +4230,7 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
             "distributions": int(round(total_dist_pos)),
             "dist_to_date":  int(round(to_date_pos)),
             "dist_forecast": int(round(forecast_pos)),
+            "q_forecast":   [int(round(x)) for x in q_buckets],
             "irr":          pj["irr"],
             "em":           pj["em"],
         })
