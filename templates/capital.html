@@ -685,10 +685,10 @@
                             <th class="right">Ownership</th>
                             <th class="right">Committed</th>
                             <th class="right good">To Date</th>
-                            {% for q in inv.quarters %}<th class="right">{{ q }}</th>{% endfor %}
                             <th class="right accent">Forecast</th>
                             <th class="right">Proj IRR</th>
                             <th class="right">Proj EM</th>
+                            {% for q in inv.quarters %}<th class="right">{{ q }}</th>{% endfor %}
                           </tr>
                         </thead>
                         <tbody>
@@ -699,10 +699,10 @@
                             <td class="right num">{{ fmt_pct(p.pct, 2) }}</td>
                             <td class="right num">{{ fmt_money_raw(p.committed) }}</td>
                             <td class="right num good">{{ fmt_money_raw(p.dist_to_date) }}</td>
-                            {% for qv in p.q_forecast %}<td class="right num">{{ fmt_money_raw(qv) }}</td>{% endfor %}
                             <td class="right num accent">{{ fmt_money_raw(p.dist_forecast) }}</td>
                             <td class="right num">{{ fmt_pct(p.irr) }}</td>
                             <td class="right num">{{ fmt_em(p.em) }}</td>
+                            {% for qv in p.q_forecast %}<td class="right num">{{ fmt_money_raw(qv) }}</td>{% endfor %}
                           </tr>
                           {% endfor %}
                           <tr class="cf-total">
@@ -711,10 +711,10 @@
                             <td></td>
                             <td class="right num bold">{{ fmt_money_raw(v.committed) }}</td>
                             <td class="right num bold good">{{ fmt_money_raw(v.distributions_to_date) }}</td>
-                            {% for qv in v.q_forecast %}<td class="right num bold">{{ fmt_money_raw(qv) }}</td>{% endfor %}
                             <td class="right num bold accent">{{ fmt_money_raw(v.distributions_forecast) }}</td>
                             <td></td>
                             <td></td>
+                            {% for qv in v.q_forecast %}<td class="right num bold">{{ fmt_money_raw(qv) }}</td>{% endfor %}
                           </tr>
                         </tbody>
                       </table>

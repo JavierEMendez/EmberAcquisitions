@@ -664,6 +664,11 @@
 .inv-pos-table td.accent, .inv-pos-table th.accent { color: var(--cap-accent); }
 .inv-pos-table .bold { font-weight: 700; }
 .inv-pos-table .cf-total td { border-top: 1px solid var(--cap-line); }
+/* Keep the project name visible when scrolling out to the quarter columns. */
+.inv-pos-table th:first-child,
+.inv-pos-table td:first-child {
+  position: sticky; left: 0; z-index: 1; background: var(--cap-bg-2);
+}
 
 /* Cap-table editor (positions grid + upload) */
 .captable-grid {
