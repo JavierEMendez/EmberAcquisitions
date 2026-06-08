@@ -675,6 +675,7 @@
                 </tr>
                 <tr class="investor-detail" data-detail-for="{{ v.id }}" hidden>
                   <td colspan="8">
+                    <div class="inv-detail-sub">Positions</div>
                     <table class="inv-pos-table">
                       <thead>
                         <tr>
@@ -703,6 +704,31 @@
                         {% endfor %}
                       </tbody>
                     </table>
+
+                    <div class="inv-detail-sub">Quarterly forecast cashflow</div>
+                    {% if inv.quarters %}
+                    <div class="cashflow-scroll">
+                      <table class="inv-cashflow-table">
+                        <thead>
+                          <tr>
+                            <th class="right good">To Date</th>
+                            {% for q in inv.quarters %}<th class="right">{{ q }}</th>{% endfor %}
+                            <th class="right accent">Forecast Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td class="right num good">{{ fmt_money_raw(v.distributions_to_date) }}</td>
+                            {% for qv in v.q_forecast %}<td class="right num">{{ fmt_money_raw(qv) }}</td>{% endfor %}
+                            <td class="right num accent">{{ fmt_money_raw(v.distributions_forecast) }}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div class="inv-detail-note">Future quarters bucketed from project monthly cashflows, scaled to this vehicle's ownership %; quarter totals tie to the Forecast column.</div>
+                    {% else %}
+                    <div class="inv-detail-note">No future quarters in the current returns horizon.</div>
+                    {% endif %}
                   </td>
                 </tr>
                 {% endfor %}
@@ -720,46 +746,6 @@
           <div class="table-foot">
             <span>Money in actual dollars. IRR is the blended rate on the vehicle's net cashflows.{% if inv.uploaded_at %} Cap tables uploaded {{ inv.uploaded_at[:10] }}.{% endif %}</span>
             <span class="mono">{{ inv.projects_matched | join(' · ') }}</span>
-          </div>
-        </div>
-
-        <header class="sec-head" style="margin-top:28px;">
-          <div class="eyebrow">Forecast cashflow</div>
-          <h2>Quarterly Distribution Cashflow</h2>
-          <p>Distributions received to date, then projected by calendar quarter. Future quarters are bucketed from the project monthly cashflows (scaled to each vehicle's ownership %); quarter totals tie to the Forecast column above.</p>
-        </header>
-
-        <div class="table-card">
-          <div class="returns-scroll">
-            <table class="returns-table cashflow-table">
-              <thead>
-                <tr>
-                  <th class="left">Investor / Vehicle</th>
-                  <th class="right good">To Date</th>
-                  {% for q in inv.quarters %}<th class="right">{{ q }}</th>{% endfor %}
-                  <th class="right accent">Forecast Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for v in inv.investors %}
-                <tr>
-                  <td class="left">{{ v.name }}</td>
-                  <td class="right num good">{{ fmt_money_raw(v.distributions_to_date) }}</td>
-                  {% for qv in v.q_forecast %}<td class="right num">{{ fmt_money_raw(qv) }}</td>{% endfor %}
-                  <td class="right num accent">{{ fmt_money_raw(v.distributions_forecast) }}</td>
-                </tr>
-                {% endfor %}
-                <tr class="portfolio-total">
-                  <td class="left bold">All Investors</td>
-                  <td class="right num bold good">{{ fmt_money_raw(inv.total_distributions_to_date) }}</td>
-                  {% for qv in inv.total_q_forecast %}<td class="right num bold">{{ fmt_money_raw(qv) }}</td>{% endfor %}
-                  <td class="right num bold accent">{{ fmt_money_raw(inv.total_distributions_forecast) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="table-foot">
-            <span>{% if inv.quarters %}{{ inv.quarters | length }} forecast quarter{{ '' if inv.quarters|length == 1 else 's' }}, {{ inv.quarters[0] }} → {{ inv.quarters[-1] }}.{% else %}No future quarters in the current returns horizon.{% endif %} Quarterly buckets scale to match each vehicle's Forecast total.</span>
           </div>
         </div>
         {% else %}

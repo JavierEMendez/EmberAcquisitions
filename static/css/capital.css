@@ -628,7 +628,37 @@
 .investor-row:hover { background: var(--cap-bg-2); }
 
 /* Nested positions detail */
-.investor-detail > td { padding: 0 !important; background: var(--cap-bg-2); }
+.investor-detail > td { padding: 14px 16px !important; background: var(--cap-bg-2); }
+.inv-detail-sub {
+  font-size: 9px; letter-spacing: 0.07em; text-transform: uppercase;
+  font-weight: 700; color: var(--cap-accent);
+  margin: 0 0 6px;
+}
+.inv-pos-table + .inv-detail-sub { margin-top: 18px; }
+.inv-detail-note { font-size: 10px; color: var(--cap-muted); margin-top: 6px; line-height: 1.4; }
+.cashflow-scroll { overflow-x: auto; }
+.inv-cashflow-table {
+  border-collapse: collapse;
+  font-size: 11px;
+  margin: 0;
+}
+.inv-cashflow-table th {
+  font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase;
+  font-weight: 600; color: var(--cap-subtle);
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--cap-line);
+  white-space: nowrap;
+}
+.inv-cashflow-table td {
+  padding: 6px 12px;
+  border-bottom: none;
+  color: var(--cap-ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.inv-cashflow-table .right { text-align: right; min-width: 84px; }
+.inv-cashflow-table td.good, .inv-cashflow-table th.good { color: var(--cap-good); }
+.inv-cashflow-table td.accent, .inv-cashflow-table th.accent { color: var(--cap-accent); font-weight: 700; }
 .inv-pos-table {
   width: 100%;
   border-collapse: collapse;
@@ -727,14 +757,6 @@
 }
 .match-col li:last-child { border-bottom: none; }
 .match-col .match-empty { font-size: 12px; color: var(--cap-muted); font-style: italic; margin: 0; }
-
-/* ── Quarterly cashflow table ────────────────────────────────────── */
-.cashflow-table th, .cashflow-table td { white-space: nowrap; }
-.cashflow-table th.right, .cashflow-table td.right { min-width: 78px; }
-.cashflow-table th.left, .cashflow-table td.left {
-  position: sticky; left: 0; z-index: 1; background: var(--cap-surface);
-}
-.cashflow-table .portfolio-total td.left { background: var(--cap-bg-2); }
 
 @media (max-width: 900px) {
   .match-cols { grid-template-columns: 1fr; gap: 16px; }

@@ -3973,6 +3973,30 @@ def _simple_irr(cashflows: list[float], lo: float = -0.9999, hi: float = 10.0) -
     return (lo + hi) / 2.0
 
 
+# Legal-entity suffixes and Ember project codes stripped when collapsing
+# vehicle-name variants into one rolled-up investor (e.g. "CCDL Ventures GPD,
+# LLC", "CCDL Ventures WRRD 16663 39 LLC", "CCDL Ventures, LLC" -> one row).
+_VEHICLE_LEGAL_TOKENS = {
+    "llc", "l.l.c", "l.l.c.", "inc", "incorporated", "corp", "corporation",
+    "co", "company", "lp", "l.p", "l.p.", "llp", "ltd", "limited",
+    "partners", "partnership", "holdings", "holding", "group", "the",
+}
+_VEHICLE_PROJECT_TOKENS = {"gpd", "hld", "wrg", "wrrd"}
+
+
+def _canon_vehicle_key(name: str) -> str:
+    """Normalized grouping key for an investment vehicle. Merges punctuation,
+    legal-suffix, and project-code variants so the same entity rolls up into a
+    single investor row regardless of how each cap table spelled it."""
+    cleaned = re.sub(r"[.,\-/&]", " ", (name or "").lower())
+    keep = [
+        t for t in cleaned.split()
+        if t and t not in _VEHICLE_LEGAL_TOKENS
+        and t not in _VEHICLE_PROJECT_TOKENS and not t.isdigit()
+    ]
+    return " ".join(keep)
+
+
 def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
                          src_months: list | None = None) -> dict:
     """Aggregate cap-table positions into per-vehicle portfolios scaled by
@@ -4179,9 +4203,10 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
         q_buckets      = _future_quarter_buckets(base, base_m, pct, forecast_pos)
 
         vname = pos["vehicle"]
-        vkey = vname.strip().lower()
+        vkey = _canon_vehicle_key(vname) or vname.strip().lower()
         v = vehicles.setdefault(vkey, {
             "name": vname,
+            "variants": set(),
             "committed": 0.0,
             "dist_yearly": [0.0] * n_years,
             "contrib_yearly": [0.0] * n_years,
@@ -4189,6 +4214,7 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
             "q_forecast": [0.0] * n_q,
             "positions": [],
         })
+        v["variants"].add(vname.strip())
         v["committed"] += contribution
         v["dist_to_date"] += to_date_pos
         for i in range(n_years):
@@ -4211,6 +4237,10 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
     # ── Finalize per-vehicle metrics ──
     investors = []
     for vkey, v in vehicles.items():
+        # Canonical display = the cleanest spelled variant (fewest characters,
+        # alphabetical tie-break) so a rolled-up entity shows one tidy name.
+        if v["variants"]:
+            v["name"] = min(v["variants"], key=lambda s: (len(s), s))
         total_dist = sum(v["dist_yearly"])
         to_date    = max(0.0, min(v["dist_to_date"], total_dist))
         forecast   = total_dist - to_date
