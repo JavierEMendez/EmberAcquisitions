@@ -605,3 +605,80 @@
   .commit-grid { grid-template-columns: 1.6fr repeat(4, 1fr) 0.9fr 36px; font-size: 11px; }
   .commit-input { padding: 6px 7px; font-size: 11px; }
 }
+
+/* ── Investors view ───────────────────────────────────────── */
+.kpi-band--4 { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 1100px) { .kpi-band--4 { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 640px)  { .kpi-band--4 { grid-template-columns: 1fr; } }
+
+/* Expand toggle on each investor row */
+.inv-expand {
+  background: none;
+  border: none;
+  color: var(--cap-subtle);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  padding: 0 6px 0 0;
+  transition: transform .15s ease, color .15s ease;
+  display: inline-block;
+}
+.investor-row.open .inv-expand { transform: rotate(90deg); color: var(--cap-accent); }
+.investor-row { cursor: pointer; }
+.investor-row:hover { background: var(--cap-bg-2); }
+
+/* Nested positions detail */
+.investor-detail > td { padding: 0 !important; background: var(--cap-bg-2); }
+.inv-pos-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  margin: 0;
+}
+.inv-pos-table th {
+  font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase;
+  font-weight: 600; color: var(--cap-subtle);
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--cap-line);
+}
+.inv-pos-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--cap-line);
+  color: var(--cap-ink);
+  font-variant-numeric: tabular-nums;
+}
+.inv-pos-table tr:last-child td { border-bottom: none; }
+.inv-pos-table .left  { text-align: left; }
+.inv-pos-table .right { text-align: right; }
+.inv-pos-table td.good { color: var(--cap-good); }
+
+/* Cap-table editor (positions grid + upload) */
+.captable-grid {
+  grid-template-columns: 1.3fr 1.6fr 0.9fr 1fr 0.9fr 32px;
+}
+.captable-row { padding: 8px 0; border-bottom: 1px solid var(--cap-line); }
+.captable-row:last-child { border-bottom: none; }
+/* Project / Vehicle text inputs read left-aligned like names */
+.captable-row .commit-input[name="project"],
+.captable-row .commit-input[name="vehicle"],
+.captable-grid select.commit-input {
+  text-align: left;
+  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  font-variant-numeric: normal;
+}
+.captable-upload {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--cap-line);
+}
+.captable-upload-text { flex: 1; min-width: 220px; }
+.captable-upload-title { font-weight: 600; font-size: 13px; color: var(--cap-ink); }
+.captable-upload-sub { font-size: 11px; color: var(--cap-muted); margin-top: 2px; }
+
+@media (max-width: 900px) {
+  .captable-grid { grid-template-columns: 1.2fr 1.4fr 0.8fr 1fr 0.8fr 30px; font-size: 11px; }
+}

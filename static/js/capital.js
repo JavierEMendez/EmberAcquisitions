@@ -29,7 +29,7 @@
   segBtns.forEach(b => b.addEventListener("click", () => setView(b.dataset.view)));
   // Restore deep-link
   const initial = (location.hash || "").replace("#", "");
-  if (["active", "pipeline", "returns", "commitments"].includes(initial)) setView(initial);
+  if (["active", "pipeline", "returns", "commitments", "investors"].includes(initial)) setView(initial);
 
   // ── Asset-class chip popover ────────────────────────────────
   const popover = $("#class-popover");
@@ -139,6 +139,9 @@
 
   // ── Commitments editor ──────────────────────────────────────
   initCommitmentsEditor();
+
+  // ── Investors view (portfolio table expand + cap-table editor) ──
+  initInvestorsView();
 
   function initPipelineModal() {
     const modal      = $("#pipeline-modal");
@@ -486,5 +489,134 @@
     });
 
     recompute();
+  }
+
+  function initInvestorsView() {
+    const section = $(".view-investors");
+    if (!section) return;
+
+    // ── Expand / collapse a vehicle's position detail ──
+    section.addEventListener("click", (e) => {
+      const row = e.target.closest(".investor-row");
+      if (!row) return;
+      const id = row.dataset.investorId;
+      const detail = section.querySelector(`.investor-detail[data-detail-for="${id}"]`);
+      if (!detail) return;
+      const nowOpen = detail.hidden;          // about to open
+      detail.hidden = !nowOpen;
+      row.classList.toggle("open", nowOpen);
+      const btn = row.querySelector(".inv-expand");
+      if (btn) btn.setAttribute("aria-expanded", String(nowOpen));
+    });
+
+    // ── Cap-table editor (edit-permitted users only) ──
+    const root = $("#captable-editor");
+    if (!root) return;
+
+    const rowsWrap = $(".captable-rows", root);
+    const addBtn   = $("#ct-add");
+    const saveBtn  = $("#ct-save");
+    const status   = $("#ct-status");
+    const saveUrl  = root.dataset.saveUrl || "/api/ember-capital/captable";
+
+    const fileInput  = $("#ct-file");
+    const pickBtn    = $("#ct-upload-pick");
+    const upStatus   = $("#ct-upload-status");
+
+    const numVal = (input) => parseFloat(input.value) || 0;
+
+    const setStatus = (el, msg, cls) => {
+      el.textContent = msg;
+      el.className = "commit-status" + (cls ? " " + cls : "");
+    };
+
+    const newRow = () => {
+      const row = document.createElement("div");
+      row.className = "commit-grid captable-grid captable-row";
+      row.innerHTML = `
+        <input type="text"   class="commit-input" name="project"      placeholder="Project name" />
+        <input type="text"   class="commit-input" name="vehicle"      placeholder="Vehicle / Entity" />
+        <select class="commit-input" name="equity_class">
+          <option value="common" selected>Common</option>
+          <option value="preferred">Preferred</option>
+        </select>
+        <input type="number" class="commit-input commit-num" name="contribution" min="0" step="1000"   placeholder="0" />
+        <input type="number" class="commit-input commit-num" name="pct"          min="0" max="100" step="0.0001" placeholder="0" />
+        <button type="button" class="commit-remove" title="Remove position" aria-label="Remove">×</button>`;
+      return row;
+    };
+
+    // Collect rows. Ownership is entered as a percentage; convert to a
+    // fraction (0..1) so the server stores the same shape the parser
+    // produces.
+    const collect = () => $$(".captable-row", rowsWrap).map(row => {
+      const get = (n) => row.querySelector(`[name="${n}"]`);
+      return {
+        project:      get("project").value.trim(),
+        vehicle:      get("vehicle").value.trim(),
+        equity_class: get("equity_class").value,
+        contribution: numVal(get("contribution")),
+        pct:          numVal(get("pct")) / 100.0,
+      };
+    }).filter(r => r.project && r.vehicle);
+
+    rowsWrap.addEventListener("click", (e) => {
+      const btn = e.target.closest(".commit-remove");
+      if (!btn) return;
+      btn.closest(".captable-row").remove();
+      setStatus(status, "Unsaved changes", "dirty");
+    });
+
+    rowsWrap.addEventListener("input", () => {
+      setStatus(status, "Unsaved changes", "dirty");
+    });
+
+    addBtn?.addEventListener("click", () => {
+      const row = newRow();
+      rowsWrap.appendChild(row);
+      row.querySelector('[name="project"]').focus();
+      setStatus(status, "Unsaved changes", "dirty");
+    });
+
+    saveBtn?.addEventListener("click", async () => {
+      const positions = collect();
+      saveBtn.disabled = true;
+      setStatus(status, "Saving…", "");
+      try {
+        const res = await fetch(saveUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ positions }),
+        });
+        if (!res.ok) throw new Error(`Save failed: ${res.status}`);
+        setStatus(status, "Saved — reloading…", "saved");
+        location.reload();           // re-render the portfolio table server-side
+      } catch (err) {
+        console.error("[capital] cap-table save failed", err);
+        setStatus(status, "Save failed — see console", "dirty");
+        saveBtn.disabled = false;
+      }
+    });
+
+    // ── Excel upload ──
+    pickBtn?.addEventListener("click", () => fileInput?.click());
+    fileInput?.addEventListener("change", async () => {
+      const f = fileInput.files && fileInput.files[0];
+      if (!f) return;
+      setStatus(upStatus, `Parsing ${f.name}…`, "");
+      const fd = new FormData();
+      fd.append("file", f);
+      try {
+        const res = await fetch(saveUrl, { method: "POST", body: fd });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(d.error || `Upload failed: ${res.status}`);
+        setStatus(upStatus, "Uploaded — reloading…", "saved");
+        location.reload();
+      } catch (err) {
+        console.error("[capital] cap-table upload failed", err);
+        setStatus(upStatus, String(err.message || err), "dirty");
+        fileInput.value = "";
+      }
+    });
   }
 })();

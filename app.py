@@ -1295,6 +1295,20 @@ def _vd_can_upload():
     pa = _refresh_page_access_from_db()
     return bool(pa.get("verticals_upload", False))
 
+def _capital_can_edit_captable():
+    """Server-side gate for Investor cap-table writes (manual edits and
+    Excel uploads on the Ember Capital → Investors tab). Mirrors
+    `_vd_can_upload`: admins always pass, otherwise the user must hold
+    page_access.captable_edit. **Defaults to False** — cap tables drive
+    investor-facing returns, so writes need an explicit grant. Re-reads
+    from the DB so admin grants apply without a re-login. Viewing the
+    Investors tab is gated by the page's existing `portfolio` access;
+    only editing requires this flag."""
+    if session.get("is_admin"):
+        return True
+    pa = _refresh_page_access_from_db()
+    return bool(pa.get("captable_edit", False))
+
 @app.route("/api/verticals/me", methods=["GET"])
 @login_required
 def vd_me():
@@ -3886,6 +3900,296 @@ def _capital_commitments_totals(groups: list[dict]) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Investor portfolios (cap tables × project returns)
+# ---------------------------------------------------------------------------
+# The Investors view scales each project's LP cashflow streams by an
+# investment vehicle's ownership % (from the cap tables) to derive that
+# vehicle's portfolio and returns. Cap-table positions are stored in the
+# reports table under report_type='ember_capital_captable'; the returns
+# streams come from the same 'returns' blob the rest of /capital uses.
+#
+# Unit note: returns arrays are in $000s; cap-table contributions are in
+# actual dollars. Everything below is normalized to ACTUAL DOLLARS (returns
+# streams are multiplied by 1000) so the Investors tab is internally
+# consistent and reads in real money.
+
+def _capital_load_captable() -> dict:
+    """{positions: [...], uploaded_at} from reports[ember_capital_captable].
+
+    Position shape: {project, vehicle, contribution, pct, equity_class}.
+    Returns an empty list when nothing has been uploaded yet.
+    """
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "SELECT data, uploaded_at FROM reports "
+        "WHERE report_type = 'ember_capital_captable' "
+        "ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    row = cur.fetchone(); cur.close(); conn.close()
+    if not row:
+        return {"positions": [], "uploaded_at": None}
+    d = (row["data"] or {})
+    return {
+        "positions":   d.get("positions", []) or [],
+        "uploaded_at": row["uploaded_at"].isoformat() if row.get("uploaded_at") else None,
+    }
+
+
+def _simple_irr(cashflows: list[float], lo: float = -0.9999, hi: float = 10.0) -> float | None:
+    """Annual IRR for a per-year net-cashflow series via bisection.
+
+    cashflows[t] is the net flow in year t (contributions negative,
+    distributions positive). Returns the rate as a decimal (0.18 = 18%),
+    or None when the series has no sign change (IRR undefined).
+    """
+    if not cashflows or all(abs(c) < 1e-9 for c in cashflows):
+        return None
+    has_pos = any(c > 0 for c in cashflows)
+    has_neg = any(c < 0 for c in cashflows)
+    if not (has_pos and has_neg):
+        return None
+
+    def npv(rate: float) -> float:
+        return sum(cf / ((1.0 + rate) ** t) for t, cf in enumerate(cashflows))
+
+    f_lo, f_hi = npv(lo), npv(hi)
+    if f_lo == 0:
+        return lo
+    if f_hi == 0:
+        return hi
+    if (f_lo > 0) == (f_hi > 0):
+        # No bracketed root in [lo, hi] — IRR outside our search range.
+        return None
+    for _ in range(200):
+        mid = (lo + hi) / 2.0
+        f_mid = npv(mid)
+        if abs(f_mid) < 1e-6:
+            return mid
+        if (f_mid > 0) == (f_lo > 0):
+            lo, f_lo = mid, f_mid
+        else:
+            hi, f_hi = mid, f_mid
+    return (lo + hi) / 2.0
+
+
+def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
+                         src_months: list | None = None) -> dict:
+    """Aggregate cap-table positions into per-vehicle portfolios scaled by
+    each project's LP returns streams. Grouping unit = investment vehicle.
+
+    Distributions are split into "to date" (actually received through today)
+    and "forecast" (everything after today). When the returns workbook ships
+    a Monthly Cashflows block (`src_months`), the split is month-accurate;
+    otherwise it falls back to whole past years plus a pro-rated current year.
+
+    Returns {investors: [...], years, projects_matched, projects_unmatched,
+    uploaded_at, total_*}. All money values in actual dollars.
+    """
+    from captable_parser import normalize_project, resolve_returns_project
+
+    blob = _capital_load_captable()
+    positions = blob.get("positions", []) or []
+    n_years = len(years_str)
+
+    # ── To-date boundary ──────────────────────────────────────────────
+    today      = datetime.date.today()
+    cur_year   = today.year
+    today_iso  = today.isoformat()
+    months_iso = [str(m)[:10] for m in (src_months or [])]
+    year_frac  = today.timetuple().tm_yday / 366.0  # current-year pro-rate
+
+    def _to_date_sum(yearly: list, monthly: list) -> float:
+        """Portion of a stream (same units as inputs) received on/before
+        today. Month-accurate when a monthly array aligned to src_months is
+        present; else past years in full + current year pro-rated."""
+        if months_iso and monthly and len(monthly) == len(months_iso):
+            return sum(float(monthly[i] or 0)
+                       for i, iso in enumerate(months_iso) if iso <= today_iso)
+        s = 0.0
+        for i, y in enumerate(years_int):
+            if i >= len(yearly):
+                break
+            v = float(yearly[i] or 0)
+            if y < cur_year:
+                s += v
+            elif y == cur_year:
+                s += v * year_frac
+        return s
+
+    # ── Per-project returns lookup (keyed by normalized returns name) ──
+    # Each entry carries the streams we scale: distributions, preferred
+    # return, contributions (for IRR timing), plus project IRR/EM.
+    proj_lookup: dict[str, dict] = {}
+    returns_names: list[str] = []
+    for p in raw_projects:
+        if p.get("active") is False:
+            continue
+        name = (p.get("name") or "").strip()
+        if not name:
+            continue
+        returns_names.append(name)
+        by_label = {m.get("label"): m for m in (p.get("metrics") or [])}
+
+        def _y(label: str) -> list[float]:
+            v = (by_label.get(label) or {}).get("yearly") or []
+            return [float(x or 0) for x in (list(v) + [0] * max(0, n_years - len(v)))[:n_years]]
+
+        def _m(label: str) -> list[float]:
+            """Monthly array for the metric (parallel to top-level src['months'])."""
+            v = (by_label.get(label) or {}).get("monthly") or []
+            return [float(x or 0) for x in v]
+
+        def _t(label: str, default: float = 0.0) -> float:
+            v = (by_label.get(label) or {}).get("total")
+            try:
+                return float(v) if v is not None else default
+            except (TypeError, ValueError):
+                return default
+
+        irr_dec = _t("LP IRR", 0.0)
+        irr_pct = irr_dec * 100 if abs(irr_dec) <= 1.5 else irr_dec
+        proj_lookup[normalize_project(name)] = {
+            "name":     name,
+            "dist_y":   _y("Total LP Distributions"),    # $000s
+            "pref_y":   _y("Preferred Return"),          # $000s
+            "contrib_y": _y("Total LP Contributions"),   # $000s, stored negative
+            "dist_m":   _m("Total LP Distributions"),    # $000s, monthly
+            "pref_m":   _m("Preferred Return"),          # $000s, monthly
+            "irr":      round(irr_pct, 1),
+            "em":       round(_t("LP Equity Multiple", 0.0), 2),
+        }
+
+    # Which cap-table projects carry a preferred equity class (LightHaven).
+    # For those, common holders receive (Total LP Distributions − Preferred
+    # Return); the preferred line receives the Preferred Return stream.
+    projects_with_pref = {
+        pos["project"] for pos in positions
+        if (pos.get("equity_class") == "preferred")
+    }
+
+    # Resolve each cap-table project to a returns project once.
+    captable_projects = sorted({pos["project"] for pos in positions})
+    resolved: dict[str, str | None] = {}
+    for cp in captable_projects:
+        match = resolve_returns_project(cp, returns_names)
+        resolved[cp] = normalize_project(match) if match else None
+
+    projects_matched   = sorted(cp for cp in captable_projects if resolved.get(cp))
+    projects_unmatched = sorted(cp for cp in captable_projects if not resolved.get(cp))
+
+    # ── Aggregate by vehicle ──
+    vehicles: dict[str, dict] = {}
+    for pos in positions:
+        cp = pos["project"]
+        norm = resolved.get(cp)
+        if not norm or norm not in proj_lookup:
+            continue  # match-by-name only: ignore positions with no return
+        pj = proj_lookup[norm]
+        pct = float(pos.get("pct") or 0.0)
+        equity_class = pos.get("equity_class", "common")
+        contribution = float(pos.get("contribution") or 0.0)  # actual $
+
+        # Base distribution stream for this class, in $000s, before scaling.
+        # Parallel monthly stream drives the month-accurate to-date split.
+        if equity_class == "preferred":
+            base   = pj["pref_y"]
+            base_m = pj["pref_m"]
+        elif cp in projects_with_pref:
+            base   = [d - p for d, p in zip(pj["dist_y"], pj["pref_y"])]
+            dm, pm = pj["dist_m"], pj["pref_m"]
+            n_m    = max(len(dm), len(pm))
+            base_m = [(dm[i] if i < len(dm) else 0.0) - (pm[i] if i < len(pm) else 0.0)
+                      for i in range(n_m)]
+        else:
+            base   = pj["dist_y"]
+            base_m = pj["dist_m"]
+
+        # Scale to this vehicle's slice and convert $000s -> actual $.
+        dist_stream    = [v * pct * 1000.0 for v in base]
+        contrib_stream = [v * pct * 1000.0 for v in pj["contrib_y"]]  # negative
+        total_dist_pos = sum(dist_stream)
+        to_date_pos    = _to_date_sum(base, base_m) * pct * 1000.0
+        # Clamp: never report more received-to-date than total scheduled.
+        to_date_pos    = max(0.0, min(to_date_pos, total_dist_pos))
+        forecast_pos   = total_dist_pos - to_date_pos
+
+        vname = pos["vehicle"]
+        vkey = vname.strip().lower()
+        v = vehicles.setdefault(vkey, {
+            "name": vname,
+            "committed": 0.0,
+            "dist_yearly": [0.0] * n_years,
+            "contrib_yearly": [0.0] * n_years,
+            "dist_to_date": 0.0,
+            "positions": [],
+        })
+        v["committed"] += contribution
+        v["dist_to_date"] += to_date_pos
+        for i in range(n_years):
+            v["dist_yearly"][i]    += dist_stream[i]
+            v["contrib_yearly"][i] += contrib_stream[i]
+        v["positions"].append({
+            "project":      pj["name"],
+            "equity_class": equity_class,
+            "pct":          round(pct * 100, 4),
+            "committed":    int(round(contribution)),
+            "distributions": int(round(total_dist_pos)),
+            "dist_to_date":  int(round(to_date_pos)),
+            "dist_forecast": int(round(forecast_pos)),
+            "irr":          pj["irr"],
+            "em":           pj["em"],
+        })
+
+    # ── Finalize per-vehicle metrics ──
+    investors = []
+    for vkey, v in vehicles.items():
+        total_dist = sum(v["dist_yearly"])
+        to_date    = max(0.0, min(v["dist_to_date"], total_dist))
+        forecast   = total_dist - to_date
+        committed  = v["committed"]
+        # EM / profit anchored on the cap-table committed dollars (the
+        # ownership basis). Falls back to returns-derived contributions
+        # when the cap table has no contribution figure.
+        basis = committed if committed > 0 else abs(sum(v["contrib_yearly"]))
+        em = round(total_dist / basis, 2) if basis else 0.0
+        profit = total_dist - basis
+        # Blended IRR from the net yearly cashflow (returns-derived
+        # contribution timing + scaled distributions).
+        net = [v["contrib_yearly"][i] + v["dist_yearly"][i] for i in range(len(v["dist_yearly"]))]
+        irr_dec = _simple_irr(net)
+        irr_pct = round(irr_dec * 100, 1) if irr_dec is not None else None
+        investors.append({
+            "id":            _capital_slug(v["name"]),
+            "name":          v["name"],
+            "committed":     int(round(committed)),
+            "distributions": int(round(total_dist)),
+            "distributions_to_date":  int(round(to_date)),
+            "distributions_forecast": int(round(forecast)),
+            "profit":        int(round(profit)),
+            "em":            em,
+            "irr":           irr_pct,
+            "yearly":        [int(round(x)) for x in v["dist_yearly"]],
+            "positions":     sorted(v["positions"], key=lambda r: r["project"]),
+        })
+
+    investors.sort(key=lambda r: r["committed"], reverse=True)
+
+    return {
+        "investors":          investors,
+        "positions":          positions,   # flat raw rows (pct as fraction)
+        "years":              years_str,
+        "projects_matched":   projects_matched,
+        "projects_unmatched": projects_unmatched,
+        "uploaded_at":        blob.get("uploaded_at"),
+        "total_committed":    int(round(sum(i["committed"] for i in investors))),
+        "total_distributions": int(round(sum(i["distributions"] for i in investors))),
+        "total_distributions_to_date":  int(round(sum(i["distributions_to_date"] for i in investors))),
+        "total_distributions_forecast": int(round(sum(i["distributions_forecast"] for i in investors))),
+        "count":              len(investors),
+    }
+
+
 def _build_capital_view_context() -> dict:
     """Assemble the dict the redesigned /capital template consumes.
 
@@ -4469,6 +4773,7 @@ def _build_capital_view_context() -> dict:
             "color_pipeline_dist":     "#5E9E8C",   # legacy — no longer rendered
         },
         "commitments": {"groups": commit_groups, "totals": commit_totals},
+        "investors": _build_investor_view(raw_projects, years_str, years_int, src_months),
         "kpis": {
             "active_count":            len(active),
             "total_equity":            int(round(total_equity)),
@@ -5227,6 +5532,134 @@ def ember_capital_commitments():
     )
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True, "groups": clean_groups})
+
+
+def _capital_returns_projects_years() -> tuple[list, list, list, list]:
+    """(raw_projects, years_str, years_int, src_months) from the latest
+    returns blob.
+
+    Shared by the Investors API so it can recompute portfolios without
+    rebuilding the entire /capital context. Returns empty lists when no
+    returns upload exists."""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "SELECT data FROM reports WHERE report_type = 'returns' "
+        "ORDER BY uploaded_at DESC LIMIT 1"
+    )
+    row = cur.fetchone(); cur.close(); conn.close()
+    src = (row["data"] if row else {}) or {}
+    years_int = list(src.get("years", []) or [])
+    years_str = [str(y) for y in years_int]
+    raw_projects = src.get("projects", []) or []
+    src_months = list(src.get("months", []) or [])
+    return raw_projects, years_str, years_int, src_months
+
+
+def _capital_save_captable(positions: list[dict]) -> None:
+    """Replace the stored cap-table positions blob (latest-snapshot pattern)."""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM reports WHERE report_type = 'ember_capital_captable'")
+    cur.execute(
+        "INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+        ("ember_capital_captable", json.dumps({"positions": positions}),
+         session.get("user_id")),
+    )
+    conn.commit(); cur.close(); conn.close()
+
+
+def _clean_captable_positions(rows: list) -> list[dict]:
+    """Validate/normalize incoming position rows.
+
+    Accepts ownership as a fraction (0..1) or a percentage (>1.5 -> /100).
+    Drops rows missing a project or vehicle. equity_class is coerced to
+    'preferred' or 'common'."""
+    clean = []
+    for r in rows or []:
+        if not isinstance(r, dict):
+            continue
+        project = str(r.get("project", "")).strip()
+        vehicle = str(r.get("vehicle", "")).strip()
+        if not project or not vehicle:
+            continue
+        try:
+            pct = float(r.get("pct") or 0)
+        except (TypeError, ValueError):
+            pct = 0.0
+        if pct > 1.5:           # sent as a percentage (e.g. 20.78)
+            pct = pct / 100.0
+        try:
+            contribution = float(r.get("contribution") or 0)
+        except (TypeError, ValueError):
+            contribution = 0.0
+        equity_class = "preferred" if str(r.get("equity_class", "")).strip().lower() == "preferred" else "common"
+        clean.append({
+            "project":      project,
+            "vehicle":      vehicle,
+            "contribution": round(contribution, 2),
+            "pct":          pct,
+            "equity_class": equity_class,
+        })
+    return clean
+
+
+@app.route("/api/ember-capital/captable", methods=["GET", "POST"])
+@login_required
+def ember_capital_captable():
+    """Investor cap-table positions + derived portfolios.
+
+    GET  — returns {positions, investors, can_edit, uploaded_at}. Viewing
+           is gated by the page's `portfolio` access (same as the rest of
+           Ember Capital); `can_edit` tells the UI whether to show edit /
+           upload affordances.
+    POST — replace the positions. Two content types:
+             * multipart/form-data with `file` = the cap-table .xlsx
+               (parsed server-side via captable_parser), or
+             * application/json {positions:[...]} for manual grid edits.
+           Both require captable_edit permission (admins always pass).
+    """
+    if request.method == "GET":
+        pa = session.get("page_access") or {}
+        if not session.get("is_admin") and not pa.get("portfolio", True):
+            return jsonify({"error": "Access denied"}), 403
+        blob = _capital_load_captable()
+        raw_projects, years_str, years_int, src_months = _capital_returns_projects_years()
+        view = _build_investor_view(raw_projects, years_str, years_int, src_months)
+        return jsonify({
+            "positions":   blob.get("positions", []),
+            "uploaded_at": blob.get("uploaded_at"),
+            "investors":   view.get("investors", []),
+            "years":       view.get("years", []),
+            "projects_matched":   view.get("projects_matched", []),
+            "projects_unmatched": view.get("projects_unmatched", []),
+            "can_edit":    _capital_can_edit_captable(),
+        })
+
+    # POST — permission-gated write
+    if not _capital_can_edit_captable():
+        return jsonify({"error": "Access denied"}), 403
+
+    f = request.files.get("file")
+    if f:
+        try:
+            from captable_parser import parse_captable_workbook
+            positions = parse_captable_workbook(io.BytesIO(f.read()))
+        except Exception as e:
+            return jsonify({"error": f"Failed to parse cap-table file: {e}"}), 400
+    else:
+        body = request.get_json(silent=True) or {}
+        positions = _clean_captable_positions(body.get("positions"))
+
+    _capital_save_captable(positions)
+    raw_projects, years_str, years_int, src_months = _capital_returns_projects_years()
+    view = _build_investor_view(raw_projects, years_str, years_int, src_months)
+    return jsonify({
+        "ok":          True,
+        "positions":   positions,
+        "investors":   view.get("investors", []),
+        "years":       view.get("years", []),
+        "projects_matched":   view.get("projects_matched", []),
+        "projects_unmatched": view.get("projects_unmatched", []),
+    })
 
 
 @app.route("/api/ember-capital/pdf", methods=["GET"])

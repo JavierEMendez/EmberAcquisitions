@@ -175,6 +175,10 @@
             {# Unchecked by default — financial statements are sensitive.
                Admin explicitly grants per user. Server defaults False too. #}
             <label><input type="checkbox" id="new-pa-financials">Financial Statements</label>
+            {# Unchecked by default — cap tables drive investor-facing
+               returns, so edit access is an explicit grant. Server
+               defaults False too. #}
+            <label><input type="checkbox" id="new-pa-captable-edit">Investor Cap Table (Edit)</label>
           </div>
           <button class="btn-add-user" onclick="addUser()">Add User</button>
         </div>
@@ -197,6 +201,7 @@ const PAGE_LABELS = {
   verticals_upload:  'Vertical Dashboard (Upload)',
   invoice_dashboard: 'Invoice Dashboard',
   financials:        'Financial Statements',
+  captable_edit:     'Investor Cap Table (Edit)',
 };
 
 async function refreshUserList() {
@@ -269,6 +274,7 @@ async function addUser() {
     verticals_upload:  document.getElementById('new-pa-verticals-upload').checked,
     invoice_dashboard: document.getElementById('new-pa-invoice-dashboard').checked,
     financials:        document.getElementById('new-pa-financials').checked,
+    captable_edit:     document.getElementById('new-pa-captable-edit').checked,
   };
   const email = document.getElementById('new-email').value.trim();
   if (!username || !password) { alert('Username and password required'); return; }
@@ -286,6 +292,7 @@ async function addUser() {
     // verticals-upload + financials default to unchecked — reset back.
     document.getElementById('new-pa-verticals-upload').checked = false;
     document.getElementById('new-pa-financials').checked       = false;
+    document.getElementById('new-pa-captable-edit').checked     = false;
     await refreshUserList();
   } else { alert(d.error || 'Error creating user'); }
 }

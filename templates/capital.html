@@ -281,6 +281,7 @@
           <button class="seg-btn"        data-view="pipeline"    role="tab">Pipeline</button>
           <button class="seg-btn"        data-view="returns"     role="tab">Returns</button>
           <button class="seg-btn"        data-view="commitments" role="tab">Commitments</button>
+          <button class="seg-btn"        data-view="investors"   role="tab">Investors</button>
         </div>
         <div class="pane-actions">
           {% if page_access.get('reports', true) or is_admin %}
@@ -575,6 +576,184 @@
             <span class="commit-status" id="commit-status"></span>
           </div>
         </div>
+
+      </section>
+
+      {# ── VIEW: INVESTORS ────────────────────────────────────── #}
+      <section class="view view-investors" data-view="investors" hidden>
+        {% set inv = capital.investors %}
+        {% set current = capital.returns.current_year %}
+        {% set can_edit_ct = is_admin or page_access.get('captable_edit', false) %}
+
+        <div class="kpi-band kpi-band--4">
+          <div class="kpi accent">
+            <div class="label">Total Committed</div>
+            <div class="v num">{{ fmt_money_raw(inv.total_committed) }}</div>
+            <div class="s">{{ inv.count }} {{ 'vehicle' if inv.count == 1 else 'vehicles' }}</div>
+          </div>
+          <div class="kpi">
+            <div class="label">Distributions To Date</div>
+            <div class="v num good">{{ fmt_money_raw(inv.total_distributions_to_date) }}</div>
+            <div class="s">received through {{ current }}</div>
+          </div>
+          <div class="kpi">
+            <div class="label">Forecast Distributions</div>
+            <div class="v num">{{ fmt_money_raw(inv.total_distributions_forecast) }}</div>
+            <div class="s">projected, {{ current|int + 1 }} onward</div>
+          </div>
+          <div class="kpi">
+            <div class="label">Projects Matched</div>
+            <div class="v num">{{ inv.projects_matched | length }}</div>
+            <div class="s">{{ (inv.projects_unmatched | length) ~ ' unmatched: ' ~ (inv.projects_unmatched | join(', ')) if inv.projects_unmatched else 'all matched' }}</div>
+          </div>
+        </div>
+
+        <header class="sec-head">
+          <div class="eyebrow">By investment vehicle</div>
+          <h2>Investor Portfolios</h2>
+          <p>Each vehicle's committed capital, distributions received to date (through {{ current }}), and forecast distributions ({{ current|int + 1 }} onward), scaled from project LP distributions by ownership %. Pari passu across investors; LightHaven preferred equity is broken out as its own position. Positions in projects without a matching return are ignored.</p>
+        </header>
+
+        {% if inv.investors %}
+        <div class="table-card">
+          <div class="returns-scroll">
+            <table class="returns-table investor-table">
+              <thead>
+                <tr>
+                  <th class="left">Investor / Vehicle</th>
+                  <th class="right">Committed</th>
+                  <th class="right good">Dist. To Date</th>
+                  <th class="right">Forecast</th>
+                  <th class="right">Profit</th>
+                  <th class="right">EM</th>
+                  <th class="right accent">IRR</th>
+                  <th class="right"># Proj</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for v in inv.investors %}
+                <tr class="investor-row" data-investor-id="{{ v.id }}">
+                  <td class="left">
+                    <button type="button" class="inv-expand" aria-expanded="false" aria-label="Toggle positions">▸</button>
+                    <span class="proj-name">{{ v.name }}</span>
+                  </td>
+                  <td class="right num">{{ fmt_money_raw(v.committed) }}</td>
+                  <td class="right num good">{{ fmt_money_raw(v.distributions_to_date) }}</td>
+                  <td class="right num">{{ fmt_money_raw(v.distributions_forecast) }}</td>
+                  <td class="right num">{{ fmt_money_raw(v.profit) }}</td>
+                  <td class="right num">{{ fmt_em(v.em) }}</td>
+                  <td class="right num accent">{% if v.irr is none %}—{% else %}{{ fmt_pct(v.irr) }}{% endif %}</td>
+                  <td class="right num">{{ v.positions | length }}</td>
+                </tr>
+                <tr class="investor-detail" data-detail-for="{{ v.id }}" hidden>
+                  <td colspan="8">
+                    <table class="inv-pos-table">
+                      <thead>
+                        <tr>
+                          <th class="left">Project</th>
+                          <th class="left">Class</th>
+                          <th class="right">Ownership</th>
+                          <th class="right">Committed</th>
+                          <th class="right">Dist. To Date</th>
+                          <th class="right">Forecast</th>
+                          <th class="right">Proj IRR</th>
+                          <th class="right">Proj EM</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for p in v.positions %}
+                        <tr>
+                          <td class="left">{{ p.project }}</td>
+                          <td class="left">{{ 'Preferred' if p.equity_class == 'preferred' else 'Common' }}</td>
+                          <td class="right num">{{ fmt_pct(p.pct, 2) }}</td>
+                          <td class="right num">{{ fmt_money_raw(p.committed) }}</td>
+                          <td class="right num good">{{ fmt_money_raw(p.dist_to_date) }}</td>
+                          <td class="right num">{{ fmt_money_raw(p.dist_forecast) }}</td>
+                          <td class="right num">{{ fmt_pct(p.irr) }}</td>
+                          <td class="right num">{{ fmt_em(p.em) }}</td>
+                        </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </td>
+                </tr>
+                {% endfor %}
+                <tr class="portfolio-total">
+                  <td class="left bold">All Investors</td>
+                  <td class="right num bold">{{ fmt_money_raw(inv.total_committed) }}</td>
+                  <td class="right num bold good">{{ fmt_money_raw(inv.total_distributions_to_date) }}</td>
+                  <td class="right num bold">{{ fmt_money_raw(inv.total_distributions_forecast) }}</td>
+                  <td class="right num bold">{{ fmt_money_raw(inv.total_distributions - inv.total_committed) }}</td>
+                  <td></td><td></td><td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="table-foot">
+            <span>Money in actual dollars. IRR is the blended rate on the vehicle's net cashflows.{% if inv.uploaded_at %} Cap tables uploaded {{ inv.uploaded_at[:10] }}.{% endif %}</span>
+            <span class="mono">{{ inv.projects_matched | join(' · ') }}</span>
+          </div>
+        </div>
+        {% else %}
+        <div class="table-card">
+          <div style="padding:32px;text-align:center;color:var(--cap-muted);">
+            No investor positions yet.{% if can_edit_ct %} Upload a cap-table workbook below to get started.{% else %} Ask an admin to upload the cap tables.{% endif %}
+          </div>
+        </div>
+        {% endif %}
+
+        {% if can_edit_ct %}
+        <header class="sec-head" style="margin-top:28px;">
+          <div class="eyebrow">Manage positions</div>
+          <h2>Cap-Table Positions</h2>
+          <p>Bulk-load from the cap-table workbook, or edit inline. Ownership % is the vehicle's share of its project; choose "Preferred" only for LightHaven preferred equity. Saving replaces all positions.</p>
+        </header>
+
+        <div class="commit-card" id="captable-editor"
+             data-save-url="/api/ember-capital/captable"
+             data-load-url="/api/ember-capital/captable">
+          <div class="captable-upload">
+            <div class="captable-upload-text">
+              <div class="captable-upload-title">Upload cap tables (Excel)</div>
+              <div class="captable-upload-sub">Parses the per-project tabs and replaces all positions.</div>
+            </div>
+            <input type="file" id="ct-file" accept=".xlsx,.xls" style="display:none;"/>
+            <button type="button" class="btn ghost" id="ct-upload-pick">Choose file…</button>
+            <span class="commit-status" id="ct-upload-status"></span>
+          </div>
+
+          <div class="commit-grid captable-grid captable-hdr">
+            <div class="ch">Project</div>
+            <div class="ch">Vehicle</div>
+            <div class="ch">Class</div>
+            <div class="ch right">Committed ($)</div>
+            <div class="ch right">Ownership (%)</div>
+            <div class="ch"></div>
+          </div>
+
+          <div class="captable-rows">
+            {% for p in inv.positions %}
+            <div class="commit-grid captable-grid captable-row">
+              <input type="text"   class="commit-input" name="project"      value="{{ p.project }}" placeholder="Project name" />
+              <input type="text"   class="commit-input" name="vehicle"      value="{{ p.vehicle }}" placeholder="Vehicle / Entity" />
+              <select class="commit-input" name="equity_class">
+                <option value="common"    {{ 'selected' if p.equity_class != 'preferred' else '' }}>Common</option>
+                <option value="preferred" {{ 'selected' if p.equity_class == 'preferred' else '' }}>Preferred</option>
+              </select>
+              <input type="number" class="commit-input commit-num" name="contribution" value="{{ '%.0f'|format(p.contribution) if p.contribution else '' }}" min="0" step="1000" placeholder="0" />
+              <input type="number" class="commit-input commit-num" name="pct" value="{{ '%.4f'|format(p.pct * 100) if p.pct else '' }}" min="0" max="100" step="0.0001" placeholder="0" />
+              <button type="button" class="commit-remove" title="Remove position" aria-label="Remove">×</button>
+            </div>
+            {% endfor %}
+          </div>
+
+          <div class="commit-actions">
+            <button type="button" class="btn ghost"   id="ct-add">+ Add position</button>
+            <button type="button" class="btn primary" id="ct-save">Save positions</button>
+            <span class="commit-status" id="ct-status"></span>
+          </div>
+        </div>
+        {% endif %}
 
       </section>
     </main>
