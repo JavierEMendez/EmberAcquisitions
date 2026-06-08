@@ -4146,11 +4146,17 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
         irr_pct = irr_dec * 100 if abs(irr_dec) <= 1.5 else irr_dec
         proj_lookup[normalize_project(name)] = {
             "name":     name,
-            "dist_y":   _y("Total LP Distributions"),    # $000s
-            "pref_y":   _y("Preferred Return"),          # $000s
+            "dist_y":   _y("Total LP Distributions"),    # $000s, yearly (timing)
+            "pref_y":   _y("Preferred Return"),          # $000s, yearly (timing)
             "contrib_y": _y("Total LP Contributions"),   # $000s, stored negative
-            "dist_m":   _m("Total LP Distributions"),    # $000s, monthly
-            "pref_m":   _m("Preferred Return"),          # $000s, monthly
+            "dist_m":   _m("Total LP Distributions"),    # $000s, monthly (timing)
+            "pref_m":   _m("Preferred Return"),          # $000s, monthly (timing)
+            # Authoritative lifetime totals from the model's own total column
+            # (E). The yearly/monthly grids only drive the to-date vs forecast
+            # timing split; magnitudes come from these so a vehicle's EM ties
+            # to the project EM (which is also computed off the total column).
+            "dist_total": _t("Total LP Distributions"),  # $000s
+            "pref_total": _t("Preferred Return"),        # $000s
             "irr":      round(irr_pct, 1),
             "em":       round(_t("LP Equity Multiple", 0.0), 2),
         }
@@ -4185,28 +4191,37 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
         equity_class = pos.get("equity_class", "common")
         contribution = float(pos.get("contribution") or 0.0)  # actual $
 
-        # Base distribution stream for this class, in $000s, before scaling.
-        # Parallel monthly stream drives the month-accurate to-date split.
+        # Base distribution stream for this class, in $000s. The yearly/monthly
+        # arrays only carry the *timing shape*; `base_total` is the authoritative
+        # lifetime magnitude from the model's total column.
         if equity_class == "preferred":
-            base   = pj["pref_y"]
-            base_m = pj["pref_m"]
+            base       = pj["pref_y"]
+            base_m     = pj["pref_m"]
+            base_total = pj["pref_total"]
         elif cp in projects_with_pref:
             base   = [d - p for d, p in zip(pj["dist_y"], pj["pref_y"])]
             dm, pm = pj["dist_m"], pj["pref_m"]
             n_m    = max(len(dm), len(pm))
             base_m = [(dm[i] if i < len(dm) else 0.0) - (pm[i] if i < len(pm) else 0.0)
                       for i in range(n_m)]
+            base_total = pj["dist_total"] - pj["pref_total"]
         else:
-            base   = pj["dist_y"]
-            base_m = pj["dist_m"]
+            base       = pj["dist_y"]
+            base_m     = pj["dist_m"]
+            base_total = pj["dist_total"]
 
-        # Scale to this vehicle's slice and convert $000s -> actual $.
-        dist_stream    = [v * pct * 1000.0 for v in base]
+        # Magnitude from the total column; timing from the yearly grid. Rescale
+        # the yearly stream so it sums to the authoritative total (preserving
+        # the year-by-year shape for IRR), then convert $000s -> actual $.
+        shape_sum      = sum(base)
+        mag_scale      = (base_total / shape_sum) if abs(shape_sum) > 1e-9 else 0.0
+        dist_stream    = [v * pct * 1000.0 * mag_scale for v in base]
         contrib_stream = [v * pct * 1000.0 for v in pj["contrib_y"]]  # negative
-        total_dist_pos = sum(dist_stream)
-        to_date_pos    = _to_date_sum(base, base_m) * pct * 1000.0
-        # Clamp: never report more received-to-date than total scheduled.
-        to_date_pos    = max(0.0, min(to_date_pos, total_dist_pos))
+        total_dist_pos = base_total * pct * 1000.0
+        # To-date fraction from the timing streams, applied to the true total.
+        td_frac        = (_to_date_sum(base, base_m) / shape_sum) if abs(shape_sum) > 1e-9 else 0.0
+        td_frac        = min(max(td_frac, 0.0), 1.0)
+        to_date_pos    = total_dist_pos * td_frac
         forecast_pos   = total_dist_pos - to_date_pos
         q_buckets      = _future_quarter_buckets(base, base_m, pct, forecast_pos)
 
@@ -4216,6 +4231,7 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
             "name": vname,
             "variants": set(),
             "committed": 0.0,
+            "dist_total": 0.0,
             "dist_yearly": [0.0] * n_years,
             "contrib_yearly": [0.0] * n_years,
             "dist_to_date": 0.0,
@@ -4224,6 +4240,7 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
         })
         v["variants"].add(vname.strip())
         v["committed"] += contribution
+        v["dist_total"] += total_dist_pos
         v["dist_to_date"] += to_date_pos
         for i in range(n_years):
             v["dist_yearly"][i]    += dist_stream[i]
@@ -4250,7 +4267,7 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
         # alphabetical tie-break) so a rolled-up entity shows one tidy name.
         if v["variants"]:
             v["name"] = min(v["variants"], key=lambda s: (len(s), s))
-        total_dist = sum(v["dist_yearly"])
+        total_dist = v["dist_total"]   # authoritative (model total column)
         to_date    = max(0.0, min(v["dist_to_date"], total_dist))
         forecast   = total_dist - to_date
         committed  = v["committed"]
