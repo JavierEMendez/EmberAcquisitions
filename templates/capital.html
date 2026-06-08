@@ -582,7 +582,6 @@
       {# ── VIEW: INVESTORS ────────────────────────────────────── #}
       <section class="view view-investors" data-view="investors" hidden>
         {% set inv = capital.investors %}
-        {% set current = capital.returns.current_year %}
         {% set can_edit_ct = is_admin or page_access.get('captable_edit', false) %}
 
         <div class="kpi-band kpi-band--4">
@@ -594,12 +593,12 @@
           <div class="kpi">
             <div class="label">Distributions To Date</div>
             <div class="v num good">{{ fmt_money_raw(inv.total_distributions_to_date) }}</div>
-            <div class="s">received through {{ current }}</div>
+            <div class="s">received through today</div>
           </div>
           <div class="kpi">
             <div class="label">Forecast Distributions</div>
             <div class="v num">{{ fmt_money_raw(inv.total_distributions_forecast) }}</div>
-            <div class="s">projected, {{ current|int + 1 }} onward</div>
+            <div class="s">projected, today onward</div>
           </div>
           <div class="kpi">
             <div class="label">Projects Matched</div>
@@ -611,7 +610,7 @@
         <header class="sec-head">
           <div class="eyebrow">By investment vehicle</div>
           <h2>Investor Portfolios</h2>
-          <p>Each vehicle's committed capital, distributions received to date (through {{ current }}), and forecast distributions ({{ current|int + 1 }} onward), scaled from project LP distributions by ownership %. Pari passu across investors; LightHaven preferred equity is broken out as its own position. Positions in projects without a matching return are ignored.</p>
+          <p>Each vehicle's committed capital, distributions received to date (through today), and forecast distributions (everything after today — the rest of this year plus future years), scaled from project LP distributions by ownership %. Pari passu across investors; LightHaven preferred equity is broken out as its own position. Positions in projects without a matching return are ignored.</p>
         </header>
 
         {% if inv.investors %}
