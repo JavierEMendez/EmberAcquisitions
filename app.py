@@ -4017,6 +4017,69 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
                 s += v * year_frac
         return s
 
+    # ── Future-quarter axis (forecast cashflow columns) ───────────────
+    # A quarter is "future" when at least one of its month-start dates is
+    # strictly after today. With a monthly block the axis is derived from
+    # src_months; otherwise it spans the current year (remaining quarters)
+    # through the last returns year.
+    cur_q = (today.month - 1) // 3 + 1
+    future_quarters: list[tuple[int, int]] = []   # (year, quarter)
+    if months_iso:
+        _seen = set()
+        for iso in months_iso:
+            if iso > today_iso:
+                y = int(iso[:4]); q = (int(iso[5:7]) - 1) // 3 + 1
+                if (y, q) not in _seen:
+                    _seen.add((y, q)); future_quarters.append((y, q))
+        future_quarters.sort()
+    else:
+        for y in years_int:
+            if y < cur_year:
+                continue
+            for q in range(1, 5):
+                if y == cur_year and q < cur_q:
+                    continue
+                future_quarters.append((y, q))
+    quarter_labels = ["Q%d %d" % (q, y) for (y, q) in future_quarters]
+    q_index = {(y, q): i for i, (y, q) in enumerate(future_quarters)}
+    n_q = len(future_quarters)
+
+    def _future_quarter_buckets(yearly: list, monthly: list, pct: float,
+                                forecast_total: float) -> list[float]:
+        """Distribute a position's forecast (actual $) across the future-
+        quarter axis. Uses the monthly block when it aligns to src_months;
+        else spreads each future year's value evenly across its quarters.
+        Buckets are scaled so they sum to `forecast_total`, keeping the
+        cashflow row consistent with the Forecast column."""
+        raw = [0.0] * n_q
+        if months_iso and monthly and len(monthly) == len(months_iso):
+            for i, iso in enumerate(months_iso):
+                if iso > today_iso:
+                    y = int(iso[:4]); q = (int(iso[5:7]) - 1) // 3 + 1
+                    j = q_index.get((y, q))
+                    if j is not None:
+                        raw[j] += float(monthly[i] or 0) * pct * 1000.0
+        else:
+            for i, y in enumerate(years_int):
+                if y < cur_year or i >= len(yearly):
+                    continue
+                yv = float(yearly[i] or 0) * pct * 1000.0
+                qs = [q for q in range(1, 5)
+                      if (y, q) in q_index and not (y == cur_year and q < cur_q)]
+                if y == cur_year:
+                    yv *= max(0.0, 1.0 - year_frac)
+                if qs:
+                    for q in qs:
+                        raw[q_index[(y, q)]] += yv / len(qs)
+        tot = sum(raw)
+        if tot > 1e-9:
+            scale = forecast_total / tot
+            return [r * scale for r in raw]
+        # No shape info — spread evenly across the axis.
+        if n_q and forecast_total:
+            return [forecast_total / n_q] * n_q
+        return raw
+
     # ── Per-project returns lookup (keyed by normalized returns name) ──
     # Each entry carries the streams we scale: distributions, preferred
     # return, contributions (for IRR timing), plus project IRR/EM.
@@ -4113,6 +4176,7 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
         # Clamp: never report more received-to-date than total scheduled.
         to_date_pos    = max(0.0, min(to_date_pos, total_dist_pos))
         forecast_pos   = total_dist_pos - to_date_pos
+        q_buckets      = _future_quarter_buckets(base, base_m, pct, forecast_pos)
 
         vname = pos["vehicle"]
         vkey = vname.strip().lower()
@@ -4122,6 +4186,7 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
             "dist_yearly": [0.0] * n_years,
             "contrib_yearly": [0.0] * n_years,
             "dist_to_date": 0.0,
+            "q_forecast": [0.0] * n_q,
             "positions": [],
         })
         v["committed"] += contribution
@@ -4129,6 +4194,8 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
         for i in range(n_years):
             v["dist_yearly"][i]    += dist_stream[i]
             v["contrib_yearly"][i] += contrib_stream[i]
+        for j in range(n_q):
+            v["q_forecast"][j] += q_buckets[j]
         v["positions"].append({
             "project":      pj["name"],
             "equity_class": equity_class,
@@ -4170,17 +4237,37 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
             "em":            em,
             "irr":           irr_pct,
             "yearly":        [int(round(x)) for x in v["dist_yearly"]],
+            "q_forecast":    [int(round(x)) for x in v["q_forecast"]],
             "positions":     sorted(v["positions"], key=lambda r: r["project"]),
         })
 
     investors.sort(key=lambda r: r["committed"], reverse=True)
 
+    # ── Match coverage (both directions) ──────────────────────────────
+    # Returns side: which active returns projects do the cap tables cover,
+    # and which have no cap-table positions at all (so they never appear).
+    matched_norms = {n for n in resolved.values() if n}
+    returns_matched   = sorted(proj_lookup[n]["name"] for n in matched_norms
+                               if n in proj_lookup)
+    returns_unmatched = sorted(pj["name"] for n, pj in proj_lookup.items()
+                               if n not in matched_norms)
+    # Portfolio quarterly forecast = sum of investors' rows.
+    total_q_forecast = [0] * n_q
+    for inv in investors:
+        for j, val in enumerate(inv["q_forecast"]):
+            total_q_forecast[j] += val
+
     return {
         "investors":          investors,
         "positions":          positions,   # flat raw rows (pct as fraction)
         "years":              years_str,
-        "projects_matched":   projects_matched,
-        "projects_unmatched": projects_unmatched,
+        "quarters":           quarter_labels,
+        "total_q_forecast":   total_q_forecast,
+        "projects_matched":   projects_matched,       # cap-table side
+        "projects_unmatched": projects_unmatched,     # cap-table → no return
+        "returns_matched":    returns_matched,        # returns w/ cap-table coverage
+        "returns_unmatched":  returns_unmatched,      # active returns, no cap table
+        "returns_total":      len(returns_names),
         "uploaded_at":        blob.get("uploaded_at"),
         "total_committed":    int(round(sum(i["committed"] for i in investors))),
         "total_distributions": int(round(sum(i["distributions"] for i in investors))),

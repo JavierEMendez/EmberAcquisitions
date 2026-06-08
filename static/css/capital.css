@@ -682,3 +682,60 @@
 @media (max-width: 900px) {
   .captable-grid { grid-template-columns: 1.2fr 1.4fr 0.8fr 1fr 0.8fr 30px; font-size: 11px; }
 }
+
+/* ── Match-coverage KPI + detail panel ───────────────────────────── */
+.kpi-clickable {
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: border-color 0.12s ease, transform 0.12s ease;
+}
+.kpi-clickable:hover { border-color: var(--cap-accent); }
+.kpi-of { font-size: 13px; font-weight: 600; color: var(--cap-muted); }
+.kpi-caret {
+  display: inline-block; font-size: 9px; color: var(--cap-muted);
+  transition: transform 0.15s ease;
+}
+.kpi-clickable[aria-expanded="true"] .kpi-caret { transform: rotate(90deg); }
+
+.match-detail {
+  border: 1px solid var(--cap-line);
+  border-radius: 12px;
+  background: var(--cap-bg-2);
+  padding: 18px 20px;
+  margin: -6px 0 4px;
+}
+.match-cols {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 22px;
+}
+.match-col .match-h {
+  font-weight: 700; font-size: 12px; letter-spacing: 0.02em;
+  padding-bottom: 6px; margin-bottom: 8px;
+  border-bottom: 1px solid var(--cap-line);
+}
+.match-col .match-h.good { color: var(--cap-good); }
+.match-col .match-h.warn { color: var(--cap-accent); }
+.match-col .match-sub { font-size: 10.5px; color: var(--cap-muted); margin: 0 0 8px; line-height: 1.4; }
+.match-col ul { list-style: none; margin: 0; padding: 0; }
+.match-col li {
+  font-size: 12px; color: var(--cap-ink);
+  padding: 3px 0; border-bottom: 1px dashed var(--cap-line);
+}
+.match-col li:last-child { border-bottom: none; }
+.match-col .match-empty { font-size: 12px; color: var(--cap-muted); font-style: italic; margin: 0; }
+
+/* ── Quarterly cashflow table ────────────────────────────────────── */
+.cashflow-table th, .cashflow-table td { white-space: nowrap; }
+.cashflow-table th.right, .cashflow-table td.right { min-width: 78px; }
+.cashflow-table th.left, .cashflow-table td.left {
+  position: sticky; left: 0; z-index: 1; background: var(--cap-surface);
+}
+.cashflow-table .portfolio-total td.left { background: var(--cap-bg-2); }
+
+@media (max-width: 900px) {
+  .match-cols { grid-template-columns: 1fr; gap: 16px; }
+}

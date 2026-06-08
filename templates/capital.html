@@ -600,10 +600,39 @@
             <div class="v num">{{ fmt_money_raw(inv.total_distributions_forecast) }}</div>
             <div class="s">projected, today onward</div>
           </div>
-          <div class="kpi">
-            <div class="label">Projects Matched</div>
-            <div class="v num">{{ inv.projects_matched | length }}</div>
-            <div class="s">{{ (inv.projects_unmatched | length) ~ ' unmatched: ' ~ (inv.projects_unmatched | join(', ')) if inv.projects_unmatched else 'all matched' }}</div>
+          <button type="button" class="kpi kpi-clickable" id="match-kpi" aria-expanded="false" aria-controls="match-detail">
+            <div class="label">Projects Matched <span class="kpi-caret">▸</span></div>
+            <div class="v num">{{ inv.returns_matched | length }} <span class="kpi-of">/ {{ inv.returns_total }}</span></div>
+            <div class="s">
+              {% set gaps = (inv.returns_unmatched | length) + (inv.projects_unmatched | length) %}
+              {{ 'all active projects covered' if gaps == 0 else (gaps ~ ' need attention — click') }}
+            </div>
+          </button>
+        </div>
+
+        <div class="match-detail" id="match-detail" hidden>
+          <div class="match-cols">
+            <div class="match-col">
+              <div class="match-h good">Matched ({{ inv.returns_matched | length }})</div>
+              <p class="match-sub">Active returns projects with cap-table coverage.</p>
+              {% if inv.returns_matched %}
+              <ul>{% for p in inv.returns_matched %}<li>{{ p }}</li>{% endfor %}</ul>
+              {% else %}<p class="match-empty">None.</p>{% endif %}
+            </div>
+            <div class="match-col">
+              <div class="match-h warn">Active, no cap table ({{ inv.returns_unmatched | length }})</div>
+              <p class="match-sub">Active projects in Returns with no cap-table positions — they don't appear in any portfolio yet.</p>
+              {% if inv.returns_unmatched %}
+              <ul>{% for p in inv.returns_unmatched %}<li>{{ p }}</li>{% endfor %}</ul>
+              {% else %}<p class="match-empty">None.</p>{% endif %}
+            </div>
+            <div class="match-col">
+              <div class="match-h warn">Cap table, no return ({{ inv.projects_unmatched | length }})</div>
+              <p class="match-sub">Cap-table tabs that didn't match a Returns project — their entities &amp; positions were dropped.</p>
+              {% if inv.projects_unmatched %}
+              <ul>{% for p in inv.projects_unmatched %}<li>{{ p }}</li>{% endfor %}</ul>
+              {% else %}<p class="match-empty">None.</p>{% endif %}
+            </div>
           </div>
         </div>
 
@@ -691,6 +720,46 @@
           <div class="table-foot">
             <span>Money in actual dollars. IRR is the blended rate on the vehicle's net cashflows.{% if inv.uploaded_at %} Cap tables uploaded {{ inv.uploaded_at[:10] }}.{% endif %}</span>
             <span class="mono">{{ inv.projects_matched | join(' · ') }}</span>
+          </div>
+        </div>
+
+        <header class="sec-head" style="margin-top:28px;">
+          <div class="eyebrow">Forecast cashflow</div>
+          <h2>Quarterly Distribution Cashflow</h2>
+          <p>Distributions received to date, then projected by calendar quarter. Future quarters are bucketed from the project monthly cashflows (scaled to each vehicle's ownership %); quarter totals tie to the Forecast column above.</p>
+        </header>
+
+        <div class="table-card">
+          <div class="returns-scroll">
+            <table class="returns-table cashflow-table">
+              <thead>
+                <tr>
+                  <th class="left">Investor / Vehicle</th>
+                  <th class="right good">To Date</th>
+                  {% for q in inv.quarters %}<th class="right">{{ q }}</th>{% endfor %}
+                  <th class="right accent">Forecast Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for v in inv.investors %}
+                <tr>
+                  <td class="left">{{ v.name }}</td>
+                  <td class="right num good">{{ fmt_money_raw(v.distributions_to_date) }}</td>
+                  {% for qv in v.q_forecast %}<td class="right num">{{ fmt_money_raw(qv) }}</td>{% endfor %}
+                  <td class="right num accent">{{ fmt_money_raw(v.distributions_forecast) }}</td>
+                </tr>
+                {% endfor %}
+                <tr class="portfolio-total">
+                  <td class="left bold">All Investors</td>
+                  <td class="right num bold good">{{ fmt_money_raw(inv.total_distributions_to_date) }}</td>
+                  {% for qv in inv.total_q_forecast %}<td class="right num bold">{{ fmt_money_raw(qv) }}</td>{% endfor %}
+                  <td class="right num bold accent">{{ fmt_money_raw(inv.total_distributions_forecast) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="table-foot">
+            <span>{% if inv.quarters %}{{ inv.quarters | length }} forecast quarter{{ '' if inv.quarters|length == 1 else 's' }}, {{ inv.quarters[0] }} → {{ inv.quarters[-1] }}.{% else %}No future quarters in the current returns horizon.{% endif %} Quarterly buckets scale to match each vehicle's Forecast total.</span>
           </div>
         </div>
         {% else %}

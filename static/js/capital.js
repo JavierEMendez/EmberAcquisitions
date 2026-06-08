@@ -509,6 +509,17 @@
       if (btn) btn.setAttribute("aria-expanded", String(nowOpen));
     });
 
+    // ── Projects-Matched KPI → toggle coverage detail ──
+    const matchKpi    = $("#match-kpi");
+    const matchDetail = $("#match-detail");
+    if (matchKpi && matchDetail) {
+      matchKpi.addEventListener("click", () => {
+        const nowOpen = matchDetail.hidden;   // about to open
+        matchDetail.hidden = !nowOpen;
+        matchKpi.setAttribute("aria-expanded", String(nowOpen));
+      });
+    }
+
     // ── Cap-table editor (edit-permitted users only) ──
     const root = $("#captable-editor");
     if (!root) return;
