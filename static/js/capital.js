@@ -31,6 +31,26 @@
   const initial = (location.hash || "").replace("#", "");
   if (["active", "pipeline", "returns", "commitments", "investors"].includes(initial)) setView(initial);
 
+  // ── Cockpit collapse (full-width pane) ──────────────────────
+  // Hides the left KPI rail so a view (e.g. the Investor report) can use
+  // the full page width. State persists across reloads.
+  const shell  = $(".cap-shell");
+  const cTog    = $("#cockpit-toggle");
+  if (shell && cTog) {
+    const applyCockpit = (collapsed) => {
+      shell.classList.toggle("cockpit-collapsed", collapsed);
+      cTog.setAttribute("aria-pressed", String(collapsed));
+      cTog.title = collapsed ? "Show summary panel" : "Collapse summary panel";
+      cTog.setAttribute("aria-label", cTog.title);
+    };
+    applyCockpit(localStorage.getItem("cap-cockpit-collapsed") === "1");
+    cTog.addEventListener("click", () => {
+      const collapsed = !shell.classList.contains("cockpit-collapsed");
+      localStorage.setItem("cap-cockpit-collapsed", collapsed ? "1" : "0");
+      applyCockpit(collapsed);
+    });
+  }
+
   // ── Asset-class chip popover ────────────────────────────────
   const popover = $("#class-popover");
   let activeChip = null;

@@ -276,12 +276,17 @@
     <main class="pane">
 
       <div class="pane-head">
-        <div class="seg" role="tablist">
-          <button class="seg-btn active" data-view="active"      role="tab">Active</button>
-          <button class="seg-btn"        data-view="pipeline"    role="tab">Pipeline</button>
-          <button class="seg-btn"        data-view="returns"     role="tab">Returns</button>
-          <button class="seg-btn"        data-view="commitments" role="tab">Commitments</button>
-          <button class="seg-btn"        data-view="investors"   role="tab">Investors</button>
+        <div class="pane-head-left">
+          <button class="cockpit-toggle" id="cockpit-toggle" type="button"
+                  aria-label="Collapse summary panel" aria-pressed="false"
+                  title="Collapse summary panel">‹</button>
+          <div class="seg" role="tablist">
+            <button class="seg-btn active" data-view="active"      role="tab">Active</button>
+            <button class="seg-btn"        data-view="pipeline"    role="tab">Pipeline</button>
+            <button class="seg-btn"        data-view="returns"     role="tab">Returns</button>
+            <button class="seg-btn"        data-view="commitments" role="tab">Commitments</button>
+            <button class="seg-btn"        data-view="investors"   role="tab">Investors</button>
+          </div>
         </div>
         <div class="pane-actions">
           {% if page_access.get('reports', true) or is_admin %}

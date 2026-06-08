@@ -215,6 +215,20 @@
 .pane-head .seg-btn:hover  { color: var(--cap-ink); }
 .pane-head .seg-btn.active { background: var(--cap-surface); color: var(--cap-ink); box-shadow: var(--cap-shadow); }
 .pane-head .pane-actions   { display: flex; gap: 8px; }
+.pane-head .pane-head-left { display: flex; align-items: center; gap: 12px; }
+
+/* Cockpit collapse toggle — hides the left KPI rail so a view (e.g. the
+   Investor report) can use the full page width. */
+.cockpit-toggle {
+  width: 34px; height: 34px; flex-shrink: 0;
+  border-radius: 8px; border: 1px solid var(--cap-line-2);
+  background: var(--cap-surface); color: var(--cap-muted);
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 16px; line-height: 1; transition: all 120ms ease;
+}
+.cockpit-toggle:hover { color: var(--cap-ink); border-color: var(--cap-accent); }
+.cap-shell.cockpit-collapsed .cockpit { display: none; }
+.cap-shell.cockpit-collapsed .cockpit-toggle { transform: rotate(180deg); }
 
 .btn { font-family: inherit; font-size: 11px; font-weight: 600; padding: 7px 12px; border-radius: 8px; cursor: pointer; border: 1px solid var(--cap-line-2); background: var(--cap-surface); color: var(--cap-ink); text-decoration: none; display: inline-flex; align-items: center; }
 .btn.ghost   { background: transparent; }
