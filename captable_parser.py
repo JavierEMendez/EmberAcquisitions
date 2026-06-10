@@ -60,6 +60,14 @@ CAPTABLE_SPEC: list[dict] = [
         "start": 7, "end": 15,
     },
     {
+        # The Shops at Grand Prairie (HPI) — Entity=B, $=C, %=D; 7 vehicles,
+        # ~$2.4M. NOTE: only surfaces in the investor report once a matching
+        # "Shops at Grand Prairie" project exists in the Returns upload.
+        "project": "Shops at Grand Prairie", "tab": "HPI (Shops @ TGP)",
+        "entity_col": "B", "pct_col": "D", "contrib_col": "C",
+        "start": 7, "end": 13,
+    },
+    {
         "project": "Windrose Green", "tab": "WRG (Windrose)",
         "entity_col": "B", "pct_col": "D", "contrib_col": "C",
         "start": 7, "end": 11,
@@ -128,6 +136,7 @@ CAPTABLE_SPEC: list[dict] = [
 PROJECT_ALIASES: dict[str, list[str]] = {
     "Grand Prairie":      ["Grand Prairie Development", "GPD"],
     "Grand Prairie East": ["Grand Prairie East (CCI)", "Grand Prairie East", "GPP 55 East", "CCI"],
+    "Shops at Grand Prairie": ["The Shops at Grand Prairie", "Shops at Grand Prairie", "Shops @ TGP", "HPI Shops"],
     "Windrose Green": ["Windrose Green", "WRG"],
     "Dennison":       ["Dennison", "WRRD"],
     "Lexington Land": ["Lexington Land Partners", "Lexington Land", "Lexington", "LLP"],
