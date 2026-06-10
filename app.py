@@ -4933,7 +4933,10 @@ def _build_capital_view_context() -> dict:
 @app.route("/capital")
 @login_required
 def portfolio_page():
-    pa = session.get("page_access") or {
+    # Pull the *current* permissions from the DB (not the stale login-time
+    # session copy) so newly-granted, default-False perms like captable_edit
+    # take effect without forcing a log-out/in.
+    pa = _refresh_page_access_from_db() or {
         "mpc_underwriting": True, "returns": True, "loans": True,
         "operations": True, "portfolio": True, "reports": True,
     }
