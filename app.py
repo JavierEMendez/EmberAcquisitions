@@ -4267,11 +4267,12 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
         basis = committed if committed > 0 else abs(sum(v["contrib_yearly"]))
         em = round(total_dist / basis, 2) if basis else 0.0
         profit = total_dist - basis
-        # Blended IRR from the net yearly cashflow (returns-derived
-        # contribution timing + scaled distributions).
-        net = [v["contrib_yearly"][i] + v["dist_yearly"][i] for i in range(len(v["dist_yearly"]))]
-        irr_dec = _simple_irr(net)
-        irr_pct = round(irr_dec * 100, 1) if irr_dec is not None else None
+        # Investment-weighted IRR: blend each position's project LP IRR by the
+        # dollars invested in that position (committed).
+        irr_w = sum(p["committed"] for p in v["positions"])
+        irr_pct = (round(sum((p["irr"] or 0) * p["committed"]
+                             for p in v["positions"]) / irr_w, 1)
+                   if irr_w > 0 else None)
         investors.append({
             "id":            _capital_slug(v["name"]),
             "name":          v["name"],
@@ -4303,6 +4304,13 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
         for j, val in enumerate(inv["q_forecast"]):
             total_q_forecast[j] += val
 
+    # Portfolio investment-weighted IRR (every position's project IRR weighted
+    # by dollars invested).
+    _all_pos = [p for inv in investors for p in inv["positions"]]
+    _w = sum(p["committed"] for p in _all_pos)
+    total_irr = (round(sum((p["irr"] or 0) * p["committed"] for p in _all_pos) / _w, 1)
+                 if _w > 0 else None)
+
     return {
         "investors":          investors,
         "positions":          positions,   # flat raw rows (pct as fraction)
@@ -4319,6 +4327,7 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
         "total_distributions": int(round(sum(i["distributions"] for i in investors))),
         "total_distributions_to_date":  int(round(sum(i["distributions_to_date"] for i in investors))),
         "total_distributions_forecast": int(round(sum(i["distributions_forecast"] for i in investors))),
+        "total_irr":          total_irr,   # investment-weighted across positions
         "count":              len(investors),
     }
 

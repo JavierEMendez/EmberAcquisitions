@@ -747,7 +747,9 @@
                   <td class="right num bold good">{{ fmt_money_raw(inv.total_distributions_to_date) }}</td>
                   <td class="right num bold">{{ fmt_money_raw(inv.total_distributions_forecast) }}</td>
                   <td class="right num bold">{{ fmt_money_raw(inv.total_distributions - inv.total_committed) }}</td>
-                  <td></td><td></td><td></td>
+                  <td></td>
+                  <td class="right num bold accent">{% if inv.total_irr is none %}—{% else %}{{ fmt_pct(inv.total_irr) }}{% endif %}</td>
+                  <td></td>
                 </tr>
               </tbody>
             </table>
