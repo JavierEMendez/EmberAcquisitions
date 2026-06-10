@@ -54,10 +54,12 @@ CAPTABLE_SPEC: list[dict] = [
     },
     {
         # Grand Prairie East / CCI — a separate deal from GPD Development.
-        # This tab's layout differs: Entity=C, Offering($)=D, %=E.
+        # The tab has three side-by-side blocks; use the FINAL cap table in
+        # columns I/J/K (Entity / Offering $ / %), NOT the "Offered" block in
+        # C/D/E. Rows 7-14 (row 15 = Total, auto-skipped).
         "project": "Grand Prairie East", "tab": "GPP 55 East (CCI)",
-        "entity_col": "C", "pct_col": "E", "contrib_col": "D",
-        "start": 7, "end": 15,
+        "entity_col": "I", "pct_col": "K", "contrib_col": "J",
+        "start": 7, "end": 14,
     },
     {
         # The Shops at Grand Prairie (HPI) — Entity=B, $=C, %=D; 7 vehicles,
