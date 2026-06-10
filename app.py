@@ -3513,6 +3513,29 @@ def change_own_password():
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True})
 
+@app.route("/api/admin/users/<int:uid>/admin", methods=["PUT"])
+@login_required
+@admin_required
+def set_user_admin(uid):
+    """Promote/demote a user to admin. Guards: an admin can't remove their own
+    admin access, and the last remaining admin can't be demoted (so the team
+    never locks itself out of the admin tools)."""
+    data = request.json or {}
+    make_admin = bool(data.get("is_admin", False))
+    if uid == session.get("user_id") and not make_admin:
+        return jsonify({"error": "You can't remove your own admin access"}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    if not make_admin:
+        cur.execute("SELECT COUNT(*) AS n FROM users WHERE is_admin = TRUE")
+        if (cur.fetchone()["n"] or 0) <= 1:
+            cur.close(); conn.close()
+            return jsonify({"error": "At least one admin must remain"}), 400
+    cur.execute("UPDATE users SET is_admin = %s WHERE id = %s", (make_admin, uid))
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True, "is_admin": make_admin})
+
+
 @app.route("/api/admin/users/<int:uid>/access", methods=["PUT"])
 @login_required
 @admin_required

@@ -225,6 +225,10 @@ async function refreshUserList() {
       return `<div class="user-row">
         <div style="display:flex;align-items:center;gap:8px;width:100%;">
           <div class="uname">${u.username} ${u.is_admin ? '<span class="badge">Admin</span>' : ''} ${optInBadge}</div>
+          <button onclick="toggleAdmin(${u.id}, ${u.is_admin ? 'false' : 'true'})" style="${btnStyle}"
+            onmouseover="this.style.borderColor='var(--eax-accent)';this.style.color='var(--eax-accent)';"
+            onmouseout="this.style.borderColor='var(--eax-line-2)';this.style.color='var(--eax-muted)';"
+            title="${u.is_admin ? 'Revoke admin access' : 'Grant full admin access'}">${u.is_admin ? 'Revoke admin' : 'Make admin'}</button>
           <button class="btn-del-user" onclick="deleteUser(${u.id},'${u.username}')" title="Remove">&times;</button>
         </div>
         <div style="display:flex;gap:6px;width:100%;">
@@ -242,6 +246,23 @@ async function refreshUserList() {
         ${u.is_admin ? '' : `<div class="user-access">${checks}</div>`}
       </div>`;
     }).join('');
+}
+
+async function toggleAdmin(uid, makeAdmin) {
+  const verb = makeAdmin
+    ? 'make this user a full admin (manage all users & see all data)'
+    : "revoke this user's admin access";
+  if (!confirm('Are you sure you want to ' + verb + '?')) return;
+  const res = await fetch('/api/admin/users/' + uid + '/admin', {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({is_admin: makeAdmin})
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    alert(e.error || 'Failed to update admin status');
+    return;
+  }
+  refreshUserList();
 }
 
 async function toggleAccess(uid, page, enabled) {
