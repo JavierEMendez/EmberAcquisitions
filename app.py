@@ -4022,6 +4022,15 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
 
     blob = _capital_load_captable()
     positions = blob.get("positions", []) or []
+    # Legacy compatibility: cap tables uploaded before LightHaven was split into
+    # two standalone returns deals stored both blocks under one "LightHaven"
+    # project. Remap by equity class so older stored blobs wire correctly
+    # without forcing a re-upload.
+    for pos in positions:
+        if (pos.get("project") or "").strip() == "LightHaven":
+            pos["project"] = ("LightHaven Preferred"
+                              if pos.get("equity_class") == "preferred"
+                              else "LightHaven Common")
     n_years = len(years_str)
 
     # ── To-date boundary ──────────────────────────────────────────────
@@ -4147,27 +4156,16 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
         proj_lookup[normalize_project(name)] = {
             "name":     name,
             "dist_y":   _y("Total LP Distributions"),    # $000s, yearly (timing)
-            "pref_y":   _y("Preferred Return"),          # $000s, yearly (timing)
             "contrib_y": _y("Total LP Contributions"),   # $000s, stored negative
             "dist_m":   _m("Total LP Distributions"),    # $000s, monthly (timing)
-            "pref_m":   _m("Preferred Return"),          # $000s, monthly (timing)
-            # Authoritative lifetime totals from the model's own total column
+            # Authoritative lifetime total from the model's own total column
             # (E). The yearly/monthly grids only drive the to-date vs forecast
-            # timing split; magnitudes come from these so a vehicle's EM ties
-            # to the project EM (which is also computed off the total column).
+            # timing split; magnitude comes from this so a vehicle's EM ties to
+            # the project EM (which is also computed off the total column).
             "dist_total": _t("Total LP Distributions"),  # $000s
-            "pref_total": _t("Preferred Return"),        # $000s
             "irr":      round(irr_pct, 1),
             "em":       round(_t("LP Equity Multiple", 0.0), 2),
         }
-
-    # Which cap-table projects carry a preferred equity class (LightHaven).
-    # For those, common holders receive (Total LP Distributions − Preferred
-    # Return); the preferred line receives the Preferred Return stream.
-    projects_with_pref = {
-        pos["project"] for pos in positions
-        if (pos.get("equity_class") == "preferred")
-    }
 
     # Resolve each cap-table project to a returns project once.
     captable_projects = sorted({pos["project"] for pos in positions})
@@ -4191,24 +4189,15 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
         equity_class = pos.get("equity_class", "common")
         contribution = float(pos.get("contribution") or 0.0)  # actual $
 
-        # Base distribution stream for this class, in $000s. The yearly/monthly
-        # arrays only carry the *timing shape*; `base_total` is the authoritative
-        # lifetime magnitude from the model's total column.
-        if equity_class == "preferred":
-            base       = pj["pref_y"]
-            base_m     = pj["pref_m"]
-            base_total = pj["pref_total"]
-        elif cp in projects_with_pref:
-            base   = [d - p for d, p in zip(pj["dist_y"], pj["pref_y"])]
-            dm, pm = pj["dist_m"], pj["pref_m"]
-            n_m    = max(len(dm), len(pm))
-            base_m = [(dm[i] if i < len(dm) else 0.0) - (pm[i] if i < len(pm) else 0.0)
-                      for i in range(n_m)]
-            base_total = pj["dist_total"] - pj["pref_total"]
-        else:
-            base       = pj["dist_y"]
-            base_m     = pj["dist_m"]
-            base_total = pj["dist_total"]
+        # Each position uses its matched project's Total LP Distributions. The
+        # yearly/monthly arrays carry only the *timing shape*; `base_total` is
+        # the authoritative lifetime magnitude from the model's total column.
+        # (LightHaven preferred vs common are now distinct returns projects, so
+        # there's no longer any per-class stream subtraction — equity_class is
+        # carried through only as a display label.)
+        base       = pj["dist_y"]
+        base_m     = pj["dist_m"]
+        base_total = pj["dist_total"]
 
         # Magnitude from the total column; timing from the yearly grid. Rescale
         # the yearly stream so it sums to the authoritative total (preserving

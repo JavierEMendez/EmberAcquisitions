@@ -92,15 +92,17 @@ CAPTABLE_SPEC: list[dict] = [
     },
     {
         # LightHaven Common Equity block. Ownership = within-class "LP Share"
-        # (col E), not the blended "Ending Capital %" (col D).
-        "project": "LightHaven", "tab": "LHDW (Lighthaven)",
+        # (col E), not the blended "Ending Capital %" (col D). Wires to the
+        # standalone "LightHaven (Common Equity)" returns project.
+        "project": "LightHaven Common", "tab": "LHDW (Lighthaven)",
         "entity_col": "B", "pct_col": "E", "contrib_col": "C",
         "start": 7, "end": 22, "equity_class": "common",
     },
     {
-        # LightHaven Preferred Equity block — separate positions, paid out
-        # differently (against the project's Preferred Return stream).
-        "project": "LightHaven", "tab": "LHDW (Lighthaven)",
+        # LightHaven Preferred Equity block — wires to the standalone
+        # "LightHaven (Preferred Equity)" returns project (its own deal with
+        # its own Total LP Distributions).
+        "project": "LightHaven Preferred", "tab": "LHDW (Lighthaven)",
         "entity_col": "B", "pct_col": "E", "contrib_col": "C",
         "start": 26, "end": 29, "equity_class": "preferred",
     },
@@ -123,7 +125,10 @@ PROJECT_ALIASES: dict[str, list[str]] = {
     "Lexington Land": ["Lexington Land Partners", "Lexington Land", "Lexington", "LLP"],
     "Hawthorne":      ["The Hawthorne", "Hawthorne", "SFC"],
     "Mid Main":       ["Mid Main East Commons (Land)", "Mid Main East Commons", "Mid Main East", "Mid Main", "MMEC"],
-    "LightHaven":     ["LightHaven", "Lighthaven", "LHDW"],
+    # LightHaven is two standalone returns deals now; wire each cap-table block
+    # to its own project (common -> Common Equity, preferred -> Preferred Equity).
+    "LightHaven Common":    ["LightHaven (Common Equity)", "Lighthaven Common"],
+    "LightHaven Preferred": ["LightHaven (Preferred Equity)", "Lighthaven Preferred"],
 }
 
 
