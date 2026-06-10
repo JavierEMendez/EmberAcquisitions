@@ -31,6 +31,16 @@
   td.accent { color: #C56028; }
   tr.total td { background: #FAF6EC; font-weight: 700; border-top: 2px solid #C56028; }
   .note { margin-top: 10px; font-size: 8px; color: #999; }
+
+  .sec-title { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase;
+               font-weight: 700; color: #C56028; margin: 16px 0 6px; }
+  /* Schedule: quarters as rows so it grows downward (paginates) instead of
+     off the right edge. Project columns wrap; header repeats per page. */
+  table.sched { table-layout: fixed; }
+  table.sched thead { display: table-header-group; }
+  table.sched th { font-size: 6.5px; white-space: normal; word-break: break-word; }
+  table.sched td { font-size: 8px; }
+  table.sched th:first-child, table.sched td:first-child { width: 58px; white-space: nowrap; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -52,6 +62,7 @@
       <div class="kpi"><div class="l">IRR</div><div class="v">{{ '{:.1f}%'.format(inv.irr) if inv.irr is not none else '—' }}</div></div>
     </div>
 
+    <div class="sec-title">Positions</div>
     <table>
       <thead>
         <tr>
@@ -60,7 +71,6 @@
           <th class="r">Ownership</th>
           <th class="r">Investment</th>
           <th class="r">Dist. To Date</th>
-          {% for q in view.quarters %}<th class="r">{{ q }}</th>{% endfor %}
           <th class="r">Forecast</th>
           <th class="r">Proj IRR</th>
           <th class="r">Proj EM</th>
@@ -74,7 +84,6 @@
           <td class="r">{{ '{:.2f}%'.format(p.pct) }}</td>
           <td class="r">{{ money(p.committed) }}</td>
           <td class="r good">{{ money(p.dist_to_date) }}</td>
-          {% for qv in p.q_forecast %}<td class="r">{{ money(qv) }}</td>{% endfor %}
           <td class="r accent">{{ money(p.dist_forecast) }}</td>
           <td class="r">{{ '{:.1f}%'.format(p.irr) if p.irr is not none else '—' }}</td>
           <td class="r">{{ '{:.2f}x'.format(p.em) if p.em else '—' }}</td>
@@ -86,7 +95,6 @@
           <td></td>
           <td class="r">{{ money(inv.committed) }}</td>
           <td class="r">{{ money(inv.distributions_to_date) }}</td>
-          {% for qv in inv.q_forecast %}<td class="r">{{ money(qv) }}</td>{% endfor %}
           <td class="r">{{ money(inv.distributions_forecast) }}</td>
           <td></td>
           <td></td>
@@ -94,7 +102,34 @@
       </tbody>
     </table>
 
-    <div class="note">Distributions scaled from each project's LP returns by ownership %. Forecast bucketed by calendar quarter; quarter totals tie to the Forecast column. Generated {{ generated }}.</div>
+    {% if view.quarters %}
+    <div class="sec-title">Forecast distribution schedule (by quarter)</div>
+    <table class="sched">
+      <thead>
+        <tr>
+          <th>Quarter</th>
+          {% for p in inv.positions %}<th class="r">{{ p.project }}{% if p.equity_class == 'preferred' %} (Pref){% endif %}</th>{% endfor %}
+          <th class="r">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for qi in range(view.quarters|length) %}
+        <tr>
+          <td>{{ view.quarters[qi] }}</td>
+          {% for p in inv.positions %}<td class="r">{{ money(p.q_forecast[qi]) }}</td>{% endfor %}
+          <td class="r accent">{{ money(inv.q_forecast[qi]) }}</td>
+        </tr>
+        {% endfor %}
+        <tr class="total">
+          <td>Total</td>
+          {% for p in inv.positions %}<td class="r">{{ money(p.dist_forecast) }}</td>{% endfor %}
+          <td class="r">{{ money(inv.distributions_forecast) }}</td>
+        </tr>
+      </tbody>
+    </table>
+    {% endif %}
+
+    <div class="note">Distributions scaled from each project's LP returns by ownership %. Forecast bucketed by calendar quarter; the schedule's column totals tie to each position's Forecast. Generated {{ generated }}.</div>
   </section>
 {% endfor %}
 </body>
