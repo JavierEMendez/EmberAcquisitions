@@ -1,109 +1,177 @@
-<!DOCTYPE html>
+{# ============================================================
+   Ember Capital — Investor Position Statement (PDF).
+   Brand design mirrors capital_report.html: navy ink, ember accent,
+   HelveticaNeue/Plus Jakarta/Gotham fonts, eyebrow heads, KPI band,
+   proj-table, confidential footer. One investor per page; the page
+   width auto-fits the forecast columns.
+   ============================================================ #}
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"/>
-<title>Investor Position Statement</title>
-{# Auto-size the page WIDTH to the column count so the single horizontal table
-   always fits on one (wide) sheet instead of being clipped. Base covers the
-   8 fixed columns + margins; each quarter adds a fixed slice. #}
+<meta charset="utf-8"/>
+<title>Ember Capital — Investor Position Statement</title>
 {% set nq = view.quarters | length %}
-{% set page_w = 210 + nq * 13 %}
+{% set page_w = [279, 200 + nq * 13] | max %}
 <style>
-  @page { size: {{ page_w }}mm 216mm; margin: 12mm 12mm; }
-  * { box-sizing: border-box; }
-  body { font-family: "Helvetica Neue", Arial, sans-serif; color: #1A1A1A; font-size: 10px; margin: 0; }
-  .investor { page-break-after: always; }
-  .investor:last-child { page-break-after: auto; }
+  @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-Bold.ttf") format("truetype"); font-weight: 700; }
+  @font-face { font-family: "HelveticaNeue Brand"; src: url("/static/fonts/HelveticaNeue-Light.ttf") format("truetype"); font-weight: 300; }
+  @font-face { font-family: "Gotham"; src: url("/static/fonts/Gotham-Medium.otf") format("opentype"); font-weight: 500; }
+  @font-face { font-family: "Plus Jakarta Sans"; src: url("/static/fonts/PlusJakartaSans-Light.ttf")  format("truetype"); font-weight: 300; }
+  @font-face { font-family: "Plus Jakarta Sans"; src: url("/static/fonts/PlusJakartaSans-Medium.ttf") format("truetype"); font-weight: 500; }
+  @font-face { font-family: "Plus Jakarta Sans"; src: url("/static/fonts/PlusJakartaSans-Bold.ttf")   format("truetype"); font-weight: 700; }
 
-  .head { border-bottom: 2px solid #C56028; padding-bottom: 8px; margin-bottom: 14px; }
-  .eyebrow { font-size: 8px; letter-spacing: 0.22em; text-transform: uppercase; color: #C56028; font-weight: 700; }
-  .head h1 { font-size: 20px; margin: 4px 0 2px; letter-spacing: -0.01em; }
-  .head .sub { font-size: 9px; color: #888; }
+  :root {
+    --paper: #FFFFFF; --warm: #F8F4EE;
+    --ink: #08233B; --ink-2: #13344E; --muted: #5b6b7b; --subtle: #97a3b0;
+    --line: rgba(8,35,59,0.10); --line-2: rgba(8,35,59,0.20);
+    --accent: #F25929; --good: #1F7A4D;
+    --font-display: "HelveticaNeue Brand", "Plus Jakarta Sans", system-ui, sans-serif;
+    --font-sans: "Plus Jakarta Sans", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, monospace;
+    --font-eyebrow: "Gotham", "Plus Jakarta Sans", system-ui, sans-serif;
+  }
 
-  .kpis { display: flex; gap: 10px; margin-bottom: 16px; max-width: 1000px; }
-  .kpi { flex: 1; border: 1px solid #E4DFD5; border-radius: 6px; padding: 8px 10px; background: #FAF6EC; }
-  .kpi .l { font-size: 7.5px; letter-spacing: 0.1em; text-transform: uppercase; color: #888; font-weight: 700; }
-  .kpi .v { font-size: 15px; font-weight: 700; margin-top: 3px; }
-  .kpi.accent .v { color: #C56028; }
-  .kpi.good .v { color: #2D8B76; }
+  @page {
+    size: {{ page_w }}mm 216mm;
+    margin: 14mm 14mm 16mm 14mm;
+    @bottom-left  { content: "CONFIDENTIAL"; font-family: "JetBrains Mono", monospace; font-size: 8px; font-weight: 700; letter-spacing: 0.18em; color: #13344E; }
+    @bottom-center{ content: "Ember Finance & Analytics · Investor Position Statement"; font-family: "JetBrains Mono", monospace; font-size: 8px; letter-spacing: 0.06em; color: #97a3b0; }
+    @bottom-right { content: counter(page) " / " counter(pages); font-family: "JetBrains Mono", monospace; font-size: 8px; letter-spacing: 0.06em; color: #97a3b0; }
+  }
 
-  table { width: 100%; border-collapse: collapse; }
-  th, td { padding: 5px 6px; border: 1px solid #E4DFD5; white-space: nowrap; }
-  th { background: #F2EFE8; font-size: 7px; letter-spacing: 0.03em; text-transform: uppercase; color: #555; }
-  td { font-size: 8.5px; }
-  th.r, td.r { text-align: right; }
-  td.good { color: #2D8B76; }
-  td.accent { color: #C56028; }
-  th.q, td.q { font-size: 7.5px; }
-  tr.total td { background: #FAF6EC; font-weight: 700; border-top: 2px solid #C56028; }
-  .note { margin-top: 10px; font-size: 8px; color: #999; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #fff; font-family: var(--font-sans); color: var(--ink); }
+  .num { font-variant-numeric: tabular-nums; }
+
+  .investor { page-break-before: always; }
+  .investor:first-child { page-break-before: avoid; }
+
+  /* Top row: ember mark + confidential stamp */
+  .top-row { display: table; width: 100%; margin-bottom: 14px; }
+  .top-row .l, .top-row .r { display: table-cell; vertical-align: middle; }
+  .top-row .r { text-align: right; }
+  .conf-stamp { font-family: var(--font-mono); font-size: 9px; font-weight: 700;
+                letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-2); }
+  .conf-stamp .dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+                     background: var(--accent); vertical-align: middle; margin-right: 7px; }
+
+  /* Section head */
+  .sec-row { padding-bottom: 12px; border-bottom: 1px solid var(--line-2); margin-bottom: 16px; }
+  .eyebrow { font-family: var(--font-eyebrow); font-weight: 500; font-size: 10px;
+             letter-spacing: 0.24em; text-transform: uppercase; color: var(--accent); }
+  .sec-row h1 { font-family: var(--font-display); font-weight: 700; font-size: 30px;
+                letter-spacing: -0.018em; line-height: 1.04; text-transform: uppercase; margin-top: 5px; }
+  .sec-row .sub { font-family: var(--font-mono); font-size: 9.5px; color: var(--subtle);
+                  letter-spacing: 0.06em; margin-top: 6px; }
+
+  /* KPI band */
+  .kpi-band { display: table; table-layout: fixed; width: 100%; border: 1px solid var(--line); margin-bottom: 18px; }
+  .kpi-band .kpi { display: table-cell; vertical-align: top; padding: 12px 14px 14px; border-left: 1px solid var(--line); }
+  .kpi-band .kpi:first-child { border-left: none; }
+  .kpi-band .kpi .l { font-family: var(--font-eyebrow); font-weight: 500; font-size: 8.5px;
+                      letter-spacing: 0.16em; text-transform: uppercase; color: var(--subtle); margin-bottom: 5px; }
+  .kpi-band .kpi .v { font-family: var(--font-display); font-weight: 700; font-size: 22px;
+                      letter-spacing: -0.012em; color: var(--ink); line-height: 1.05; font-variant-numeric: tabular-nums; }
+  .kpi-band .kpi.accent .v { color: var(--accent); }
+  .kpi-band .kpi.good .v { color: var(--good); }
+
+  /* Positions table — proj-table styling */
+  .panel-head { padding-bottom: 8px; }
+  .panel-head .h { font-family: var(--font-display); font-weight: 700; font-size: 12.5px;
+                   letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink); }
+  table.proj-table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+  table.proj-table th { padding: 10px 7px 8px; font-family: var(--font-eyebrow); font-weight: 500;
+                        font-size: 8px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--subtle);
+                        text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
+  table.proj-table th:first-child { text-align: left; padding-left: 4px; }
+  table.proj-table td { padding: 9px 7px; text-align: right; color: var(--ink);
+                        font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  table.proj-table td:first-child { text-align: left; padding-left: 4px; font-weight: 500; }
+  table.proj-table td.muted  { color: var(--muted); }
+  table.proj-table td.good   { color: var(--good); }
+  table.proj-table td.accent { color: var(--accent); font-weight: 600; }
+  th.q, td.q { font-size: 9px; }
+  table.proj-table tr.total-row td { border-top: 2px solid var(--line-2); border-bottom: none;
+                                     font-weight: 700; padding-top: 11px; }
+  table.proj-table tr.total-row td.accent { color: var(--accent); }
+  .note { margin-top: 12px; font-size: 8.5px; color: var(--subtle); font-family: var(--font-mono); letter-spacing: 0.04em; }
 </style>
 </head>
 <body>
-{# Full currency for the summary columns; compact ($1.1M / $957K) for the many
-   narrow quarter cells so the table stays a sane width. #}
+{% macro ember_mark() %}
+<svg width="34" height="34" viewBox="0 0 36 36" fill="none" aria-hidden="true"><g fill="#F25929">
+  <rect x="2" y="20" width="3.5" height="14" rx="0.5"/><rect x="8" y="14" width="3.5" height="20" rx="0.5"/>
+  <rect x="14" y="6" width="3.5" height="28" rx="0.5"/><rect x="20" y="12" width="3.5" height="22" rx="0.5"/>
+  <rect x="26" y="2" width="3.5" height="32" rx="0.5"/></g></svg>
+{% endmacro %}
 {% macro money(v) %}{% if not v %}—{% else %}{{ '${:,.0f}'.format(v) }}{% endif %}{% endmacro %}
 {% macro moneyc(v) %}{% if not v %}—{% elif v|abs >= 1000000 %}{{ '${:.1f}M'.format(v/1000000.0) }}{% elif v|abs >= 1000 %}{{ '${:.0f}K'.format(v/1000.0) }}{% else %}{{ '${:,.0f}'.format(v) }}{% endif %}{% endmacro %}
 {% for inv in view.investors %}
   <section class="investor">
-    <div class="head">
-      <div class="eyebrow">Ember Capital · Investor Position Statement</div>
+    <div class="top-row">
+      <div class="l">{{ ember_mark() }}</div>
+      <div class="r"><span class="conf-stamp"><span class="dot"></span>Confidential · Internal</span></div>
+    </div>
+
+    <div class="sec-row">
+      <div class="eyebrow">Ember Residential · Investor Position Statement</div>
       <h1>{{ inv.name }}</h1>
       <div class="sub">As of {{ (view.uploaded_at or generated)[:10] }} · values in actual USD</div>
     </div>
 
-    <div class="kpis">
+    <div class="kpi-band">
       <div class="kpi accent"><div class="l">Total Investment</div><div class="v">{{ money(inv.committed) }}</div></div>
       <div class="kpi good"><div class="l">Distributions To Date</div><div class="v">{{ money(inv.distributions_to_date) }}</div></div>
       <div class="kpi"><div class="l">Forecast Distributions</div><div class="v">{{ money(inv.distributions_forecast) }}</div></div>
       <div class="kpi"><div class="l">Profit</div><div class="v">{{ money(inv.profit) }}</div></div>
       <div class="kpi"><div class="l">Equity Multiple</div><div class="v">{{ '{:.2f}x'.format(inv.em) if inv.em else '—' }}</div></div>
-      <div class="kpi"><div class="l">IRR</div><div class="v">{{ '{:.1f}%'.format(inv.irr) if inv.irr is not none else '—' }}</div></div>
+      <div class="kpi accent"><div class="l">IRR</div><div class="v">{{ '{:.1f}%'.format(inv.irr) if inv.irr is not none else '—' }}</div></div>
     </div>
 
-    <table>
+    <div class="panel-head"><div class="h">Positions &amp; Forecast Schedule</div></div>
+    <table class="proj-table">
       <thead>
         <tr>
           <th>Project</th>
           <th>Class</th>
-          <th class="r">Ownership</th>
-          <th class="r">Investment</th>
-          <th class="r">Dist. To Date</th>
-          {% for q in view.quarters %}<th class="r q">{{ q }}</th>{% endfor %}
-          <th class="r">Forecast</th>
-          <th class="r">Proj IRR</th>
-          <th class="r">Proj EM</th>
+          <th>Ownership</th>
+          <th>Investment</th>
+          <th>Dist. To Date</th>
+          {% for q in view.quarters %}<th class="q">{{ q }}</th>{% endfor %}
+          <th>Forecast</th>
+          <th>Proj IRR</th>
+          <th>Proj EM</th>
         </tr>
       </thead>
       <tbody>
         {% for p in inv.positions %}
         <tr>
           <td>{{ p.project }}</td>
-          <td>{{ 'Preferred' if p.equity_class == 'preferred' else 'Common' }}</td>
-          <td class="r">{{ '{:.2f}%'.format(p.pct) }}</td>
-          <td class="r">{{ money(p.committed) }}</td>
-          <td class="r good">{{ money(p.dist_to_date) }}</td>
-          {% for qv in p.q_forecast %}<td class="r q">{{ moneyc(qv) }}</td>{% endfor %}
-          <td class="r accent">{{ money(p.dist_forecast) }}</td>
-          <td class="r">{{ '{:.1f}%'.format(p.irr) if p.irr is not none else '—' }}</td>
-          <td class="r">{{ '{:.2f}x'.format(p.em) if p.em else '—' }}</td>
+          <td class="muted">{{ 'Preferred' if p.equity_class == 'preferred' else 'Common' }}</td>
+          <td>{{ '{:.2f}%'.format(p.pct) }}</td>
+          <td>{{ money(p.committed) }}</td>
+          <td class="good">{{ money(p.dist_to_date) }}</td>
+          {% for qv in p.q_forecast %}<td class="q">{{ moneyc(qv) }}</td>{% endfor %}
+          <td class="accent">{{ money(p.dist_forecast) }}</td>
+          <td>{{ '{:.1f}%'.format(p.irr) if p.irr is not none else '—' }}</td>
+          <td>{{ '{:.2f}x'.format(p.em) if p.em else '—' }}</td>
         </tr>
         {% endfor %}
-        <tr class="total">
+        <tr class="total-row">
           <td>Total</td>
           <td></td>
           <td></td>
-          <td class="r">{{ money(inv.committed) }}</td>
-          <td class="r">{{ money(inv.distributions_to_date) }}</td>
-          {% for qv in inv.q_forecast %}<td class="r q">{{ moneyc(qv) }}</td>{% endfor %}
-          <td class="r">{{ money(inv.distributions_forecast) }}</td>
-          <td class="r">{{ '{:.1f}%'.format(inv.irr) if inv.irr is not none else '—' }}</td>
-          <td class="r">{{ '{:.2f}x'.format(inv.em) if inv.em else '—' }}</td>
+          <td>{{ money(inv.committed) }}</td>
+          <td class="good">{{ money(inv.distributions_to_date) }}</td>
+          {% for qv in inv.q_forecast %}<td class="q">{{ moneyc(qv) }}</td>{% endfor %}
+          <td class="accent">{{ money(inv.distributions_forecast) }}</td>
+          <td>{{ '{:.1f}%'.format(inv.irr) if inv.irr is not none else '—' }}</td>
+          <td>{{ '{:.2f}x'.format(inv.em) if inv.em else '—' }}</td>
         </tr>
       </tbody>
     </table>
 
-    <div class="note">Distributions scaled from each project's LP returns by ownership %. Quarter columns are forecast distributions per calendar quarter (compact $); quarter totals tie to the Forecast column. Generated {{ generated }}.</div>
+    <div class="note">Distributions scaled from each project's LP returns by ownership %. Period columns are forecast distributions for the next four quarters, then by year; column totals tie to the Forecast column. Generated {{ generated }}.</div>
   </section>
 {% endfor %}
 </body>
