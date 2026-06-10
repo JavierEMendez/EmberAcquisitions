@@ -4062,46 +4062,41 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
                 s += v * year_frac
         return s
 
-    # ── Future-quarter axis (forecast cashflow columns) ───────────────
-    # A quarter is "future" when at least one of its month-start dates is
-    # strictly after today. With a monthly block the axis is derived from
-    # src_months; otherwise it spans the current year (remaining quarters)
-    # through the last returns year.
+    # ── Forecast axis (cashflow columns) ──────────────────────────────
+    # Near-term detail, long-term roll-up: the current year is split into its
+    # 4 quarters, then each subsequent returns year is a single annual column.
+    # ("To Date" is its own column upstream.) Columns: Q1..Q4 <cur_year>,
+    # then <cur_year+1>, <cur_year+2>, … through the last returns year.
     cur_q = (today.month - 1) // 3 + 1
-    future_quarters: list[tuple[int, int]] = []   # (year, quarter)
-    if months_iso:
-        _seen = set()
-        for iso in months_iso:
-            if iso > today_iso:
-                y = int(iso[:4]); q = (int(iso[5:7]) - 1) // 3 + 1
-                if (y, q) not in _seen:
-                    _seen.add((y, q)); future_quarters.append((y, q))
-        future_quarters.sort()
-    else:
-        for y in years_int:
-            if y < cur_year:
-                continue
-            for q in range(1, 5):
-                if y == cur_year and q < cur_q:
-                    continue
-                future_quarters.append((y, q))
-    quarter_labels = ["Q%d %d" % (q, y) for (y, q) in future_quarters]
-    q_index = {(y, q): i for i, (y, q) in enumerate(future_quarters)}
-    n_q = len(future_quarters)
+    last_year = max(years_int) if years_int else cur_year
+    quarter_labels = ["Q%d %d" % (q, cur_year) for q in range(1, 5)]
+    quarter_labels += [str(y) for y in range(cur_year + 1, last_year + 1)]
+    n_q = len(quarter_labels)
+
+    def _col_index(year: int, q: int) -> int | None:
+        """Forecast-axis column for a (year, quarter). Current year → its
+        quarter slot (0–3); later years → their annual slot; past years →
+        None (they belong to 'to date', not the forecast axis)."""
+        if year == cur_year:
+            return q - 1
+        if year > cur_year:
+            j = 4 + (year - cur_year - 1)
+            return min(j, n_q - 1)
+        return None
 
     def _future_quarter_buckets(yearly: list, monthly: list, pct: float,
                                 forecast_total: float) -> list[float]:
-        """Distribute a position's forecast (actual $) across the future-
-        quarter axis. Uses the monthly block when it aligns to src_months;
-        else spreads each future year's value evenly across its quarters.
-        Buckets are scaled so they sum to `forecast_total`, keeping the
-        cashflow row consistent with the Forecast column."""
+        """Distribute a position's forecast (actual $) across the forecast
+        axis (current-year quarters + annual columns). Uses the monthly block
+        when it aligns to src_months; else spreads each future year's value
+        (current year across its remaining quarters, later years to their
+        annual column). Buckets scale to sum to `forecast_total`."""
         raw = [0.0] * n_q
         if months_iso and monthly and len(monthly) == len(months_iso):
             for i, iso in enumerate(months_iso):
                 if iso > today_iso:
                     y = int(iso[:4]); q = (int(iso[5:7]) - 1) // 3 + 1
-                    j = q_index.get((y, q))
+                    j = _col_index(y, q)
                     if j is not None:
                         raw[j] += float(monthly[i] or 0) * pct * 1000.0
         else:
@@ -4109,13 +4104,15 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
                 if y < cur_year or i >= len(yearly):
                     continue
                 yv = float(yearly[i] or 0) * pct * 1000.0
-                qs = [q for q in range(1, 5)
-                      if (y, q) in q_index and not (y == cur_year and q < cur_q)]
                 if y == cur_year:
                     yv *= max(0.0, 1.0 - year_frac)
-                if qs:
+                    qs = [q for q in range(1, 5) if q >= cur_q]
                     for q in qs:
-                        raw[q_index[(y, q)]] += yv / len(qs)
+                        raw[_col_index(cur_year, q)] += yv / len(qs)
+                else:
+                    j = _col_index(y, 0)
+                    if j is not None:
+                        raw[j] += yv
         tot = sum(raw)
         if tot > 1e-9:
             scale = forecast_total / tot
