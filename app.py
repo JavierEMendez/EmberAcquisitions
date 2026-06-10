@@ -355,6 +355,10 @@ def init_db():
     # Admin-controllable per user; defaults to true so we don't yank the
     # ability away from existing accounts on deploy.
     cur.execute("UPDATE users SET page_access = page_access || '{\"reports\": true}'::jsonb WHERE page_access->>'reports' IS NULL")
+    # `captable_edit` gates uploading/editing investor cap tables (money data).
+    # Defaults to FALSE for everyone; granted explicitly to the owner account
+    # so it can manage cap tables without opening the control to all users.
+    cur.execute("UPDATE users SET page_access = page_access || '{\"captable_edit\": true}'::jsonb WHERE username = %s", ("carlossaldierna",))
 
     # Backfill report_subscriptions for users created before the column
     # existed. If they were opted-in under the legacy single-flag model,
