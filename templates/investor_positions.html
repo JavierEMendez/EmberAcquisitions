@@ -3,8 +3,13 @@
 <head>
 <meta charset="UTF-8"/>
 <title>Investor Position Statement</title>
+{# Auto-size the page WIDTH to the column count so the single horizontal table
+   always fits on one (wide) sheet instead of being clipped. Base covers the
+   8 fixed columns + margins; each quarter adds a fixed slice. #}
+{% set nq = view.quarters | length %}
+{% set page_w = 210 + nq * 13 %}
 <style>
-  @page { size: letter landscape; margin: 14mm 12mm; }
+  @page { size: {{ page_w }}mm 216mm; margin: 12mm 12mm; }
   * { box-sizing: border-box; }
   body { font-family: "Helvetica Neue", Arial, sans-serif; color: #1A1A1A; font-size: 10px; margin: 0; }
   .investor { page-break-after: always; }
@@ -15,7 +20,7 @@
   .head h1 { font-size: 20px; margin: 4px 0 2px; letter-spacing: -0.01em; }
   .head .sub { font-size: 9px; color: #888; }
 
-  .kpis { display: flex; gap: 10px; margin-bottom: 16px; }
+  .kpis { display: flex; gap: 10px; margin-bottom: 16px; max-width: 1000px; }
   .kpi { flex: 1; border: 1px solid #E4DFD5; border-radius: 6px; padding: 8px 10px; background: #FAF6EC; }
   .kpi .l { font-size: 7.5px; letter-spacing: 0.1em; text-transform: uppercase; color: #888; font-weight: 700; }
   .kpi .v { font-size: 15px; font-weight: 700; margin-top: 3px; }
@@ -23,28 +28,22 @@
   .kpi.good .v { color: #2D8B76; }
 
   table { width: 100%; border-collapse: collapse; }
-  th, td { padding: 5px 7px; border: 1px solid #E4DFD5; white-space: nowrap; }
-  th { background: #F2EFE8; font-size: 7.5px; letter-spacing: 0.04em; text-transform: uppercase; color: #555; }
-  td { font-size: 9px; }
+  th, td { padding: 5px 6px; border: 1px solid #E4DFD5; white-space: nowrap; }
+  th { background: #F2EFE8; font-size: 7px; letter-spacing: 0.03em; text-transform: uppercase; color: #555; }
+  td { font-size: 8.5px; }
   th.r, td.r { text-align: right; }
   td.good { color: #2D8B76; }
   td.accent { color: #C56028; }
+  th.q, td.q { font-size: 7.5px; }
   tr.total td { background: #FAF6EC; font-weight: 700; border-top: 2px solid #C56028; }
   .note { margin-top: 10px; font-size: 8px; color: #999; }
-
-  .sec-title { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase;
-               font-weight: 700; color: #C56028; margin: 16px 0 6px; }
-  /* Schedule: quarters as rows so it grows downward (paginates) instead of
-     off the right edge. Project columns wrap; header repeats per page. */
-  table.sched { table-layout: fixed; }
-  table.sched thead { display: table-header-group; }
-  table.sched th { font-size: 6.5px; white-space: normal; word-break: break-word; }
-  table.sched td { font-size: 8px; }
-  table.sched th:first-child, table.sched td:first-child { width: 58px; white-space: nowrap; font-weight: 600; }
 </style>
 </head>
 <body>
-{% macro money(v) %}{% if v is none %}—{% elif v == 0 %}—{% else %}{{ '${:,.0f}'.format(v) }}{% endif %}{% endmacro %}
+{# Full currency for the summary columns; compact ($1.1M / $957K) for the many
+   narrow quarter cells so the table stays a sane width. #}
+{% macro money(v) %}{% if not v %}—{% else %}{{ '${:,.0f}'.format(v) }}{% endif %}{% endmacro %}
+{% macro moneyc(v) %}{% if not v %}—{% elif v|abs >= 1000000 %}{{ '${:.1f}M'.format(v/1000000.0) }}{% elif v|abs >= 1000 %}{{ '${:.0f}K'.format(v/1000.0) }}{% else %}{{ '${:,.0f}'.format(v) }}{% endif %}{% endmacro %}
 {% for inv in view.investors %}
   <section class="investor">
     <div class="head">
@@ -62,7 +61,6 @@
       <div class="kpi"><div class="l">IRR</div><div class="v">{{ '{:.1f}%'.format(inv.irr) if inv.irr is not none else '—' }}</div></div>
     </div>
 
-    <div class="sec-title">Positions</div>
     <table>
       <thead>
         <tr>
@@ -71,6 +69,7 @@
           <th class="r">Ownership</th>
           <th class="r">Investment</th>
           <th class="r">Dist. To Date</th>
+          {% for q in view.quarters %}<th class="r q">{{ q | replace(' 20', " '") }}</th>{% endfor %}
           <th class="r">Forecast</th>
           <th class="r">Proj IRR</th>
           <th class="r">Proj EM</th>
@@ -84,6 +83,7 @@
           <td class="r">{{ '{:.2f}%'.format(p.pct) }}</td>
           <td class="r">{{ money(p.committed) }}</td>
           <td class="r good">{{ money(p.dist_to_date) }}</td>
+          {% for qv in p.q_forecast %}<td class="r q">{{ moneyc(qv) }}</td>{% endfor %}
           <td class="r accent">{{ money(p.dist_forecast) }}</td>
           <td class="r">{{ '{:.1f}%'.format(p.irr) if p.irr is not none else '—' }}</td>
           <td class="r">{{ '{:.2f}x'.format(p.em) if p.em else '—' }}</td>
@@ -95,6 +95,7 @@
           <td></td>
           <td class="r">{{ money(inv.committed) }}</td>
           <td class="r">{{ money(inv.distributions_to_date) }}</td>
+          {% for qv in inv.q_forecast %}<td class="r q">{{ moneyc(qv) }}</td>{% endfor %}
           <td class="r">{{ money(inv.distributions_forecast) }}</td>
           <td></td>
           <td></td>
@@ -102,34 +103,7 @@
       </tbody>
     </table>
 
-    {% if view.quarters %}
-    <div class="sec-title">Forecast distribution schedule (by quarter)</div>
-    <table class="sched">
-      <thead>
-        <tr>
-          <th>Quarter</th>
-          {% for p in inv.positions %}<th class="r">{{ p.project }}{% if p.equity_class == 'preferred' %} (Pref){% endif %}</th>{% endfor %}
-          <th class="r">Total</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for qi in range(view.quarters|length) %}
-        <tr>
-          <td>{{ view.quarters[qi] }}</td>
-          {% for p in inv.positions %}<td class="r">{{ money(p.q_forecast[qi]) }}</td>{% endfor %}
-          <td class="r accent">{{ money(inv.q_forecast[qi]) }}</td>
-        </tr>
-        {% endfor %}
-        <tr class="total">
-          <td>Total</td>
-          {% for p in inv.positions %}<td class="r">{{ money(p.dist_forecast) }}</td>{% endfor %}
-          <td class="r">{{ money(inv.distributions_forecast) }}</td>
-        </tr>
-      </tbody>
-    </table>
-    {% endif %}
-
-    <div class="note">Distributions scaled from each project's LP returns by ownership %. Forecast bucketed by calendar quarter; the schedule's column totals tie to each position's Forecast. Generated {{ generated }}.</div>
+    <div class="note">Distributions scaled from each project's LP returns by ownership %. Quarter columns are forecast distributions per calendar quarter (compact $); quarter totals tie to the Forecast column. Generated {{ generated }}.</div>
   </section>
 {% endfor %}
 </body>
