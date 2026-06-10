@@ -730,8 +730,8 @@
                             <td class="right num bold">{{ fmt_money_raw(v.committed) }}</td>
                             <td class="right num bold good">{{ fmt_money_raw(v.distributions_to_date) }}</td>
                             <td class="right num bold accent">{{ fmt_money_raw(v.distributions_forecast) }}</td>
-                            <td></td>
-                            <td></td>
+                            <td class="right num bold">{% if v.irr is none %}—{% else %}{{ fmt_pct(v.irr) }}{% endif %}</td>
+                            <td class="right num bold">{{ fmt_em(v.em) }}</td>
                             {% for qv in v.q_forecast %}<td class="right num bold">{{ fmt_money_raw(qv) }}</td>{% endfor %}
                           </tr>
                         </tbody>

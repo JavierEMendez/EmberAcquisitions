@@ -5979,6 +5979,8 @@ def _gen_excel_investor_positions(view: dict) -> bytes:
             qv = inv["q_forecast"][j] if j < len(inv["q_forecast"]) else 0
             m = ws.cell(r, 6 + j); money(m, qv); m.font = font(True)
         m = ws.cell(r, 6 + nq); money(m, inv["distributions_forecast"]); m.font = font(True)
+        ti = ws.cell(r, 7 + nq); pct(ti, (inv["irr"] / 100.0) if inv.get("irr") is not None else None); ti.font = font(True)
+        te = ws.cell(r, 8 + nq); emx(te, inv["em"]); te.font = font(True)
 
         # Column widths
         ws.column_dimensions["A"].width = 26

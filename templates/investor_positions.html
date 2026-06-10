@@ -97,8 +97,8 @@
           <td class="r">{{ money(inv.distributions_to_date) }}</td>
           {% for qv in inv.q_forecast %}<td class="r q">{{ moneyc(qv) }}</td>{% endfor %}
           <td class="r">{{ money(inv.distributions_forecast) }}</td>
-          <td></td>
-          <td></td>
+          <td class="r">{{ '{:.1f}%'.format(inv.irr) if inv.irr is not none else '—' }}</td>
+          <td class="r">{{ '{:.2f}x'.format(inv.em) if inv.em else '—' }}</td>
         </tr>
       </tbody>
     </table>
