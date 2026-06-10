@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>Investor Position Statement</title>
+<style>
+  @page { size: letter landscape; margin: 14mm 12mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; color: #1A1A1A; font-size: 10px; margin: 0; }
+  .investor { page-break-after: always; }
+  .investor:last-child { page-break-after: auto; }
+
+  .head { border-bottom: 2px solid #C56028; padding-bottom: 8px; margin-bottom: 14px; }
+  .eyebrow { font-size: 8px; letter-spacing: 0.22em; text-transform: uppercase; color: #C56028; font-weight: 700; }
+  .head h1 { font-size: 20px; margin: 4px 0 2px; letter-spacing: -0.01em; }
+  .head .sub { font-size: 9px; color: #888; }
+
+  .kpis { display: flex; gap: 10px; margin-bottom: 16px; }
+  .kpi { flex: 1; border: 1px solid #E4DFD5; border-radius: 6px; padding: 8px 10px; background: #FAF6EC; }
+  .kpi .l { font-size: 7.5px; letter-spacing: 0.1em; text-transform: uppercase; color: #888; font-weight: 700; }
+  .kpi .v { font-size: 15px; font-weight: 700; margin-top: 3px; }
+  .kpi.accent .v { color: #C56028; }
+  .kpi.good .v { color: #2D8B76; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 5px 7px; border: 1px solid #E4DFD5; white-space: nowrap; }
+  th { background: #F2EFE8; font-size: 7.5px; letter-spacing: 0.04em; text-transform: uppercase; color: #555; }
+  td { font-size: 9px; }
+  th.r, td.r { text-align: right; }
+  td.good { color: #2D8B76; }
+  td.accent { color: #C56028; }
+  tr.total td { background: #FAF6EC; font-weight: 700; border-top: 2px solid #C56028; }
+  .note { margin-top: 10px; font-size: 8px; color: #999; }
+</style>
+</head>
+<body>
+{% macro money(v) %}{% if v is none %}—{% elif v == 0 %}—{% else %}{{ '${:,.0f}'.format(v) }}{% endif %}{% endmacro %}
+{% for inv in view.investors %}
+  <section class="investor">
+    <div class="head">
+      <div class="eyebrow">Ember Capital · Investor Position Statement</div>
+      <h1>{{ inv.name }}</h1>
+      <div class="sub">As of {{ (view.uploaded_at or generated)[:10] }} · values in actual USD</div>
+    </div>
+
+    <div class="kpis">
+      <div class="kpi accent"><div class="l">Total Investment</div><div class="v">{{ money(inv.committed) }}</div></div>
+      <div class="kpi good"><div class="l">Distributions To Date</div><div class="v">{{ money(inv.distributions_to_date) }}</div></div>
+      <div class="kpi"><div class="l">Forecast Distributions</div><div class="v">{{ money(inv.distributions_forecast) }}</div></div>
+      <div class="kpi"><div class="l">Profit</div><div class="v">{{ money(inv.profit) }}</div></div>
+      <div class="kpi"><div class="l">Equity Multiple</div><div class="v">{{ '{:.2f}x'.format(inv.em) if inv.em else '—' }}</div></div>
+      <div class="kpi"><div class="l">IRR</div><div class="v">{{ '{:.1f}%'.format(inv.irr) if inv.irr is not none else '—' }}</div></div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Project</th>
+          <th>Class</th>
+          <th class="r">Ownership</th>
+          <th class="r">Investment</th>
+          <th class="r">Dist. To Date</th>
+          {% for q in view.quarters %}<th class="r">{{ q }}</th>{% endfor %}
+          <th class="r">Forecast</th>
+          <th class="r">Proj IRR</th>
+          <th class="r">Proj EM</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in inv.positions %}
+        <tr>
+          <td>{{ p.project }}</td>
+          <td>{{ 'Preferred' if p.equity_class == 'preferred' else 'Common' }}</td>
+          <td class="r">{{ '{:.2f}%'.format(p.pct) }}</td>
+          <td class="r">{{ money(p.committed) }}</td>
+          <td class="r good">{{ money(p.dist_to_date) }}</td>
+          {% for qv in p.q_forecast %}<td class="r">{{ money(qv) }}</td>{% endfor %}
+          <td class="r accent">{{ money(p.dist_forecast) }}</td>
+          <td class="r">{{ '{:.1f}%'.format(p.irr) if p.irr is not none else '—' }}</td>
+          <td class="r">{{ '{:.2f}x'.format(p.em) if p.em else '—' }}</td>
+        </tr>
+        {% endfor %}
+        <tr class="total">
+          <td>Total</td>
+          <td></td>
+          <td></td>
+          <td class="r">{{ money(inv.committed) }}</td>
+          <td class="r">{{ money(inv.distributions_to_date) }}</td>
+          {% for qv in inv.q_forecast %}<td class="r">{{ money(qv) }}</td>{% endfor %}
+          <td class="r">{{ money(inv.distributions_forecast) }}</td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="note">Distributions scaled from each project's LP returns by ownership %. Forecast bucketed by calendar quarter; quarter totals tie to the Forecast column. Generated {{ generated }}.</div>
+  </section>
+{% endfor %}
+</body>
+</html>

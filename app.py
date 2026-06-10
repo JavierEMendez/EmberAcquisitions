@@ -5798,6 +5798,190 @@ def ember_capital_captable():
     })
 
 
+def _investor_export_view(selected_id: str | None = None) -> dict:
+    """Build the investor view for export, optionally narrowed to one vehicle.
+    Returns the view dict (with `investors` filtered when an id is given)."""
+    raw_projects, years_str, years_int, src_months = _capital_returns_projects_years()
+    view = _build_investor_view(raw_projects, years_str, years_int, src_months)
+    if selected_id:
+        view = dict(view)
+        view["investors"] = [i for i in view.get("investors", [])
+                             if i["id"] == selected_id]
+    return view
+
+
+def _investor_export_gate():
+    """Same view gate as the investor portfolios table (portfolio access);
+    admins always pass. Returns an error response tuple or None."""
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("portfolio", True):
+        return jsonify({"error": "Access denied"}), 403
+    return None
+
+
+@app.route("/api/ember-capital/investors.xlsx", methods=["GET"])
+@login_required
+def ember_capital_investors_xlsx():
+    """Excel export of investor positions + quarterly schedule. `?id=<vehicle>`
+    exports a single investor (for handing to a visiting investor); omit it to
+    export every investor, one sheet each."""
+    gate = _investor_export_gate()
+    if gate:
+        return gate
+    sel = request.args.get("id")
+    view = _investor_export_view(sel)
+    if not view.get("investors"):
+        return jsonify({"error": "No investor positions to export"}), 404
+    xlsx = _gen_excel_investor_positions(view)
+    base = view["investors"][0]["name"] if sel else "All_Investors"
+    fname = "Positions_%s_%s.xlsx" % (_capital_slug(base),
+                                      datetime.datetime.now().strftime("%Y-%m-%d"))
+    return send_file(
+        io.BytesIO(xlsx),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True, download_name=fname)
+
+
+@app.route("/api/ember-capital/investors.pdf", methods=["GET"])
+@login_required
+def ember_capital_investors_pdf():
+    """PDF position statement for one investor (`?id=`) or all investors."""
+    gate = _investor_export_gate()
+    if gate:
+        return gate
+    sel = request.args.get("id")
+    view = _investor_export_view(sel)
+    if not view.get("investors"):
+        return jsonify({"error": "No investor positions to export"}), 404
+    html = render_template("investor_positions.html", view=view,
+                           generated=datetime.date.today().isoformat())
+    try:
+        from weasyprint import HTML
+        pdf_bytes = HTML(string=html, base_url=request.host_url,
+                         url_fetcher=_weasyprint_local_fetcher).write_pdf()
+    except (ImportError, OSError) as e:
+        app.logger.warning("WeasyPrint unavailable for investor positions "
+                           "(%s: %s); returning HTML", type(e).__name__, e)
+        return Response(html, mimetype="text/html")
+    base = view["investors"][0]["name"] if sel else "All_Investors"
+    fname = "Positions_%s_%s.pdf" % (_capital_slug(base),
+                                     datetime.datetime.now().strftime("%Y-%m-%d"))
+    return send_file(io.BytesIO(pdf_bytes), mimetype="application/pdf",
+                     as_attachment=True, download_name=fname)
+
+
+def _gen_excel_investor_positions(view: dict) -> bytes:
+    """One worksheet per investor: summary KPIs + the per-project positions
+    table with the quarterly forecast schedule and a total row."""
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    investors = view.get("investors", []) or []
+    quarters  = view.get("quarters", []) or []
+    uploaded  = (view.get("uploaded_at") or "")[:10] or datetime.date.today().isoformat()
+
+    ACCENT = "C56028"; HDR_FILL = PatternFill("solid", fgColor="F2EFE8")
+    TOT_FILL = PatternFill("solid", fgColor="FAF6EC")
+    thin = Side(style="thin", color="DDDDDD")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    right = Alignment(horizontal="right")
+
+    def font(bold=False, color="1A1A1A", size=10):
+        return Font(name="Calibri", size=size, bold=bold, color=color)
+    def money(cell, v):
+        cell.value = v if isinstance(v, (int, float)) else None
+        cell.number_format = '"$"#,##0'
+    def pct(cell, v):
+        if v is not None:
+            cell.value = v; cell.number_format = '0.0%'
+    def emx(cell, v):
+        if v is not None:
+            cell.value = v; cell.number_format = '0.00"x"'
+
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    used: set[str] = set()
+    def sheet_name(nm):
+        base = "".join(c for c in (nm or "Investor") if c not in '[]:*?/\\')[:31] or "Investor"
+        s, i = base, 2
+        while s in used:
+            s = (base[:28] + "_%d" % i); i += 1
+        used.add(s); return s
+
+    for inv in investors:
+        ws = wb.create_sheet(sheet_name(inv["name"]))
+        ws.cell(1, 1, inv["name"] + " — Position Statement").font = font(True, ACCENT, 14)
+        ws.cell(2, 1, "As of %s · values in actual USD" % uploaded).font = font(False, "888888", 9)
+
+        # Summary block (label / value rows)
+        irr_dec = (inv["irr"] / 100.0) if inv.get("irr") is not None else None
+        summary = [
+            ("Total Investment",       inv["committed"],              "money"),
+            ("Distributions To Date",  inv["distributions_to_date"],  "money"),
+            ("Forecast Distributions", inv["distributions_forecast"], "money"),
+            ("Profit",                 inv["profit"],                 "money"),
+            ("Equity Multiple",        inv["em"],                     "em"),
+            ("IRR",                    irr_dec,                       "pct"),
+        ]
+        r = 4
+        for lbl, val, kind in summary:
+            ws.cell(r, 1, lbl).font = font(True, "666666", 9)
+            c = ws.cell(r, 2)
+            if kind == "money": money(c, val)
+            elif kind == "em":  emx(c, val)
+            else:               pct(c, val)
+            r += 1
+
+        # Positions table
+        r += 1
+        headers = (["Project", "Class", "Ownership", "Investment", "Dist. To Date"]
+                   + list(quarters) + ["Forecast", "Proj IRR", "Proj EM"])
+        for ci, h in enumerate(headers, start=1):
+            cell = ws.cell(r, ci, h)
+            cell.font = font(True, "1A1A1A", 9)
+            cell.fill = HDR_FILL; cell.border = border
+            if ci > 2:
+                cell.alignment = right
+        hdr_row = r
+        r += 1
+        nq = len(quarters)
+        for p in sorted(inv.get("positions", []), key=lambda x: x["project"]):
+            ws.cell(r, 1, p["project"]).border = border
+            ws.cell(r, 2, "Preferred" if p["equity_class"] == "preferred" else "Common").border = border
+            pc = ws.cell(r, 3); pct(pc, (p["pct"] or 0) / 100.0); pc.border = border
+            mc = ws.cell(r, 4); money(mc, p["committed"]); mc.border = border
+            dc = ws.cell(r, 5); money(dc, p["dist_to_date"]); dc.border = border
+            for j in range(nq):
+                qv = p["q_forecast"][j] if j < len(p["q_forecast"]) else 0
+                qc = ws.cell(r, 6 + j); money(qc, qv); qc.border = border
+            fc = ws.cell(r, 6 + nq); money(fc, p["dist_forecast"]); fc.border = border
+            ic = ws.cell(r, 7 + nq); pct(ic, (p["irr"] or 0) / 100.0); ic.border = border
+            ec = ws.cell(r, 8 + nq); emx(ec, p["em"]); ec.border = border
+            r += 1
+        # Total row
+        tc = ws.cell(r, 1, "Total"); tc.font = font(True)
+        for ci in range(1, 9 + nq):
+            ws.cell(r, ci).fill = TOT_FILL; ws.cell(r, ci).border = border
+        ws.cell(r, 2).font = font(True)
+        m = ws.cell(r, 4); money(m, inv["committed"]); m.font = font(True)
+        m = ws.cell(r, 5); money(m, inv["distributions_to_date"]); m.font = font(True)
+        for j in range(nq):
+            qv = inv["q_forecast"][j] if j < len(inv["q_forecast"]) else 0
+            m = ws.cell(r, 6 + j); money(m, qv); m.font = font(True)
+        m = ws.cell(r, 6 + nq); money(m, inv["distributions_forecast"]); m.font = font(True)
+
+        # Column widths
+        ws.column_dimensions["A"].width = 26
+        ws.column_dimensions["B"].width = 11
+        for ci in range(3, 9 + nq):
+            ws.column_dimensions[get_column_letter(ci)].width = 13
+
+    bio = io.BytesIO()
+    wb.save(bio)
+    return bio.getvalue()
+
+
 @app.route("/api/ember-capital/pdf", methods=["GET"])
 @login_required
 def ember_capital_pdf():

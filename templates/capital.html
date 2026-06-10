@@ -591,7 +591,7 @@
 
         <div class="kpi-band kpi-band--4">
           <div class="kpi accent">
-            <div class="label">Total Committed</div>
+            <div class="label">Total Investment</div>
             <div class="v num">{{ fmt_money_raw(inv.total_committed) }}</div>
             <div class="s">{{ inv.count }} {{ 'vehicle' if inv.count == 1 else 'vehicles' }}</div>
           </div>
@@ -644,7 +644,14 @@
         <header class="sec-head">
           <div class="eyebrow">By investment vehicle</div>
           <h2>Investor Portfolios</h2>
-          <p>Each vehicle's committed capital, distributions received to date (through today), and forecast distributions (everything after today — the rest of this year plus future years), scaled from project LP distributions by ownership %. Pari passu across investors; LightHaven preferred equity is broken out as its own position. Positions in projects without a matching return are ignored.</p>
+          <p>Each vehicle's invested capital, distributions received to date (through today), and forecast distributions (everything after today — the rest of this year plus future years), scaled from project LP distributions by ownership %. Pari passu across investors; LightHaven preferred equity is broken out as its own position. Positions in projects without a matching return are ignored.</p>
+          {% if inv.investors %}
+          <div class="sec-actions">
+            <span class="sec-actions-label">Export all positions:</span>
+            <a class="btn ghost btn-sm" href="/api/ember-capital/investors.pdf" target="_blank" rel="noopener">PDF</a>
+            <a class="btn ghost btn-sm" href="/api/ember-capital/investors.xlsx">Excel</a>
+          </div>
+          {% endif %}
         </header>
 
         {% if inv.investors %}
@@ -654,7 +661,7 @@
               <thead>
                 <tr>
                   <th class="left">Investor / Vehicle</th>
-                  <th class="right">Committed</th>
+                  <th class="right">Investment</th>
                   <th class="right good">Dist. To Date</th>
                   <th class="right">Forecast</th>
                   <th class="right">Profit</th>
@@ -680,7 +687,13 @@
                 </tr>
                 <tr class="investor-detail" data-detail-for="{{ v.id }}" hidden>
                   <td colspan="8">
-                    <div class="inv-detail-sub">Positions &amp; quarterly forecast cashflow by project</div>
+                    <div class="inv-detail-head">
+                      <div class="inv-detail-sub">Positions &amp; quarterly forecast cashflow by project</div>
+                      <div class="inv-detail-export">
+                        <a class="btn ghost btn-sm" href="/api/ember-capital/investors.pdf?id={{ v.id }}" target="_blank" rel="noopener">Export PDF</a>
+                        <a class="btn ghost btn-sm" href="/api/ember-capital/investors.xlsx?id={{ v.id }}">Export Excel</a>
+                      </div>
+                    </div>
                     <div class="cashflow-scroll">
                       <table class="inv-pos-table">
                         <thead>
@@ -688,7 +701,7 @@
                             <th class="left">Project</th>
                             <th class="left">Class</th>
                             <th class="right">Ownership</th>
-                            <th class="right">Committed</th>
+                            <th class="right">Investment</th>
                             <th class="right good">To Date</th>
                             <th class="right accent">Forecast</th>
                             <th class="right">Proj IRR</th>
@@ -776,7 +789,7 @@
             <div class="ch">Project</div>
             <div class="ch">Vehicle</div>
             <div class="ch">Class</div>
-            <div class="ch right">Committed ($)</div>
+            <div class="ch right">Investment ($)</div>
             <div class="ch right">Ownership (%)</div>
             <div class="ch"></div>
           </div>

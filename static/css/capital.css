@@ -641,6 +641,13 @@
 .investor-row { cursor: pointer; }
 .investor-row:hover { background: var(--cap-bg-2); }
 
+/* Export affordances */
+.btn.btn-sm { font-size: 10px; padding: 5px 10px; }
+.sec-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.sec-actions-label { font-size: 10px; color: var(--cap-muted); font-weight: 600; }
+.inv-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.inv-detail-export { display: flex; gap: 8px; flex-shrink: 0; }
+
 /* Nested positions detail */
 .investor-detail > td { padding: 14px 16px !important; background: var(--cap-bg-2); }
 .inv-detail-sub {
