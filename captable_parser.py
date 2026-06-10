@@ -53,6 +53,13 @@ CAPTABLE_SPEC: list[dict] = [
         "start": 7, "end": 15,
     },
     {
+        # Grand Prairie East / CCI — a separate deal from GPD Development.
+        # This tab's layout differs: Entity=C, Offering($)=D, %=E.
+        "project": "Grand Prairie East", "tab": "GPP 55 East (CCI)",
+        "entity_col": "C", "pct_col": "E", "contrib_col": "D",
+        "start": 7, "end": 15,
+    },
+    {
         "project": "Windrose Green", "tab": "WRG (Windrose)",
         "entity_col": "B", "pct_col": "D", "contrib_col": "C",
         "start": 7, "end": 11,
@@ -119,7 +126,8 @@ CAPTABLE_SPEC: list[dict] = [
 # "GPD" tab is Grand Prairie *Development*, NOT "Grand Prairie East (CCI)" —
 # those are two separate deals and only Development has a cap table.
 PROJECT_ALIASES: dict[str, list[str]] = {
-    "Grand Prairie":  ["Grand Prairie Development", "GPD"],
+    "Grand Prairie":      ["Grand Prairie Development", "GPD"],
+    "Grand Prairie East": ["Grand Prairie East (CCI)", "Grand Prairie East", "GPP 55 East", "CCI"],
     "Windrose Green": ["Windrose Green", "WRG"],
     "Dennison":       ["Dennison", "WRRD"],
     "Lexington Land": ["Lexington Land Partners", "Lexington Land", "Lexington", "LLP"],
