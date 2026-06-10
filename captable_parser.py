@@ -112,13 +112,17 @@ CAPTABLE_SPEC: list[dict] = [
 # normalized (alnum-only) form; the first candidate that resolves wins. This is
 # config-driven on purpose: the exact live returns names are verified on
 # deploy, and adding/renaming a project is a one-line edit here.
+# Full Returns names go FIRST so the exact-match pass wins before the loose
+# containment fallback can grab a same-token sibling. Notably the cap-table
+# "GPD" tab is Grand Prairie *Development*, NOT "Grand Prairie East (CCI)" —
+# those are two separate deals and only Development has a cap table.
 PROJECT_ALIASES: dict[str, list[str]] = {
-    "Grand Prairie":  ["Grand Prairie", "GPD"],
-    "Windrose Green": ["Windrose Green", "Windrose", "WRG"],
-    "Dennison":       ["Dennison", "Windrose Dennison", "WRRD"],
-    "Lexington Land": ["Lexington Land", "Lexington", "LLP"],
-    "Hawthorne":      ["Hawthorne", "SFC"],
-    "Mid Main":       ["Mid Main", "Mid Main East", "MMEC"],
+    "Grand Prairie":  ["Grand Prairie Development", "GPD"],
+    "Windrose Green": ["Windrose Green", "WRG"],
+    "Dennison":       ["Dennison", "WRRD"],
+    "Lexington Land": ["Lexington Land Partners", "Lexington Land", "Lexington", "LLP"],
+    "Hawthorne":      ["The Hawthorne", "Hawthorne", "SFC"],
+    "Mid Main":       ["Mid Main East Commons (Land)", "Mid Main East Commons", "Mid Main East", "Mid Main", "MMEC"],
     "LightHaven":     ["LightHaven", "Lighthaven", "LHDW"],
 }
 
