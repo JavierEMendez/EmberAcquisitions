@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="/static/theme.css?v=3"/>
-<link rel="stylesheet" href="/static/css/financials.css?v=2"/>
+<link rel="stylesheet" href="/static/css/financials.css?v=3"/>
 <script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 <style>
   /* App shell — copied from operations.html so /financials nests in
@@ -287,20 +287,34 @@ function fmtMoney(n) {
   return neg ? '(' + s + ')' : s;
 }
 
-async function loadEntities() {
+async function loadEntities(period) {
   if (!FIN.sageConfigured) {
     $('fin-entity').innerHTML = '<option value="">Sage not configured</option>';
     return;
   }
   try {
-    const res = await fetch('/api/financials/entities');
+    const url = '/api/financials/entities' + (period ? ('?period=' + encodeURIComponent(period)) : '');
+    const res = await fetch(url);
     const j = await res.json();
     FIN.entities = j.entities || [];
     const sel = $('fin-entity');
+    const prevValue = sel.value;
+    // When a period is set we tag entities without a cached TB by giving
+    // them a CSS class — rendered as a lighter grey so the user can see
+    // at a glance which projects already have data uploaded for the
+    // currently-selected period.
     sel.innerHTML = '<option value="">Select an entity…</option>'
-      + FIN.entities.map(e => `<option value="${e.id}">${e.name}</option>`).join('');
+      + FIN.entities.map(e => {
+          const dim = (period && e.has_cache === false) ? ' class="fin-entity-no-data"' : '';
+          const suffix = (period && e.has_cache === false) ? ' — (no TB uploaded)' : '';
+          return `<option value="${e.id}"${dim}>${escapeHtml(e.name)}${suffix}</option>`;
+        }).join('');
     sel.disabled = false;
-    sel.addEventListener('change', onSelectionChange);
+    if (prevValue) sel.value = prevValue;
+    if (!sel._changeListenerAttached) {
+      sel.addEventListener('change', onSelectionChange);
+      sel._changeListenerAttached = true;
+    }
   } catch (err) {
     console.error('Failed to load entities', err);
     setStatus('Could not load entities: ' + err.message, 'err');
@@ -330,11 +344,18 @@ async function loadPeriods() {
 }
 
 function onSelectionChange() {
+  const prevPeriod = FIN.currentPeriod;
   FIN.currentEntity = $('fin-entity').value;
   FIN.currentPeriod = $('fin-period').value;
   $('fin-refresh').disabled = !(FIN.currentEntity && FIN.currentPeriod);
   $('fin-calibrate').disabled = !(FIN.currentEntity && FIN.currentPeriod);
   $('fin-pull-tb-report').disabled = !(FIN.currentEntity && FIN.currentPeriod);
+  // When the period changes, the set of entities with cached TB data
+  // changes too — refetch so the "no TB uploaded" greyed-out hints stay
+  // in sync. loadEntities preserves the current selection.
+  if (FIN.currentPeriod && FIN.currentPeriod !== prevPeriod) {
+    loadEntities(FIN.currentPeriod);
+  }
   if (FIN.currentEntity && FIN.currentPeriod) {
     // Try to render from cache; if no cache, show empty state
     fetchBalanceSheet(false);
@@ -1238,10 +1259,10 @@ $('fin-upload-tb-form').addEventListener('submit', async (e) => {
             + 'from the uploaded TB.';
     summary += '</span>';
     $('fin-upload-tb-status').innerHTML = summary;
-    // Refresh the entity dropdown so newly-cached entities appear.
-    // Switch the BS fetch path to use the TB-upload endpoint when
-    // the user picks an entity.
+    // Refresh the entity dropdown so the freshly-cached entities lose
+    // their "no TB uploaded" greyed-out styling immediately.
     FIN.useTbUpload = true;
+    await loadEntities(FIN.currentPeriod);
     if (FIN.currentEntity) {
       fetchBalanceSheet(false);
     }

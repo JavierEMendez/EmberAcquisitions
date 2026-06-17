@@ -2047,17 +2047,37 @@ def financials_page():
 @app.route("/api/financials/entities", methods=["GET"])
 @login_required
 def api_financials_entities():
+    """Return the entity list. When called with ?period=<name>, also tag
+    each entity with has_cache:bool indicating whether intacct_tb_cache
+    holds a row for (entity_id, period) — the frontend uses this to dim
+    entities the user hasn't uploaded a TB for yet."""
     if not _can_view_financials():
         return jsonify({"error": "forbidden"}), 403
     if not sage_intacct.is_configured():
         return jsonify({"configured": False, "entities": []}), 200
     try:
         entities = sage_intacct.list_entities()
-        return jsonify({"configured": True, "entities": entities})
     except sage_intacct.IntacctConfigurationError as e:
         return jsonify({"configured": False, "error": str(e)}), 200
     except sage_intacct.IntacctAPIError as e:
         return jsonify({"configured": True, "entities": [], "error": str(e)}), 502
+
+    period = (request.args.get("period") or "").strip()
+    if period and entities:
+        try:
+            conn = get_db(); cur = conn.cursor()
+            cur.execute(
+                "SELECT entity_id FROM intacct_tb_cache WHERE period_name = %s",
+                (period,),
+            )
+            cached_ids = {row["entity_id"] for row in cur.fetchall()}
+            cur.close(); conn.close()
+            for e in entities:
+                e["has_cache"] = e["id"] in cached_ids
+        except Exception as exc:
+            app.logger.warning("entities: has_cache lookup failed: %s", exc)
+            # Don't fail the response — just omit the field
+    return jsonify({"configured": True, "entities": entities})
 
 
 @app.route("/api/financials/periods", methods=["GET"])
@@ -2450,13 +2470,18 @@ def api_financials_upload_tb():
         except Exception as e:
             return jsonify({"error": f"failed to parse YTD TB: {e}"}), 400
 
-    # Cache each entity under its TB sage_code (e.g. "DEV_GPD LLC")
-    # AND — if the form supplied the user-selected entity_id from the
-    # dropdown (e.g. "E_Grand Prairie Development LLC") — also under
-    # that key, so the dashboard's current selection finds the data.
-    # The sage_code Sage uses on the TB header doesn't match the
-    # entity-LOCATIONID Sage uses in list_entities, so we cache under
-    # both to make either lookup work.
+    # Cache each TB section under both the sage_code (TB header) and the
+    # entity-level LOCATIONID the dropdown navigates by. Previously this
+    # only mirrored under the user's *currently-selected* entity, so the
+    # workaround was to re-upload once per project — now one upload
+    # populates every project whose entity appears in the TB.
+    try:
+        loc_to_entity = sage_intacct.location_to_entity_map()
+    except Exception as e:
+        app.logger.warning("upload-tb: location_to_entity_map() failed: %s", e)
+        loc_to_entity = {}
+    # Optional override the form may pass (kept for backwards compat with
+    # the old upload UX that scoped to one entity).
     selected_entity = (request.form.get("entity") or "").strip()
     cached_entities = []
     for code, data in monthly_entities.items():
@@ -2464,13 +2489,29 @@ def api_financials_upload_tb():
         ytd_info  = ytd_entities.get(code)
         if ytd_info:
             ytd_accts = ytd_info["accounts"]
-        # Primary: cache under the TB header's sage_code.
+
+        keys_written = []
+        # Primary: cache under the TB header's sage_code so direct lookups
+        # by Sage code still work.
         _fin_cache_put(code, period, data["accounts"], accounts_ytd=ytd_accts)
-        # Mirror: when the dropdown's entity is set and isn't the same
-        # as the sage_code, ALSO cache under that key.
-        if selected_entity and selected_entity != code:
+        keys_written.append(code)
+
+        # Auto-mirror: resolve sage_code → parent entity_id via Sage's
+        # LOCATION graph and cache under that key too. This is what
+        # eliminates the "re-upload per project" workflow.
+        parent_entity = loc_to_entity.get(code)
+        if parent_entity and parent_entity != code:
+            _fin_cache_put(parent_entity, period, data["accounts"],
+                           accounts_ytd=ytd_accts)
+            keys_written.append(parent_entity)
+
+        # Legacy explicit-override mirror (only useful when the dropdown's
+        # current selection doesn't naturally match either key above).
+        if selected_entity and selected_entity not in keys_written:
             _fin_cache_put(selected_entity, period, data["accounts"],
                            accounts_ytd=ytd_accts)
+            keys_written.append(selected_entity)
+
         cached_entities.append({
             "sage_code":         code,
             "full_name":         data["full_name"],
@@ -2478,7 +2519,7 @@ def api_financials_upload_tb():
             "as_of_date":        data["as_of_date"],
             "account_count":     len(data["accounts"]),
             "ytd_account_count": len(ytd_accts) if ytd_accts else 0,
-            "mirror_key":        selected_entity if (selected_entity and selected_entity != code) else None,
+            "cached_under":      keys_written,
         })
     return jsonify({
         "ok":              True,

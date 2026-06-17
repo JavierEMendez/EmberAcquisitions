@@ -328,3 +328,14 @@
   font-variant-numeric: tabular-nums;
 }
 .fin-data-dates .ddf-sep { color: var(--eax-line-2); }
+
+/* Entity dropdown: dim options whose TB hasn't been uploaded for the
+   currently-selected period. Helps the user spot which projects already
+   have data. Native <select> option styling is OS/browser-limited but
+   `color` is broadly supported on desktop browsers — paired with a
+   text suffix in loadEntities() so the cue still lands when the OS
+   strips the color (Safari, some mobile). */
+#fin-entity option.fin-entity-no-data {
+  color: var(--eax-muted, #9aa0a6);
+  font-style: italic;
+}

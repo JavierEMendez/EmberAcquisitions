@@ -633,11 +633,29 @@ def _read_report(
     report_name: str,
     arguments: dict = None,
     page_size: int = 1000,
-    max_pages: int = 50,
-    wait_seconds: int = 30,
+    max_pages: int = 60,
+    wait_seconds: int = 0,
+    poll_interval: float = 2.0,
+    poll_timeout_seconds: int = 90,
+    report_type: Optional[str] = None,
 ) -> dict:
-    """Invoke <readReport> for `report_name` with the given arguments.
-    Returns {'rows': [...], 'columns': [...], 'error': str-or-None}."""
+    """Invoke <readReport> for `report_name`, poll until DONE, return all rows.
+
+    Custom (memorized) Sage reports — including the API_TB Trial Balance
+    we use here — are async. The first <readReport> returns a <report_results>
+    element with a REPORTID and STATUS=PENDING. We then poll <readMore> using
+    that REPORTID (camelCase <reportId>, NOT <resultId> — different element
+    than readByQuery pagination) until the status flips to DONE and rows
+    start arriving in <data>. The earlier implementation looked for <data>
+    on the first call and bailed when it found a PENDING <report_results>
+    block instead, which is why this returned 0 rows and the team fell back
+    to GLENTRY-aggregation.
+
+    type="interactive" is required for custom/memorized reports per the
+    Sage developer docs. Omitting it targets "original" reports only.
+
+    Returns {'rows': [...], 'columns': [...], 'error': str-or-None}.
+    """
     args_xml = ""
     if arguments:
         for k, v in arguments.items():
@@ -646,159 +664,186 @@ def _read_report(
 
     out_rows: list[dict] = []
     out_cols: list[str] = []
-    result_id: Optional[str] = None
+    report_id: Optional[str] = None
+    status: str = "PENDING"
 
-    for page in range(max_pages):
-        if result_id is None:
-            # readReport schema (per Sage XL03000003 errors when we
-            # included <returnDef>): <report>, <waitTime>, <pagesize>,
-            # and (optional) <arguments> only. No <returnDef>.
-            content = (
-                f'<function controlid="{_new_control_id()}">'
-                "<readReport>"
-                f"<report>{_xml_escape(report_name)}</report>"
-                f"<waitTime>{int(wait_seconds)}</waitTime>"
-                f"<pagesize>{int(page_size)}</pagesize>"
-                f"{arguments_block}"
-                "</readReport>"
-                "</function>"
-            )
-        else:
-            content = (
-                f'<function controlid="{_new_control_id()}">'
-                f"<readMore><resultId>{_xml_escape(result_id)}</resultId></readMore>"
-                "</function>"
-            )
-        try:
-            root = _call(content)
-        except IntacctAPIError as e:
-            return {"rows": out_rows, "columns": out_cols, "error": str(e)[:500]}
-
-        data = root.find("./operation/result/data")
-        if data is None:
-            break
-        result_id = data.attrib.get("resultId") or None
-        try:
-            remaining = int(data.attrib.get("numremaining", "0") or "0")
-        except ValueError:
-            remaining = 0
-
-        for row_node in list(data):
-            row_dict = {child.tag: (child.text or "") for child in row_node}
-            if not out_cols:
-                out_cols = list(row_dict.keys())
-            out_rows.append(row_dict)
-
-        if not result_id or remaining <= 0:
-            break
-
-    return {"rows": out_rows, "columns": out_cols, "error": None}
-
-
-def _run_report(
-    report_name: str,
-    arguments: dict = None,
-    poll_seconds: int = 30,
-    poll_interval: float = 2.0,
-) -> dict:
-    """Invoke <runReport> (asynchronous variant of readReport).
-
-    Sage's <readReport> targets Report Writer reports. <runReport>
-    is the alternative path that historically also covers Memorized
-    Reports and some standard reports. Returns:
-        {'rows': [...], 'columns': [...], 'error': str-or-None}
-
-    Workflow:
-      1. POST <runReport> → returns a REPORTID (async job handle).
-      2. POST <getReportStatus> → poll until DONE.
-      3. POST <readReportResult> → fetch rows by the REPORTID.
-    Falls back to surfacing the original error if step 1 fails.
-    """
-    args_xml = ""
-    if arguments:
-        for k, v in arguments.items():
-            args_xml += f"<{_xml_escape(k)}>{_xml_escape(str(v))}</{_xml_escape(k)}>"
-    arguments_block = f"<arguments>{args_xml}</arguments>" if args_xml else ""
-
+    # Step 1: submit. Returns either a PENDING report_results (custom reports)
+    # or a data block with rows (some sync standard reports).
+    # type="interactive" targets Custom Report Writer reports. Omit it to target
+    # "original" reports including MEMORIZED standard reports (which is what
+    # API_TB is — a memorized Trial Balance). We try the no-type variant first
+    # since memorized standard reports are the common case for accounting use.
+    type_attr = f' type="{_xml_escape(report_type)}"' if report_type else ""
     submit = (
         f'<function controlid="{_new_control_id()}">'
-        "<runReport>"
+        f'<readReport{type_attr}>'
         f"<report>{_xml_escape(report_name)}</report>"
-        "<pagesize>1000</pagesize>"
+        f"<waitTime>{int(wait_seconds)}</waitTime>"
+        f"<pagesize>{int(page_size)}</pagesize>"
         f"{arguments_block}"
-        "</runReport>"
+        "</readReport>"
         "</function>"
     )
     try:
         root = _call(submit)
     except IntacctAPIError as e:
-        return {"rows": [], "columns": [], "error": str(e)[:500]}
+        return {"rows": out_rows, "columns": out_cols, "error": str(e)[:500]}
 
-    # The response should contain a REPORTID we can poll on.
-    report_id = None
+    # Try to extract a REPORTID + STATUS first (async path).
+    # Responses contain multiple <STATUS> elements (control/auth/result are all
+    # 'success'); the REPORT's status is the LAST one — nested deeper inside
+    # <data>/<report_results> or <data>/<report>/<data>. Take the last hit.
+    statuses_found = []
     for node in root.iter():
-        if node.tag.upper() in ("REPORTID", "REQUESTID", "JOBID"):
-            report_id = (node.text or "").strip()
-            if report_id:
-                break
+        tag = node.tag.upper()
+        if tag == "REPORTID" and (node.text or "").strip():
+            report_id = node.text.strip()
+        elif tag == "STATUS" and (node.text or "").strip():
+            statuses_found.append(node.text.strip().upper())
+    # The REPORT's status is the last STATUS — skip the control/auth/result ones
+    # that are all 'success'. If only success values exist, the report hasn't
+    # reported a status yet; default to PENDING.
+    report_statuses = [s for s in statuses_found if s not in ("SUCCESS",)]
+    if report_statuses:
+        status = report_statuses[-1]
+    elif statuses_found:
+        status = statuses_found[-1]
+
+    # Harvest data ONLY if this is a sync response with real rows. For async
+    # reports, the first response wraps a <report_results> meta block inside
+    # <data> — that's NOT a TB row, it's the job handle. If STATUS is set
+    # (PENDING/etc.), trust that signal and skip harvesting; the polling loop
+    # below will fetch the real rows once the report finishes.
+    data = root.find("./operation/result/data")
+    if data is not None and not report_id:
+        # Sync path — no REPORTID returned, so the data IS the rows
+        for row_node in list(data):
+            row_dict = {child.tag: (child.text or "") for child in row_node}
+            if not out_cols:
+                out_cols = list(row_dict.keys())
+            out_rows.append(row_dict)
+        try:
+            remaining = int(data.attrib.get("numremaining", "0") or "0")
+        except ValueError:
+            remaining = 0
+        report_id = data.attrib.get("resultId") or None  # legacy/sync fallback
+        if remaining <= 0 and out_rows:
+            return {"rows": out_rows, "columns": out_cols, "error": None}
+
     if not report_id:
         return {
-            "rows": [], "columns": [],
-            "error": f"runReport returned no REPORTID; raw: {ET.tostring(root).decode()[:500]}",
+            "rows": out_rows, "columns": out_cols,
+            "error": f"readReport returned no REPORTID and no rows; raw: {ET.tostring(root).decode()[:500]}",
         }
 
-    # Poll for status — simple linear polling.
+    # Step 2: poll readMore until status is DONE or rows arrive.
     waited = 0.0
-    while waited < poll_seconds:
+    while status in ("PENDING", "INPROGRESS", "INWAIT") and not out_rows:
+        if waited >= poll_timeout_seconds:
+            return {
+                "rows": out_rows, "columns": out_cols,
+                "error": f"readReport timed out after {poll_timeout_seconds}s (status={status}, REPORTID={report_id})",
+            }
         time.sleep(poll_interval)
         waited += poll_interval
-        status_xml = (
+        poll_xml = (
             f'<function controlid="{_new_control_id()}">'
-            "<getReportStatus>"
-            f"<REPORTID>{_xml_escape(report_id)}</REPORTID>"
-            "</getReportStatus>"
+            f"<readMore><reportId>{_xml_escape(report_id)}</reportId></readMore>"
             "</function>"
         )
         try:
-            sroot = _call(status_xml)
+            root = _call(poll_xml)
         except IntacctAPIError as e:
-            return {"rows": [], "columns": [], "error": f"getReportStatus failed: {e}"[:500]}
-        status_node = None
-        for n in sroot.iter():
-            if n.tag.upper() in ("STATUS", "REPORTSTATUS"):
-                status_node = n
-                break
-        status_val = (status_node.text or "").strip().upper() if status_node is not None else ""
-        if status_val in ("DONE", "COMPLETED", "COMPLETE", "SUCCESS"):
+            return {"rows": out_rows, "columns": out_cols, "error": str(e)[:500]}
+
+        # Refresh status from response — take the LAST non-'SUCCESS' STATUS
+        # (control/auth/result statuses are always 'success'; the report's
+        # actual status is nested deeper and reported separately).
+        statuses_found = [
+            n.text.strip().upper() for n in root.iter()
+            if n.tag.upper() == "STATUS" and (n.text or "").strip()
+        ]
+        report_statuses = [s for s in statuses_found if s != "SUCCESS"]
+        if report_statuses:
+            status = report_statuses[-1]
+        elif statuses_found:
+            status = statuses_found[-1]
+
+        # Only harvest data once the report is DONE. While PENDING, the data
+        # block contains a placeholder structure (data > report > data > STATUS)
+        # that's not real rows. Harvesting it would break out of the wait loop
+        # with junk and return early without the actual TB rows.
+        if status not in ("PENDING", "INPROGRESS", "INWAIT"):
+            data = root.find("./operation/result/data")
+            if data is not None:
+                for row_node in _iter_report_rows(data):
+                    row_dict = {child.tag: (child.text or "") for child in row_node}
+                    if not out_cols:
+                        out_cols = list(row_dict.keys())
+                    out_rows.append(row_dict)
+
+        if status in ("FAILED", "ERROR", "CANCELLED"):
+            return {"rows": out_rows, "columns": out_cols, "error": f"readReport status={status}"}
+
+    # Step 3: paginate remaining pages via readMore until numremaining=0.
+    for _ in range(max_pages):
+        data = root.find("./operation/result/data")
+        if data is None:
             break
-        if status_val in ("FAILED", "ERROR", "CANCELLED"):
-            return {"rows": [], "columns": [], "error": f"runReport status={status_val}"}
-    else:
-        return {"rows": [], "columns": [], "error": f"runReport timed out after {poll_seconds}s waiting for completion"}
-
-    # Fetch results.
-    fetch_xml = (
-        f'<function controlid="{_new_control_id()}">'
-        "<readReportResult>"
-        f"<REPORTID>{_xml_escape(report_id)}</REPORTID>"
-        "</readReportResult>"
-        "</function>"
-    )
-    try:
-        froot = _call(fetch_xml)
-    except IntacctAPIError as e:
-        return {"rows": [], "columns": [], "error": f"readReportResult failed: {e}"[:500]}
-
-    data = froot.find("./operation/result/data")
-    rows = []
-    cols = []
-    if data is not None:
-        for row_node in list(data):
+        try:
+            remaining = int(data.attrib.get("numremaining", "0") or "0")
+        except ValueError:
+            remaining = 0
+        if remaining <= 0:
+            break
+        poll_xml = (
+            f'<function controlid="{_new_control_id()}">'
+            f"<readMore><reportId>{_xml_escape(report_id)}</reportId></readMore>"
+            "</function>"
+        )
+        try:
+            root = _call(poll_xml)
+        except IntacctAPIError as e:
+            return {"rows": out_rows, "columns": out_cols, "error": str(e)[:500]}
+        data = root.find("./operation/result/data")
+        if data is None:
+            break
+        for row_node in _iter_report_rows(data):
             row_dict = {child.tag: (child.text or "") for child in row_node}
-            if not cols:
-                cols = list(row_dict.keys())
-            rows.append(row_dict)
-    return {"rows": rows, "columns": cols, "error": None}
+            if not out_cols:
+                out_cols = list(row_dict.keys())
+            out_rows.append(row_dict)
+
+    return {"rows": out_rows, "columns": out_cols, "error": None}
+
+
+def _iter_report_rows(data_elem):
+    """Yield row elements from a readReport/readMore <data> block.
+
+    Sage nests the rows differently depending on which call returned them:
+      readReport sync (rare):
+        <data><row>…</row><row>…</row></data>
+      readMore (DONE) — what API_TB actually returns:
+        <data count=N><report>
+          <data>…row…</data>   ← each row is itself a <data> element
+          <data>…row…</data>
+          …
+          <STATUS>DONE</STATUS>  ← terminator, skip it
+        </report></data>
+
+    The row container is <report> (when present); rows are its <data>
+    children. <STATUS> and any other non-<data> children are skipped.
+    """
+    if data_elem is None:
+        return
+    report_elem = data_elem.find("./report")
+    container = report_elem if report_elem is not None else data_elem
+    for child in list(container):
+        # In the readMore-DONE case each row is itself tagged <data>; in the
+        # sync case rows can be <row> or another tag. Skip STATUS/metadata.
+        if child.tag.upper() in ("STATUS",):
+            continue
+        yield child
 
 
 def list_saved_reports() -> dict:
@@ -890,30 +935,33 @@ def pull_tb_via_report(
     candidate_names = [n for n in candidate_names if not (n in seen or seen.add(n))]
 
     attempts: list[dict] = []
+    # API_TB rejects OWNER and LOCATIONID as invalid arguments — the report
+    # is either pre-configured for an entity or returns all entities (caller
+    # filters). Pass only the period; entity_id is used post-fetch to filter.
     args = {
-        # Sage convention arg names — report definition controls
-        # which are honored. We pass several so the right one binds.
         "REPORTINGPERIOD": period_name,
-        "OWNER":           entity_id,
-        "LOCATIONID":      entity_id,
     }
+    # Try each name with both report-type variants:
+    #   no type attr  → memorized standard reports (the common case — what API_TB likely is)
+    #   type="interactive" → Custom Report Writer reports
+    type_variants = [None, "interactive"]
     for name in candidate_names:
-        for op_label, runner in [("readReport", _read_report),
-                                 ("runReport",  _run_report)]:
-            log.info("pull_tb_via_report: trying %s(%r)", op_label, name)
-            result = runner(name, arguments=args)
+        for rtype in type_variants:
+            label = f"readReport(type={rtype or 'standard'})"
+            log.info("pull_tb_via_report: trying %s(%r)", label, name)
+            result = _read_report(name, arguments=args, report_type=rtype)
             attempt_info = {
                 "report_name": name,
-                "operation":   op_label,
+                "operation":   label,
                 "row_count":   len(result["rows"]),
                 "error":       result["error"],
             }
             attempts.append(attempt_info)
             if result["error"]:
-                log.warning("%s(%r) error: %s", op_label, name, result["error"])
+                log.warning("%s(%r) error: %s", label, name, result["error"])
                 continue
             if not result["rows"]:
-                log.warning("%s(%r) returned 0 rows", op_label, name)
+                log.warning("%s(%r) returned 0 rows", label, name)
                 continue
 
             accounts = _coerce_report_rows_to_accounts(result["rows"])
@@ -921,14 +969,15 @@ def pull_tb_via_report(
                 return {
                     "ok":          True,
                     "report_name": name,
-                    "operation":   op_label,
+                    "operation":   label,
                     "accounts":    accounts,
                     "attempts":    attempts,
-                    "message":     f"Pulled {len(accounts)} accounts from {op_label}({name!r}).",
+                    "message":     f"Pulled {len(accounts)} accounts from {label}({name!r}).",
                 }
+            # rows came back but couldn't be coerced to TB account shape
             log.warning(
                 "%s(%r) returned %d rows but none parseable as TB accounts; columns=%s",
-                op_label, name, len(result["rows"]), result["columns"],
+                label, name, len(result["rows"]), result["columns"],
             )
             attempt_info["parse_failed"] = True
             attempt_info["columns"]      = result["columns"]
@@ -974,11 +1023,16 @@ def _coerce_report_rows_to_accounts(rows: list[dict]) -> list[dict]:
         "num":     {"accountno", "accountnumber", "accountnum", "accno", "account",
                     "glaccountno", "glaccountnumber"},
         "name":    {"accountname", "accounttitle", "name", "title", "description"},
-        "opening": {"openingbalance", "beginningbalance", "beginbalance", "openingbal", "openbal"},
-        "debit":   {"debit", "debits", "totaldebits", "currentdebit"},
-        "credit":  {"credit", "credits", "totalcredits", "currentcredit"},
+        "opening": {"openingbalance", "beginningbalance", "beginbalance",
+                    "openingbal", "openbal", "beginbal"},
+        # Sage uses TOTDEBIT/TOTCREDIT in readReport output; aliases cover
+        # readByQuery (TOTALDEBIT) and the trial-balance variants.
+        "debit":   {"debit", "debits", "totaldebit", "totaldebits", "totdebit",
+                    "currentdebit"},
+        "credit":  {"credit", "credits", "totalcredit", "totalcredits", "totcredit",
+                    "currentcredit"},
         "closing": {"closingbalance", "endingbalance", "endbalance", "closingbal",
-                    "closeBal".lower(), "currentbalance", "balance"},
+                    "closebal", "endbal", "currentbalance", "balance"},
     }
 
     first_row = rows[0]
@@ -1686,6 +1740,49 @@ def get_trial_balance_with_cutoff(
         }
         for no, total in sums.items()
     ]
+
+
+def location_to_entity_map() -> dict[str, str]:
+    """Map every active LOCATIONID to the entity-level LOCATIONID it rolls up to.
+
+    Sage's multi-entity structure has LOCATIONTYPE='E' rows (entities, what
+    list_entities() returns) with LOCATIONTYPE='C' children whose PARENTID
+    points back to the entity. TB exports key sections by the child code
+    (e.g., "DEV_GPD LLC"), but the dashboard dropdown picks by entity id
+    (e.g., "16 - GPD"). This map lets the upload route mirror each TB
+    section under the entity_id that the dropdown will look up later.
+
+    Returns a dict where each LOCATIONID maps to itself (if it's an entity)
+    or to its parent's LOCATIONID (if it's a child). Inactive locations
+    are skipped. On API errors returns whatever's been built so far —
+    callers should treat a missing key as "no mapping known."
+    """
+    try:
+        rows = _read_by_query(
+            "LOCATION",
+            "",  # STATUS filter applied below to match list_entities behavior
+            "LOCATIONID,LOCATIONTYPE,PARENTID,STATUS",
+            pagesize=1000,
+            max_pages=4,
+        )
+    except IntacctAPIError as e:
+        log.warning("location_to_entity_map: query failed: %s", e)
+        return {}
+    out: dict[str, str] = {}
+    for r in rows:
+        if (r.get("STATUS") or "").strip().lower() != "active":
+            continue
+        lid = (r.get("LOCATIONID") or "").strip()
+        ltype = (r.get("LOCATIONTYPE") or "").strip().upper()
+        parent = (r.get("PARENTID") or "").strip()
+        if not lid:
+            continue
+        if ltype == "E":
+            out[lid] = lid
+        elif parent:
+            out[lid] = parent
+        # else: child with no parent — skip; we have no mapping
+    return out
 
 
 def _entity_location_set(entity_id: str) -> list[str]:
