@@ -2126,9 +2126,23 @@ def _fin_render_bs(accounts: list) -> dict:
 @login_required
 def api_financials_balance_sheet():
     """Return the rolled-up BS for the cached TB of (entity, period).
-    Does NOT call Sage — refresh hits a separate endpoint."""
+    Does NOT call Sage — refresh hits a separate endpoint.
+
+    Routes through tb_parser (same renderer as /balance-sheet-tb) so the
+    cached TB-upload data renders correctly for *every* user, not just the
+    one whose session set FIN.useTbUpload after uploading. The data was
+    always shared in Postgres; this is what makes it visible.
+
+    The legacy _fin_render_bs (frp_mapping) path only computed correctly
+    for GLENTRY-aggregated accounts, which we abandoned — keeping the
+    route name for backward compatibility but unifying the renderer.
+    """
     if not _can_view_financials():
         return jsonify({"error": "forbidden"}), 403
+    try:
+        import tb_parser
+    except ImportError as e:
+        return jsonify({"error": f"tb_parser import failed: {e}"}), 500
     entity = (request.args.get("entity") or "").strip()
     period = (request.args.get("period") or "").strip()
     if not entity or not period:
@@ -2139,12 +2153,15 @@ def api_financials_balance_sheet():
             "cached":  False,
             "message": "No data cached for this entity/period. Click Refresh from Sage.",
         }), 200
-    bs = _fin_render_bs(cache["accounts"])
+    v  = tb_parser.compute_bs(cache["accounts"])
+    bs = tb_parser.render_bs(v)
     return jsonify({
-        "cached":     True,
-        "entity":     entity,
-        "period":     period,
-        "fetched_at": cache["fetched_at"].isoformat() if cache["fetched_at"] else None,
+        "cached":        True,
+        "source":        "tb_upload",
+        "entity":        entity,
+        "period":        period,
+        "fetched_at":    cache["fetched_at"].isoformat() if cache["fetched_at"] else None,
+        "account_count": len(cache["accounts"]),
         "balance_sheet": bs,
     })
 
