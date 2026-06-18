@@ -1938,6 +1938,108 @@ def bva_discovery(entity_id: str | None = None, sample_rows: int = 300) -> dict:
     return out
 
 
+# ─── BVA actuals + commitments (by PROJECT × COSTTYPE) ───────────────────────
+def _glentry_signed(r: dict):
+    """Signed GL amount: AMOUNT × TR_TYPE (debit +1 / credit -1). Returns None
+    when TR_TYPE is missing (those entries are dropped, per get_trial_balance)."""
+    tr = (r.get("TR_TYPE") or "").strip()
+    if not tr:
+        return None
+    try:
+        return float(r.get("AMOUNT") or 0) * float(tr)
+    except (TypeError, ValueError):
+        return None
+
+
+def bva_actuals(entity_id: str) -> dict:
+    """Actual cost to date by (PROJECTID, COSTTYPEID) for an entity's locations.
+    Returns {(project, costtype): {project, project_name, task, costtype,
+    actual}}. Only cost-coded entries (those carrying a project or cost type)
+    are summed; cash/AP/debt lines fall out naturally."""
+    if not is_configured():
+        raise IntacctConfigurationError("Sage Intacct is not configured on this server.")
+    locs = _entity_location_set(entity_id)
+    select = ["PROJECTID", "PROJECTNAME", "TASKNAME", "COSTTYPEID", "AMOUNT", "TR_TYPE"]
+    agg: dict = {}
+    for loc in locs:
+        try:
+            rows = _query("GLENTRY", select, [("LOCATION", loc)],
+                          page_size=1000, max_pages=100)
+        except Exception as e:
+            log.warning("bva_actuals: GLENTRY LOCATION=%s failed: %s", loc, e)
+            continue
+        for r in rows:
+            proj = (r.get("PROJECTID") or "").strip()
+            ct = (r.get("COSTTYPEID") or "").strip()
+            if not (proj or ct):
+                continue
+            signed = _glentry_signed(r)
+            if signed is None:
+                continue
+            key = (proj, ct)
+            e = agg.setdefault(key, {"project": proj, "project_name": "",
+                                     "task": "", "costtype": ct, "actual": 0.0})
+            e["actual"] += signed
+            if not e["project_name"] and (r.get("PROJECTNAME") or "").strip():
+                e["project_name"] = r["PROJECTNAME"].strip()
+            if not e["task"] and (r.get("TASKNAME") or "").strip():
+                e["task"] = r["TASKNAME"].strip()
+    return agg
+
+
+_PO_LINE_CANDIDATES = [
+    "RECORDNO", "DOCHDRNO", "ITEMID", "PROJECTID", "PROJECTNAME",
+    "TASKID", "COSTTYPEID", "TOTAL", "AMOUNT", "STATE", "LOCATIONID",
+]
+
+
+def bva_commitments(entity_id: str) -> dict:
+    """Best-effort open commitments by (PROJECTID, COSTTYPEID) from PO lines.
+    Returns {(project, costtype): amount}; empty when Purchasing lines aren't
+    reachable or don't carry the cost dimensions. Refine 'open vs converted'
+    after verifying the live PO model."""
+    if not is_configured():
+        return {}
+    qfields: list[str] = []
+    for f in _PO_LINE_CANDIDATES:
+        try:
+            _query("PODOCUMENTENTRY", [f], [], page_size=1, max_pages=1)
+            qfields.append(f)
+        except Exception:
+            continue
+    if not ({"PROJECTID", "COSTTYPEID"} <= set(qfields)):
+        return {}
+    amount_field = "TOTAL" if "TOTAL" in qfields else ("AMOUNT" if "AMOUNT" in qfields else None)
+    if not amount_field:
+        return {}
+    sel = [f for f in ["PROJECTID", "COSTTYPEID", amount_field, "STATE", "LOCATIONID"] if f in qfields]
+    loc_set = set(_entity_location_set(entity_id))
+    out: dict = {}
+    try:
+        rows = _query("PODOCUMENTENTRY", sel, [], page_size=1000, max_pages=50)
+    except Exception as e:
+        log.warning("bva_commitments: PODOCUMENTENTRY query failed: %s", e)
+        return {}
+    for r in rows:
+        # If line carries a location, keep only this entity's locations.
+        loc = (r.get("LOCATIONID") or "").strip()
+        if loc and loc_set and loc not in loc_set:
+            continue
+        state = (r.get("STATE") or "").strip().lower()
+        if state in ("closed", "converted"):   # fully consumed → not an open commitment
+            continue
+        proj = (r.get("PROJECTID") or "").strip()
+        ct = (r.get("COSTTYPEID") or "").strip()
+        if not (proj or ct):
+            continue
+        try:
+            amt = float(r.get(amount_field) or 0)
+        except (TypeError, ValueError):
+            amt = 0.0
+        out[(proj, ct)] = out.get((proj, ct), 0.0) + amt
+    return out
+
+
 # ─── Debug helper for one-off connectivity tests ─────────────────────────────
 def ping() -> dict:
     """Smoke test — verifies env vars are set and Sage accepts our

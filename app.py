@@ -2068,6 +2068,135 @@ def api_bva_sage_discovery():
         return jsonify({"configured": True, "error": str(e)}), 502
 
 
+# The three dev projects we control accounting on (label → Sage LOCATIONID).
+_BVA_ENTITIES = [
+    ("GPD",       "16 - GPD"),
+    ("Dennison",  "20 - Emp WRRD"),
+    ("WRG",       "10 - Emp Angleton"),
+]
+
+
+def _gen_bva_template_xlsx(blocks: list) -> bytes:
+    """Budget-vs-Actuals template: one sheet per project, rows = the project's
+    real Sage PROJECT × COSTTYPE combos. Budget column is left blank for the
+    user; Committed + Actuals are pre-filled from Sage; Variance is a formula."""
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
+    from openpyxl.utils import get_column_letter
+
+    ACCENT = "C56028"; HDR = PatternFill("solid", fgColor="F2EFE8")
+    SUB = PatternFill("solid", fgColor="FAF6EC")
+    thin = Side(style="thin", color="DDDDDD")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    rightal = Alignment(horizontal="right")
+    def F(b=False, c="1A1A1A", s=10): return Font(name="Calibri", bold=b, color=c, size=s)
+    def money(cell, v=None):
+        if v is not None:
+            cell.value = v
+        cell.number_format = '"$"#,##0'
+
+    wb = openpyxl.Workbook(); wb.remove(wb.active)
+    used: set = set()
+    def sheet_name(nm):
+        base = "".join(ch for ch in (nm or "Sheet") if ch not in '[]:*?/\\')[:31] or "Sheet"
+        s, i = base, 2
+        while s in used:
+            s = base[:28] + "_%d" % i; i += 1
+        used.add(s); return s
+
+    headers = ["Project", "Task", "Cost Type", "Budget", "Committed", "Actuals", "Variance"]
+    for blk in blocks:
+        ws = wb.create_sheet(sheet_name(blk["label"]))
+        ws.cell(1, 1, "%s — Budget vs Actuals" % blk["label"]).font = Font(name="Calibri", bold=True, size=14, color=ACCENT)
+        ws.cell(2, 1, "Sage entity: %s · Fill the Budget column; Committed & Actuals are pulled from Sage; Variance = Budget − Committed − Actuals" % blk["entity"]).font = F(False, "888888", 9)
+        r = 4
+        for ci, h in enumerate(headers, 1):
+            c = ws.cell(r, ci, h); c.font = F(True, "1A1A1A", 9); c.fill = HDR; c.border = border
+            if ci >= 4:
+                c.alignment = rightal
+        r += 1
+
+        rows = blk.get("rows", [])
+        groups: dict = {}
+        order: list = []
+        for row in rows:
+            label = row.get("project_name") or row.get("project") or "(no project)"
+            if label not in groups:
+                groups[label] = []; order.append(label)
+            groups[label].append(row)
+
+        for proj in order:
+            prows = sorted(groups[proj], key=lambda x: x.get("costtype") or "")
+            pstart = r
+            for row in prows:
+                ws.cell(r, 1, proj).border = border
+                ws.cell(r, 2, row.get("task") or "").border = border
+                ws.cell(r, 3, row.get("costtype") or "").border = border
+                bc = ws.cell(r, 4); money(bc); bc.border = border                       # Budget (blank)
+                cc = ws.cell(r, 5); money(cc, int(round(row.get("committed") or 0))); cc.border = border
+                ac = ws.cell(r, 6); money(ac, int(round(row.get("actual") or 0))); ac.border = border
+                vc = ws.cell(r, 7); vc.value = "=D%d-E%d-F%d" % (r, r, r); money(vc); vc.border = border
+                r += 1
+            # Project subtotal
+            for ci in range(1, 8):
+                ws.cell(r, ci).fill = SUB; ws.cell(r, ci).border = border
+            ws.cell(r, 1, proj + " — Total").font = F(True)
+            for col in (4, 5, 6, 7):
+                L = get_column_letter(col)
+                tc = ws.cell(r, col); tc.value = "=SUM(%s%d:%s%d)" % (L, pstart, L, r - 1)
+                money(tc); tc.font = F(True)
+            r += 2
+
+        ws.column_dimensions["A"].width = 30
+        ws.column_dimensions["B"].width = 20
+        ws.column_dimensions["C"].width = 16
+        for col in ("D", "E", "F", "G"):
+            ws.column_dimensions[col].width = 14
+
+    bio = io.BytesIO(); wb.save(bio)
+    return bio.getvalue()
+
+
+@app.route("/api/bva/template.xlsx", methods=["GET"])
+@login_required
+@admin_required
+def api_bva_template():
+    """Generate the BVA budget template (GPD, Dennison, WRG), one tab each,
+    rows = each project's Sage PROJECT × COSTTYPE combos with Actuals +
+    Committed pre-filled and Budget left blank to fill in."""
+    if not sage_intacct.is_configured():
+        return jsonify({"error": "Sage Intacct is not configured on this server."}), 400
+    blocks = []
+    for label, eid in _BVA_ENTITIES:
+        try:
+            actuals = sage_intacct.bva_actuals(eid)
+        except sage_intacct.IntacctAPIError as e:
+            return jsonify({"error": "Actuals pull failed for %s: %s" % (label, e)}), 502
+        try:
+            commits = sage_intacct.bva_commitments(eid)
+        except Exception:
+            commits = {}
+        keys = set(actuals.keys()) | set(commits.keys())
+        rows = []
+        for k in keys:
+            proj, ct = k
+            a = actuals.get(k, {})
+            rows.append({
+                "project":      a.get("project") or proj,
+                "project_name": a.get("project_name") or a.get("project") or proj,
+                "task":         a.get("task", ""),
+                "costtype":     ct,
+                "actual":       a.get("actual", 0.0),
+                "committed":    commits.get(k, 0.0),
+            })
+        blocks.append({"label": label, "entity": eid, "rows": rows})
+    xlsx = _gen_bva_template_xlsx(blocks)
+    fname = "BVA_Template_%s.xlsx" % datetime.datetime.now().strftime("%Y-%m-%d")
+    return send_file(io.BytesIO(xlsx),
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                     as_attachment=True, download_name=fname)
+
+
 @app.route("/api/financials/entities", methods=["GET"])
 @login_required
 def api_financials_entities():
