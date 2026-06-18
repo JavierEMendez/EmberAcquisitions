@@ -359,6 +359,8 @@ def init_db():
     # Defaults to FALSE for everyone; granted explicitly to the owner account
     # so it can manage cap tables without opening the control to all users.
     cur.execute("UPDATE users SET page_access = page_access || '{\"captable_edit\": true}'::jsonb WHERE username = %s", ("carlossaldierna",))
+    # Owner account is a full admin (manage users, all dashboards, Sage tools).
+    cur.execute("UPDATE users SET is_admin = TRUE WHERE username = %s", ("carlossaldierna",))
 
     # Backfill report_subscriptions for users created before the column
     # existed. If they were opted-in under the legacy single-flag model,
