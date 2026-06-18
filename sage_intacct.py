@@ -1935,6 +1935,35 @@ def bva_discovery(entity_id: str | None = None, sample_rows: int = 300) -> dict:
         except Exception as e:
             commit[obj] = {"reachable": False, "error": str(e)[:200]}
     out["commitment_objects"] = commit
+
+    # 4) Does the PROJECT master carry a grouping field (Category / Type /
+    #    parent) we could roll projects up by (Plant, Roads, Detention…)?
+    proj_meta_candidates = [
+        "PROJECTID", "NAME", "PROJECTCATEGORY", "PROJECTCATEGORYNAME",
+        "PROJECTCATEGORYID", "PROJECTTYPE", "PROJECTTYPEID", "CLASSID",
+        "CLASSNAME", "PARENTKEY", "PARENTID", "PARENTPROJECTID",
+    ]
+    pmeta_fields = []
+    for f in proj_meta_candidates:
+        try:
+            _query("PROJECT", [f], [], page_size=1, max_pages=1)
+            pmeta_fields.append(f)
+        except Exception:
+            continue
+    out["project_master_fields"] = pmeta_fields
+    psel = [f for f in proj_meta_candidates if f in pmeta_fields]
+    if psel:
+        try:
+            precs = _query("PROJECT", psel, [], page_size=500, max_pages=2)
+            # Only this entity's projects (their ids start with the GP_/EA_ prefix
+            # seen in GL) — but show all; the caller can scan.
+            out["project_master_sample"] = precs[:120]
+            for catf in ("PROJECTCATEGORY", "PROJECTCATEGORYNAME", "PROJECTTYPE", "CLASSNAME"):
+                if catf in psel:
+                    out.setdefault("project_categories", {})[catf] = sorted(
+                        {(r.get(catf) or "").strip() for r in precs if (r.get(catf) or "").strip()})[:60]
+        except Exception as e:
+            out["project_master_error"] = str(e)[:200]
     return out
 
 
