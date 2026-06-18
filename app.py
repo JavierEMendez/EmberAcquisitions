@@ -2044,6 +2044,28 @@ def financials_page():
     )
 
 
+@app.route("/api/bva/sage-discovery", methods=["GET"])
+@login_required
+@admin_required
+def api_bva_sage_discovery():
+    """Read-only Sage introspection for designing the Budget-vs-Actuals
+    template. Hit /api/bva/sage-discovery for the entity list, then
+    /api/bva/sage-discovery?entity=<LOCATIONID> for that project's cost
+    dimensions, sample values, and commitment-object availability."""
+    if not sage_intacct.is_configured():
+        return jsonify({"configured": False,
+                        "error": "Sage Intacct is not configured on this server."}), 200
+    entity = request.args.get("entity")
+    try:
+        data = sage_intacct.bva_discovery(entity)
+        data["configured"] = True
+        return jsonify(data)
+    except sage_intacct.IntacctConfigurationError as e:
+        return jsonify({"configured": False, "error": str(e)}), 200
+    except sage_intacct.IntacctAPIError as e:
+        return jsonify({"configured": True, "error": str(e)}), 502
+
+
 @app.route("/api/financials/entities", methods=["GET"])
 @login_required
 def api_financials_entities():

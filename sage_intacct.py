@@ -1854,6 +1854,83 @@ def _coa_titles_cached() -> dict:
     return titles
 
 
+# ─── BVA discovery (read-only) ───────────────────────────────────────────────
+# Candidate GL dimensions that might carry a job-cost line like
+# "Baethe Rd Pavement" (Project / Task / Cost code / Class). Probed against
+# the live instance so we only query the ones that actually exist.
+_COST_DIM_CANDIDATES = [
+    "PROJECTID", "PROJECTDIMKEY", "PROJECT_NO", "PROJECTNAME",
+    "TASKID", "TASKDIMKEY", "TASKNO", "TASKNAME",
+    "COSTTYPEID", "COSTTYPE", "COSTCODE", "COSTCODEID",
+    "CLASSID", "CLASSDIMKEY", "DEPARTMENTID", "ITEMID",
+]
+
+
+def bva_discovery(entity_id: str | None = None, sample_rows: int = 300) -> dict:
+    """Read-only introspection to design the Budget-vs-Actuals template.
+
+    Without an entity → just the entity list (so we can map GPD / EMtor /
+    WRRD / WRG → LOCATIONID). With an entity → which cost dimensions exist on
+    GLENTRY, distinct sample values for each (where 'Baethe Rd Pavement' type
+    lines should surface), and which commitment/PO objects are reachable.
+    Nothing is written; every probe is wrapped so partial results still return.
+    """
+    if not is_configured():
+        raise IntacctConfigurationError("Sage Intacct is not configured on this server.")
+
+    out: dict = {"entities": list_entities(), "entity": entity_id}
+    if not entity_id:
+        return out
+
+    # 1) Which candidate cost dimensions actually exist on GLENTRY.
+    valid_dims: list[str] = []
+    for f in _COST_DIM_CANDIDATES:
+        try:
+            if _probe_field_validity("GLENTRY", f).get("valid"):
+                valid_dims.append(f)
+        except Exception as e:
+            log.warning("bva_discovery probe GLENTRY.%s: %s", f, e)
+    out["glentry_cost_fields"] = valid_dims
+
+    # 2) Sample GL entries for this entity's locations; collect distinct
+    #    values per dimension (top 60) so we can see where cost lines live.
+    try:
+        locs = _entity_location_set(entity_id)
+    except Exception as e:
+        locs = [entity_id]
+        out["location_set_error"] = str(e)[:200]
+    out["locations"] = locs
+
+    select = ["ACCOUNTNO", "AMOUNT", "LOCATION"] + valid_dims
+    rows: list[dict] = []
+    for loc in locs[:8]:
+        try:
+            rows += _query("GLENTRY", select, [("LOCATION", loc)],
+                           page_size=sample_rows, max_pages=1)
+        except Exception as e:
+            out.setdefault("query_errors", []).append(f"{loc}: {str(e)[:160]}")
+    out["sample_count"] = len(rows)
+
+    distinct: dict = {}
+    for f in (valid_dims + ["ACCOUNTNO"]):
+        vals = sorted({(r.get(f) or "").strip() for r in rows if (r.get(f) or "").strip()})
+        distinct[f] = vals[:60]
+    out["distinct_values"] = distinct
+
+    # 3) Which commitment / PO objects are reachable (for the Commitments column).
+    commit: dict = {}
+    for obj in ["PODOCUMENT", "PODOCUMENTENTRY", "DOCPARENTRY", "APBILL", "APBILLITEM"]:
+        try:
+            info = _inspect_fields(obj)
+            commit[obj] = {"available": bool(info.get("fields")),
+                           "field_count": len(info.get("fields") or []),
+                           "error": info.get("error")}
+        except Exception as e:
+            commit[obj] = {"available": False, "error": str(e)[:160]}
+    out["commitment_objects"] = commit
+    return out
+
+
 # ─── Debug helper for one-off connectivity tests ─────────────────────────────
 def ping() -> dict:
     """Smoke test — verifies env vars are set and Sage accepts our
