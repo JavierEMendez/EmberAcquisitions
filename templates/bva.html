@@ -48,6 +48,9 @@
   .btn:hover{border-color:var(--eax-accent);}
   .btn.primary{background:var(--eax-accent);border-color:var(--eax-accent);color:#fff;}
   .upload-status{font-size:11px;color:var(--eax-muted);}
+  .formula-note{font-size:11px;color:var(--eax-muted);margin-bottom:16px;background:var(--eax-bg-2);border:1px solid var(--eax-line);border-radius:8px;padding:9px 13px;}
+  .formula-note strong{color:var(--eax-ink);}
+  .col-formula{display:block;font-weight:400;text-transform:none;letter-spacing:0;font-size:8px;color:var(--eax-subtle);margin-top:2px;}
 
   .seg{display:inline-flex;gap:4px;background:var(--eax-bg-2);padding:4px;border-radius:999px;margin-bottom:18px;}
   .seg-btn{background:transparent;border:none;cursor:pointer;padding:7px 16px;border-radius:999px;font-family:inherit;font-size:12px;font-weight:600;color:var(--eax-muted);}
@@ -130,11 +133,13 @@
           <a class="btn" href="/api/bva/template.xlsx">⬇ Generate Template</a>
           <button class="btn primary" id="upload-btn">⬆ Upload Budget</button>
           <input type="file" id="upload-file" accept=".xlsx" style="display:none;">
+          <a class="btn" href="/api/bva/actualize.xlsx" title="Export all actuals by Project ID × Task × month for the pro-forma">⬇ Actualize Pro-Forma</a>
           <span class="upload-status" id="upload-status"></span>
         </div>
       </div>
 
       <div class="seg" id="proj-tabs"></div>
+      <div class="formula-note"><strong>Variance = Budget − Committed − Actuals</strong> &nbsp;·&nbsp; positive = budget remaining (under), negative = over budget. Committed = open Sage POs; Actuals = posted Sage GL.</div>
       <div id="bva-body"><div class="empty">Loading…</div></div>
     </div>
   </div>
@@ -202,12 +207,12 @@
         <div class="kpi"><div class="l">Budget</div><div class="v">${fmt(tB)}</div></div>
         <div class="kpi accent"><div class="l">Committed</div><div class="v">${fmt(tC)}</div></div>
         <div class="kpi"><div class="l">Actuals</div><div class="v">${fmt(tA)}</div></div>
-        <div class="kpi ${tV<0?'':'good'}"><div class="l">Variance (Remaining)</div><div class="v" style="${tV<0?'color:#c0392b':''}">${fmt(tV)}</div></div>
+        <div class="kpi ${tV<0?'':'good'}"><div class="l">Variance = Budget − Committed − Actuals</div><div class="v" style="${tV<0?'color:#c0392b':''}">${fmt(tV)}</div></div>
       </div>
       <table class="bva-table">
         <thead><tr>
           <th class="left">Cost Type</th><th class="left">Task</th>
-          <th>Budget</th><th>Committed</th><th>Actuals</th><th>Variance</th>
+          <th>Budget</th><th>Committed</th><th>Actuals</th><th>Variance<span class="col-formula">Budget − Committed − Actuals</span></th>
         </tr></thead>
         <tbody>
           ${rowsHtml}

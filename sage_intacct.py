@@ -2040,6 +2040,59 @@ def bva_commitments(entity_id: str) -> dict:
     return out
 
 
+def _month_key(s) -> str:
+    """GL ENTRY_DATE -> 'YYYY-MM'. Handles ISO (YYYY-MM-DD) and US (MM/DD/YYYY)."""
+    s = (s or "").strip()
+    if not s:
+        return ""
+    if len(s) >= 7 and s[4] == "-":
+        return s[:7]
+    if "/" in s:
+        p = s.split("/")
+        if len(p) == 3 and len(p[2][:4]) == 4:
+            return "%s-%s" % (p[2][:4], p[0].zfill(2))
+    return ""
+
+
+def bva_actuals_monthly(entity_id: str) -> dict:
+    """Actuals by (PROJECTID, TASKID) per month — for the 'actualize pro-forma'
+    export. Returns {'rows': [{project, task, task_name, months:{'YYYY-MM': $}}],
+    'months': [sorted YYYY-MM]}. Signed GL (AMOUNT × TR_TYPE)."""
+    if not is_configured():
+        raise IntacctConfigurationError("Sage Intacct is not configured on this server.")
+    locs = _entity_location_set(entity_id)
+    select = ["PROJECTID", "TASKID", "TASKNAME", "AMOUNT", "TR_TYPE", "ENTRY_DATE"]
+    agg: dict = {}
+    months: set = set()
+    for loc in locs:
+        try:
+            rows = _query("GLENTRY", select, [("LOCATION", loc)],
+                          page_size=1000, max_pages=100)
+        except Exception as e:
+            log.warning("bva_actuals_monthly: LOCATION=%s failed: %s", loc, e)
+            continue
+        for r in rows:
+            proj = (r.get("PROJECTID") or "").strip()
+            task = (r.get("TASKID") or "").strip()
+            if not (proj or task):
+                continue
+            signed = _glentry_signed(r)
+            if signed is None:
+                continue
+            mk = _month_key(r.get("ENTRY_DATE"))
+            if not mk:
+                continue
+            key = (proj, task)
+            e = agg.setdefault(key, {"project": proj, "task": task,
+                                     "task_name": "", "months": {}})
+            e["months"][mk] = e["months"].get(mk, 0.0) + signed
+            if not e["task_name"] and (r.get("TASKNAME") or "").strip():
+                e["task_name"] = r["TASKNAME"].strip()
+            months.add(mk)
+    return {"rows": sorted(agg.values(), key=lambda x: (x["project"], x["task"])),
+            "months": sorted(months)}
+
+
 # ─── Debug helper for one-off connectivity tests ─────────────────────────────
 def ping() -> dict:
     """Smoke test — verifies env vars are set and Sage accepts our

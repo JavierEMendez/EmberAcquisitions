@@ -2328,6 +2328,90 @@ def api_bva_budget_upload():
     return jsonify({"ok": True, "imported": imported})
 
 
+def _gen_bva_actualize_xlsx(blocks: list) -> bytes:
+    """Actuals matrix for entering into the pro-forma: one sheet per project,
+    rows = (Project ID, Task), columns = months, cells = that month's actual
+    spend, plus a row Total."""
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
+    from openpyxl.utils import get_column_letter
+
+    ACCENT = "C56028"; HDR = PatternFill("solid", fgColor="F2EFE8")
+    thin = Side(style="thin", color="DDDDDD")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    rightal = Alignment(horizontal="right")
+    def F(b=False, c="1A1A1A", s=10): return Font(name="Calibri", bold=b, color=c, size=s)
+
+    wb = openpyxl.Workbook(); wb.remove(wb.active)
+    used: set = set()
+    def sheet_name(nm):
+        base = "".join(ch for ch in (nm or "Sheet") if ch not in '[]:*?/\\')[:31] or "Sheet"
+        s, i = base, 2
+        while s in used:
+            s = base[:28] + "_%d" % i; i += 1
+        used.add(s); return s
+
+    for blk in blocks:
+        months = blk.get("months", [])
+        ws = wb.create_sheet(sheet_name(blk["label"]))
+        ws.cell(1, 1, "%s — Actuals by Project / Task / Month" % blk["label"]).font = Font(name="Calibri", bold=True, size=14, color=ACCENT)
+        ws.cell(2, 1, "Sage entity: %s · signed GL actuals by month — paste into the pro-forma" % blk["entity"]).font = F(False, "888888", 9)
+        r = 4
+        headers = ["Project ID", "Task", "Task Name"] + months + ["Total"]
+        for ci, h in enumerate(headers, 1):
+            c = ws.cell(r, ci, h); c.font = F(True, "1A1A1A", 9); c.fill = HDR; c.border = border
+            if ci > 3:
+                c.alignment = rightal
+        r += 1
+        for row in blk.get("rows", []):
+            ws.cell(r, 1, row.get("project", "")).border = border
+            ws.cell(r, 2, row.get("task", "")).border = border
+            ws.cell(r, 3, row.get("task_name", "")).border = border
+            tot = 0.0
+            mvals = row.get("months", {})
+            for j, mk in enumerate(months):
+                v = mvals.get(mk, 0.0); tot += v
+                c = ws.cell(r, 4 + j)
+                if v:
+                    c.value = round(v)
+                c.number_format = "#,##0"; c.border = border
+            tc = ws.cell(r, 4 + len(months)); tc.value = round(tot)
+            tc.number_format = "#,##0"; tc.border = border; tc.font = F(True)
+            r += 1
+        ws.column_dimensions["A"].width = 24
+        ws.column_dimensions["B"].width = 16
+        ws.column_dimensions["C"].width = 20
+        for j in range(len(months) + 1):
+            ws.column_dimensions[get_column_letter(4 + j)].width = 11
+
+    bio = io.BytesIO(); wb.save(bio)
+    return bio.getvalue()
+
+
+@app.route("/api/bva/actualize.xlsx", methods=["GET"])
+@login_required
+def api_bva_actualize():
+    """Export all actuals by Project ID × Task × month (one tab per project)
+    for entering into the development pro-forma."""
+    if not _bva_can_view():
+        return jsonify({"error": "forbidden"}), 403
+    if not sage_intacct.is_configured():
+        return jsonify({"error": "Sage Intacct is not configured on this server."}), 400
+    blocks = []
+    for label, eid in _BVA_ENTITIES:
+        try:
+            d = sage_intacct.bva_actuals_monthly(eid)
+        except sage_intacct.IntacctAPIError as e:
+            return jsonify({"error": "Sage error for %s: %s" % (label, e)}), 502
+        blocks.append({"label": label, "entity": eid,
+                       "rows": d["rows"], "months": d["months"]})
+    xlsx = _gen_bva_actualize_xlsx(blocks)
+    fname = "BVA_Actuals_by_Month_%s.xlsx" % datetime.datetime.now().strftime("%Y-%m-%d")
+    return send_file(io.BytesIO(xlsx),
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                     as_attachment=True, download_name=fname)
+
+
 @app.route("/bva", methods=["GET"])
 @app.route("/budget-vs-actuals", methods=["GET"])
 @login_required
