@@ -359,6 +359,9 @@ def init_db():
     # Defaults to FALSE for everyone; granted explicitly to the owner account
     # so it can manage cap tables without opening the control to all users.
     cur.execute("UPDATE users SET page_access = page_access || '{\"captable_edit\": true}'::jsonb WHERE username = %s", ("carlossaldierna",))
+    # `bva` gates the Budget vs Actuals dashboard (dev-team financial data).
+    # Defaults FALSE; admins always pass and grant it to the dev team per user.
+    cur.execute("UPDATE users SET page_access = page_access || '{\"bva\": false}'::jsonb WHERE page_access->>'bva' IS NULL")
     # Owner account is a full admin (manage users, all dashboards, Sage tools).
     cur.execute("UPDATE users SET is_admin = TRUE WHERE username = %s", ("carlossaldierna",))
 
@@ -2195,6 +2198,147 @@ def api_bva_template():
     return send_file(io.BytesIO(xlsx),
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                      as_attachment=True, download_name=fname)
+
+
+# ─── BVA budget storage + dashboard data ─────────────────────────────────────
+_BVA_KEYSEP = ""   # project<sep>costtype budget key
+
+
+def _bva_can_view() -> bool:
+    """View gate for the BVA page/data: admins always; else page_access.bva."""
+    if session.get("is_admin"):
+        return True
+    return bool(_refresh_page_access_from_db().get("bva", False))
+
+
+def _bva_load_budgets() -> dict:
+    """Stored budgets: {entity_id: {"<project>\\x1f<costtype>": amount}}."""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT data FROM reports WHERE report_type = 'bva_budget' "
+                "ORDER BY uploaded_at DESC LIMIT 1")
+    row = cur.fetchone(); cur.close(); conn.close()
+    return ((row["data"] if row else {}) or {}).get("budgets", {}) or {}
+
+
+def _bva_save_budgets(budgets: dict) -> None:
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM reports WHERE report_type = 'bva_budget'")
+    cur.execute("INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+                ("bva_budget", json.dumps({"budgets": budgets}), session.get("user_id")))
+    conn.commit(); cur.close(); conn.close()
+
+
+@app.route("/api/bva/data", methods=["GET"])
+@login_required
+def api_bva_data():
+    """Per-project Budget vs Committed vs Actuals rows for GPD/Dennison/WRG,
+    merging stored budgets with live Sage actuals + commitments."""
+    if not _bva_can_view():
+        return jsonify({"error": "forbidden"}), 403
+    if not sage_intacct.is_configured():
+        return jsonify({"configured": False, "blocks": []}), 200
+    budgets = _bva_load_budgets()
+    blocks = []
+    for label, eid in _BVA_ENTITIES:
+        try:
+            actuals = sage_intacct.bva_actuals(eid)
+        except sage_intacct.IntacctAPIError as e:
+            return jsonify({"configured": True, "error": "Sage error for %s: %s" % (label, e)}), 502
+        try:
+            commits = sage_intacct.bva_commitments(eid)
+        except Exception:
+            commits = {}
+        ebud = budgets.get(eid, {})
+        rows = []
+        seen = set()
+        for k in (set(actuals) | set(commits)):
+            proj, ct = k
+            a = actuals.get(k, {})
+            pname = a.get("project_name") or a.get("project") or proj
+            bkey = pname + _BVA_KEYSEP + ct
+            seen.add(bkey)
+            bud = float(ebud.get(bkey, 0) or 0)
+            act = round(a.get("actual", 0.0))
+            com = round(commits.get(k, 0.0))
+            rows.append({"project": pname, "task": a.get("task", ""), "costtype": ct,
+                         "budget": round(bud), "committed": com, "actual": act,
+                         "variance": round(bud - com - act)})
+        # Budgeted lines with no Sage activity yet still show up.
+        for bkey, amt in ebud.items():
+            if bkey in seen:
+                continue
+            pname, _, ct = bkey.partition(_BVA_KEYSEP)
+            amt = round(float(amt or 0))
+            rows.append({"project": pname, "task": "", "costtype": ct,
+                         "budget": amt, "committed": 0, "actual": 0, "variance": amt})
+        rows.sort(key=lambda r: (r["project"], r["costtype"]))
+        blocks.append({"label": label, "entity": eid, "rows": rows})
+    return jsonify({"configured": True, "blocks": blocks})
+
+
+@app.route("/api/bva/budget", methods=["POST"])
+@login_required
+def api_bva_budget_upload():
+    """Ingest a filled-in BVA template (the workbook from /api/bva/template.xlsx)
+    and store its Budget column, keyed by entity + project + cost type."""
+    if not _bva_can_view():
+        return jsonify({"error": "forbidden"}), 403
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No file uploaded"}), 400
+    import openpyxl
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(f.read()), data_only=True)
+    except Exception as e:
+        return jsonify({"error": "Could not read workbook: %s" % e}), 400
+    budgets = _bva_load_budgets()
+    imported = 0
+    for ws in wb.worksheets:
+        eid = None
+        for lbl, e in _BVA_ENTITIES:
+            if ws.title.strip().lower().startswith(lbl.strip().lower()[:28]):
+                eid = e; break
+        if not eid:
+            continue
+        # Locate the header row (has both "project" and "budget").
+        hdr = None; cols = {}
+        for r in range(1, min(ws.max_row, 15) + 1):
+            vals = [str(ws.cell(r, c).value or "").strip().lower() for c in range(1, 9)]
+            if "project" in vals and "budget" in vals:
+                hdr = r; cols = {v: i + 1 for i, v in enumerate(vals) if v}
+                break
+        if not hdr:
+            continue
+        pcol, ccol, bcol = cols.get("project"), cols.get("cost type"), cols.get("budget")
+        if not (pcol and ccol and bcol):
+            continue
+        ebud = budgets.setdefault(eid, {})
+        for r in range(hdr + 1, ws.max_row + 1):
+            proj = str(ws.cell(r, pcol).value or "").strip()
+            ct = str(ws.cell(r, ccol).value or "").strip()
+            if not proj or not ct or "total" in proj.lower():
+                continue
+            try:
+                amt = float(ws.cell(r, bcol).value)
+            except (TypeError, ValueError):
+                continue
+            ebud[proj + _BVA_KEYSEP + ct] = amt
+            imported += 1
+    _bva_save_budgets(budgets)
+    return jsonify({"ok": True, "imported": imported})
+
+
+@app.route("/bva", methods=["GET"])
+@app.route("/budget-vs-actuals", methods=["GET"])
+@login_required
+def bva_page():
+    pa = _refresh_page_access_from_db() or {}
+    if not session.get("is_admin") and not pa.get("bva", False):
+        return redirect(url_for("home"))
+    return render_template("bva.html",
+                           username=session.get("username"),
+                           is_admin=session.get("is_admin", False),
+                           page_access=pa)
 
 
 @app.route("/api/financials/entities", methods=["GET"])
