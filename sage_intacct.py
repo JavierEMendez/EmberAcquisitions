@@ -1994,10 +1994,11 @@ _PO_LINE_CANDIDATES = [
 
 
 def bva_commitments(entity_id: str) -> dict:
-    """Best-effort open commitments by (PROJECTID, COSTTYPEID) from PO lines.
-    Returns {(project, costtype): amount}; empty when Purchasing lines aren't
-    reachable or don't carry the cost dimensions. Refine 'open vs converted'
-    after verifying the live PO model."""
+    """Total committed (PO) amount by (PROJECTID, COSTTYPEID) from PO lines —
+    the FULL commitment incl. amounts already billed, so 'Committed − Actuals'
+    reads as the open/unbilled remainder. Cancelled lines are dropped.
+    Returns {(project, costtype): amount}; empty when PO lines aren't reachable
+    or don't carry the cost dimensions."""
     if not is_configured():
         return {}
     qfields: list[str] = []
@@ -2026,7 +2027,7 @@ def bva_commitments(entity_id: str) -> dict:
         if loc and loc_set and loc not in loc_set:
             continue
         state = (r.get("STATE") or "").strip().lower()
-        if state in ("closed", "converted"):   # fully consumed → not an open commitment
+        if state in ("cancelled", "canceled", "declined", "denied"):  # dead PO lines
             continue
         proj = (r.get("PROJECTID") or "").strip()
         ct = (r.get("COSTTYPEID") or "").strip()
