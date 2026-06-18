@@ -174,6 +174,7 @@
     b.rows.forEach(r => { tB += r.budget; tC += r.committed; tA += r.actual; });
     const tBC = tB - tC;   // uncommitted budget remaining
     const tCA = tC - tA;   // open commitment still to be billed
+    const tBA = tB - tA;   // budget remaining vs actual spend
 
     // Budget − Committed: positive = budget left to commit (good); negative = over-committed (bad)
     const bcCls = (v) => v < 0 ? "over" : (v > 0 ? "under" : "muted");
@@ -191,7 +192,7 @@
       let pB = 0, pC = 0, pA = 0;
       const inner = pr.map(r => {
         pB += r.budget; pC += r.committed; pA += r.actual;
-        const bc = r.budget - r.committed, ca = r.committed - r.actual;
+        const bc = r.budget - r.committed, ca = r.committed - r.actual, ba = r.budget - r.actual;
         return `<tr>
           <td class="left muted">${r.costtype || ""}</td>
           <td class="left muted">${r.task || ""}</td>
@@ -200,11 +201,12 @@
           <td>${fmt(r.actual)}</td>
           <td class="${bcCls(bc)}">${fmt(bc)}</td>
           <td class="${caCls(ca)}">${fmt(ca)}</td>
+          <td class="${bcCls(ba)}">${fmt(ba)}</td>
         </tr>`;
       }).join("");
-      const pBC = pB - pC, pCA = pC - pA;
-      rowsHtml += `<tr class="proj-head"><td class="left" colspan="7">${proj}</td></tr>${inner}
-        <tr class="proj-sub"><td class="left">Subtotal</td><td></td><td>${fmt(pB)}</td><td>${fmt(pC)}</td><td>${fmt(pA)}</td><td class="${bcCls(pBC)}">${fmt(pBC)}</td><td class="${caCls(pCA)}">${fmt(pCA)}</td></tr>`;
+      const pBC = pB - pC, pCA = pC - pA, pBA = pB - pA;
+      rowsHtml += `<tr class="proj-head"><td class="left" colspan="8">${proj}</td></tr>${inner}
+        <tr class="proj-sub"><td class="left">Subtotal</td><td></td><td>${fmt(pB)}</td><td>${fmt(pC)}</td><td>${fmt(pA)}</td><td class="${bcCls(pBC)}">${fmt(pBC)}</td><td class="${caCls(pCA)}">${fmt(pCA)}</td><td class="${bcCls(pBA)}">${fmt(pBA)}</td></tr>`;
     });
 
     host.innerHTML = `
@@ -214,6 +216,7 @@
         <div class="kpi"><div class="l">Actuals</div><div class="v">${fmt(tA)}</div></div>
         <div class="kpi ${tBC<0?'':'good'}"><div class="l">Budget − Committed</div><div class="v" style="${tBC<0?'color:#c0392b':''}">${fmt(tBC)}</div></div>
         <div class="kpi"><div class="l">Committed − Actuals</div><div class="v" style="${tCA<0?'color:#c0392b':''}">${fmt(tCA)}</div></div>
+        <div class="kpi ${tBA<0?'':'good'}"><div class="l">Budget − Actuals</div><div class="v" style="${tBA<0?'color:#c0392b':''}">${fmt(tBA)}</div></div>
       </div>
       <table class="bva-table">
         <thead><tr>
@@ -221,10 +224,11 @@
           <th>Budget</th><th>Committed</th><th>Actuals</th>
           <th>Budget − Committed<span class="col-formula">budget left to commit</span></th>
           <th>Committed − Actuals<span class="col-formula">committed, not yet billed</span></th>
+          <th>Budget − Actuals<span class="col-formula">budget vs actual spend</span></th>
         </tr></thead>
         <tbody>
           ${rowsHtml}
-          <tr class="grand"><td class="left">All Projects</td><td></td><td>${fmt(tB)}</td><td>${fmt(tC)}</td><td>${fmt(tA)}</td><td class="${bcCls(tBC)}">${fmt(tBC)}</td><td class="${caCls(tCA)}">${fmt(tCA)}</td></tr>
+          <tr class="grand"><td class="left">All Projects</td><td></td><td>${fmt(tB)}</td><td>${fmt(tC)}</td><td>${fmt(tA)}</td><td class="${bcCls(tBC)}">${fmt(tBC)}</td><td class="${caCls(tCA)}">${fmt(tCA)}</td><td class="${bcCls(tBA)}">${fmt(tBA)}</td></tr>
         </tbody>
       </table>`;
   }
