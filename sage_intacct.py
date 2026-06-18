@@ -1882,26 +1882,29 @@ def bva_discovery(entity_id: str | None = None, sample_rows: int = 300) -> dict:
     if not entity_id:
         return out
 
-    # 1) Which candidate cost dimensions actually exist on GLENTRY.
-    valid_dims: list[str] = []
-    for f in _COST_DIM_CANDIDATES:
-        try:
-            if _probe_field_validity("GLENTRY", f).get("valid"):
-                valid_dims.append(f)
-        except Exception as e:
-            log.warning("bva_discovery probe GLENTRY.%s: %s", f, e)
-    out["glentry_cost_fields"] = valid_dims
-
-    # 2) Sample GL entries for this entity's locations; collect distinct
-    #    values per dimension (top 60) so we can see where cost lines live.
     try:
         locs = _entity_location_set(entity_id)
     except Exception as e:
         locs = [entity_id]
         out["location_set_error"] = str(e)[:200]
     out["locations"] = locs
+    probe_loc = locs[0] if locs else entity_id
 
-    select = ["ACCOUNTNO", "AMOUNT", "LOCATION"] + valid_dims
+    # 1) Which candidate dims are actually QUERYABLE in a select. Sage rejects
+    #    some (e.g. DEPARTMENTID) with XL03000006, and one bad field zeroes the
+    #    whole query — so test each individually and keep only those that work.
+    queryable: list[str] = []
+    for f in _COST_DIM_CANDIDATES:
+        try:
+            _query("GLENTRY", [f], [("LOCATION", probe_loc)], page_size=1, max_pages=1)
+            queryable.append(f)
+        except Exception:
+            continue
+    out["glentry_cost_fields"] = queryable
+
+    # 2) Sample GL entries across the entity's locations; collect distinct
+    #    values per queryable dimension so we can see where cost lines live.
+    select = ["ACCOUNTNO", "AMOUNT", "LOCATION"] + queryable
     rows: list[dict] = []
     for loc in locs[:8]:
         try:
@@ -1912,21 +1915,25 @@ def bva_discovery(entity_id: str | None = None, sample_rows: int = 300) -> dict:
     out["sample_count"] = len(rows)
 
     distinct: dict = {}
-    for f in (valid_dims + ["ACCOUNTNO"]):
+    for f in (queryable + ["ACCOUNTNO"]):
         vals = sorted({(r.get(f) or "").strip() for r in rows if (r.get(f) or "").strip()})
-        distinct[f] = vals[:60]
+        distinct[f] = vals[:100]
     out["distinct_values"] = distinct
 
-    # 3) Which commitment / PO objects are reachable (for the Commitments column).
+    # 3) Commitments — query (not inspect) a few PO rows to see if Purchasing
+    #    carries open commitments and which dimensions they hold.
     commit: dict = {}
-    for obj in ["PODOCUMENT", "PODOCUMENTENTRY", "DOCPARENTRY", "APBILL", "APBILLITEM"]:
+    probes = [
+        ("PODOCUMENT",      ["DOCID", "DOCNO", "STATE", "TOTAL", "TOTALENTERED"]),
+        ("PODOCUMENTENTRY", ["DOCID", "ITEMID", "ITEMNAME", "TOTAL", "PROJECTID", "TASKID", "LOCATIONID"]),
+        ("PURCHASING",      ["RECORDNO", "STATE", "TOTAL"]),
+    ]
+    for obj, flds in probes:
         try:
-            info = _inspect_fields(obj)
-            commit[obj] = {"available": bool(info.get("fields")),
-                           "field_count": len(info.get("fields") or []),
-                           "error": info.get("error")}
+            sample = _query(obj, flds, [], page_size=3, max_pages=1)
+            commit[obj] = {"reachable": True, "rows_seen": len(sample), "sample": sample[:3]}
         except Exception as e:
-            commit[obj] = {"available": False, "error": str(e)[:160]}
+            commit[obj] = {"reachable": False, "error": str(e)[:200]}
     out["commitment_objects"] = commit
     return out
 
