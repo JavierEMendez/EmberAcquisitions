@@ -2112,7 +2112,8 @@ def _gen_bva_template_xlsx(blocks: list) -> bytes:
     from openpyxl.utils import get_column_letter
 
     ACCENT = "C56028"; HDR = PatternFill("solid", fgColor="F2EFE8")
-    SUB = PatternFill("solid", fgColor="FAF6EC")
+    SUB = PatternFill("solid", fgColor="FAF6EC")      # project subtotal
+    CAT = PatternFill("solid", fgColor="F3E0D4")      # category subtotal
     thin = Side(style="thin", color="DDDDDD")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
     rightal = Alignment(horizontal="right")
@@ -2131,53 +2132,93 @@ def _gen_bva_template_xlsx(blocks: list) -> bytes:
             s = base[:28] + "_%d" % i; i += 1
         used.add(s); return s
 
-    headers = ["Project", "Task", "Cost Type", "Budget", "Committed", "Actuals", "Variance"]
+    # Cols: A Category, B Project, C Task, D Cost Type, E Budget, F Committed,
+    # G Actuals, H Budget−Committed, I Committed−Actuals, J Budget−Actuals
+    headers = ["Category", "Project", "Task", "Cost Type", "Budget", "Committed",
+               "Actuals", "Budget − Committed", "Committed − Actuals", "Budget − Actuals"]
+    NC = len(headers)
     for blk in blocks:
         ws = wb.create_sheet(sheet_name(blk["label"]))
         ws.cell(1, 1, "%s — Budget vs Actuals" % blk["label"]).font = Font(name="Calibri", bold=True, size=14, color=ACCENT)
-        ws.cell(2, 1, "Sage entity: %s · Fill the Budget column; Committed & Actuals are pulled from Sage; Variance = Budget − Committed − Actuals" % blk["entity"]).font = F(False, "888888", 9)
+        ws.cell(2, 1, "Sage entity: %s · Fill the Budget column; Committed & Actuals pulled from Sage. B−C = uncommitted budget · C−A = open commitment · B−A = budget vs spend." % blk["entity"]).font = F(False, "888888", 9)
         r = 4
         for ci, h in enumerate(headers, 1):
             c = ws.cell(r, ci, h); c.font = F(True, "1A1A1A", 9); c.fill = HDR; c.border = border
-            if ci >= 4:
+            if ci >= 5:
                 c.alignment = rightal
         r += 1
 
-        rows = blk.get("rows", [])
-        groups: dict = {}
-        order: list = []
-        for row in rows:
-            label = row.get("project_name") or row.get("project") or "(no project)"
-            if label not in groups:
-                groups[label] = []; order.append(label)
-            groups[label].append(row)
+        def var_cells(ridx, bold=False):
+            for col, fexpr in ((8, "=E%d-F%d"), (9, "=F%d-G%d"), (10, "=E%d-G%d")):
+                cc = ws.cell(ridx, col); cc.value = fexpr % (ridx, ridx); money(cc); cc.border = border
+                if bold:
+                    cc.font = F(True)
 
-        for proj in order:
-            prows = sorted(groups[proj], key=lambda x: x.get("costtype") or "")
-            pstart = r
-            for row in prows:
-                ws.cell(r, 1, proj).border = border
-                ws.cell(r, 2, row.get("task") or "").border = border
-                ws.cell(r, 3, row.get("costtype") or "").border = border
-                bc = ws.cell(r, 4); money(bc); bc.border = border                       # Budget (blank)
-                cc = ws.cell(r, 5); money(cc, int(round(row.get("committed") or 0))); cc.border = border
-                ac = ws.cell(r, 6); money(ac, int(round(row.get("actual") or 0))); ac.border = border
-                vc = ws.cell(r, 7); vc.value = "=D%d-E%d-F%d" % (r, r, r); money(vc); vc.border = border
+        # Group by category → project
+        cat_groups: dict = {}; cat_order: list = []
+        for row in blk.get("rows", []):
+            cat = row.get("category") or "Other"
+            if cat not in cat_groups:
+                cat_groups[cat] = {"projs": {}, "order": []}; cat_order.append(cat)
+            pn = row.get("project_name") or row.get("project") or "(no project)"
+            cg = cat_groups[cat]
+            if pn not in cg["projs"]:
+                cg["projs"][pn] = []; cg["order"].append(pn)
+            cg["projs"][pn].append(row)
+
+        cat_subtotal_rows = []
+        for cat in cat_order:
+            cg = cat_groups[cat]
+            proj_subtotal_rows = []
+            for pn in cg["order"]:
+                prows = sorted(cg["projs"][pn], key=lambda x: x.get("costtype") or "")
+                pstart = r
+                for row in prows:
+                    ws.cell(r, 1, cat).border = border
+                    ws.cell(r, 2, pn).border = border
+                    ws.cell(r, 3, row.get("task") or "").border = border
+                    ws.cell(r, 4, row.get("costtype") or "").border = border
+                    bc = ws.cell(r, 5); money(bc); bc.border = border                      # Budget blank
+                    cc = ws.cell(r, 6); money(cc, int(round(row.get("committed") or 0))); cc.border = border
+                    ac = ws.cell(r, 7); money(ac, int(round(row.get("actual") or 0))); ac.border = border
+                    var_cells(r)
+                    r += 1
+                for ci in range(1, NC + 1):
+                    ws.cell(r, ci).fill = SUB; ws.cell(r, ci).border = border
+                ws.cell(r, 2, pn + " — Total").font = F(True)
+                for col in (5, 6, 7):
+                    L = get_column_letter(col)
+                    tc = ws.cell(r, col); tc.value = "=SUM(%s%d:%s%d)" % (L, pstart, L, r - 1); money(tc); tc.font = F(True)
+                var_cells(r, bold=True)
+                proj_subtotal_rows.append(r)
                 r += 1
-            # Project subtotal
-            for ci in range(1, 8):
-                ws.cell(r, ci).fill = SUB; ws.cell(r, ci).border = border
-            ws.cell(r, 1, proj + " — Total").font = F(True)
-            for col in (4, 5, 6, 7):
+            # Category subtotal = sum of its project subtotals
+            for ci in range(1, NC + 1):
+                ws.cell(r, ci).fill = CAT; ws.cell(r, ci).border = border
+            ws.cell(r, 1, cat + " — TOTAL").font = F(True, ACCENT)
+            for col in (5, 6, 7):
                 L = get_column_letter(col)
-                tc = ws.cell(r, col); tc.value = "=SUM(%s%d:%s%d)" % (L, pstart, L, r - 1)
-                money(tc); tc.font = F(True)
+                expr = "+".join("%s%d" % (L, pr) for pr in proj_subtotal_rows) or "0"
+                tc = ws.cell(r, col); tc.value = "=" + expr; money(tc); tc.font = F(True, ACCENT)
+            var_cells(r, bold=True)
+            cat_subtotal_rows.append(r)
             r += 2
 
-        ws.column_dimensions["A"].width = 30
-        ws.column_dimensions["B"].width = 20
+        # Grand total = sum of category subtotals
+        for ci in range(1, NC + 1):
+            ws.cell(r, ci).fill = CAT; ws.cell(r, ci).border = border
+        ws.cell(r, 1, "ALL CATEGORIES").font = F(True)
+        for col in (5, 6, 7):
+            L = get_column_letter(col)
+            expr = "+".join("%s%d" % (L, cr) for cr in cat_subtotal_rows) or "0"
+            tc = ws.cell(r, col); tc.value = "=" + expr; money(tc); tc.font = F(True)
+        var_cells(r, bold=True)
+
+        ws.column_dimensions["A"].width = 20
+        ws.column_dimensions["B"].width = 26
         ws.column_dimensions["C"].width = 16
-        for col in ("D", "E", "F", "G"):
+        ws.column_dimensions["D"].width = 14
+        for col in ("E", "F", "G", "H", "I", "J"):
             ws.column_dimensions[col].width = 14
 
     bio = io.BytesIO(); wb.save(bio)
@@ -2208,9 +2249,11 @@ def api_bva_template():
         for k in keys:
             proj, ct = k
             a = actuals.get(k, {})
+            pname = a.get("project_name") or a.get("project") or proj
             rows.append({
                 "project":      a.get("project") or proj,
-                "project_name": a.get("project_name") or a.get("project") or proj,
+                "project_name": pname,
+                "category":     _bva_category(pname),
                 "task":         a.get("task", ""),
                 "costtype":     ct,
                 "actual":       a.get("actual", 0.0),
@@ -2383,32 +2426,37 @@ def _gen_bva_actualize_xlsx(blocks: list) -> bytes:
         ws.cell(1, 1, "%s — Actuals by Project / Task / Month" % blk["label"]).font = Font(name="Calibri", bold=True, size=14, color=ACCENT)
         ws.cell(2, 1, "Sage entity: %s · signed GL actuals by month — paste into the pro-forma" % blk["entity"]).font = F(False, "888888", 9)
         r = 4
-        headers = ["Project ID", "Task", "Task Name"] + months + ["Total"]
+        # Category | Project ID | Task | Task Name | <months…> | Total
+        headers = ["Category", "Project ID", "Task", "Task Name"] + months + ["Total"]
         for ci, h in enumerate(headers, 1):
             c = ws.cell(r, ci, h); c.font = F(True, "1A1A1A", 9); c.fill = HDR; c.border = border
-            if ci > 3:
+            if ci > 4:
                 c.alignment = rightal
         r += 1
-        for row in blk.get("rows", []):
-            ws.cell(r, 1, row.get("project", "")).border = border
-            ws.cell(r, 2, row.get("task", "")).border = border
-            ws.cell(r, 3, row.get("task_name", "")).border = border
+        base = 5  # first month column
+        for row in sorted(blk.get("rows", []),
+                          key=lambda x: (x.get("category") or "", x.get("project") or "", x.get("task") or "")):
+            ws.cell(r, 1, row.get("category", "")).border = border
+            ws.cell(r, 2, row.get("project", "")).border = border
+            ws.cell(r, 3, row.get("task", "")).border = border
+            ws.cell(r, 4, row.get("task_name", "")).border = border
             tot = 0.0
             mvals = row.get("months", {})
             for j, mk in enumerate(months):
                 v = mvals.get(mk, 0.0); tot += v
-                c = ws.cell(r, 4 + j)
+                c = ws.cell(r, base + j)
                 if v:
                     c.value = round(v)
                 c.number_format = "#,##0"; c.border = border
-            tc = ws.cell(r, 4 + len(months)); tc.value = round(tot)
+            tc = ws.cell(r, base + len(months)); tc.value = round(tot)
             tc.number_format = "#,##0"; tc.border = border; tc.font = F(True)
             r += 1
-        ws.column_dimensions["A"].width = 24
-        ws.column_dimensions["B"].width = 16
-        ws.column_dimensions["C"].width = 20
+        ws.column_dimensions["A"].width = 20
+        ws.column_dimensions["B"].width = 24
+        ws.column_dimensions["C"].width = 16
+        ws.column_dimensions["D"].width = 20
         for j in range(len(months) + 1):
-            ws.column_dimensions[get_column_letter(4 + j)].width = 11
+            ws.column_dimensions[get_column_letter(base + j)].width = 11
 
     bio = io.BytesIO(); wb.save(bio)
     return bio.getvalue()
@@ -2429,8 +2477,11 @@ def api_bva_actualize():
             d = sage_intacct.bva_actuals_monthly(eid)
         except sage_intacct.IntacctAPIError as e:
             return jsonify({"error": "Sage error for %s: %s" % (label, e)}), 502
+        rows = d["rows"]
+        for row in rows:
+            row["category"] = _bva_category(row.get("project", ""))
         blocks.append({"label": label, "entity": eid,
-                       "rows": d["rows"], "months": d["months"]})
+                       "rows": rows, "months": d["months"]})
     xlsx = _gen_bva_actualize_xlsx(blocks)
     fname = "BVA_Actuals_by_Month_%s.xlsx" % datetime.datetime.now().strftime("%Y-%m-%d")
     return send_file(io.BytesIO(xlsx),
