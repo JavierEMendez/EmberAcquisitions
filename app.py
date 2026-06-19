@@ -2078,6 +2078,30 @@ _BVA_ENTITIES = [
     ("WRG",       "10 - Emp Angleton"),
 ]
 
+# Sage has no major-category field on projects, so we bucket by name. Ordered:
+# first bucket with a matching keyword (lowercased substring) wins. Unmatched
+# projects fall to "Other". Tweak keywords here to re-group.
+_BVA_CATEGORIES = [
+    ("Plant & Utilities",   ["wwtp", "water plant", "lift station", "liftstation", "wtp"]),
+    ("Collector Roads",     ["baethe", "kermier", " rd ", " rd", "road"]),
+    ("Detention & Drainage", ["detention", "outfall", "dtn", "drainage", "fdc"]),
+    ("Sections",            ["sec.", "sec ", "section"]),
+    ("Amenities",           ["rec center", "lake charlie", "sundancer", "amenit"]),
+    ("Marketing",           ["m_", "welcome center", "realtor", "marketing", "spring event", "stratgy", "strategy"]),
+    ("Soft Costs",          ["land planning", "professional", "field expense", "g&a", "g-a", "operations"]),
+    ("MUD / HOA",           ["mud advance", "hoa advance", " mud", " hoa"]),
+    ("Site Work",           ["site work", "sitework"]),
+]
+
+
+def _bva_category(project_name: str) -> str:
+    """Map a project name to its major cost category (configurable above)."""
+    n = " " + (project_name or "").lower() + " "
+    for cat, kws in _BVA_CATEGORIES:
+        if any(k in n for k in kws):
+            return cat
+    return "Other"
+
 
 def _gen_bva_template_xlsx(blocks: list) -> bytes:
     """Budget-vs-Actuals template: one sheet per project, rows = the project's
@@ -2260,7 +2284,8 @@ def api_bva_data():
             bud = float(ebud.get(bkey, 0) or 0)
             act = round(a.get("actual", 0.0))
             com = round(commits.get(k, 0.0))
-            rows.append({"project": pname, "task": a.get("task", ""), "costtype": ct,
+            rows.append({"project": pname, "category": _bva_category(pname),
+                         "task": a.get("task", ""), "costtype": ct,
                          "budget": round(bud), "committed": com, "actual": act,
                          "variance": round(bud - com - act)})
         # Budgeted lines with no Sage activity yet still show up.
@@ -2269,9 +2294,10 @@ def api_bva_data():
                 continue
             pname, _, ct = bkey.partition(_BVA_KEYSEP)
             amt = round(float(amt or 0))
-            rows.append({"project": pname, "task": "", "costtype": ct,
+            rows.append({"project": pname, "category": _bva_category(pname),
+                         "task": "", "costtype": ct,
                          "budget": amt, "committed": 0, "actual": 0, "variance": amt})
-        rows.sort(key=lambda r: (r["project"], r["costtype"]))
+        rows.sort(key=lambda r: (r["category"], r["project"], r["costtype"]))
         blocks.append({"label": label, "entity": eid, "rows": rows})
     return jsonify({"configured": True, "blocks": blocks})
 

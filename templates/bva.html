@@ -68,8 +68,10 @@
   .bva-table th.left{text-align:left;}
   .bva-table td{padding:8px 12px;text-align:right;border-bottom:1px solid var(--eax-line);font-variant-numeric:tabular-nums;color:var(--eax-ink);white-space:nowrap;}
   .bva-table td.left{text-align:left;}
-  .bva-table tr.proj-head td{background:var(--eax-bg-2);font-weight:700;text-transform:none;letter-spacing:0;color:var(--eax-ink);}
-  .bva-table tr.proj-sub td{background:var(--eax-bg-2);font-weight:700;}
+  .bva-table tr.cat-head td{background:var(--eax-accent-soft);font-weight:800;color:var(--eax-ink);border-top:2px solid var(--eax-line-2);text-transform:uppercase;letter-spacing:0.04em;font-size:11px;}
+  .bva-table tr.proj-head td{background:var(--eax-bg-2);font-weight:700;color:var(--eax-ink);}
+  .bva-table tr.proj-head td.left{padding-left:22px;}
+  .bva-table tbody tr:not(.cat-head):not(.proj-head):not(.grand) td.left:first-child{padding-left:34px;}
   .bva-table tr.grand td{border-top:2px solid var(--eax-line-2);font-weight:800;}
   .bva-table .muted{color:var(--eax-muted);}
   .over{color:#c0392b;font-weight:600;}
@@ -181,32 +183,39 @@
     // Committed − Actuals: just informational (open commitment); show neutral
     const caCls = (v) => v < 0 ? "over" : "muted";
 
-    // Group rows by project
-    const groups = {};
-    const order = [];
-    b.rows.forEach(r => { if (!(r.project in groups)) { groups[r.project] = []; order.push(r.project); } groups[r.project].push(r); });
+    const vcells = (B, C, A) => {
+      const bc = B - C, ca = C - A, ba = B - A;
+      return `<td>${fmt(B)}</td><td>${fmt(C)}</td><td>${fmt(A)}</td>`
+        + `<td class="${bcCls(bc)}">${fmt(bc)}</td>`
+        + `<td class="${caCls(ca)}">${fmt(ca)}</td>`
+        + `<td class="${bcCls(ba)}">${fmt(ba)}</td>`;
+    };
+
+    // Group: category → project → cost-type rows
+    const cats = {}; const catOrder = [];
+    b.rows.forEach(r => {
+      const c = r.category || "Other";
+      if (!(c in cats)) { cats[c] = { projects: {}, order: [] }; catOrder.push(c); }
+      const cg = cats[c];
+      if (!(r.project in cg.projects)) { cg.projects[r.project] = []; cg.order.push(r.project); }
+      cg.projects[r.project].push(r);
+    });
 
     let rowsHtml = "";
-    order.forEach(proj => {
-      const pr = groups[proj];
-      let pB = 0, pC = 0, pA = 0;
-      const inner = pr.map(r => {
-        pB += r.budget; pC += r.committed; pA += r.actual;
-        const bc = r.budget - r.committed, ca = r.committed - r.actual, ba = r.budget - r.actual;
-        return `<tr>
-          <td class="left muted">${r.costtype || ""}</td>
-          <td class="left muted">${r.task || ""}</td>
-          <td>${fmt(r.budget)}</td>
-          <td>${fmt(r.committed)}</td>
-          <td>${fmt(r.actual)}</td>
-          <td class="${bcCls(bc)}">${fmt(bc)}</td>
-          <td class="${caCls(ca)}">${fmt(ca)}</td>
-          <td class="${bcCls(ba)}">${fmt(ba)}</td>
-        </tr>`;
-      }).join("");
-      const pBC = pB - pC, pCA = pC - pA, pBA = pB - pA;
-      rowsHtml += `<tr class="proj-head"><td class="left" colspan="8">${proj}</td></tr>${inner}
-        <tr class="proj-sub"><td class="left">Subtotal</td><td></td><td>${fmt(pB)}</td><td>${fmt(pC)}</td><td>${fmt(pA)}</td><td class="${bcCls(pBC)}">${fmt(pBC)}</td><td class="${caCls(pCA)}">${fmt(pCA)}</td><td class="${bcCls(pBA)}">${fmt(pBA)}</td></tr>`;
+    catOrder.forEach(cat => {
+      const cg = cats[cat];
+      let cB = 0, cC = 0, cA = 0, projHtml = "";
+      cg.order.forEach(proj => {
+        const pr = cg.projects[proj];
+        let pB = 0, pC = 0, pA = 0;
+        const inner = pr.map(r => {
+          pB += r.budget; pC += r.committed; pA += r.actual;
+          return `<tr><td class="left muted">${r.costtype || ""}</td><td class="left muted">${r.task || ""}</td>${vcells(r.budget, r.committed, r.actual)}</tr>`;
+        }).join("");
+        cB += pB; cC += pC; cA += pA;
+        projHtml += `<tr class="proj-head"><td class="left" colspan="2">${proj}</td>${vcells(pB, pC, pA)}</tr>${inner}`;
+      });
+      rowsHtml += `<tr class="cat-head"><td class="left" colspan="2">${cat}</td>${vcells(cB, cC, cA)}</tr>${projHtml}`;
     });
 
     host.innerHTML = `
