@@ -2070,6 +2070,49 @@ def bva_commitments(entity_id: str) -> dict:
     return out
 
 
+def bva_audit(entity_id: str) -> dict:
+    """Verification view of the actuals pull: the signed total, plus breakdowns
+    by GL account and by project, so we can confirm magnitudes and spot any
+    non-cost accounts (debt, intercompany) leaking in. Read-only."""
+    if not is_configured():
+        raise IntacctConfigurationError("Sage Intacct is not configured on this server.")
+    locs = _entity_location_set(entity_id)
+    select = ["ACCOUNTNO", "PROJECTID", "COSTTYPEID", "CLASSID", "AMOUNT", "TR_TYPE"]
+    by_acct: dict = {}; by_proj: dict = {}
+    total = 0.0; n = 0; n_cost = 0; dropped = 0
+    for loc in locs:
+        try:
+            rows = _query("GLENTRY", select, [("LOCATION", loc)], page_size=1000, max_pages=100)
+        except Exception as e:
+            log.warning("bva_audit: LOCATION=%s failed: %s", loc, e)
+            continue
+        for r in rows:
+            n += 1
+            signed = _glentry_signed(r)
+            if signed is None:
+                dropped += 1
+                continue
+            proj = (r.get("PROJECTID") or "").strip()
+            ct = (r.get("COSTTYPEID") or "").strip()
+            if not (proj or ct):
+                continue
+            n_cost += 1
+            acct = (r.get("ACCOUNTNO") or "").strip()
+            by_acct[acct] = by_acct.get(acct, 0.0) + signed
+            by_proj[proj] = by_proj.get(proj, 0.0) + signed
+            total += signed
+    return {
+        "total": round(total),
+        "entries_scanned": n,
+        "cost_coded_entries": n_cost,
+        "dropped_no_tr_type": dropped,
+        "by_account": [{"account": k, "amount": round(v)}
+                       for k, v in sorted(by_acct.items(), key=lambda x: -abs(x[1]))],
+        "by_project": [{"project": k, "amount": round(v)}
+                       for k, v in sorted(by_proj.items(), key=lambda x: -abs(x[1]))],
+    }
+
+
 def _month_key(s) -> str:
     """GL ENTRY_DATE -> 'YYYY-MM'. Handles ISO (YYYY-MM-DD) and US (MM/DD/YYYY)."""
     s = (s or "").strip()

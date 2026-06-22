@@ -2489,6 +2489,41 @@ def api_bva_actualize():
                      as_attachment=True, download_name=fname)
 
 
+@app.route("/api/bva/preview", methods=["GET"])
+@login_required
+@admin_required
+def api_bva_preview():
+    """Verification dump: per-entity actuals total + breakdown by GL account
+    and by project, plus the commitments total — so we can sanity-check the
+    numbers (and spot non-cost accounts leaking in) before trusting them."""
+    if not sage_intacct.is_configured():
+        return jsonify({"error": "Sage Intacct is not configured on this server."}), 400
+    sel = request.args.get("entity")
+    targets = [(l, e) for (l, e) in _BVA_ENTITIES if (not sel or e == sel)]
+    out = []
+    for label, eid in targets:
+        try:
+            audit = sage_intacct.bva_audit(eid)
+        except sage_intacct.IntacctAPIError as e:
+            return jsonify({"error": "Sage error for %s: %s" % (label, e)}), 502
+        try:
+            commits = sage_intacct.bva_commitments(eid)
+        except Exception:
+            commits = {}
+        out.append({
+            "label": label, "entity": eid,
+            "actuals_total": audit["total"],
+            "entries_scanned": audit["entries_scanned"],
+            "cost_coded_entries": audit["cost_coded_entries"],
+            "dropped_no_tr_type": audit["dropped_no_tr_type"],
+            "by_account": audit["by_account"],
+            "by_project": audit["by_project"],
+            "commitments_total": round(sum(commits.values())) if commits else 0,
+            "commitment_lines": len(commits),
+        })
+    return jsonify({"configured": True, "preview": out})
+
+
 @app.route("/bva", methods=["GET"])
 @app.route("/budget-vs-actuals", methods=["GET"])
 @login_required
