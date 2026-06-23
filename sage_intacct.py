@@ -1968,6 +1968,24 @@ def bva_discovery(entity_id: str | None = None, sample_rows: int = 300) -> dict:
 
 
 # ─── BVA actuals + commitments (by PROJECT × COSTTYPE) ───────────────────────
+# Development "actuals" = costs only: the 16xxx CIP/WIP development accounts and
+# 70xxx expense accounts. Everything else (10xxx cash, 11xxx AR, 20xxx
+# liabilities incl. MUD-advances payable, 50xxx) is funding/offset, NOT cost,
+# and must be excluded or it pollutes the actuals (and yields phantom totals
+# like the MUD-advances liability).
+_BVA_COST_ACCT_PREFIXES = ("16", "70")
+
+
+def _is_cost_account(acct) -> bool:
+    a = (acct or "").strip()
+    return any(a.startswith(p) for p in _BVA_COST_ACCT_PREFIXES)
+
+
+def _proj_prefix(project_id: str) -> str:
+    """Entity prefix of a project id, e.g. 'GP_MUD Advances' -> 'GP'."""
+    return (project_id or "").split("_", 1)[0].strip()
+
+
 def _glentry_signed(r: dict):
     """Signed GL amount: AMOUNT × TR_TYPE (debit +1 / credit -1). Returns None
     when TR_TYPE is missing (those entries are dropped, per get_trial_balance)."""
@@ -1988,7 +2006,7 @@ def bva_actuals(entity_id: str) -> dict:
     if not is_configured():
         raise IntacctConfigurationError("Sage Intacct is not configured on this server.")
     locs = _entity_location_set(entity_id)
-    select = ["PROJECTID", "PROJECTNAME", "TASKNAME", "COSTTYPEID", "AMOUNT", "TR_TYPE"]
+    select = ["ACCOUNTNO", "PROJECTID", "PROJECTNAME", "TASKNAME", "COSTTYPEID", "AMOUNT", "TR_TYPE"]
     agg: dict = {}
     for loc in locs:
         try:
@@ -1998,6 +2016,8 @@ def bva_actuals(entity_id: str) -> dict:
             log.warning("bva_actuals: GLENTRY LOCATION=%s failed: %s", loc, e)
             continue
         for r in rows:
+            if not _is_cost_account(r.get("ACCOUNTNO")):
+                continue   # cost accounts only (16xxx/70xxx) — skip cash/liab/AR
             proj = (r.get("PROJECTID") or "").strip()
             ct = (r.get("COSTTYPEID") or "").strip()
             if not (proj or ct):
@@ -2022,12 +2042,15 @@ _PO_LINE_CANDIDATES = [
 ]
 
 
-def bva_commitments(entity_id: str) -> dict:
+def bva_commitments(entity_id: str, project_prefixes: set | None = None) -> dict:
     """Total committed (PO) amount by (PROJECTID, COSTTYPEID) from PO lines —
     the FULL commitment incl. amounts already billed, so 'Committed − Actuals'
     reads as the open/unbilled remainder. Cancelled lines are dropped.
-    Returns {(project, costtype): amount}; empty when PO lines aren't reachable
-    or don't carry the cost dimensions."""
+
+    PODOCUMENTENTRY isn't entity-filterable on this instance, so the query is
+    company-wide; pass `project_prefixes` (e.g. {'GP'}) to keep only this
+    entity's projects — otherwise commitments balloon with every project's POs.
+    Returns {(project, costtype): amount}; empty when PO lines aren't reachable."""
     if not is_configured():
         return {}
     qfields: list[str] = []
@@ -2062,6 +2085,8 @@ def bva_commitments(entity_id: str) -> dict:
         ct = (r.get("COSTTYPEID") or "").strip()
         if not (proj or ct):
             continue
+        if project_prefixes is not None and _proj_prefix(proj) not in project_prefixes:
+            continue   # keep only this entity's projects (e.g. GP_*)
         try:
             amt = float(r.get(amount_field) or 0)
         except (TypeError, ValueError):
@@ -2078,7 +2103,7 @@ def bva_audit(entity_id: str) -> dict:
         raise IntacctConfigurationError("Sage Intacct is not configured on this server.")
     locs = _entity_location_set(entity_id)
     select = ["ACCOUNTNO", "PROJECTID", "COSTTYPEID", "CLASSID", "AMOUNT", "TR_TYPE"]
-    by_acct: dict = {}; by_proj: dict = {}
+    by_acct: dict = {}; by_proj: dict = {}; excluded: dict = {}
     total = 0.0; n = 0; n_cost = 0; dropped = 0
     for loc in locs:
         try:
@@ -2096,8 +2121,11 @@ def bva_audit(entity_id: str) -> dict:
             ct = (r.get("COSTTYPEID") or "").strip()
             if not (proj or ct):
                 continue
-            n_cost += 1
             acct = (r.get("ACCOUNTNO") or "").strip()
+            if not _is_cost_account(acct):
+                excluded[acct] = excluded.get(acct, 0.0) + signed
+                continue   # cost accounts (16xxx/70xxx) only
+            n_cost += 1
             by_acct[acct] = by_acct.get(acct, 0.0) + signed
             by_proj[proj] = by_proj.get(proj, 0.0) + signed
             total += signed
@@ -2110,6 +2138,8 @@ def bva_audit(entity_id: str) -> dict:
                        for k, v in sorted(by_acct.items(), key=lambda x: -abs(x[1]))],
         "by_project": [{"project": k, "amount": round(v)}
                        for k, v in sorted(by_proj.items(), key=lambda x: -abs(x[1]))],
+        "excluded_by_account": [{"account": k, "amount": round(v)}
+                                for k, v in sorted(excluded.items(), key=lambda x: -abs(x[1]))],
     }
 
 
@@ -2134,7 +2164,7 @@ def bva_actuals_monthly(entity_id: str) -> dict:
     if not is_configured():
         raise IntacctConfigurationError("Sage Intacct is not configured on this server.")
     locs = _entity_location_set(entity_id)
-    select = ["PROJECTID", "TASKID", "TASKNAME", "AMOUNT", "TR_TYPE", "ENTRY_DATE"]
+    select = ["ACCOUNTNO", "PROJECTID", "TASKID", "TASKNAME", "AMOUNT", "TR_TYPE", "ENTRY_DATE"]
     agg: dict = {}
     months: set = set()
     for loc in locs:
@@ -2145,6 +2175,8 @@ def bva_actuals_monthly(entity_id: str) -> dict:
             log.warning("bva_actuals_monthly: LOCATION=%s failed: %s", loc, e)
             continue
         for r in rows:
+            if not _is_cost_account(r.get("ACCOUNTNO")):
+                continue
             proj = (r.get("PROJECTID") or "").strip()
             task = (r.get("TASKID") or "").strip()
             if not (proj or task):

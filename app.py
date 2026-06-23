@@ -2240,8 +2240,9 @@ def api_bva_template():
             actuals = sage_intacct.bva_actuals(eid)
         except sage_intacct.IntacctAPIError as e:
             return jsonify({"error": "Actuals pull failed for %s: %s" % (label, e)}), 502
+        prefixes = {p.split("_", 1)[0].strip() for (p, _ct) in actuals.keys()} or None
         try:
-            commits = sage_intacct.bva_commitments(eid)
+            commits = sage_intacct.bva_commitments(eid, prefixes)
         except Exception:
             commits = {}
         keys = set(actuals.keys()) | set(commits.keys())
@@ -2311,8 +2312,9 @@ def api_bva_data():
             actuals = sage_intacct.bva_actuals(eid)
         except sage_intacct.IntacctAPIError as e:
             return jsonify({"configured": True, "error": "Sage error for %s: %s" % (label, e)}), 502
+        prefixes = {p.split("_", 1)[0].strip() for (p, _ct) in actuals.keys()} or None
         try:
-            commits = sage_intacct.bva_commitments(eid)
+            commits = sage_intacct.bva_commitments(eid, prefixes)
         except Exception:
             commits = {}
         ebud = budgets.get(eid, {})
@@ -2506,8 +2508,10 @@ def api_bva_preview():
             audit = sage_intacct.bva_audit(eid)
         except sage_intacct.IntacctAPIError as e:
             return jsonify({"error": "Sage error for %s: %s" % (label, e)}), 502
+        prefixes = {p["project"].split("_", 1)[0].strip()
+                    for p in audit.get("by_project", []) if p.get("project")} or None
         try:
-            commits = sage_intacct.bva_commitments(eid)
+            commits = sage_intacct.bva_commitments(eid, prefixes)
         except Exception:
             commits = {}
         out.append({
