@@ -2078,38 +2078,46 @@ _BVA_ENTITIES = [
     ("WRG",       "10 - Emp Angleton"),
 ]
 
-# Sage has no major-category field on projects, so we bucket by project name.
-# Ordered: first bucket with a matching keyword (lowercased substring) wins.
-# Individual lots (S#-B#-L#) roll into Sections. Validated against the live GL
-# so nothing falls to "Other". Tweak keywords here to re-group.
+# Bucket each GL line by project name + task. Task overrides win first
+# (landscaping → Amenities; power/streetlights → Dry Utilities). Individual
+# lots (S#-B#-L#) roll into Lot Taxes. Then first matching project keyword.
+# Validated against the live GL so nothing falls to "Other".
 _BVA_CATEGORIES = [
     ("Land Acquisition",    ["acquisition"]),
     ("Financing",           ["financing", "receivable", "bond"]),
+    ("Dry Utilities",       ["dry util", "street light", "streetlight"]),
     ("Plant & Utilities",   ["wwtp", "water plant", "lift station", "liftstation",
-                             "wtp", "dry util", "utilit", "pump", "irrg", "irrig"]),
+                             "wtp", "utilit", "pump", "irrg", "irrig"]),
     ("Collector Roads",     ["baethe", "kermier", " rd ", " rd", "road", "crossing"]),
     ("Detention & Drainage", ["detention", "outfall", "dtn", "drainage", "fdc", "pond", "channel"]),
     ("Amenities",           ["rec center", "lake", "overlook", "sundancer", "monument",
-                             "mallard", "amenit", "landscap"]),
+                             "mallard", "amenit", "landscap", "hill"]),
     ("Marketing",           ["m_", "welcome center", "realtor", "marketing",
                              "spring event", "stratgy", "strategy"]),
-    ("Site Work",           ["site work", "sitework", "grading"]),
+    ("Site Work",           ["site work", "sitework", "grading", "field expense"]),
     ("Sections",            ["sec.", "sec ", "section", "sec0", "sec1", "lotsales"]),
     ("Taxes",               ["tax"]),
     ("MUD / HOA",           ["mud advance", "hoa advance", " mud", " hoa"]),
-    ("Soft Costs",          ["land planning", "professional", "field expense", "g&a",
-                             "g-a", "operations", "development fee", "fees", "personnel",
-                             "accounting", "legal", "insurance", "contingency", "entries"]),
+    ("Soft Costs",          ["land planning", "professional", "g&a", "g-a", "operations",
+                             "development fee", "fees", "personnel", "accounting",
+                             "legal", "insurance", "contingency", "entries"]),
 ]
-_BVA_LOT_RE = re.compile(r"s\d+-b\d+-l\d+")   # individual lot id -> Sections
+_BVA_LOT_RE = re.compile(r"s\d+-b\d+-l\d+")   # individual lot id
 
 
-def _bva_category(project_name: str) -> str:
-    """Map a project name to its major cost category (configurable above).
-    Individual lots fold into Sections; everything else matches a keyword."""
+def _bva_category(project_name: str, task: str = "") -> str:
+    """Major cost category for a GL line, from project name + task.
+    Task overrides come first, then individual lots, then project keywords."""
     n = " " + (project_name or "").lower() + " "
+    t = (task or "").lower()
+    if "landscap" in t:
+        return "Amenities"
+    if "power" in t or "street" in t or "light" in t:
+        return "Dry Utilities"
     if _BVA_LOT_RE.search(n):
-        return "Sections"
+        return "Lot Taxes"
+    if "hill" in n:                      # Hill + Pond is an amenity feature
+        return "Amenities"
     for cat, kws in _BVA_CATEGORIES:
         if any(k in n for k in kws):
             return cat
@@ -2128,16 +2136,28 @@ def _bva_owner_to_entity(owner: str, owner_name: str):
     return None
 
 
-def _parse_bva_gl(file_bytes: bytes) -> dict:
-    """Parse a Sage 'General Ledger report' CSV (ACCRUAL + commitment books
-    combined) into {entity_label: [{project, task, subtask, actual, committed}]}.
+def _bva_month_key(s: str) -> str:
+    """'MM/DD/YYYY' (or ISO) Posted dt -> 'YYYY-MM'."""
+    s = (s or "").strip()
+    if len(s) >= 7 and s[4] == "-":
+        return s[:7]
+    if "/" in s:
+        p = s.split("/")
+        if len(p) == 3 and len(p[2][:4]) == 4:
+            return "%s-%s" % (p[2][:4], p[0].zfill(2))
+    return ""
 
-    - Account comes from the section-header rows; only cost accounts (16xxx CIP
-      + 70xxx expense) are kept.
-    - signed = Debit − Credit; actuals = non-commitment journals, commitments =
-      COMMITMENTS / CJ_PO / CJ_CLOSE.
-    - Rows are routed to a tab by the Owner column; grouped by project name +
-      task + subtask."""
+
+def _parse_bva_gl(file_bytes: bytes, force_entity: str = None) -> dict:
+    """Parse a Sage 'General Ledger report' CSV (ACCRUAL + commitment books
+    combined) into {entity_label: [{project, task, subtask, committed, months}]}
+    where months = {'YYYY-MM': actual} (actuals), committed = PO-book total.
+
+    - Account from the section-header rows; cost accounts only (16xxx/70xxx).
+    - signed = Debit − Credit; actuals (by month) = non-commitment journals,
+      commitments = COMMITMENTS / CJ_PO / CJ_CLOSE.
+    - force_entity: assign every row to that tab (per-entity upload); else route
+      by Owner. Grouped by project name + task + subtask."""
     import csv as _csv, io as _sio
     text = file_bytes.decode("utf-8-sig", errors="replace")
     rows = list(_csv.reader(_sio.StringIO(text)))
@@ -2147,7 +2167,7 @@ def _parse_bva_gl(file_bytes: bytes) -> dict:
     idx = {h: i for i, h in enumerate(hdr)}
     c_owner, c_oname = idx.get("Owner"), idx.get("Owner name")
     c_proj, c_task, c_sub = idx.get("Project name"), idx.get("Task name"), idx.get("Subtask name")
-    c_jnl, c_deb, c_cred = idx.get("JNL"), idx.get("Debit"), idx.get("Credit")
+    c_jnl, c_deb, c_cred, c_date = idx.get("JNL"), idx.get("Debit"), idx.get("Credit"), idx.get("Posted dt.")
     date_re = re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$")
     acct_re = re.compile(r"^\s*(\d[\w.-]*)\s+-\s+")
     COMMIT = {"COMMITMENTS", "CJ_PO", "CJ_CLOSE"}
@@ -2173,7 +2193,7 @@ def _parse_bva_gl(file_bytes: bytes) -> dict:
             continue
         if not (cur_acct and (cur_acct.startswith("16") or cur_acct.startswith("70"))):
             continue
-        ent = _bva_owner_to_entity(g(r, c_owner), g(r, c_oname))
+        ent = force_entity or _bva_owner_to_entity(g(r, c_owner), g(r, c_oname))
         if not ent:
             continue
         proj = g(r, c_proj)
@@ -2181,16 +2201,19 @@ def _parse_bva_gl(file_bytes: bytes) -> dict:
             continue
         key = (proj, g(r, c_task), g(r, c_sub))
         signed = num(g(r, c_deb)) - num(g(r, c_cred))
-        d = agg.setdefault(ent, {}).setdefault(key, {"actual": 0.0, "committed": 0.0})
+        d = agg.setdefault(ent, {}).setdefault(key, {"committed": 0.0, "months": {}})
         if g(r, c_jnl) in COMMIT:
             d["committed"] += signed
         else:
-            d["actual"] += signed
+            mk = _bva_month_key(g(r, c_date))
+            if mk:
+                d["months"][mk] = d["months"].get(mk, 0.0) + signed
 
     out: dict = {}
     for ent, kv in agg.items():
         out[ent] = [{"project": p, "task": t, "subtask": s,
-                     "actual": round(d["actual"]), "committed": round(d["committed"])}
+                     "committed": round(d["committed"]),
+                     "months": {mk: round(v) for mk, v in d["months"].items()}}
                     for (p, t, s), d in kv.items()]
     return out
 
@@ -2215,28 +2238,32 @@ def _bva_save_gl(entities: dict) -> None:
 @app.route("/api/bva/gl-upload", methods=["POST"])
 @login_required
 def api_bva_gl_upload():
-    """Ingest a Sage General Ledger report CSV (with the commitment books
-    combined) as the BVA actuals + commitments source."""
+    """Ingest a Sage General Ledger report CSV (commitment books combined) for
+    ONE entity. ?entity=GPD|Dennison|WRG forces the target tab (the dev team
+    updates each project's report independently)."""
     if not _bva_can_view():
         return jsonify({"error": "forbidden"}), 403
     f = request.files.get("file")
     if not f:
         return jsonify({"error": "No file uploaded"}), 400
+    ent = request.args.get("entity")
+    valid = {lbl for lbl, _e in _BVA_ENTITIES}
+    if ent not in valid:
+        return jsonify({"error": "Specify ?entity= one of: %s" % ", ".join(sorted(valid))}), 400
     try:
-        parsed = _parse_bva_gl(f.read())
+        parsed = _parse_bva_gl(f.read(), force_entity=ent)
     except Exception as e:
         return jsonify({"error": "Could not parse GL report: %s" % e}), 400
-    if not parsed:
-        return jsonify({"error": "No GPD / Dennison / WRG cost rows found — check the "
-                                 "Owner column and that cost accounts (16xxx/70xxx) are present."}), 400
+    recs = parsed.get(ent, [])
+    if not recs:
+        return jsonify({"error": "No cost rows (16xxx/70xxx with a project) found in the file."}), 400
     existing = _bva_load_gl()
-    existing.update(parsed)   # replace the entities present in this upload
+    existing[ent] = recs   # replace just this entity
     _bva_save_gl(existing)
-    summary = {ent: {"lines": len(recs),
-                     "actual": round(sum(r["actual"] for r in recs)),
-                     "committed": round(sum(r["committed"] for r in recs))}
-               for ent, recs in parsed.items()}
-    return jsonify({"ok": True, "loaded": summary})
+    actual = sum(sum(r["months"].values()) for r in recs)
+    committed = sum(r["committed"] for r in recs)
+    return jsonify({"ok": True, "entity": ent, "lines": len(recs),
+                    "actual": round(actual), "committed": round(committed)})
 
 
 def _gen_bva_template_xlsx(blocks: list) -> bytes:
@@ -2376,13 +2403,13 @@ def api_bva_template():
     for label, eid in _BVA_ENTITIES:
         rows = []
         for rec in gl.get(label, []) or []:
-            proj = rec.get("project", "")
+            proj = rec.get("project", ""); task = rec.get("task", "")
             rows.append({
                 "project":   proj,
-                "category":  _bva_category(proj),
-                "task":      rec.get("task", ""),
+                "category":  _bva_category(proj, task),
+                "task":      task,
                 "subtask":   rec.get("subtask", ""),
-                "actual":    rec.get("actual", 0.0),
+                "actual":    sum((rec.get("months") or {}).values()),
                 "committed": rec.get("committed", 0.0),
             })
         blocks.append({"label": label, "entity": eid, "rows": rows})
@@ -2442,8 +2469,9 @@ def api_bva_data():
             bkey = proj + _BVA_KEYSEP + sub
             seen.add(bkey)
             bud = round(float(ebud.get(bkey, 0) or 0))
-            com = round(rec.get("committed", 0)); act = round(rec.get("actual", 0))
-            rows.append({"category": _bva_category(proj), "project": proj,
+            com = round(rec.get("committed", 0))
+            act = round(sum((rec.get("months") or {}).values()))
+            rows.append({"category": _bva_category(proj, task), "project": proj,
                          "task": task, "subtask": sub,
                          "budget": bud, "committed": com, "actual": act})
         # Budgeted lines with no GL activity yet still show.
@@ -2538,11 +2566,11 @@ def _gen_bva_actualize_xlsx(blocks: list) -> bytes:
     for blk in blocks:
         months = blk.get("months", [])
         ws = wb.create_sheet(sheet_name(blk["label"]))
-        ws.cell(1, 1, "%s — Actuals by Project / Task / Month" % blk["label"]).font = Font(name="Calibri", bold=True, size=14, color=ACCENT)
+        ws.cell(1, 1, "%s — Actuals by Category / Project / Subtask / Month" % blk["label"]).font = Font(name="Calibri", bold=True, size=14, color=ACCENT)
         ws.cell(2, 1, "Sage entity: %s · signed GL actuals by month — paste into the pro-forma" % blk["entity"]).font = F(False, "888888", 9)
         r = 4
-        # Category | Project ID | Task | Task Name | <months…> | Total
-        headers = ["Category", "Project ID", "Task", "Task Name"] + months + ["Total"]
+        # Category | Project | Task | Subtask | <months…> | Total
+        headers = ["Category", "Project", "Task", "Subtask"] + months + ["Total"]
         for ci, h in enumerate(headers, 1):
             c = ws.cell(r, ci, h); c.font = F(True, "1A1A1A", 9); c.fill = HDR; c.border = border
             if ci > 4:
@@ -2550,11 +2578,11 @@ def _gen_bva_actualize_xlsx(blocks: list) -> bytes:
         r += 1
         base = 5  # first month column
         for row in sorted(blk.get("rows", []),
-                          key=lambda x: (x.get("category") or "", x.get("project") or "", x.get("task") or "")):
+                          key=lambda x: (x.get("category") or "", x.get("project") or "", x.get("subtask") or "")):
             ws.cell(r, 1, row.get("category", "")).border = border
             ws.cell(r, 2, row.get("project", "")).border = border
             ws.cell(r, 3, row.get("task", "")).border = border
-            ws.cell(r, 4, row.get("task_name", "")).border = border
+            ws.cell(r, 4, row.get("subtask", "")).border = border
             tot = 0.0
             mvals = row.get("months", {})
             for j, mk in enumerate(months):
@@ -2580,23 +2608,24 @@ def _gen_bva_actualize_xlsx(blocks: list) -> bytes:
 @app.route("/api/bva/actualize.xlsx", methods=["GET"])
 @login_required
 def api_bva_actualize():
-    """Export all actuals by Project ID × Task × month (one tab per project)
-    for entering into the development pro-forma."""
+    """Pro-forma actuals: every line's actual spend by month, grouped by
+    category → project → subtask, one tab per entity — from the uploaded GL."""
     if not _bva_can_view():
         return jsonify({"error": "forbidden"}), 403
-    if not sage_intacct.is_configured():
-        return jsonify({"error": "Sage Intacct is not configured on this server."}), 400
+    gl = _bva_load_gl()
+    if not gl:
+        return jsonify({"error": "No GL report uploaded yet — upload it first."}), 400
     blocks = []
     for label, eid in _BVA_ENTITIES:
-        try:
-            d = sage_intacct.bva_actuals_monthly(eid)
-        except sage_intacct.IntacctAPIError as e:
-            return jsonify({"error": "Sage error for %s: %s" % (label, e)}), 502
-        rows = d["rows"]
-        for row in rows:
-            row["category"] = _bva_category(row.get("project", ""))
-        blocks.append({"label": label, "entity": eid,
-                       "rows": rows, "months": d["months"]})
+        recs = gl.get(label, []) or []
+        months = sorted({mk for rec in recs for mk in (rec.get("months") or {})})
+        rows = []
+        for rec in recs:
+            proj = rec.get("project", ""); task = rec.get("task", "")
+            rows.append({"category": _bva_category(proj, task), "project": proj,
+                         "task": task, "subtask": rec.get("subtask", ""),
+                         "months": rec.get("months") or {}})
+        blocks.append({"label": label, "entity": eid, "rows": rows, "months": months})
     xlsx = _gen_bva_actualize_xlsx(blocks)
     fname = "BVA_Actuals_by_Month_%s.xlsx" % datetime.datetime.now().strftime("%Y-%m-%d")
     return send_file(io.BytesIO(xlsx),

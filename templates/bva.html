@@ -63,9 +63,13 @@
   .kpi.accent .v{color:var(--eax-accent);}
   .kpi.good .v{color:var(--eax-good,#1F7A4D);}
 
-  table.bva-table{width:100%;border-collapse:collapse;font-size:12px;background:var(--eax-surface);border:1px solid var(--eax-line);border-radius:10px;overflow:hidden;}
-  .bva-table th{font-size:9px;letter-spacing:0.08em;text-transform:uppercase;color:var(--eax-subtle);font-weight:700;padding:10px 12px;text-align:right;border-bottom:1px solid var(--eax-line);white-space:nowrap;}
+  table.bva-table{width:100%;border-collapse:collapse;font-size:12px;background:var(--eax-surface);border:1px solid var(--eax-line);border-radius:10px;}
+  .bva-table th{font-size:9px;letter-spacing:0.08em;text-transform:uppercase;color:var(--eax-subtle);font-weight:700;padding:10px 12px;text-align:right;border-bottom:1px solid var(--eax-line);white-space:nowrap;position:sticky;top:0;z-index:3;background:var(--eax-bg-2);}
   .bva-table th.left{text-align:left;}
+  .bva-table tr.cat-head{cursor:pointer;}
+  .bva-table tr.cat-head:hover td{filter:brightness(0.98);}
+  .caret{display:inline-block;width:10px;color:var(--eax-accent);font-size:10px;}
+  .gl-label,.gl-sep{font-size:11px;color:var(--eax-muted);font-weight:600;}
   .bva-table td{padding:8px 12px;text-align:right;border-bottom:1px solid var(--eax-line);font-variant-numeric:tabular-nums;color:var(--eax-ink);white-space:nowrap;}
   .bva-table td.left{text-align:left;}
   .bva-table tr.cat-head td{background:var(--eax-accent-soft);font-weight:800;color:var(--eax-ink);border-top:2px solid var(--eax-line-2);text-transform:uppercase;letter-spacing:0.04em;font-size:11px;}
@@ -132,11 +136,16 @@
           <p>Actuals + Commitments from the uploaded Sage GL report, vs your Budget — grouped by category → project → subtask. 1) Upload the GL report, 2) Generate the template, fill Budget, upload it back.</p>
         </div>
         <div class="bva-actions">
-          <button class="btn primary" id="gl-btn">⬆ Upload GL Report</button>
+          <span class="gl-label">Upload GL:</span>
+          <button class="btn gl-up" data-ent="GPD">GPD</button>
+          <button class="btn gl-up" data-ent="Dennison">Dennison</button>
+          <button class="btn gl-up" data-ent="WRG">WRG</button>
           <input type="file" id="gl-file" accept=".csv" style="display:none;">
-          <a class="btn" href="/api/bva/template.xlsx">⬇ Generate Template</a>
-          <button class="btn" id="upload-btn">⬆ Upload Budget</button>
+          <span class="gl-sep">·</span>
+          <a class="btn" href="/api/bva/template.xlsx">⬇ Template</a>
+          <button class="btn" id="upload-btn">⬆ Budget</button>
           <input type="file" id="upload-file" accept=".xlsx" style="display:none;">
+          <a class="btn" href="/api/bva/actualize.xlsx">⬇ Update Pro-Forma</a>
           <span class="upload-status" id="upload-status"></span>
         </div>
       </div>
@@ -203,7 +212,7 @@
     });
 
     let rowsHtml = "";
-    catOrder.forEach(cat => {
+    catOrder.forEach((cat, ci) => {
       const cg = cats[cat];
       let cB = 0, cC = 0, cA = 0, projHtml = "";
       cg.order.forEach(proj => {
@@ -211,12 +220,12 @@
         let pB = 0, pC = 0, pA = 0;
         const inner = pr.map(r => {
           pB += r.budget; pC += r.committed; pA += r.actual;
-          return `<tr><td class="left muted">${r.subtask || ""}</td><td class="left muted">${r.task || ""}</td>${vcells(r.budget, r.committed, r.actual)}</tr>`;
+          return `<tr class="det det-${ci}" hidden><td class="left muted">${r.subtask || ""}</td><td class="left muted">${r.task || ""}</td>${vcells(r.budget, r.committed, r.actual)}</tr>`;
         }).join("");
         cB += pB; cC += pC; cA += pA;
-        projHtml += `<tr class="proj-head"><td class="left" colspan="2">${proj}</td>${vcells(pB, pC, pA)}</tr>${inner}`;
+        projHtml += `<tr class="proj-head det det-${ci}" hidden><td class="left" colspan="2">${proj}</td>${vcells(pB, pC, pA)}</tr>${inner}`;
       });
-      rowsHtml += `<tr class="cat-head"><td class="left" colspan="2">${cat}</td>${vcells(cB, cC, cA)}</tr>${projHtml}`;
+      rowsHtml += `<tr class="cat-head" data-cat="${ci}"><td class="left" colspan="2"><span class="caret">▸</span> ${cat}</td>${vcells(cB, cC, cA)}</tr>${projHtml}`;
     });
 
     host.innerHTML = `
@@ -241,6 +250,16 @@
           <tr class="grand"><td class="left">All Projects</td><td></td><td>${fmt(tB)}</td><td>${fmt(tC)}</td><td>${fmt(tA)}</td><td class="${bcCls(tBC)}">${fmt(tBC)}</td><td class="${caCls(tCA)}">${fmt(tCA)}</td><td class="${bcCls(tBA)}">${fmt(tBA)}</td></tr>
         </tbody>
       </table>`;
+
+    // Collapsible categories — detail hidden by default, click to expand.
+    host.querySelectorAll(".cat-head").forEach(h => {
+      h.addEventListener("click", () => {
+        const ci = h.dataset.cat;
+        const open = h.classList.toggle("open");
+        h.querySelector(".caret").textContent = open ? "▾" : "▸";
+        host.querySelectorAll(".det-" + ci).forEach(d => { d.hidden = !open; });
+      });
+    });
   }
 
   async function load() {
@@ -257,19 +276,20 @@
     }
   }
 
-  // GL report upload (actuals + commitments source)
-  $("#gl-btn").addEventListener("click", () => $("#gl-file").click());
+  // GL report upload — one per entity (GPD / Dennison / WRG)
+  let glEntity = null;
+  document.querySelectorAll(".gl-up").forEach(b =>
+    b.addEventListener("click", () => { glEntity = b.dataset.ent; $("#gl-file").click(); }));
   $("#gl-file").addEventListener("change", async (e) => {
     const file = e.target.files[0];
-    if (!file) return;
-    const st = $("#upload-status"); st.textContent = "Parsing GL report…";
+    if (!file || !glEntity) return;
+    const st = $("#upload-status"); st.textContent = `Parsing ${glEntity} GL…`;
     const fd = new FormData(); fd.append("file", file);
     try {
-      const res = await fetch("/api/bva/gl-upload", { method: "POST", body: fd });
+      const res = await fetch("/api/bva/gl-upload?entity=" + encodeURIComponent(glEntity), { method: "POST", body: fd });
       const d = await res.json();
       if (!res.ok) { st.textContent = d.error || "Upload failed"; return; }
-      const parts = Object.entries(d.loaded || {}).map(([k, v]) => `${k}: ${v.lines} lines`);
-      st.textContent = "Loaded — " + (parts.join(" · ") || "no rows");
+      st.textContent = `${d.entity}: ${d.lines} lines · actuals $${(d.actual||0).toLocaleString()} · committed $${(d.committed||0).toLocaleString()}`;
       load();
     } catch (err) { st.textContent = "Upload failed: " + err; }
     e.target.value = "";
