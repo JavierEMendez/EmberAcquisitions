@@ -129,13 +129,14 @@
         <div>
           <div class="bva-eyebrow">Development · Budget vs Actuals</div>
           <h1>Budget vs Actuals</h1>
-          <p>Budget (your upload) vs Committed (open Sage POs) vs Actuals (Sage GL), matched by project &amp; cost type. Generate the template, fill the Budget column, and upload it back.</p>
+          <p>Actuals + Commitments from the uploaded Sage GL report, vs your Budget — grouped by category → project → subtask. 1) Upload the GL report, 2) Generate the template, fill Budget, upload it back.</p>
         </div>
         <div class="bva-actions">
+          <button class="btn primary" id="gl-btn">⬆ Upload GL Report</button>
+          <input type="file" id="gl-file" accept=".csv" style="display:none;">
           <a class="btn" href="/api/bva/template.xlsx">⬇ Generate Template</a>
-          <button class="btn primary" id="upload-btn">⬆ Upload Budget</button>
+          <button class="btn" id="upload-btn">⬆ Upload Budget</button>
           <input type="file" id="upload-file" accept=".xlsx" style="display:none;">
-          <a class="btn" href="/api/bva/actualize.xlsx" title="Export all actuals by Project ID × Task × month for the pro-forma">⬇ Actualize Pro-Forma</a>
           <span class="upload-status" id="upload-status"></span>
         </div>
       </div>
@@ -210,7 +211,7 @@
         let pB = 0, pC = 0, pA = 0;
         const inner = pr.map(r => {
           pB += r.budget; pC += r.committed; pA += r.actual;
-          return `<tr><td class="left muted">${r.costtype || ""}</td><td class="left muted">${r.task || ""}</td>${vcells(r.budget, r.committed, r.actual)}</tr>`;
+          return `<tr><td class="left muted">${r.subtask || ""}</td><td class="left muted">${r.task || ""}</td>${vcells(r.budget, r.committed, r.actual)}</tr>`;
         }).join("");
         cB += pB; cC += pC; cA += pA;
         projHtml += `<tr class="proj-head"><td class="left" colspan="2">${proj}</td>${vcells(pB, pC, pA)}</tr>${inner}`;
@@ -229,7 +230,7 @@
       </div>
       <table class="bva-table">
         <thead><tr>
-          <th class="left">Cost Type</th><th class="left">Task</th>
+          <th class="left">Subtask</th><th class="left">Task</th>
           <th>Budget</th><th>Committed</th><th>Actuals</th>
           <th>Budget − Committed<span class="col-formula">budget left to commit</span></th>
           <th>Committed − Actuals<span class="col-formula">committed, not yet billed</span></th>
@@ -243,12 +244,12 @@
   }
 
   async function load() {
-    $("#bva-body").innerHTML = `<div class="empty">Loading live data from Sage…</div>`;
+    $("#bva-body").innerHTML = `<div class="empty">Loading…</div>`;
     try {
       const res = await fetch("/api/bva/data");
       const d = await res.json();
-      if (d.configured === false) { $("#bva-body").innerHTML = `<div class="empty">Sage Intacct isn't configured on the server.</div>`; return; }
       if (d.error) { $("#bva-body").innerHTML = `<div class="empty">${d.error}</div>`; return; }
+      if (!d.has_gl) { $("#bva-body").innerHTML = `<div class="empty">No GL report loaded yet. Click <b>Upload GL Report</b> to load actuals &amp; commitments from Sage.</div>`; $("#proj-tabs").innerHTML = ""; return; }
       BLOCKS = d.blocks || [];
       renderTabs(); renderBody();
     } catch (e) {
@@ -256,7 +257,25 @@
     }
   }
 
-  // Upload wiring
+  // GL report upload (actuals + commitments source)
+  $("#gl-btn").addEventListener("click", () => $("#gl-file").click());
+  $("#gl-file").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const st = $("#upload-status"); st.textContent = "Parsing GL report…";
+    const fd = new FormData(); fd.append("file", file);
+    try {
+      const res = await fetch("/api/bva/gl-upload", { method: "POST", body: fd });
+      const d = await res.json();
+      if (!res.ok) { st.textContent = d.error || "Upload failed"; return; }
+      const parts = Object.entries(d.loaded || {}).map(([k, v]) => `${k}: ${v.lines} lines`);
+      st.textContent = "Loaded — " + (parts.join(" · ") || "no rows");
+      load();
+    } catch (err) { st.textContent = "Upload failed: " + err; }
+    e.target.value = "";
+  });
+
+  // Budget template upload
   $("#upload-btn").addEventListener("click", () => $("#upload-file").click());
   $("#upload-file").addEventListener("change", async (e) => {
     const file = e.target.files[0];

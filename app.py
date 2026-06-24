@@ -2078,29 +2078,165 @@ _BVA_ENTITIES = [
     ("WRG",       "10 - Emp Angleton"),
 ]
 
-# Sage has no major-category field on projects, so we bucket by name. Ordered:
-# first bucket with a matching keyword (lowercased substring) wins. Unmatched
-# projects fall to "Other". Tweak keywords here to re-group.
+# Sage has no major-category field on projects, so we bucket by project name.
+# Ordered: first bucket with a matching keyword (lowercased substring) wins.
+# Individual lots (S#-B#-L#) roll into Sections. Validated against the live GL
+# so nothing falls to "Other". Tweak keywords here to re-group.
 _BVA_CATEGORIES = [
-    ("Plant & Utilities",   ["wwtp", "water plant", "lift station", "liftstation", "wtp"]),
-    ("Collector Roads",     ["baethe", "kermier", " rd ", " rd", "road"]),
-    ("Detention & Drainage", ["detention", "outfall", "dtn", "drainage", "fdc"]),
-    ("Sections",            ["sec.", "sec ", "section"]),
-    ("Amenities",           ["rec center", "lake charlie", "sundancer", "amenit"]),
-    ("Marketing",           ["m_", "welcome center", "realtor", "marketing", "spring event", "stratgy", "strategy"]),
-    ("Soft Costs",          ["land planning", "professional", "field expense", "g&a", "g-a", "operations"]),
+    ("Land Acquisition",    ["acquisition"]),
+    ("Financing",           ["financing", "receivable", "bond"]),
+    ("Plant & Utilities",   ["wwtp", "water plant", "lift station", "liftstation",
+                             "wtp", "dry util", "utilit", "pump", "irrg", "irrig"]),
+    ("Collector Roads",     ["baethe", "kermier", " rd ", " rd", "road", "crossing"]),
+    ("Detention & Drainage", ["detention", "outfall", "dtn", "drainage", "fdc", "pond", "channel"]),
+    ("Amenities",           ["rec center", "lake", "overlook", "sundancer", "monument",
+                             "mallard", "amenit", "landscap"]),
+    ("Marketing",           ["m_", "welcome center", "realtor", "marketing",
+                             "spring event", "stratgy", "strategy"]),
+    ("Site Work",           ["site work", "sitework", "grading"]),
+    ("Sections",            ["sec.", "sec ", "section", "sec0", "sec1", "lotsales"]),
+    ("Taxes",               ["tax"]),
     ("MUD / HOA",           ["mud advance", "hoa advance", " mud", " hoa"]),
-    ("Site Work",           ["site work", "sitework"]),
+    ("Soft Costs",          ["land planning", "professional", "field expense", "g&a",
+                             "g-a", "operations", "development fee", "fees", "personnel",
+                             "accounting", "legal", "insurance", "contingency", "entries"]),
 ]
+_BVA_LOT_RE = re.compile(r"s\d+-b\d+-l\d+")   # individual lot id -> Sections
 
 
 def _bva_category(project_name: str) -> str:
-    """Map a project name to its major cost category (configurable above)."""
+    """Map a project name to its major cost category (configurable above).
+    Individual lots fold into Sections; everything else matches a keyword."""
     n = " " + (project_name or "").lower() + " "
+    if _BVA_LOT_RE.search(n):
+        return "Sections"
     for cat, kws in _BVA_CATEGORIES:
         if any(k in n for k in kws):
             return cat
     return "Other"
+
+
+def _bva_owner_to_entity(owner: str, owner_name: str):
+    """Map a GL-report Owner to one of our three BVA tabs, or None to skip."""
+    s = ((owner or "") + " " + (owner_name or "")).lower()
+    if "angleton" in s:
+        return "WRG"
+    if "wrrd" in s or "dennison" in s:
+        return "Dennison"
+    if "gpd" in s or "grand prairie" in s:
+        return "GPD"
+    return None
+
+
+def _parse_bva_gl(file_bytes: bytes) -> dict:
+    """Parse a Sage 'General Ledger report' CSV (ACCRUAL + commitment books
+    combined) into {entity_label: [{project, task, subtask, actual, committed}]}.
+
+    - Account comes from the section-header rows; only cost accounts (16xxx CIP
+      + 70xxx expense) are kept.
+    - signed = Debit − Credit; actuals = non-commitment journals, commitments =
+      COMMITMENTS / CJ_PO / CJ_CLOSE.
+    - Rows are routed to a tab by the Owner column; grouped by project name +
+      task + subtask."""
+    import csv as _csv, io as _sio
+    text = file_bytes.decode("utf-8-sig", errors="replace")
+    rows = list(_csv.reader(_sio.StringIO(text)))
+    if not rows:
+        return {}
+    hdr = [h.strip() for h in rows[0]]
+    idx = {h: i for i, h in enumerate(hdr)}
+    c_owner, c_oname = idx.get("Owner"), idx.get("Owner name")
+    c_proj, c_task, c_sub = idx.get("Project name"), idx.get("Task name"), idx.get("Subtask name")
+    c_jnl, c_deb, c_cred = idx.get("JNL"), idx.get("Debit"), idx.get("Credit")
+    date_re = re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$")
+    acct_re = re.compile(r"^\s*(\d[\w.-]*)\s+-\s+")
+    COMMIT = {"COMMITMENTS", "CJ_PO", "CJ_CLOSE"}
+    def num(s):
+        s = (s or "").strip().replace(",", "")
+        try:
+            return float(s)
+        except ValueError:
+            return 0.0
+    def g(r, i):
+        return (r[i].strip() if i is not None and i < len(r) else "")
+
+    cur_acct = None
+    agg: dict = {}
+    for r in rows[1:]:
+        if not r:
+            continue
+        first = (r[0] or "").strip()
+        if not date_re.match(first):
+            m = acct_re.match(first)
+            if m:
+                cur_acct = m.group(1)
+            continue
+        if not (cur_acct and (cur_acct.startswith("16") or cur_acct.startswith("70"))):
+            continue
+        ent = _bva_owner_to_entity(g(r, c_owner), g(r, c_oname))
+        if not ent:
+            continue
+        proj = g(r, c_proj)
+        if not proj:
+            continue
+        key = (proj, g(r, c_task), g(r, c_sub))
+        signed = num(g(r, c_deb)) - num(g(r, c_cred))
+        d = agg.setdefault(ent, {}).setdefault(key, {"actual": 0.0, "committed": 0.0})
+        if g(r, c_jnl) in COMMIT:
+            d["committed"] += signed
+        else:
+            d["actual"] += signed
+
+    out: dict = {}
+    for ent, kv in agg.items():
+        out[ent] = [{"project": p, "task": t, "subtask": s,
+                     "actual": round(d["actual"]), "committed": round(d["committed"])}
+                    for (p, t, s), d in kv.items()]
+    return out
+
+
+def _bva_load_gl() -> dict:
+    """Stored GL actuals/commitments: {entity_label: [records]}."""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT data FROM reports WHERE report_type = 'bva_gl' "
+                "ORDER BY uploaded_at DESC LIMIT 1")
+    row = cur.fetchone(); cur.close(); conn.close()
+    return ((row["data"] if row else {}) or {}).get("entities", {}) or {}
+
+
+def _bva_save_gl(entities: dict) -> None:
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM reports WHERE report_type = 'bva_gl'")
+    cur.execute("INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+                ("bva_gl", json.dumps({"entities": entities}), session.get("user_id")))
+    conn.commit(); cur.close(); conn.close()
+
+
+@app.route("/api/bva/gl-upload", methods=["POST"])
+@login_required
+def api_bva_gl_upload():
+    """Ingest a Sage General Ledger report CSV (with the commitment books
+    combined) as the BVA actuals + commitments source."""
+    if not _bva_can_view():
+        return jsonify({"error": "forbidden"}), 403
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No file uploaded"}), 400
+    try:
+        parsed = _parse_bva_gl(f.read())
+    except Exception as e:
+        return jsonify({"error": "Could not parse GL report: %s" % e}), 400
+    if not parsed:
+        return jsonify({"error": "No GPD / Dennison / WRG cost rows found — check the "
+                                 "Owner column and that cost accounts (16xxx/70xxx) are present."}), 400
+    existing = _bva_load_gl()
+    existing.update(parsed)   # replace the entities present in this upload
+    _bva_save_gl(existing)
+    summary = {ent: {"lines": len(recs),
+                     "actual": round(sum(r["actual"] for r in recs)),
+                     "committed": round(sum(r["committed"] for r in recs))}
+               for ent, recs in parsed.items()}
+    return jsonify({"ok": True, "loaded": summary})
 
 
 def _gen_bva_template_xlsx(blocks: list) -> bytes:
@@ -2132,9 +2268,9 @@ def _gen_bva_template_xlsx(blocks: list) -> bytes:
             s = base[:28] + "_%d" % i; i += 1
         used.add(s); return s
 
-    # Cols: A Category, B Project, C Task, D Cost Type, E Budget, F Committed,
+    # Cols: A Category, B Project, C Task, D Subtask, E Budget, F Committed,
     # G Actuals, H Budget−Committed, I Committed−Actuals, J Budget−Actuals
-    headers = ["Category", "Project", "Task", "Cost Type", "Budget", "Committed",
+    headers = ["Category", "Project", "Task", "Subtask", "Budget", "Committed",
                "Actuals", "Budget − Committed", "Committed − Actuals", "Budget − Actuals"]
     NC = len(headers)
     for blk in blocks:
@@ -2160,7 +2296,7 @@ def _gen_bva_template_xlsx(blocks: list) -> bytes:
             cat = row.get("category") or "Other"
             if cat not in cat_groups:
                 cat_groups[cat] = {"projs": {}, "order": []}; cat_order.append(cat)
-            pn = row.get("project_name") or row.get("project") or "(no project)"
+            pn = row.get("project") or "(no project)"
             cg = cat_groups[cat]
             if pn not in cg["projs"]:
                 cg["projs"][pn] = []; cg["order"].append(pn)
@@ -2171,13 +2307,13 @@ def _gen_bva_template_xlsx(blocks: list) -> bytes:
             cg = cat_groups[cat]
             proj_subtotal_rows = []
             for pn in cg["order"]:
-                prows = sorted(cg["projs"][pn], key=lambda x: x.get("costtype") or "")
+                prows = sorted(cg["projs"][pn], key=lambda x: x.get("subtask") or "")
                 pstart = r
                 for row in prows:
                     ws.cell(r, 1, cat).border = border
                     ws.cell(r, 2, pn).border = border
                     ws.cell(r, 3, row.get("task") or "").border = border
-                    ws.cell(r, 4, row.get("costtype") or "").border = border
+                    ws.cell(r, 4, row.get("subtask") or "").border = border
                     bc = ws.cell(r, 5); money(bc); bc.border = border                      # Budget blank
                     cc = ws.cell(r, 6); money(cc, int(round(row.get("committed") or 0))); cc.border = border
                     ac = ws.cell(r, 7); money(ac, int(round(row.get("actual") or 0))); ac.border = border
@@ -2230,35 +2366,24 @@ def _gen_bva_template_xlsx(blocks: list) -> bytes:
 @admin_required
 def api_bva_template():
     """Generate the BVA budget template (GPD, Dennison, WRG), one tab each,
-    rows = each project's Sage PROJECT × COSTTYPE combos with Actuals +
-    Committed pre-filled and Budget left blank to fill in."""
-    if not sage_intacct.is_configured():
-        return jsonify({"error": "Sage Intacct is not configured on this server."}), 400
+    rows = each project's GL Project × Subtask lines with Actuals + Committed
+    pre-filled and Budget left blank to fill in. Sourced from the uploaded GL
+    report (upload it first)."""
+    gl = _bva_load_gl()
+    if not gl:
+        return jsonify({"error": "No GL report uploaded yet — upload the Sage GL report first."}), 400
     blocks = []
     for label, eid in _BVA_ENTITIES:
-        try:
-            actuals = sage_intacct.bva_actuals(eid)
-        except sage_intacct.IntacctAPIError as e:
-            return jsonify({"error": "Actuals pull failed for %s: %s" % (label, e)}), 502
-        prefixes = {p.split("_", 1)[0].strip() for (p, _ct) in actuals.keys()} or None
-        try:
-            commits = sage_intacct.bva_commitments(eid, prefixes)
-        except Exception:
-            commits = {}
-        keys = set(actuals.keys()) | set(commits.keys())
         rows = []
-        for k in keys:
-            proj, ct = k
-            a = actuals.get(k, {})
-            pname = a.get("project_name") or a.get("project") or proj
+        for rec in gl.get(label, []) or []:
+            proj = rec.get("project", "")
             rows.append({
-                "project":      a.get("project") or proj,
-                "project_name": pname,
-                "category":     _bva_category(pname),
-                "task":         a.get("task", ""),
-                "costtype":     ct,
-                "actual":       a.get("actual", 0.0),
-                "committed":    commits.get(k, 0.0),
+                "project":   proj,
+                "category":  _bva_category(proj),
+                "task":      rec.get("task", ""),
+                "subtask":   rec.get("subtask", ""),
+                "actual":    rec.get("actual", 0.0),
+                "committed": rec.get("committed", 0.0),
             })
         blocks.append({"label": label, "entity": eid, "rows": rows})
     xlsx = _gen_bva_template_xlsx(blocks)
@@ -2299,52 +2424,40 @@ def _bva_save_budgets(budgets: dict) -> None:
 @app.route("/api/bva/data", methods=["GET"])
 @login_required
 def api_bva_data():
-    """Per-project Budget vs Committed vs Actuals rows for GPD/Dennison/WRG,
-    merging stored budgets with live Sage actuals + commitments."""
+    """Per-project Budget vs Committed vs Actuals for GPD/Dennison/WRG, from the
+    uploaded GL report (actuals + commitments) merged with stored budgets,
+    grouped Category → Project name → Subtask."""
     if not _bva_can_view():
         return jsonify({"error": "forbidden"}), 403
-    if not sage_intacct.is_configured():
-        return jsonify({"configured": False, "blocks": []}), 200
+    gl = _bva_load_gl()
     budgets = _bva_load_budgets()
     blocks = []
     for label, eid in _BVA_ENTITIES:
-        try:
-            actuals = sage_intacct.bva_actuals(eid)
-        except sage_intacct.IntacctAPIError as e:
-            return jsonify({"configured": True, "error": "Sage error for %s: %s" % (label, e)}), 502
-        prefixes = {p.split("_", 1)[0].strip() for (p, _ct) in actuals.keys()} or None
-        try:
-            commits = sage_intacct.bva_commitments(eid, prefixes)
-        except Exception:
-            commits = {}
-        ebud = budgets.get(eid, {})
+        recs = gl.get(label, []) or []
+        ebud = budgets.get(label, {}) or {}
         rows = []
         seen = set()
-        for k in (set(actuals) | set(commits)):
-            proj, ct = k
-            a = actuals.get(k, {})
-            pname = a.get("project_name") or a.get("project") or proj
-            bkey = pname + _BVA_KEYSEP + ct
+        for rec in recs:
+            proj = rec.get("project", ""); task = rec.get("task", ""); sub = rec.get("subtask", "")
+            bkey = proj + _BVA_KEYSEP + sub
             seen.add(bkey)
-            bud = float(ebud.get(bkey, 0) or 0)
-            act = round(a.get("actual", 0.0))
-            com = round(commits.get(k, 0.0))
-            rows.append({"project": pname, "category": _bva_category(pname),
-                         "task": a.get("task", ""), "costtype": ct,
-                         "budget": round(bud), "committed": com, "actual": act,
-                         "variance": round(bud - com - act)})
-        # Budgeted lines with no Sage activity yet still show up.
+            bud = round(float(ebud.get(bkey, 0) or 0))
+            com = round(rec.get("committed", 0)); act = round(rec.get("actual", 0))
+            rows.append({"category": _bva_category(proj), "project": proj,
+                         "task": task, "subtask": sub,
+                         "budget": bud, "committed": com, "actual": act})
+        # Budgeted lines with no GL activity yet still show.
         for bkey, amt in ebud.items():
             if bkey in seen:
                 continue
-            pname, _, ct = bkey.partition(_BVA_KEYSEP)
+            proj, _, sub = bkey.partition(_BVA_KEYSEP)
             amt = round(float(amt or 0))
-            rows.append({"project": pname, "category": _bva_category(pname),
-                         "task": "", "costtype": ct,
-                         "budget": amt, "committed": 0, "actual": 0, "variance": amt})
-        rows.sort(key=lambda r: (r["category"], r["project"], r["costtype"]))
+            rows.append({"category": _bva_category(proj), "project": proj,
+                         "task": "", "subtask": sub,
+                         "budget": amt, "committed": 0, "actual": 0})
+        rows.sort(key=lambda r: (r["category"], r["project"], r["subtask"]))
         blocks.append({"label": label, "entity": eid, "rows": rows})
-    return jsonify({"configured": True, "blocks": blocks})
+    return jsonify({"configured": True, "has_gl": bool(gl), "blocks": blocks})
 
 
 @app.route("/api/bva/budget", methods=["POST"])
@@ -2365,35 +2478,35 @@ def api_bva_budget_upload():
     budgets = _bva_load_budgets()
     imported = 0
     for ws in wb.worksheets:
-        eid = None
-        for lbl, e in _BVA_ENTITIES:
+        label = None
+        for lbl, _e in _BVA_ENTITIES:
             if ws.title.strip().lower().startswith(lbl.strip().lower()[:28]):
-                eid = e; break
-        if not eid:
+                label = lbl; break
+        if not label:
             continue
         # Locate the header row (has both "project" and "budget").
         hdr = None; cols = {}
         for r in range(1, min(ws.max_row, 15) + 1):
-            vals = [str(ws.cell(r, c).value or "").strip().lower() for c in range(1, 9)]
+            vals = [str(ws.cell(r, c).value or "").strip().lower() for c in range(1, 12)]
             if "project" in vals and "budget" in vals:
                 hdr = r; cols = {v: i + 1 for i, v in enumerate(vals) if v}
                 break
         if not hdr:
             continue
-        pcol, ccol, bcol = cols.get("project"), cols.get("cost type"), cols.get("budget")
-        if not (pcol and ccol and bcol):
+        pcol, scol, bcol = cols.get("project"), cols.get("subtask"), cols.get("budget")
+        if not (pcol and scol and bcol):
             continue
-        ebud = budgets.setdefault(eid, {})
+        ebud = budgets.setdefault(label, {})
         for r in range(hdr + 1, ws.max_row + 1):
             proj = str(ws.cell(r, pcol).value or "").strip()
-            ct = str(ws.cell(r, ccol).value or "").strip()
-            if not proj or not ct or "total" in proj.lower():
+            sub = str(ws.cell(r, scol).value or "").strip()
+            if not proj or "total" in proj.lower():
                 continue
             try:
                 amt = float(ws.cell(r, bcol).value)
             except (TypeError, ValueError):
                 continue
-            ebud[proj + _BVA_KEYSEP + ct] = amt
+            ebud[proj + _BVA_KEYSEP + sub] = amt
             imported += 1
     _bva_save_budgets(budgets)
     return jsonify({"ok": True, "imported": imported})
