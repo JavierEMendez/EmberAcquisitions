@@ -2107,9 +2107,10 @@ _BVA_LOT_RE = re.compile(r"s\d+-b\d+-l\d+")   # individual lot id
 # Display order on the page/exports — development cost first, then financial,
 # with Lot Taxes / Other at the bottom.
 _BVA_CAT_ORDER = [
-    "Site Work", "Collector Roads", "Plant & Utilities", "Dry Utilities",
-    "Detention & Drainage", "Sections", "Amenities", "Marketing", "Soft Costs",
-    "MUD / HOA", "Land Acquisition", "Financing", "Taxes", "Lot Taxes", "Other",
+    "Land Acquisition", "Amenities", "Sections", "Collector Roads",
+    "Detention & Drainage", "Plant & Utilities", "Site Work", "Dry Utilities",
+    "Marketing", "MUD / HOA", "Soft Costs", "Taxes", "Lot Taxes", "Financing",
+    "Other",
 ]
 
 
