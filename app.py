@@ -2096,21 +2096,22 @@ _BVA_CATEGORIES = [
                              "spring event", "stratgy", "strategy"]),
     ("Site Work",           ["site work", "sitework", "grading", "field expense"]),
     ("Sections",            ["sec.", "sec ", "section", "sec0", "sec1", "lotsales"]),
-    ("Taxes",               ["tax"]),
+    ("Professional Services", ["professional", "land planning"]),
+    ("Taxes",               ["tax", "property tax", "wip property", "wip - property"]),
     ("MUD / HOA",           ["mud advance", "hoa advance", " mud", " hoa"]),
-    ("Soft Costs",          ["land planning", "professional", "g&a", "g-a", "operations",
-                             "development fee", "fees", "personnel", "accounting",
-                             "legal", "insurance", "contingency", "entries"]),
+    ("Soft Costs",          ["g&a", "g-a", "operations", "development fee", "fees",
+                             "personnel", "accounting", "legal", "insurance",
+                             "contingency", "entries"]),
 ]
 _BVA_LOT_RE = re.compile(r"s\d+-b\d+-l\d+")   # individual lot id
 
 # Display order on the page/exports — development cost first, then financial,
 # with Lot Taxes / Other at the bottom.
 _BVA_CAT_ORDER = [
-    "Land Acquisition", "Amenities", "Sections", "Collector Roads",
-    "Detention & Drainage", "Plant & Utilities", "Site Work", "Dry Utilities",
-    "Marketing", "MUD / HOA", "Soft Costs", "Taxes", "Lot Taxes", "Financing",
-    "Other",
+    "Land Acquisition", "Professional Services", "Amenities", "Sections",
+    "Collector Roads", "Detention & Drainage", "Plant & Utilities", "Site Work",
+    "Dry Utilities", "Marketing", "MUD / HOA", "Soft Costs", "Taxes", "Lot Taxes",
+    "Financing", "Other",
 ]
 
 
