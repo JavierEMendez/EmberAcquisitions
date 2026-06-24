@@ -70,6 +70,9 @@
   .bva-table tr.cat-head:hover td{filter:brightness(0.98);}
   .caret{display:inline-block;width:10px;color:var(--eax-accent);font-size:10px;}
   .gl-label,.gl-sep{font-size:11px;color:var(--eax-muted);font-weight:600;}
+  .bva-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+  .bva-search{flex:0 0 280px;max-width:280px;background:var(--eax-surface);border:1px solid var(--eax-line-2);color:var(--eax-ink);border-radius:8px;padding:8px 12px;font-size:12px;font-family:inherit;outline:none;}
+  .bva-search:focus{border-color:var(--eax-accent);}
   .bva-table td{padding:8px 12px;text-align:right;border-bottom:1px solid var(--eax-line);font-variant-numeric:tabular-nums;color:var(--eax-ink);white-space:nowrap;}
   .bva-table td.left{text-align:left;}
   .bva-table tr.cat-head td{background:var(--eax-accent-soft);font-weight:800;color:var(--eax-ink);border-top:2px solid var(--eax-line-2);text-transform:uppercase;letter-spacing:0.04em;font-size:11px;}
@@ -150,7 +153,10 @@
         </div>
       </div>
 
-      <div class="seg" id="proj-tabs"></div>
+      <div class="bva-toolbar">
+        <div class="seg" id="proj-tabs"></div>
+        <input id="bva-search" class="bva-search" type="search" placeholder="🔍 Search project or subtask…" autocomplete="off">
+      </div>
       <div id="bva-body"><div class="empty">Loading…</div></div>
     </div>
   </div>
@@ -166,7 +172,7 @@
     const n = Math.round(v);
     return (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString();
   };
-  let BLOCKS = [], active = 0;
+  let BLOCKS = [], active = 0, query = "";
 
   function renderTabs() {
     const t = $("#proj-tabs");
@@ -181,9 +187,14 @@
     const host = $("#bva-body");
     if (!b || !b.rows.length) { host.innerHTML = `<div class="empty">No cost activity or budget for ${b ? b.label : "this project"} yet.</div>`; return; }
 
-    // KPI totals
+    const q = query.trim().toLowerCase();
+    const rows = q ? b.rows.filter(r => ((r.project||"")+" "+(r.subtask||"")+" "+(r.task||"")).toLowerCase().includes(q)) : b.rows;
+    const expand = !!q;   // searching → show detail expanded
+    if (!rows.length) { host.innerHTML = `<div class="empty">No projects match “${query}”.</div>`; return; }
+
+    // KPI totals (filtered)
     let tB = 0, tC = 0, tA = 0;
-    b.rows.forEach(r => { tB += r.budget; tC += r.committed; tA += r.actual; });
+    rows.forEach(r => { tB += r.budget; tC += r.committed; tA += r.actual; });
     const tBC = tB - tC;   // uncommitted budget remaining
     const tCA = tC - tA;   // open commitment still to be billed
     const tBA = tB - tA;   // budget remaining vs actual spend
@@ -201,9 +212,9 @@
         + `<td class="${bcCls(ba)}">${fmt(ba)}</td>`;
     };
 
-    // Group: category → project → cost-type rows
+    // Group: category → project → subtask rows
     const cats = {}; const catOrder = [];
-    b.rows.forEach(r => {
+    rows.forEach(r => {
       const c = r.category || "Other";
       if (!(c in cats)) { cats[c] = { projects: {}, order: [] }; catOrder.push(c); }
       const cg = cats[c];
@@ -211,6 +222,8 @@
       cg.projects[r.project].push(r);
     });
 
+    const hid = expand ? "" : "hidden";
+    const caret = expand ? "▾" : "▸";
     let rowsHtml = "";
     catOrder.forEach((cat, ci) => {
       const cg = cats[cat];
@@ -220,12 +233,12 @@
         let pB = 0, pC = 0, pA = 0;
         const inner = pr.map(r => {
           pB += r.budget; pC += r.committed; pA += r.actual;
-          return `<tr class="det det-${ci}" hidden><td class="left muted">${r.subtask || ""}</td><td class="left muted">${r.task || ""}</td>${vcells(r.budget, r.committed, r.actual)}</tr>`;
+          return `<tr class="det det-${ci}" ${hid}><td class="left muted">${r.subtask || ""}</td><td class="left muted">${r.task || ""}</td>${vcells(r.budget, r.committed, r.actual)}</tr>`;
         }).join("");
         cB += pB; cC += pC; cA += pA;
-        projHtml += `<tr class="proj-head det det-${ci}" hidden><td class="left" colspan="2">${proj}</td>${vcells(pB, pC, pA)}</tr>${inner}`;
+        projHtml += `<tr class="proj-head det det-${ci}" ${hid}><td class="left" colspan="2">${proj}</td>${vcells(pB, pC, pA)}</tr>${inner}`;
       });
-      rowsHtml += `<tr class="cat-head" data-cat="${ci}"><td class="left" colspan="2"><span class="caret">▸</span> ${cat}</td>${vcells(cB, cC, cA)}</tr>${projHtml}`;
+      rowsHtml += `<tr class="cat-head ${expand ? "open" : ""}" data-cat="${ci}"><td class="left" colspan="2"><span class="caret">${caret}</span> ${cat}</td>${vcells(cB, cC, cA)}</tr>${projHtml}`;
     });
 
     host.innerHTML = `
@@ -310,6 +323,14 @@
       load();
     } catch (err) { st.textContent = "Upload failed: " + err; }
     e.target.value = "";
+  });
+
+  // Project / subtask search
+  let _stmr = null;
+  $("#bva-search").addEventListener("input", (e) => {
+    query = e.target.value || "";
+    clearTimeout(_stmr);
+    _stmr = setTimeout(renderBody, 120);
   });
 
   load();

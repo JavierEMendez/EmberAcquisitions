@@ -2104,6 +2104,21 @@ _BVA_CATEGORIES = [
 ]
 _BVA_LOT_RE = re.compile(r"s\d+-b\d+-l\d+")   # individual lot id
 
+# Display order on the page/exports — development cost first, then financial,
+# with Lot Taxes / Other at the bottom.
+_BVA_CAT_ORDER = [
+    "Site Work", "Collector Roads", "Plant & Utilities", "Dry Utilities",
+    "Detention & Drainage", "Sections", "Amenities", "Marketing", "Soft Costs",
+    "MUD / HOA", "Land Acquisition", "Financing", "Taxes", "Lot Taxes", "Other",
+]
+
+
+def _bva_cat_rank(cat: str) -> int:
+    try:
+        return _BVA_CAT_ORDER.index(cat)
+    except ValueError:
+        return len(_BVA_CAT_ORDER)
+
 
 def _bva_category(project_name: str, task: str = "") -> str:
     """Major cost category for a GL line, from project name + task.
@@ -2483,7 +2498,7 @@ def api_bva_data():
             rows.append({"category": _bva_category(proj), "project": proj,
                          "task": "", "subtask": sub,
                          "budget": amt, "committed": 0, "actual": 0})
-        rows.sort(key=lambda r: (r["category"], r["project"], r["subtask"]))
+        rows.sort(key=lambda r: (_bva_cat_rank(r["category"]), r["project"], r["subtask"]))
         blocks.append({"label": label, "entity": eid, "rows": rows})
     return jsonify({"configured": True, "has_gl": bool(gl), "blocks": blocks})
 
