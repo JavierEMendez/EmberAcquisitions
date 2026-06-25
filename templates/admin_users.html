@@ -230,6 +230,10 @@ async function refreshUserList() {
             onmouseover="this.style.borderColor='var(--eax-accent)';this.style.color='var(--eax-accent)';"
             onmouseout="this.style.borderColor='var(--eax-line-2)';this.style.color='var(--eax-muted)';"
             title="${u.is_admin ? 'Revoke admin access' : 'Grant full admin access'}">${u.is_admin ? 'Revoke admin' : 'Make admin'}</button>
+          <button onclick="resetPassword(${u.id},'${u.username}')" style="${btnStyle}"
+            onmouseover="this.style.borderColor='var(--eax-accent)';this.style.color='var(--eax-accent)';"
+            onmouseout="this.style.borderColor='var(--eax-line-2)';this.style.color='var(--eax-muted)';"
+            title="Set a new password for this user">Reset password</button>
           <button class="btn-del-user" onclick="deleteUser(${u.id},'${u.username}')" title="Remove">&times;</button>
         </div>
         <div style="display:flex;gap:6px;width:100%;">
@@ -334,6 +338,21 @@ async function saveEmail(uid) {
     method: 'PUT', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({email})
   });
+}
+
+async function resetPassword(uid, username) {
+  if (!confirm('Reset "' + username + '" to the default password?\n\nThey will be required to set their own password the next time they log in.')) return;
+  const res = await fetch('/api/admin/users/' + uid + '/password', {
+    method: 'PUT', headers: {'Content-Type':'application/json'}
+  });
+  if (res.ok) {
+    const d = await res.json().catch(() => ({}));
+    alert('"' + username + '" has been reset.\n\nDefault password: ' + (d.default_password || 'ember2024') +
+          '\n\nGive them this password — they\'ll be prompted to choose a new one at next login.');
+  } else {
+    const e = await res.json().catch(() => ({}));
+    alert(e.error || 'Failed to reset password');
+  }
 }
 
 async function deleteUser(id, name) {

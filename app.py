@@ -106,6 +106,10 @@ def get_db():
     conn = psycopg2.connect(os.environ["DATABASE_URL"], cursor_factory=psycopg2.extras.RealDictCursor)
     return conn
 
+# Default password an admin "Reset password" assigns. The user logs in with
+# this and is then forced to set their own (see force_password_change).
+DEFAULT_PASSWORD = "ember2024"
+
 def init_db():
     conn = get_db()
     cur = conn.cursor()
@@ -131,6 +135,10 @@ def init_db():
         ALTER TABLE users ADD COLUMN IF NOT EXISTS report_subscriptions JSONB NOT NULL DEFAULT '{}'::jsonb;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name TEXT;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name TEXT;
+        -- Set TRUE when an admin resets a user to the default password; the
+        -- user is forced to set a new password at next login before they can
+        -- use the app, then it flips back to FALSE.
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE;
         CREATE TABLE IF NOT EXISTS report_sends (
             id SERIAL PRIMARY KEY,
             period TEXT UNIQUE NOT NULL,
@@ -466,6 +474,24 @@ def _capture_page_view():
         return
     _log_activity("page_view", path=p)
 
+# Paths a user under a forced password change is still allowed to hit, so the
+# change page itself (and logout/static) keeps working while everything else
+# bounces to /force-password-change.
+_FORCE_PW_ALLOW = ("/force-password-change", "/logout", "/static/", "/health", "/favicon")
+
+@app.before_request
+def _enforce_password_change():
+    """When an admin has reset a user to the default password, force them to
+    set a new one before they can use any other part of the app."""
+    if not session.get("must_change_password"):
+        return
+    p = request.path or ""
+    if p.startswith(_FORCE_PW_ALLOW):
+        return
+    if request.is_json:
+        return jsonify({"error": "Password change required"}), 403
+    return redirect(url_for("force_password_change"))
+
 # ─── AUTH ROUTES ─────────────────────────────────────────────────────────────
 @app.route("/health")
 def health():
@@ -490,7 +516,10 @@ def login():
             fn = (user.get("first_name") or "").strip()
             ln = (user.get("last_name") or "").strip()
             session["display_name"] = f"{fn} {ln}".strip() or user["username"]
+            session["must_change_password"] = bool(user.get("must_change_password"))
             _log_activity("login", user_id=user["id"], username=user["username"])
+            if session["must_change_password"]:
+                return redirect(url_for("force_password_change"))
             return redirect(url_for("home"))
         error = "Invalid username or password."
     return render_template("login.html", error=error)
@@ -505,6 +534,39 @@ def logout():
         _log_activity("logout", user_id=uid, username=uname)
     session.clear()
     return redirect(url_for("login"))
+
+@app.route("/force-password-change", methods=["GET", "POST"])
+@login_required
+def force_password_change():
+    """Shown after an admin resets a user to the default password. The user
+    must set a new password here before the app lets them go anywhere else.
+    No 'current password' is required — they just got the default and the
+    whole point is to replace it."""
+    # Already cleared the flag (e.g. via back button)? Send them home.
+    if not session.get("must_change_password"):
+        return redirect(url_for("home"))
+    error = None
+    if request.method == "POST":
+        new_pw = request.form.get("new_password", "")
+        confirm = request.form.get("confirm_password", "")
+        if not new_pw or not confirm:
+            error = "Both fields are required."
+        elif new_pw != confirm:
+            error = "Passwords do not match."
+        elif len(new_pw) < 6:
+            error = "Password must be at least 6 characters."
+        elif new_pw == DEFAULT_PASSWORD:
+            error = "Please choose a password different from the default."
+        else:
+            conn = get_db(); cur = conn.cursor()
+            cur.execute(
+                "UPDATE users SET password_hash = %s, must_change_password = FALSE WHERE id = %s",
+                (generate_password_hash(new_pw), session["user_id"]),
+            )
+            conn.commit(); cur.close(); conn.close()
+            session["must_change_password"] = False
+            return redirect(url_for("home"))
+    return render_template("force_password_change.html", error=error)
 
 # ─── MAIN APP ─────────────────────────────────────────────────────────────────
 def _fmt_data_date(val) -> str | None:
@@ -4167,16 +4229,20 @@ def delete_user(uid):
 @login_required
 @admin_required
 def reset_password(uid):
-    data = request.json or {}
-    password = data.get("password", "")
-    if not password:
-        return jsonify({"error": "Password required"}), 400
+    """Reset a user to the shared DEFAULT_PASSWORD and flag them so they're
+    forced to set their own password the next time they log in."""
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("UPDATE users SET password_hash = %s WHERE id = %s",
-                (generate_password_hash(password), uid))
+    cur.execute(
+        "UPDATE users SET password_hash = %s, must_change_password = TRUE WHERE id = %s",
+        (generate_password_hash(DEFAULT_PASSWORD), uid),
+    )
     conn.commit(); cur.close(); conn.close()
-    return jsonify({"ok": True})
+    # If an admin reset their own password, reflect the flag in their session
+    # so they get bounced to the change page too.
+    if uid == session.get("user_id"):
+        session["must_change_password"] = True
+    return jsonify({"ok": True, "default_password": DEFAULT_PASSWORD})
 
 @app.route("/api/account", methods=["GET"])
 @login_required
