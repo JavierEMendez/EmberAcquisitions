@@ -155,8 +155,24 @@ def _parse_returns(ws) -> dict:
         monthly_col_end = c
 
     # --- Projects ---
+    # Detect each project block dynamically instead of using a fixed list of
+    # start rows: a block begins at a row whose column C holds the project
+    # name and whose NEXT row's column C is the "LP Returns Metrics"
+    # sub-header. This imports ANY number of projects — and adding a project
+    # (which pushes every block below it down) no longer drops the last one
+    # or misaligns the summary. Falls back to the legacy fixed rows only if
+    # no sub-header markers are found (older/odd workbooks).
+    project_starts = []
+    for r in range(4, ws.max_row + 1):
+        if not _str(ws.cell(row=r, column=3).value):
+            continue
+        if _str(ws.cell(row=r + 1, column=3).value).strip().lower() == "lp returns metrics":
+            project_starts.append(r)
+    if not project_starts:
+        project_starts = _PROJECT_STARTS
+
     projects = []
-    for start_row in _PROJECT_STARTS:
+    for start_row in project_starts:
         name = _str(ws.cell(row=start_row, column=3).value)  # C column
         if not name:
             continue
@@ -182,22 +198,34 @@ def _parse_returns(ws) -> dict:
 
         projects.append({"name": name, "metrics": metrics})
 
-    # --- Summary section (rows 105-111) ---
-    summary_labels = [
-        (105, "MPC Contributions"),
-        (106, "MPC Distributions"),
-        (107, "MPC Net Cashflow"),
-        (108, "Vertical Contributions"),
-        (109, "Vertical Distributions"),
-        (110, "Vertical Net Cashflow"),
-        (111, "Total Assets Net Cashflow"),
+    # --- Summary section ---
+    # The summary block sits below the projects, so its rows shift whenever a
+    # project is added. Locate each line by its (unique) label in column C
+    # rather than a fixed row; fall back to the legacy rows if a label can't
+    # be found.
+    _legacy_summary_rows = {
+        "MPC Contributions": 105, "MPC Distributions": 106, "MPC Net Cashflow": 107,
+        "Vertical Contributions": 108, "Vertical Distributions": 109,
+        "Vertical Net Cashflow": 110, "Total Assets Net Cashflow": 111,
+    }
+    summary_order = [
+        "MPC Contributions", "MPC Distributions", "MPC Net Cashflow",
+        "Vertical Contributions", "Vertical Distributions",
+        "Vertical Net Cashflow", "Total Assets Net Cashflow",
     ]
+    after = (project_starts[-1] + 11) if project_starts else 0  # scan below the last block
+    label_row = {}
+    for r in range(max(after, 1), ws.max_row + 1):
+        lbl = _str(ws.cell(row=r, column=3).value)
+        if lbl in _legacy_summary_rows and lbl not in label_row:
+            label_row[lbl] = r
     summary = []
-    for r, default_label in summary_labels:
-        label = _str(ws.cell(row=r, column=3).value) or default_label
+    for label in summary_order:
+        r = label_row.get(label) or _legacy_summary_rows[label]
         total = _num(ws.cell(row=r, column=5).value, 2)
         yearly = _row_yearly(ws, r, precision=2)
-        summary.append({"label": label, "total": total, "yearly": yearly})
+        summary.append({"label": _str(ws.cell(row=r, column=3).value) or label,
+                        "total": total, "yearly": yearly})
 
     return {
         "title": title or "Consolidated Ember Project Returns",
