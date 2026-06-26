@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Operating Budget · Ember Residential</title>
+<link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="/static/theme.css?v=3"/>
+<script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;}
+  body{background:var(--eax-bg);color:var(--eax-ink);font-family:'Plus Jakarta Sans',system-ui,sans-serif;overflow:hidden;}
+  #app{display:flex;height:100vh;overflow:hidden;}
+
+  /* Canonical sidebar (matches operations.html) */
+  #sidebar{width:240px;background:var(--eax-bg-2);border-right:1px solid var(--eax-line);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;}
+  .sidebar-logo{padding:16px 18px 14px;border-bottom:1px solid var(--eax-line)}
+  .logo-img{width:100%;max-width:160px;height:auto;display:block;margin:0 auto}
+  img.logo-light{display:none;}
+  [data-theme="light"] img.logo-dark{display:none;}
+  [data-theme="light"] img.logo-light{display:block;margin:0 auto;}
+  .logo-sub{font-size:10px;color:var(--eax-subtle);letter-spacing:0.2em;text-transform:uppercase;margin-top:8px;text-align:center;font-weight:700}
+  .sidebar-section{padding:8px 16px 4px;font-size:9px;line-height:1.2;color:var(--eax-subtle);letter-spacing:0.22em;text-transform:uppercase;margin-top:8px;font-weight:700}
+  .sidebar-item{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;border-radius:8px;margin:1px 8px;transition:all .15s;color:var(--eax-muted);font-size:13px;line-height:1.2;text-decoration:none;font-weight:500}
+  .sidebar-item:hover{background:var(--eax-accent-soft);color:var(--eax-ink);text-decoration:none}
+  .sidebar-item.active{background:var(--eax-surface);color:var(--eax-ink);font-weight:600;border:1px solid var(--eax-line);position:relative}
+  .sidebar-item.active::before{content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:2px;background:var(--eax-accent);border-radius:2px}
+  .sidebar-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0}
+  .sidebar-item.active .icon{opacity:1;color:var(--eax-accent)}
+
+  #main-content{flex:1;overflow:auto;min-width:0;}
+  .bd-wrap{max-width:1280px;margin:0 auto;padding:30px 34px 70px;}
+
+  /* Header */
+  .bd-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:22px;}
+  .bd-eyebrow{font-size:10.5px;letter-spacing:0.18em;text-transform:uppercase;color:var(--eax-accent);font-weight:700;margin-bottom:7px;}
+  .bd-title{font-family:'Plus Jakarta Sans';font-size:27px;font-weight:800;letter-spacing:-0.02em;color:var(--eax-ink-2);}
+  .bd-sub{color:var(--eax-muted);font-size:13.5px;margin-top:5px;max-width:640px;}
+  .bd-btn{display:inline-flex;align-items:center;gap:7px;padding:8px 15px;border-radius:8px;font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;border:1px solid var(--eax-line-2,rgba(0,0,0,.14));background:var(--eax-surface);color:var(--eax-ink);}
+  .bd-btn.primary{background:var(--eax-accent);color:#fff;border-color:transparent;}
+  .bd-btn:hover{border-color:var(--eax-accent);}
+
+  /* Cards + KPIs */
+  .bd-card{background:var(--eax-surface);border:1px solid var(--eax-line);border-radius:14px;padding:20px 22px;margin-bottom:20px;box-shadow:0 1px 0 rgba(16,22,32,.03),0 8px 26px rgba(16,22,32,.05);}
+  .bd-card h3{font-family:'Plus Jakarta Sans';font-size:14px;font-weight:700;color:var(--eax-ink-2);margin-bottom:3px;}
+  .bd-card .sub{font-size:12px;color:var(--eax-muted);margin-bottom:14px;}
+  .bd-kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:14px;margin-bottom:22px;}
+  @media(max-width:1100px){.bd-kpis{grid-template-columns:repeat(3,1fr);}}
+  @media(max-width:620px){.bd-kpis{grid-template-columns:repeat(2,1fr);}}
+  .bd-kpi{background:var(--eax-surface);border:1px solid var(--eax-line);border-radius:12px;padding:15px 16px;}
+  .bd-kpi .lbl{font-size:11px;color:var(--eax-muted);font-weight:600;letter-spacing:.01em;}
+  .bd-kpi .val{font-family:'Plus Jakarta Sans';font-size:21px;font-weight:700;color:var(--eax-ink-2);margin-top:7px;letter-spacing:-.01em;font-variant-numeric:tabular-nums;}
+  .bd-kpi .cap{font-size:11px;color:var(--eax-subtle);margin-top:4px;}
+  .pos{color:var(--eax-good,#1f9d6b);} .neg{color:var(--eax-bad,#d2452f);}
+
+  /* Tables */
+  .bd-scroll{overflow-x:auto;}
+  table.bd-tbl{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums;white-space:nowrap;}
+  table.bd-tbl th,table.bd-tbl td{padding:7px 11px;text-align:right;border-bottom:1px solid var(--eax-line);}
+  table.bd-tbl th:first-child,table.bd-tbl td:first-child{text-align:left;position:sticky;left:0;background:var(--eax-surface);font-weight:500;color:var(--eax-ink);}
+  table.bd-tbl th{color:var(--eax-subtle);font-weight:700;font-size:10px;letter-spacing:.05em;text-transform:uppercase;}
+  table.bd-tbl tr.sect td{font-weight:700;color:var(--eax-ink-2);background:var(--eax-bg-2);}
+  table.bd-tbl tr.total td{font-weight:700;color:var(--eax-ink-2);border-top:1px solid var(--eax-line-2,rgba(0,0,0,.16));}
+  table.bd-tbl td.child{padding-left:24px;color:var(--eax-muted);}
+  table.bd-tbl td.tot{border-left:1px solid var(--eax-line-2,rgba(0,0,0,.16));font-weight:700;}
+  .chart-box{position:relative;height:300px;}
+
+  .bd-empty{max-width:520px;margin:8vh auto;text-align:center;color:var(--eax-muted);}
+  .bd-empty h2{font-family:'Plus Jakarta Sans';font-weight:700;font-size:19px;color:var(--eax-ink-2);margin-bottom:8px;}
+  .bd-empty p{font-size:13px;line-height:1.55;margin-bottom:18px;}
+  .bd-foot-note{font-size:11.5px;color:var(--eax-subtle);margin-top:6px;}
+</style>
+</head>
+<body>
+<div id="app">
+  <nav id="sidebar">
+    <div class="sidebar-logo">
+      <img src="/static/img/ember_logo.png"       alt="Ember" class="logo-img logo-dark">
+      <img src="/static/img/ember_logo_light.png" alt="Ember" class="logo-img logo-light">
+      <div class="logo-sub">Operating Budget</div>
+    </div>
+    <div class="sidebar-section">Apps &amp; Dashboards</div>
+    {% if page_access.get('mpc_underwriting', true) %}
+    <a href="/" class="sidebar-item"><svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>MPC Underwriting</a>
+    {% endif %}
+    {% if page_access.get('returns', true) %}
+    <a href="/returns" class="sidebar-item"><svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 19V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0H5a2 2 0 01-2-2v-4a2 2 0 012-2h2m6 6h4a2 2 0 002-2V5a2 2 0 00-2-2h-2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Project Returns</a>
+    {% endif %}
+    {% if page_access.get('loans', true) %}
+    <a href="/loans" class="sidebar-item"><svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8V7m0 1v8m0 0v1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Loans &amp; Debt</a>
+    {% endif %}
+    {% if page_access.get('operations', true) %}
+    <a href="/operations" class="sidebar-item"><svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Operating Revenues</a>
+    {% endif %}
+    <a href="/budget" class="sidebar-item active"><svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 13l3 3 3-5 4 4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Operating Budget</a>
+    {% if page_access.get('invoice_dashboard', true) %}
+    <a href="/invoice-dashboard" class="sidebar-item"><svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 2h6a2 2 0 012 2v16l-3-2-2 2-2-2-2 2-3-2V4a2 2 0 012-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 7h6M9 11h6M9 15h4" stroke-width="1.5" stroke-linecap="round"/></svg>Invoice Dashboard</a>
+    {% endif %}
+    {% if page_access.get('financials', false) %}
+    <a href="/financials" class="sidebar-item"><svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4h16v16H4z M4 9h16 M9 9v11" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Financial Statements</a>
+    {% endif %}
+    {% if page_access.get('macro', true) %}
+    <a href="/macro" class="sidebar-item"><svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="1.5"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20" stroke-width="1.5" stroke-linecap="round"/></svg>Macro Dashboard</a>
+    {% endif %}
+    {% if page_access.get('portfolio', true) %}
+    <a href="/ember-capital" class="sidebar-item"><svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 3.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Ember Capital</a>
+    {% endif %}
+    {% if page_access.get('sales', true) %}
+    <a href="/sales" class="sidebar-item"><svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l3-3 4 4 5-6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Community Sales</a>
+    {% endif %}
+    {% if page_access.get('verticals', true) %}
+    <a href="/verticals" class="sidebar-item"><svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" stroke-width="1.5" stroke-linejoin="round"/></svg>Vertical Dashboard</a>
+    {% endif %}
+    <div style="flex:1"></div>
+    {% include "_partials/_sidebar_foot.html" %}
+  </nav>
+
+  <div id="main-content">
+    <div class="bd-wrap">
+      <div class="bd-head">
+        <div>
+          <div class="bd-eyebrow">Ember · Firm P&amp;L Forecast · USD</div>
+          <div class="bd-title">Operating Budget</div>
+          <div class="bd-sub">
+            Firm-level revenue and operating expenses (personnel + other costs) → net income &amp; cashflow.
+            {% if budget %}<strong>{{ budget.meta.report_date or 'Latest' }}</strong> · {{ budget.kpis.horizon_label }}. Feeds the Maquina Ember dashboard.
+            {% else %}Upload the EMBER Budget workbook to populate this page.{% endif %}
+          </div>
+        </div>
+        {% if is_admin %}
+        <div>
+          <input type="file" id="bd-file" accept=".xlsx,.xlsm" style="display:none">
+          <button class="bd-btn primary" id="bd-upload-btn" onclick="document.getElementById('bd-file').click()">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M8 8l4-4 4 4M12 4v12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            {{ 'Re-upload budget' if budget else 'Upload budget' }}
+          </button>
+          <div id="bd-upload-msg" style="font-size:11.5px;color:var(--eax-muted);margin-top:6px;text-align:right;"></div>
+        </div>
+        {% endif %}
+      </div>
+
+      {% if not budget %}
+        <div class="bd-empty">
+          <h2>No budget uploaded yet</h2>
+          <p>{% if is_admin %}Upload the standard <strong>EMBER Budget</strong> .xlsx (the EMBER COMPANIES cash-flow forecast). We read revenue, personnel and operating costs by month and surface net income &amp; cashflow here — and the Maquina dashboard reads it from this same source.{% else %}Ask an admin to upload the latest EMBER Budget workbook.{% endif %}</p>
+          {% if is_admin %}<button class="bd-btn primary" onclick="document.getElementById('bd-file').click()">Choose .xlsx file</button>{% endif %}
+        </div>
+      {% else %}
+        {% set K = budget.kpis %}
+        {% set M = budget.meta.months %}
+        {% set ML = budget.meta.month_labels %}
+        {% set YEARS = budget.meta.years %}
+
+        {# ── helper macros ── #}
+        {% macro fmt(v) %}{{ '{:,.0f}'.format(v) if (v is not none and v != 0) else '·' }}{% endmacro %}
+        {% macro yrow(label, series, kind='') %}
+          <tr class="{{ kind }}">
+            <td class="{{ 'child' if kind == 'child' }}">{{ label }}</td>
+            {% for y in YEARS %}
+              {% set v = series.by_year.get(y|string, 0) if series else 0 %}
+              <td class="{{ 'neg' if v < 0 else ('pos' if (v > 0 and kind in ['total','net']) ) }}">{{ fmt(v) }}</td>
+            {% endfor %}
+            {% set tot = (series.by_year.values()|sum) if series else 0 %}
+            <td class="tot {{ 'neg' if tot < 0 }}">{{ fmt(tot) }}</td>
+          </tr>
+        {% endmacro %}
+        {% macro mrow(label, series, kind='') %}
+          <tr class="{{ kind }}">
+            <td class="{{ 'child' if kind == 'child' }}">{{ label }}</td>
+            {% for i in range(M|length) %}
+              {% set v = series.months.get(M[i], 0) if series else 0 %}
+              <td class="{{ 'neg' if v < 0 }}">{{ fmt(v) }}</td>
+            {% endfor %}
+            {% set tot = (series.by_year.values()|sum) if series else 0 %}
+            <td class="tot {{ 'neg' if tot < 0 }}">{{ fmt(tot) }}</td>
+          </tr>
+        {% endmacro %}
+
+        {# ── KPI band ── #}
+        <div class="bd-kpis">
+          <div class="bd-kpi"><div class="lbl">Total Revenue</div><div class="val">${{ '{:,.0f}'.format(K.revenue_life) }}</div><div class="cap">{{ K.horizon_label }}</div></div>
+          <div class="bd-kpi"><div class="lbl">Personnel</div><div class="val neg">${{ '{:,.0f}'.format(K.people_life) }}</div><div class="cap">People (E + M)</div></div>
+          <div class="bd-kpi"><div class="lbl">Other Operating Costs</div><div class="val neg">${{ '{:,.0f}'.format(K.operations_life) }}</div><div class="cap">insurance, rent, IT…</div></div>
+          <div class="bd-kpi"><div class="lbl">Total Costs</div><div class="val neg">${{ '{:,.0f}'.format(K.costs_life) }}</div><div class="cap">people + operations</div></div>
+          <div class="bd-kpi"><div class="lbl">Net Income</div><div class="val {{ 'pos' if K.net_income_life >= 0 else 'neg' }}">${{ '{:,.0f}'.format(K.net_income_life) }}</div><div class="cap">revenue − costs</div></div>
+          <div class="bd-kpi"><div class="lbl">Net Cash Flow</div><div class="val {{ 'pos' if K.cash_flow_life >= 0 else 'neg' }}">${{ '{:,.0f}'.format(K.cash_flow_life) }}</div><div class="cap">{{ K.horizon_label }}</div></div>
+        </div>
+
+        {# ── Monthly chart ── #}
+        <div class="bd-card">
+          <h3>Revenue vs Costs &amp; Net Income</h3>
+          <div class="sub">Monthly — revenue and total costs (bars), net income (line). USD.</div>
+          <div class="chart-box"><canvas id="bdChart"></canvas></div>
+        </div>
+
+        {# ── Annual summary ── #}
+        <div class="bd-card">
+          <h3>Annual Summary</h3>
+          <div class="sub">Revenue, costs, net income &amp; cashflow by year.</div>
+          <div class="bd-scroll">
+            <table class="bd-tbl">
+              <thead><tr><th>Line item</th>{% for y in YEARS %}<th>{{ y }}</th>{% endfor %}<th class="tot">Total</th></tr></thead>
+              <tbody>
+                {{ yrow('Total Revenue', budget.revenue.total, 'sect') }}
+                {{ yrow('Personnel (People)', budget.people) }}
+                {{ yrow('Other Operating Costs', budget.operations.total) }}
+                {{ yrow('Total Costs', budget.total_costs, 'total') }}
+                {{ yrow('Net Income', budget.net_income, 'net') }}
+                {{ yrow('Cash Flow', budget.cash_flow, 'net') }}
+                {{ yrow('Cumulative Cash Flow', budget.cumulative) }}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {# ── Cost + revenue breakdown ── #}
+        <div class="bd-card">
+          <h3>Cost Breakdown</h3>
+          <div class="sub">Operating expense lines by year.</div>
+          <div class="bd-scroll">
+            <table class="bd-tbl">
+              <thead><tr><th>Expense line</th>{% for y in YEARS %}<th>{{ y }}</th>{% endfor %}<th class="tot">Total</th></tr></thead>
+              <tbody>
+                {{ yrow('Personnel (People)', budget.people, 'child') }}
+                {% for line in budget.operations.lines %}{{ yrow(line.name, line, 'child') }}{% endfor %}
+                {{ yrow('Total Costs', budget.total_costs, 'total') }}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="bd-card">
+          <h3>Revenue Breakdown</h3>
+          <div class="sub">Revenue by project / source, by year.</div>
+          <div class="bd-scroll">
+            <table class="bd-tbl">
+              <thead><tr><th>Source</th>{% for y in YEARS %}<th>{{ y }}</th>{% endfor %}<th class="tot">Total</th></tr></thead>
+              <tbody>
+                {% for line in budget.revenue.lines %}{{ yrow(line.name, line, 'child') }}{% endfor %}
+                {{ yrow('Total Revenue', budget.revenue.total, 'total') }}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {# ── Monthly detail ── #}
+        <div class="bd-card">
+          <h3>Monthly Detail</h3>
+          <div class="sub">Full monthly P&amp;L — scroll horizontally. USD.</div>
+          <div class="bd-scroll">
+            <table class="bd-tbl">
+              <thead><tr><th>Line item</th>{% for l in ML %}<th>{{ l }}</th>{% endfor %}<th class="tot">Total</th></tr></thead>
+              <tbody>
+                {{ mrow('Total Revenue', budget.revenue.total, 'sect') }}
+                {{ mrow('Personnel (People)', budget.people) }}
+                {% for line in budget.operations.lines %}{{ mrow(line.name, line, 'child') }}{% endfor %}
+                {{ mrow('Total Operating Costs', budget.operations.total) }}
+                {{ mrow('Total Costs', budget.total_costs, 'total') }}
+                {{ mrow('Net Income', budget.net_income, 'net') }}
+                {{ mrow('Cash Flow', budget.cash_flow, 'net') }}
+                {{ mrow('Cumulative Cash Flow', budget.cumulative) }}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="bd-foot-note">
+          Source: {{ budget.meta.filename or 'EMBER Budget workbook' }}{% if uploaded_at %} · uploaded {{ uploaded_at.strftime('%b %d, %Y') if uploaded_at.strftime else uploaded_at }}{% endif %}.
+          The Maquina dashboard reads this same data for the Ember company's net cashflow.
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% include "_partials/_account_modal.html" %}
+
+{% if budget %}
+<script>
+  const B = {{ budget | tojson }};
+  (function(){
+    const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+    const M = B.meta.months, ML = B.meta.month_labels;
+    const rev  = M.map(k => (B.revenue.total.months[k] || 0) / 1000);
+    const cost = M.map(k => (B.total_costs.months[k] || 0) / 1000);
+    const net  = M.map(k => (B.net_income.months[k] || 0) / 1000);
+    const ctx = document.getElementById('bdChart'); if(!ctx) return;
+    const ink = css('--eax-muted') || '#5c6770', grid = css('--eax-line') || 'rgba(0,0,0,.1)';
+    const good = css('--eax-good') || '#1f9d6b', bad = css('--eax-bad') || '#d2452f', acc = css('--eax-accent') || '#0568b3';
+    const fmtK = v => (v<0?'-$':'$') + Math.abs(v).toLocaleString(undefined,{maximumFractionDigits:0}) + 'K';
+    new Chart(ctx, {
+      data: {
+        labels: ML,
+        datasets: [
+          { type:'bar', label:'Revenue', data:rev, backgroundColor:good+'cc', borderRadius:2, order:3 },
+          { type:'bar', label:'Total Costs', data:cost, backgroundColor:bad+'aa', borderRadius:2, order:3 },
+          { type:'line', label:'Net Income', data:net, borderColor:acc, backgroundColor:acc+'22', borderWidth:2.5, tension:.3, pointRadius:0, fill:false, order:1 },
+        ]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+        plugins:{ legend:{ position:'bottom', labels:{ color:ink, boxWidth:10, font:{size:11} } },
+          tooltip:{ callbacks:{ label:c => c.dataset.label + ': ' + fmtK(c.parsed.y) } } },
+        scales:{ x:{ grid:{display:false}, ticks:{ color:ink, font:{size:9}, maxRotation:60, minRotation:45 } },
+          y:{ grid:{color:grid}, ticks:{ color:ink, font:{size:10}, callback:v=>'$'+v+'K' } } }
+      }
+    });
+  })();
+</script>
+{% endif %}
+
+{# Admin upload — POSTs to /api/upload-ember-budget then reloads. #}
+{% if is_admin %}
+<script>
+  (function(){
+    const input = document.getElementById('bd-file');
+    const msg = document.getElementById('bd-upload-msg');
+    const btn = document.getElementById('bd-upload-btn');
+    if(!input) return;
+    input.addEventListener('change', async function(){
+      const f = this.files[0]; if(!f) return;
+      const fd = new FormData(); fd.append('file', f);
+      if(btn) btn.disabled = true;
+      if(msg){ msg.style.color = 'var(--eax-muted)'; msg.textContent = 'Uploading ' + f.name + '…'; }
+      try {
+        const res = await fetch('/api/upload-ember-budget', { method:'POST', body:fd });
+        const d = await res.json();
+        if(!res.ok) throw new Error(d.error || 'Upload failed');
+        if(msg){ msg.style.color = 'var(--eax-good,#1f9d6b)'; msg.textContent = 'Imported ' + d.months + ' months. Reloading…'; }
+        setTimeout(()=>location.reload(), 700);
+      } catch(e){
+        if(msg){ msg.style.color = 'var(--eax-bad,#d2452f)'; msg.textContent = 'Error: ' + e.message; }
+        if(btn) btn.disabled = false;
+        input.value = '';
+      }
+    });
+  })();
+</script>
+{% endif %}
+</body>
+</html>

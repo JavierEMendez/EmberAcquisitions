@@ -23,6 +23,7 @@ from bohlke_parser import parse_bohlke
 from waller_parser import parse_waller_monthly
 from hpermits_parser import parse_hpermits
 from uw_parser import parse_uw
+from ember_budget_parser import parse_ember_budget
 import sage_intacct
 from frp_mapping import roll_up_balance_sheet, summarize_bs
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -355,6 +356,8 @@ def init_db():
     cur.execute("UPDATE users SET page_access = page_access || '{\"portfolio\": true}'::jsonb WHERE page_access->>'portfolio' IS NULL")
     cur.execute("UPDATE users SET page_access = page_access || '{\"macro\": true}'::jsonb WHERE page_access->>'macro' IS NULL")
     cur.execute("UPDATE users SET page_access = page_access || '{\"sales\": true}'::jsonb WHERE page_access->>'sales' IS NULL")
+    # Backfill `budget` — Ember Operating Budget (firm P&L forecast) upload page.
+    cur.execute("UPDATE users SET page_access = page_access || '{\"budget\": true}'::jsonb WHERE page_access->>'budget' IS NULL")
     # `financials` gates the Sage-Intacct-backed Financial Statements
     # dashboard. Defaults to FALSE — financial statements are sensitive,
     # so we want explicit admin grants rather than backfilling true.
@@ -4193,7 +4196,7 @@ def create_user():
         "mpc_underwriting": True, "returns": True, "loans": True,
         "operations": True, "macro": True, "sales": True,
         "portfolio": True, "reports": True, "verticals": True,
-        "verticals_comment": True, "invoice_dashboard": True,
+        "verticals_comment": True, "invoice_dashboard": True, "budget": True,
     })
     if not username or not password:
         return jsonify({"error": "Username and password required"}), 400
@@ -8887,6 +8890,63 @@ def _jinja_int_comma(v):
         return f"{int(round(float(v))):,}"
     except (TypeError, ValueError):
         return "0"
+
+
+@app.route("/budget")
+@login_required
+def budget_page():
+    """Ember Operating Budget — the firm's CORPORATE P&L forecast (revenue +
+    personnel + office overhead → net income & cashflow). Distinct from the
+    project-level Budget-vs-Actuals (/bva) tool: this is firm overhead, not
+    per-MPC development cost. Source of truth in reports (report_type=
+    'ember_budget'); consumed by the Maquina dashboard's Ember page."""
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("budget", True):
+        return redirect(url_for("home"))
+    pa.setdefault("budget", True)
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT data, uploaded_at, uploaded_by FROM reports "
+                "WHERE report_type = 'ember_budget' ORDER BY uploaded_at DESC LIMIT 1")
+    row = cur.fetchone(); cur.close(); conn.close()
+    data = row["data"] if row else None
+    if isinstance(data, str):
+        data = json.loads(data)
+    return render_template(
+        "budget.html",
+        budget=data,
+        uploaded_at=(row["uploaded_at"] if row else None),
+        is_admin=session.get("is_admin", False),
+        page_access=pa,
+        username=session.get("username"),
+    )
+
+
+@app.route("/api/upload-ember-budget", methods=["POST"])
+@login_required
+@admin_required
+def upload_ember_budget():
+    """Admin-only — parse the EMBER Budget xlsx (firm P&L forecast) and store
+    it as the 'ember_budget' report (latest wins). Same DELETE+INSERT pattern
+    as the other dashboard uploads."""
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"error": "No file provided"}), 400
+    if not f.filename.lower().endswith((".xlsx", ".xlsm")):
+        return jsonify({"error": "Upload the EMBER Budget .xlsx file."}), 400
+    try:
+        data = parse_ember_budget(f.read(), filename=f.filename)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"Failed to parse file: {e}"}), 400
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM reports WHERE report_type = 'ember_budget'")
+    cur.execute("INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+                ("ember_budget", json.dumps(data), session["user_id"]))
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True, "report_date": data["meta"]["report_date"],
+                    "months": len(data["meta"]["months"]),
+                    "years": data["meta"]["years"]})
 
 
 @app.route("/operations")
