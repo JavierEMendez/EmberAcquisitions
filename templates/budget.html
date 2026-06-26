@@ -234,8 +234,8 @@
         </div>
 
         <div class="bd-card">
-          <h3>Revenue Breakdown</h3>
-          <div class="sub">Revenue by project / source, by year.</div>
+          <h3>Revenue Breakdown {% if budget.revenue.source == 'operations' %}<span style="font-size:10px;font-weight:600;letter-spacing:.04em;color:var(--eax-accent);background:var(--eax-accent-soft);padding:2px 7px;border-radius:5px;vertical-align:middle;margin-left:6px;">● from Operating Revenues</span>{% endif %}</h3>
+          <div class="sub">{% if budget.revenue.source == 'operations' %}Live from the Operating Revenues dashboard (not the budget workbook).{% else %}Revenue by project / source, by year.{% endif %}</div>
           <div class="bd-scroll">
             <table class="bd-tbl">
               <thead><tr><th>Source</th>{% for y in YEARS %}<th>{{ y }}</th>{% endfor %}<th class="tot">Total</th></tr></thead>

@@ -276,6 +276,12 @@
       Loans &amp; Debt
     </a>
     {% endif %}
+    {% if is_admin or page_access.get('budget', false) %}
+    <a href="/budget" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 13l3 3 3-5 4 4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Operating Budget
+    </a>
+    {% endif %}
     {% if page_access.get('operations', true) %}
     <a href="/operations" class="sidebar-item">
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8M14 7h7v7" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>

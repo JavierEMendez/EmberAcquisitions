@@ -356,8 +356,13 @@ def init_db():
     cur.execute("UPDATE users SET page_access = page_access || '{\"portfolio\": true}'::jsonb WHERE page_access->>'portfolio' IS NULL")
     cur.execute("UPDATE users SET page_access = page_access || '{\"macro\": true}'::jsonb WHERE page_access->>'macro' IS NULL")
     cur.execute("UPDATE users SET page_access = page_access || '{\"sales\": true}'::jsonb WHERE page_access->>'sales' IS NULL")
-    # Backfill `budget` — Ember Operating Budget (firm P&L forecast) upload page.
-    cur.execute("UPDATE users SET page_access = page_access || '{\"budget\": true}'::jsonb WHERE page_access->>'budget' IS NULL")
+    # Backfill `budget` (Ember Operating Budget) — admin-only by default:
+    # admins can view; everyone else starts hidden and is granted per-user
+    # by an admin on the Manage Team page.
+    cur.execute("UPDATE users SET page_access = page_access || '{\"budget\": true}'::jsonb "
+                "WHERE page_access->>'budget' IS NULL AND is_admin = true")
+    cur.execute("UPDATE users SET page_access = page_access || '{\"budget\": false}'::jsonb "
+                "WHERE page_access->>'budget' IS NULL AND (is_admin = false OR is_admin IS NULL)")
     # `financials` gates the Sage-Intacct-backed Financial Statements
     # dashboard. Defaults to FALSE — financial statements are sensitive,
     # so we want explicit admin grants rather than backfilling true.
@@ -4196,7 +4201,7 @@ def create_user():
         "mpc_underwriting": True, "returns": True, "loans": True,
         "operations": True, "macro": True, "sales": True,
         "portfolio": True, "reports": True, "verticals": True,
-        "verticals_comment": True, "invoice_dashboard": True, "budget": True,
+        "verticals_comment": True, "invoice_dashboard": True, "budget": False,
     })
     if not username or not password:
         return jsonify({"error": "Username and password required"}), 400
@@ -8892,6 +8897,129 @@ def _jinja_int_comma(v):
         return "0"
 
 
+def _ops_revenue_axis(ops):
+    """From an Operating Revenues report (report_type='operations'), pull
+    corporate revenue keyed for the budget axis:
+      { by_year: {'YYYY': total}, by_month: {'YYYY-MM': total}, lines: [...] }.
+    Returns None if the report has no usable revenue."""
+    if not isinstance(ops, dict):
+        return None
+    yr = ops.get("yearly_rollup") or {}
+    years = yr.get("years") or []
+    totals = yr.get("totals") or []
+    by_year = {str(y): float(t or 0) for y, t in zip(years, totals)}
+    mo = ops.get("monthly") or {}
+    dates = mo.get("dates") or []
+    mtotals = mo.get("totals") or []
+    by_month = {}
+    for iso, v in zip(dates, mtotals):
+        s = str(iso or "")
+        if len(s) >= 7:
+            by_month[s[:7]] = round(by_month.get(s[:7], 0.0) + float(v or 0), 2)
+    mrows = {r.get("label"): r for r in (mo.get("rows") or []) if isinstance(r, dict)}
+    lines = []
+    for r in (yr.get("rows") or []):
+        if not isinstance(r, dict):
+            continue
+        name = r.get("label")
+        vals = r.get("values") or []
+        lby = {str(y): float(v or 0) for y, v in zip(years, vals)}
+        lmonths = {}
+        mr = mrows.get(name)
+        if mr:
+            for iso, v in zip(dates, (mr.get("values") or [])):
+                s = str(iso or "")
+                if len(s) >= 7 and v:
+                    lmonths[s[:7]] = round(lmonths.get(s[:7], 0.0) + float(v or 0), 2)
+        lines.append({"name": name, "by_year": lby, "months": lmonths})
+    if not by_year and not by_month:
+        return None
+    return {"by_year": by_year, "by_month": by_month, "lines": lines}
+
+
+def _apply_ops_revenue(budget, ops):
+    """Replace the Operating Budget's revenue with the live Operating Revenues
+    figures and re-derive Net Income (= revenue − costs), Cash Flow (shifted by
+    the revenue delta) and Cumulative. The original Excel revenue is preserved
+    under revenue.excel. No-op (returns the budget unchanged) if operations data
+    isn't available, so the page still works before an operations upload."""
+    if not budget:
+        return budget
+    rev = _ops_revenue_axis(ops)
+    if not rev:
+        return budget
+    import copy
+    b = copy.deepcopy(budget)
+    meta = b.get("meta", {}) or {}
+    months = meta.get("months", []) or []
+    years = [str(y) for y in (meta.get("years", []) or [])]
+
+    old_total = (b.get("revenue", {}) or {}).get("total", {}) or {}
+    old_m = old_total.get("months", {}) or {}
+    old_y = old_total.get("by_year", {}) or {}
+
+    new_m = {k: rev["by_month"][k] for k in months if rev["by_month"].get(k)}
+    new_y = {y: round(rev["by_year"].get(y, 0.0), 2) for y in years}
+    dmonth = {k: new_m.get(k, 0.0) - float(old_m.get(k, 0.0) or 0) for k in months}
+    dyear = {y: new_y.get(y, 0.0) - float(old_y.get(y, 0.0) or 0) for y in years}
+
+    # 1) revenue (keep Excel original for reference)
+    b.setdefault("revenue", {})
+    b["revenue"]["excel"] = old_total
+    b["revenue"]["total"] = {"months": new_m, "by_year": new_y}
+    b["revenue"]["lines"] = rev["lines"]
+    b["revenue"]["source"] = "operations"
+
+    # 2) net income = revenue − total costs (clean identity)
+    tc = b.get("total_costs", {}) or {}
+    tcm = tc.get("months", {}) or {}
+    tcy = tc.get("by_year", {}) or {}
+    ni_m = {}
+    for k in months:
+        v = round(new_m.get(k, 0.0) - float(tcm.get(k, 0.0) or 0), 2)
+        if v:
+            ni_m[k] = v
+    ni_y = {y: round(new_y.get(y, 0.0) - float(tcy.get(y, 0.0) or 0), 2) for y in years}
+    b["net_income"] = {"months": ni_m, "by_year": ni_y}
+
+    # 3) cash flow shifts by the revenue delta (costs unchanged)
+    cf = b.get("cash_flow", {}) or {}
+    cf_m_old = cf.get("months", {}) or {}
+    cfm = dict(cf_m_old)
+    cfy = dict(cf.get("by_year", {}) or {})
+    for k in months:
+        if dmonth.get(k):
+            cfm[k] = round(float(cfm.get(k, 0.0) or 0) + dmonth[k], 2)
+    for y in years:
+        cfy[y] = round(float(cfy.get(y, 0.0) or 0) + dyear.get(y, 0.0), 2)
+    b["cash_flow"] = {"months": cfm, "by_year": cfy}
+
+    # 4) cumulative = beginning balance + running sum of the new cash flow
+    old_cum_m = (b.get("cumulative", {}) or {}).get("months", {}) or {}
+    begin = 0.0
+    if months:
+        f = months[0]
+        begin = float(old_cum_m.get(f, 0.0) or 0) - float(cf_m_old.get(f, 0.0) or 0)
+    run = begin
+    cum_m, year_end = {}, {}
+    for k in months:
+        run = round(run + float(cfm.get(k, 0.0) or 0), 2)
+        cum_m[k] = run
+        year_end[k[:4]] = run
+    b["cumulative"] = {"months": cum_m, "by_year": {y: year_end.get(y, 0.0) for y in years}}
+
+    # 5) KPIs
+    kp = b.get("kpis", {}) or {}
+    kp["revenue_life"] = round(sum(new_y.values()), 2)
+    kp["net_income_life"] = round(sum(ni_y.values()), 2)
+    kp["cash_flow_life"] = round(sum(cfy.values()), 2)
+    kp["revenue_source"] = "operations"
+    b["kpis"] = kp
+    meta["revenue_source"] = "operations"
+    b["meta"] = meta
+    return b
+
+
 @app.route("/budget")
 @login_required
 def budget_page():
@@ -8901,9 +9029,9 @@ def budget_page():
     per-MPC development cost. Source of truth in reports (report_type=
     'ember_budget'); consumed by the Maquina dashboard's Ember page."""
     pa = session.get("page_access") or {}
-    if not session.get("is_admin") and not pa.get("budget", True):
+    if not session.get("is_admin") and not pa.get("budget", False):
         return redirect(url_for("home"))
-    pa.setdefault("budget", True)
+    pa.setdefault("budget", False)
     conn = get_db(); cur = conn.cursor()
     cur.execute("SELECT data, uploaded_at, uploaded_by FROM reports "
                 "WHERE report_type = 'ember_budget' ORDER BY uploaded_at DESC LIMIT 1")
@@ -8911,6 +9039,17 @@ def budget_page():
     data = row["data"] if row else None
     if isinstance(data, str):
         data = json.loads(data)
+    # Revenue comes from the live Operating Revenues report, not the Excel —
+    # overlay it and re-derive net income / cash flow. No-op until both exist.
+    if data:
+        ocon = get_db(); ocur = ocon.cursor()
+        ocur.execute("SELECT data FROM reports WHERE report_type = 'operations' "
+                     "ORDER BY uploaded_at DESC LIMIT 1")
+        orow = ocur.fetchone(); ocur.close(); ocon.close()
+        ops = orow["data"] if orow else None
+        if isinstance(ops, str):
+            ops = json.loads(ops)
+        data = _apply_ops_revenue(data, ops)
     return render_template(
         "budget.html",
         budget=data,
