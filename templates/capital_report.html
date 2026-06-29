@@ -327,13 +327,15 @@
     border-bottom: 1px solid var(--line);
   }
   table.proj-table th:first-child { text-align: left; padding-left: 16px; }
-  /* Row padding tuned so 9 active projects + a portfolio total line
-     stretch the panel down to align with the bottom edge of the
-     Distributions card on the right column. ~14px vertical padding
-     gives ~38px row height — 11 rows × 38 ≈ 418px, matching the
-     donut card (~290px) + 14px gap + dist card (~140px) ≈ 444px. */
+  /* Row vertical padding scales to the project count via --td-pad (set
+     inline on the table), so the table body keeps a roughly constant
+     height — aligned with the bottom edge of the Distributions card on
+     the right column — no matter how many projects there are. At 9 or
+     fewer projects this resolves to the original 14px (≈38px rows); a
+     10th project compresses it so the portfolio total never bleeds into
+     the footer. The 14px fallback below preserves the original look. */
   table.proj-table td {
-    padding: 14px 10px;
+    padding: var(--td-pad, 14px) 10px;
     text-align: right;
     color: var(--ink);
     font-variant-numeric: tabular-nums;
@@ -753,7 +755,12 @@
             <div class="h">Active Projects</div>
             <div class="s">{{ capital.kpis.active_count }} · $000s</div>
           </div>
-          <table class="proj-table">
+          {# Keep the table body ~420px tall regardless of project count: at
+             <=9 projects this caps at the original 14px padding; each extra
+             project shrinks it so the portfolio total stays off the footer. #}
+          {% set _na = capital.active|length %}
+          {% set _td_pad = [6.0, [14.0, (420.0 / (_na + 1) - 14.0) / 2.0]|min]|max %}
+          <table class="proj-table" style="--td-pad: {{ '%.1f'|format(_td_pad) }}px;">
             <colgroup>
               <col class="col-name"/>
               <col class="col-num"/>
