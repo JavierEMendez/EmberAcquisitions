@@ -395,21 +395,32 @@
     letter-spacing: 0.04em;
     margin-top: 3px;
   }
+  /* Row metrics (padding + font sizes) scale to the number of projects via
+     the --bp-* custom properties set inline on .by-project, so the list fills
+     the card without bleeding into the footer as projects are added. The
+     fallbacks below are the roomy defaults used for short portfolios. */
   .by-project .row {
     display: table; table-layout: fixed; width: 100%;
-    padding: 8px 16px;
+    padding: var(--bp-pad, 8px) 16px;
     border-bottom: 1px solid var(--line);
   }
   .by-project .row:last-child { border-bottom: none; }
   .by-project .row > div { display: table-cell; vertical-align: top; }
-  .by-project .pname-col { width: 40%; }
-  .by-project .num-col   { width: 20%; text-align: right; vertical-align: middle !important; }
-  .by-project .pname { font-size: 11px; font-weight: 500; line-height: 1.2; color: var(--ink); }
-  .by-project .pmeta { font-family: var(--font-mono); font-size: 8.5px; color: var(--subtle); margin-top: 2px; letter-spacing: 0.04em; }
+  /* Name column widened (and number columns trimmed) so the longest project
+     names — e.g. "LightHaven (Preferred Equity)" — fit on a single line. */
+  .by-project .pname-col { width: 49%; }
+  .by-project .num-col   { width: 17%; text-align: right; vertical-align: middle !important; }
+  .by-project .pname {
+    font-size: var(--bp-name, 11px);
+    font-weight: 500; line-height: 1.2; color: var(--ink);
+    /* Keep every project on one line; ellipsis guards pathological names. */
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .by-project .pmeta { font-family: var(--font-mono); font-size: var(--bp-meta, 8.5px); color: var(--subtle); margin-top: 2px; letter-spacing: 0.04em; }
   .by-project .num {
     font-family: var(--font-display);
     font-weight: 700;
-    font-size: 12px;
+    font-size: var(--bp-num, 12px);
     color: var(--ink);
     font-variant-numeric: tabular-nums;
   }
@@ -884,7 +895,17 @@
       </div>
 
       <div class="side-col">
-        <div class="by-project">
+        {# Scale the row padding + fonts to the project count so the list fills
+           the ~410px tall card without overflowing the footer. Few projects
+           keep the roomy defaults; longer portfolios tighten gradually. #}
+        {% set _n = projects_ranked|length %}
+        {% set _row_h = 410.0 / _n %}
+        {% set _bp_name = [11.0, [9.0, _row_h * 0.25]|max]|min %}
+        {% set _bp_meta = [8.5, [7.0, _bp_name - 2.5]|max]|min %}
+        {% set _bp_num  = _bp_name + 1.0 %}
+        {% set _bp_text = _bp_name * 1.2 + _bp_meta + 2.0 %}
+        {% set _bp_pad  = [3.0, [11.0, (_row_h - _bp_text) / 2.0]|min]|max %}
+        <div class="by-project" style="--bp-name:{{ '%.1f'|format(_bp_name) }}px; --bp-meta:{{ '%.1f'|format(_bp_meta) }}px; --bp-num:{{ '%.1f'|format(_bp_num) }}px; --bp-pad:{{ '%.1f'|format(_bp_pad) }}px;">
           <div class="hd">
             <div class="h">By Project</div>
             <div class="s">IRR · EM · Profit</div>
