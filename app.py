@@ -3,8 +3,6 @@ Ember Tract Underwriting Web App
 Flask + PostgreSQL + Flask-Login — no Excel required
 """
 import os, re, html, json, datetime, io, base64, requests, threading, concurrent.futures
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail, Attachment, FileContent, FileName, FileType, Disposition, Content
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_file, Response
 import psycopg2
@@ -4435,7 +4433,7 @@ def send_reports_now():
     diagnostics so the admin UI can show who got skipped and why.
 
     Runs in-process (not a thread) so the response carries the result —
-    the job is bounded by the recipient count and SendGrid latency, and
+    the job is bounded by the recipient count and Mailgun latency, and
     knowing what happened beats fire-and-forget for debugging."""
     try:
         count = _send_monthly_emails(force=True)
@@ -11622,8 +11620,8 @@ def _gen_new_pdf_report(rt, data, uploaded_at=None):
 def _release_period_claim(period):
     """Undo a period claim in report_sends so the month can be retried.
 
-    Called when a claimed monthly run sends zero emails (e.g. SendGrid
-    rejects everyone for "Maximum credits exceeded") — without this the
+    Called when a claimed monthly run sends zero emails (e.g. the mail
+    provider rejects everyone for an exceeded quota) — without this the
     period stays marked done and neither the next cron tick nor an admin
     retry would re-send. Best-effort: a failure here only logs, since the
     caller is already on an error path."""
@@ -11709,13 +11707,23 @@ def _send_monthly_emails(force=False, recipient_ids=None):
     if not recipients:
         return 0
 
-    sendgrid_key = os.environ.get("SENDGRID_API_KEY", "")
+    # Mailgun transport. MAILGUN_DOMAIN is the verified sending domain
+    # (e.g. "mg.ember-grp.com"); SMTP_FROM stays the sender address and
+    # must belong to that domain. MAILGUN_BASE_URL defaults to the US
+    # region — set it to https://api.eu.mailgun.net for an EU domain.
+    mailgun_key    = os.environ.get("MAILGUN_API_KEY", "")
+    mailgun_domain = os.environ.get("MAILGUN_DOMAIN", "")
+    mailgun_base   = os.environ.get("MAILGUN_BASE_URL", "https://api.mailgun.net").rstrip("/")
     from_addr = os.environ.get("SMTP_FROM", "")
 
-    if not sendgrid_key:
-        raise ValueError("SENDGRID_API_KEY environment variable must be set")
+    if not mailgun_key:
+        raise ValueError("MAILGUN_API_KEY environment variable must be set")
+    if not mailgun_domain:
+        raise ValueError("MAILGUN_DOMAIN environment variable must be set (Mailgun sending domain)")
     if not from_addr:
         raise ValueError("SMTP_FROM environment variable must be set (used as sender address)")
+
+    mailgun_url = f"{mailgun_base}/v3/{mailgun_domain}/messages"
 
     subject = now.strftime("%B %Y") + " Ember Reports"
 
@@ -11726,7 +11734,6 @@ def _send_monthly_emails(force=False, recipient_ids=None):
         "ember_capital": "Ember Capital Executive Report",
     }
 
-    sg = SendGridAPIClient(sendgrid_key)
     sent_count = 0
     # Per-recipient diagnostic so the admin "Send Reports Now" UI can show
     # who got skipped and why. Also goes to stdout for Railway logs.
@@ -11734,19 +11741,21 @@ def _send_monthly_emails(force=False, recipient_ids=None):
 
     # Load logo once
     # Email footer wordmark — the design-handoff blue wordmark, attached
-    # via CID so it embeds reliably in every client (CID is widely
-    # supported and avoids data-URI volume limits).
-    logo_b64 = ""
+    # as a Mailgun inline part so it embeds reliably in every client (CID
+    # is widely supported and avoids data-URI volume limits). Mailgun uses
+    # the inline part's filename as the Content-ID, so the HTML references
+    # it as `cid:ember_logo.png`.
+    logo_bytes = b""
     logo_path = os.path.join(os.path.dirname(__file__),
                               "static", "img", "ember_logo_blue_wordmark.png")
     if os.path.exists(logo_path):
         with open(logo_path, "rb") as f:
-            logo_b64 = base64.b64encode(f.read()).decode()
+            logo_bytes = f.read()
 
     print(f"[Reports] {len(recipients)} candidate recipient(s) matched the filter", flush=True)
 
     # Atomically claim this period, as late as possible — only now that we
-    # know there are recipients and valid SendGrid config, and immediately
+    # know there are recipients and valid Mailgun config, and immediately
     # before the send loop. The UNIQUE constraint on report_sends.period
     # means only one process can win: if Railway runs the cron in two worker
     # instances at once (which happened on 2026-05-01 → duplicate emails),
@@ -11755,8 +11764,8 @@ def _send_monthly_emails(force=False, recipient_ids=None):
     # Claiming this late (rather than at function entry) means a run that
     # never reaches the send loop — missing env, no recipients, an
     # exception building payloads — doesn't burn the month. And if the loop
-    # below sends zero (e.g. SendGrid rejects everything for "Maximum
-    # credits exceeded"), the claim is RELEASED at the end so the next cron
+    # below sends zero (e.g. the mail provider rejects everything for an
+    # exceeded quota), the claim is RELEASED at the end so the next cron
     # tick or an admin "Send Reports Now" can retry. force / recipient_ids
     # runs (admin-initiated) never claim — they're explicitly on demand.
     claimed_period = None
@@ -11883,9 +11892,9 @@ def _send_monthly_emails(force=False, recipient_ids=None):
                 ["#F25929", "#F25929", "#F25929", "#F25929", "rgba(255,255,255,0.35)"]))
         )
 
-        logo_img = ('<img src="cid:ember_logo" alt="Ember" height="22" '
+        logo_img = ('<img src="cid:ember_logo.png" alt="Ember" height="22" '
                     'style="display:block;margin:0 auto 10px;height:22px;border:0;">'
-                    if logo_b64 else "")
+                    if logo_bytes else "")
 
         html_body = f"""<!DOCTYPE html>
 <html>
@@ -11977,33 +11986,9 @@ def _send_monthly_emails(force=False, recipient_ids=None):
         ])
         plain_body = "\n".join(plain_lines)
 
-        message = Mail(
-            from_email=from_addr,
-            to_emails=email_addr,
-            subject=subject,
-        )
-        message.content = [
-            Content("text/plain", plain_body),
-            Content("text/html", html_body),
-        ]
-
-        # Collect ALL attachments first, then assign once. SendGrid's
-        # Mail.attachment setter REPLACES on each call in modern SDK
-        # versions — assigning per-iteration would silently drop every
-        # attachment except the last one. Building a list and assigning
-        # at the end keeps every PDF / Excel + the inline logo.
-        attachments = []
-
-        if logo_b64:
-            logo_att = Attachment(
-                FileContent(logo_b64),
-                FileName("ember_logo.png"),
-                FileType("image/png"),
-                Disposition("inline"),
-            )
-            logo_att.content_id = "ember_logo"
-            attachments.append(logo_att)
-
+        # Build the report attachments as (filename, bytes, mimetype)
+        # tuples — they go in as Mailgun multipart `attachment` parts below.
+        report_files = []
         attached_rts = []
         for rt, label in accessible.items():
             data = report_data[rt]
@@ -12034,45 +12019,58 @@ def _send_monthly_emails(force=False, recipient_ids=None):
                     filename = f"{label.replace(' ','_')}.pdf"
                     mime_type = "application/pdf"
 
-                attachments.append(Attachment(
-                    FileContent(base64.b64encode(file_bytes).decode()),
-                    FileName(filename),
-                    FileType(mime_type),
-                    Disposition("attachment"),
-                ))
+                report_files.append((filename, bytes(file_bytes), mime_type))
                 attached_rts.append(f"{rt}({fmt})")
             except Exception as e:
                 print(f"[Reports] {display_name}: failed to build {rt} {fmt}: "
                       f"{type(e).__name__}: {e}", flush=True)
 
-        if not attachments or all(a.disposition.get() == "inline" if hasattr(a.disposition, 'get') else False
-                                   for a in attachments):
-            # Only the inline logo, no actual reports — don't bother sending.
+        if not report_files:
+            # No actual reports built — don't bother sending.
             print(f"[Reports]  · skip {display_name} <{email_addr}>: "
                   f"no report attachments built", flush=True)
             diag.append({"user": display_name, "email": email_addr,
                          "status": "skipped", "reason": "no attachments built"})
             continue
 
-        message.attachment = attachments
+        # Assemble the Mailgun multipart payload: the logo as an `inline`
+        # part (referenced as cid:ember_logo.png in the HTML), each report
+        # as an `attachment` part.
+        files = []
+        if logo_bytes:
+            files.append(("inline", ("ember_logo.png", logo_bytes, "image/png")))
+        for fname, fbytes, mime in report_files:
+            files.append(("attachment", (fname, fbytes, mime)))
 
         try:
-            sg.send(message)
+            resp = requests.post(
+                mailgun_url,
+                auth=("api", mailgun_key),
+                data={
+                    "from": from_addr,
+                    "to": email_addr,
+                    "subject": subject,
+                    "text": plain_body,
+                    "html": html_body,
+                },
+                files=files,
+                timeout=30,
+            )
+            resp.raise_for_status()
             sent_count += 1
             print(f"[Reports]  · sent {display_name} <{email_addr}>: "
                   f"{', '.join(attached_rts)}", flush=True)
             diag.append({"user": display_name, "email": email_addr,
                          "status": "sent", "reports": attached_rts})
         except Exception as e:
-            print(f"[Reports] SendGrid error sending to <{email_addr}>: "
+            print(f"[Reports] Mailgun error sending to <{email_addr}>: "
                   f"{type(e).__name__}: {e}", flush=True)
-            # If SendGrid returns a structured error body, log it too —
-            # this is the only way to see why an email was rejected
-            # (over quota, bounced, suppressed, etc.).
-            err_body = getattr(getattr(e, "body", None), "decode", lambda *_: None)("utf-8") \
-                       if hasattr(getattr(e, "body", None), "decode") else getattr(e, "body", None)
-            if err_body:
-                print(f"[Reports]    response: {err_body}", flush=True)
+            # Log Mailgun's response body when present — that's where the
+            # reason lives (over quota, unauthorized, unverified domain,
+            # recipient not on the authorized list for a sandbox domain).
+            body = getattr(getattr(e, "response", None), "text", None)
+            if body:
+                print(f"[Reports]    response: {body}", flush=True)
             diag.append({"user": display_name, "email": email_addr,
                          "status": "send_failed",
                          "reason": f"{type(e).__name__}: {e}"})
@@ -12080,8 +12078,8 @@ def _send_monthly_emails(force=False, recipient_ids=None):
     print(f"[Reports] Done — {sent_count} email(s) sent, "
           f"{len(diag) - sent_count} skipped/failed.", flush=True)
 
-    # If we claimed the period but sent nothing (e.g. SendGrid rejected
-    # every recipient for "Maximum credits exceeded"), release the claim so
+    # If we claimed the period but sent nothing (e.g. the mail provider
+    # rejected every recipient for an exceeded quota), release the claim so
     # the month isn't silently marked done — the next cron tick or an admin
     # "Send Reports Now" can retry once the underlying issue is fixed. We
     # only release on a total shutout: a partial success keeps the claim,
