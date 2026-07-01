@@ -11619,6 +11619,25 @@ def _gen_new_pdf_report(rt, data, uploaded_at=None):
         return None
 
 
+def _release_period_claim(period):
+    """Undo a period claim in report_sends so the month can be retried.
+
+    Called when a claimed monthly run sends zero emails (e.g. SendGrid
+    rejects everyone for "Maximum credits exceeded") — without this the
+    period stays marked done and neither the next cron tick nor an admin
+    retry would re-send. Best-effort: a failure here only logs, since the
+    caller is already on an error path."""
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("DELETE FROM report_sends WHERE period = %s", (period,))
+        conn.commit(); cur.close(); conn.close()
+        print(f"[Reports] Released period claim {period} (0 sent) — "
+              f"eligible for retry.", flush=True)
+    except Exception as e:
+        print(f"[Reports] Failed to release period claim {period}: "
+              f"{type(e).__name__}: {e}", flush=True)
+
+
 def _send_monthly_emails(force=False, recipient_ids=None):
     """Send monthly reports. Returns count of emails sent.
 
@@ -11640,24 +11659,6 @@ def _send_monthly_emails(force=False, recipient_ids=None):
 
     conn = get_db()
     cur = conn.cursor()
-
-    if not force and not recipient_ids:
-        # Atomically claim this period BEFORE sending. The UNIQUE
-        # constraint on report_sends.period means only one process can
-        # win — if Railway runs the cron in two worker instances at the
-        # same time (which happened on 2026-05-01 → duplicate emails),
-        # the second one's INSERT silently no-ops and we bail out here.
-        # The previous SELECT-then-INSERT-after pattern raced.
-        cur.execute(
-            "INSERT INTO report_sends (period) VALUES (%s) ON CONFLICT DO NOTHING",
-            (period,)
-        )
-        claimed = cur.rowcount
-        conn.commit()
-        if not claimed:
-            cur.close(); conn.close()
-            print(f"[Reports] Period {period} already claimed by another instance; skipping.", flush=True)
-            return 0
 
     if recipient_ids:
         # Ad-hoc per-user send: filter by id only, no email/subscription
@@ -11743,6 +11744,34 @@ def _send_monthly_emails(force=False, recipient_ids=None):
             logo_b64 = base64.b64encode(f.read()).decode()
 
     print(f"[Reports] {len(recipients)} candidate recipient(s) matched the filter", flush=True)
+
+    # Atomically claim this period, as late as possible — only now that we
+    # know there are recipients and valid SendGrid config, and immediately
+    # before the send loop. The UNIQUE constraint on report_sends.period
+    # means only one process can win: if Railway runs the cron in two worker
+    # instances at once (which happened on 2026-05-01 → duplicate emails),
+    # the second INSERT silently no-ops and that instance bails here.
+    #
+    # Claiming this late (rather than at function entry) means a run that
+    # never reaches the send loop — missing env, no recipients, an
+    # exception building payloads — doesn't burn the month. And if the loop
+    # below sends zero (e.g. SendGrid rejects everything for "Maximum
+    # credits exceeded"), the claim is RELEASED at the end so the next cron
+    # tick or an admin "Send Reports Now" can retry. force / recipient_ids
+    # runs (admin-initiated) never claim — they're explicitly on demand.
+    claimed_period = None
+    if not force and not recipient_ids:
+        cconn = get_db(); ccur = cconn.cursor()
+        ccur.execute(
+            "INSERT INTO report_sends (period) VALUES (%s) ON CONFLICT DO NOTHING",
+            (period,)
+        )
+        claimed = ccur.rowcount
+        cconn.commit(); ccur.close(); cconn.close()
+        if not claimed:
+            print(f"[Reports] Period {period} already claimed by another instance; skipping.", flush=True)
+            return 0
+        claimed_period = period
 
     for user in recipients:
         email_addr  = (user.get("email") or "").strip()
@@ -12051,10 +12080,15 @@ def _send_monthly_emails(force=False, recipient_ids=None):
     print(f"[Reports] Done — {sent_count} email(s) sent, "
           f"{len(diag) - sent_count} skipped/failed.", flush=True)
 
-    # NOTE: the period claim was inserted at the START of this function
-    # (atomic INSERT ... ON CONFLICT DO NOTHING). We no longer record
-    # the send a second time at the end — that double-write is what
-    # used to leave a window for duplicates when two workers raced.
+    # If we claimed the period but sent nothing (e.g. SendGrid rejected
+    # every recipient for "Maximum credits exceeded"), release the claim so
+    # the month isn't silently marked done — the next cron tick or an admin
+    # "Send Reports Now" can retry once the underlying issue is fixed. We
+    # only release on a total shutout: a partial success keeps the claim,
+    # since there's no per-recipient dedup and re-running would double-send
+    # to those who already received their reports.
+    if claimed_period and sent_count == 0:
+        _release_period_claim(claimed_period)
 
     # Stash the per-recipient breakdown so the admin "Send Reports Now"
     # endpoint can surface it back to the UI.
