@@ -3,6 +3,11 @@ Ember Tract Underwriting Web App
 Flask + PostgreSQL + Flask-Login — no Excel required
 """
 import os, re, html, json, datetime, io, base64, requests, threading, concurrent.futures
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.image import MIMEImage
+from email.mime.application import MIMEApplication
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_file, Response
 import psycopg2
@@ -4433,7 +4438,7 @@ def send_reports_now():
     diagnostics so the admin UI can show who got skipped and why.
 
     Runs in-process (not a thread) so the response carries the result —
-    the job is bounded by the recipient count and Mailgun latency, and
+    the job is bounded by the recipient count and SMTP latency, and
     knowing what happened beats fire-and-forget for debugging."""
     try:
         count = _send_monthly_emails(force=True)
@@ -11707,23 +11712,24 @@ def _send_monthly_emails(force=False, recipient_ids=None):
     if not recipients:
         return 0
 
-    # Mailgun transport. MAILGUN_DOMAIN is the verified sending domain
-    # (e.g. "mg.ember-grp.com"); SMTP_FROM stays the sender address and
-    # must belong to that domain. MAILGUN_BASE_URL defaults to the US
-    # region — set it to https://api.eu.mailgun.net for an EU domain.
-    mailgun_key    = os.environ.get("MAILGUN_API_KEY", "")
-    mailgun_domain = os.environ.get("MAILGUN_DOMAIN", "")
-    mailgun_base   = os.environ.get("MAILGUN_BASE_URL", "https://api.mailgun.net").rstrip("/")
-    from_addr = os.environ.get("SMTP_FROM", "")
+    # SMTP transport — authenticated submission through the mailbox
+    # provider that already owns the domain (Microsoft 365 for
+    # ember-grp.com), so no DNS/SPF/DKIM changes are needed: the mail is
+    # genuinely sent by the account. SMTP_USER is the login mailbox;
+    # SMTP_FROM is the visible sender and must be that same mailbox or an
+    # address it has Send-As rights to (defaults to SMTP_USER).
+    smtp_host = os.environ.get("SMTP_HOST", "smtp.office365.com")
+    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    smtp_user = os.environ.get("SMTP_USER", "")
+    smtp_password = os.environ.get("SMTP_PASSWORD", "")
+    from_addr = os.environ.get("SMTP_FROM", "") or smtp_user
 
-    if not mailgun_key:
-        raise ValueError("MAILGUN_API_KEY environment variable must be set")
-    if not mailgun_domain:
-        raise ValueError("MAILGUN_DOMAIN environment variable must be set (Mailgun sending domain)")
+    if not smtp_user:
+        raise ValueError("SMTP_USER environment variable must be set (login mailbox)")
+    if not smtp_password:
+        raise ValueError("SMTP_PASSWORD environment variable must be set (mailbox or app password)")
     if not from_addr:
-        raise ValueError("SMTP_FROM environment variable must be set (used as sender address)")
-
-    mailgun_url = f"{mailgun_base}/v3/{mailgun_domain}/messages"
+        raise ValueError("SMTP_FROM (or SMTP_USER) must be set (used as sender address)")
 
     subject = now.strftime("%B %Y") + " Ember Reports"
 
@@ -11740,11 +11746,10 @@ def _send_monthly_emails(force=False, recipient_ids=None):
     diag = []
 
     # Load logo once
-    # Email footer wordmark — the design-handoff blue wordmark, attached
-    # as a Mailgun inline part so it embeds reliably in every client (CID
-    # is widely supported and avoids data-URI volume limits). Mailgun uses
-    # the inline part's filename as the Content-ID, so the HTML references
-    # it as `cid:ember_logo.png`.
+    # Email footer wordmark — the design-handoff blue wordmark, embedded as
+    # an inline MIME part (Content-ID <ember_logo.png>) so it renders in
+    # every client without a data-URI. The HTML references it as
+    # `cid:ember_logo.png`.
     logo_bytes = b""
     logo_path = os.path.join(os.path.dirname(__file__),
                               "static", "img", "ember_logo_blue_wordmark.png")
@@ -11754,20 +11759,35 @@ def _send_monthly_emails(force=False, recipient_ids=None):
 
     print(f"[Reports] {len(recipients)} candidate recipient(s) matched the filter", flush=True)
 
+    # Open the SMTP connection and authenticate BEFORE claiming the period.
+    # If login fails (e.g. the M365 tenant has SMTP AUTH disabled, or the
+    # password/app-password is wrong) this raises here — before any claim —
+    # so a broken transport never burns the month. STARTTLS on 587 is the
+    # standard Office 365 client-submission path.
+    server = smtplib.SMTP(smtp_host, smtp_port, timeout=30)
+    try:
+        server.ehlo()
+        server.starttls()
+        server.ehlo()
+        server.login(smtp_user, smtp_password)
+    except Exception:
+        try: server.quit()
+        except Exception: pass
+        raise
+
     # Atomically claim this period, as late as possible — only now that we
-    # know there are recipients and valid Mailgun config, and immediately
+    # have recipients and a live authenticated SMTP session, and immediately
     # before the send loop. The UNIQUE constraint on report_sends.period
     # means only one process can win: if Railway runs the cron in two worker
     # instances at once (which happened on 2026-05-01 → duplicate emails),
     # the second INSERT silently no-ops and that instance bails here.
     #
     # Claiming this late (rather than at function entry) means a run that
-    # never reaches the send loop — missing env, no recipients, an
-    # exception building payloads — doesn't burn the month. And if the loop
-    # below sends zero (e.g. the mail provider rejects everything for an
-    # exceeded quota), the claim is RELEASED at the end so the next cron
-    # tick or an admin "Send Reports Now" can retry. force / recipient_ids
-    # runs (admin-initiated) never claim — they're explicitly on demand.
+    # never reaches the send loop — missing env, no recipients, a failed
+    # SMTP login — doesn't burn the month. And if the loop below sends zero
+    # (e.g. the provider rejects everything), the claim is RELEASED at the
+    # end so the next cron tick or an admin "Send Reports Now" can retry.
+    # force / recipient_ids runs (admin-initiated) never claim.
     claimed_period = None
     if not force and not recipient_ids:
         cconn = get_db(); ccur = cconn.cursor()
@@ -11779,6 +11799,8 @@ def _send_monthly_emails(force=False, recipient_ids=None):
         cconn.commit(); ccur.close(); cconn.close()
         if not claimed:
             print(f"[Reports] Period {period} already claimed by another instance; skipping.", flush=True)
+            try: server.quit()
+            except Exception: pass
             return 0
         claimed_period = period
 
@@ -11987,7 +12009,7 @@ def _send_monthly_emails(force=False, recipient_ids=None):
         plain_body = "\n".join(plain_lines)
 
         # Build the report attachments as (filename, bytes, mimetype)
-        # tuples — they go in as Mailgun multipart `attachment` parts below.
+        # tuples — each becomes a MIME attachment part below.
         report_files = []
         attached_rts = []
         for rt, label in accessible.items():
@@ -12033,47 +12055,76 @@ def _send_monthly_emails(force=False, recipient_ids=None):
                          "status": "skipped", "reason": "no attachments built"})
             continue
 
-        # Assemble the Mailgun multipart payload: the logo as an `inline`
-        # part (referenced as cid:ember_logo.png in the HTML), each report
-        # as an `attachment` part.
-        files = []
+        # Assemble the MIME message:
+        #   multipart/mixed
+        #     ├─ multipart/related
+        #     │    ├─ multipart/alternative (text + html)
+        #     │    └─ image/png  (inline logo, Content-ID <ember_logo.png>)
+        #     └─ application/*  (one attachment per report)
+        msg = MIMEMultipart("mixed")
+        msg["Subject"] = subject
+        msg["From"] = from_addr
+        msg["To"] = email_addr
+
+        related = MIMEMultipart("related")
+        alt = MIMEMultipart("alternative")
+        alt.attach(MIMEText(plain_body, "plain", "utf-8"))
+        alt.attach(MIMEText(html_body, "html", "utf-8"))
+        related.attach(alt)
         if logo_bytes:
-            files.append(("inline", ("ember_logo.png", logo_bytes, "image/png")))
+            logo_part = MIMEImage(logo_bytes, _subtype="png")
+            logo_part.add_header("Content-ID", "<ember_logo.png>")
+            logo_part.add_header("Content-Disposition", "inline", filename="ember_logo.png")
+            related.attach(logo_part)
+        msg.attach(related)
+
         for fname, fbytes, mime in report_files:
-            files.append(("attachment", (fname, fbytes, mime)))
+            subtype = mime.split("/", 1)[1] if "/" in mime else "octet-stream"
+            part = MIMEApplication(fbytes, _subtype=subtype)
+            part.add_header("Content-Disposition", "attachment", filename=fname)
+            msg.attach(part)
 
         try:
-            resp = requests.post(
-                mailgun_url,
-                auth=("api", mailgun_key),
-                data={
-                    "from": from_addr,
-                    "to": email_addr,
-                    "subject": subject,
-                    "text": plain_body,
-                    "html": html_body,
-                },
-                files=files,
-                timeout=30,
-            )
-            resp.raise_for_status()
+            server.send_message(msg)
             sent_count += 1
             print(f"[Reports]  · sent {display_name} <{email_addr}>: "
                   f"{', '.join(attached_rts)}", flush=True)
             diag.append({"user": display_name, "email": email_addr,
                          "status": "sent", "reports": attached_rts})
+        except smtplib.SMTPServerDisconnected as e:
+            # The provider dropped the session mid-run (idle timeout, rate
+            # limiting). Reconnect once and retry this recipient before
+            # giving up on them.
+            print(f"[Reports] SMTP disconnected before <{email_addr}>: {e} — reconnecting", flush=True)
+            try:
+                server = smtplib.SMTP(smtp_host, smtp_port, timeout=30)
+                server.ehlo(); server.starttls(); server.ehlo()
+                server.login(smtp_user, smtp_password)
+                server.send_message(msg)
+                sent_count += 1
+                print(f"[Reports]  · sent {display_name} <{email_addr}> (after reconnect): "
+                      f"{', '.join(attached_rts)}", flush=True)
+                diag.append({"user": display_name, "email": email_addr,
+                             "status": "sent", "reports": attached_rts})
+            except Exception as e2:
+                print(f"[Reports] SMTP error sending to <{email_addr}>: "
+                      f"{type(e2).__name__}: {e2}", flush=True)
+                diag.append({"user": display_name, "email": email_addr,
+                             "status": "send_failed",
+                             "reason": f"{type(e2).__name__}: {e2}"})
         except Exception as e:
-            print(f"[Reports] Mailgun error sending to <{email_addr}>: "
+            # Per-recipient failure (e.g. recipient refused). Record it and
+            # keep going — one bad address shouldn't stop the batch.
+            print(f"[Reports] SMTP error sending to <{email_addr}>: "
                   f"{type(e).__name__}: {e}", flush=True)
-            # Log Mailgun's response body when present — that's where the
-            # reason lives (over quota, unauthorized, unverified domain,
-            # recipient not on the authorized list for a sandbox domain).
-            body = getattr(getattr(e, "response", None), "text", None)
-            if body:
-                print(f"[Reports]    response: {body}", flush=True)
             diag.append({"user": display_name, "email": email_addr,
                          "status": "send_failed",
                          "reason": f"{type(e).__name__}: {e}"})
+
+    try:
+        server.quit()
+    except Exception:
+        pass
 
     print(f"[Reports] Done — {sent_count} email(s) sent, "
           f"{len(diag) - sent_count} skipped/failed.", flush=True)
