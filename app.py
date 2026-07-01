@@ -11764,15 +11764,28 @@ def _send_monthly_emails(force=False, recipient_ids=None):
     # password/app-password is wrong) this raises here — before any claim —
     # so a broken transport never burns the month. STARTTLS on 587 is the
     # standard Office 365 client-submission path.
-    server = smtplib.SMTP(smtp_host, smtp_port, timeout=30)
+    #
+    # Each step logs before it runs so the Railway logs pinpoint a stall:
+    #   • hangs after "connecting"  -> TCP egress blocked (host/plan/firewall)
+    #   • hangs after "TLS"         -> STARTTLS negotiation
+    #   • errors after "authenticating" -> Microsoft rejected the login
+    #     (535 5.7.139 == Authenticated SMTP disabled for the mailbox)
+    print(f"[Reports] Connecting to {smtp_host}:{smtp_port} …", flush=True)
+    server = None
     try:
+        server = smtplib.SMTP(smtp_host, smtp_port, timeout=30)
+        print("[Reports] TCP connected; starting TLS …", flush=True)
         server.ehlo()
         server.starttls()
         server.ehlo()
+        print(f"[Reports] TLS established; authenticating as {smtp_user} …", flush=True)
         server.login(smtp_user, smtp_password)
-    except Exception:
-        try: server.quit()
-        except Exception: pass
+        print("[Reports] SMTP authenticated OK", flush=True)
+    except Exception as e:
+        print(f"[Reports] SMTP connect/login failed: {type(e).__name__}: {e}", flush=True)
+        if server is not None:
+            try: server.quit()
+            except Exception: pass
         raise
 
     # Atomically claim this period, as late as possible — only now that we
