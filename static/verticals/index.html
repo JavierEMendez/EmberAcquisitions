@@ -3035,7 +3035,7 @@ const noiForecast = [22073, 4700, 54932, 79291, 107094, 113683, 68710, 99047, 10
 // Actual for Jan–Mar uses ember color, Budget months (Apr–Dec) use navy
 const forecastColors = noiForecast.map((_,i) => i < 3 ? 'rgba(229,85,0,.85)' : 'rgba(0,53,82,.75)');
 const budgetColors = noiBudget.map(() => 'rgba(0,53,82,.35)');
-new Chart(document.getElementById('noiChart'), {
+window.__LH_noiChart = new Chart(document.getElementById('noiChart'), {
   type: 'bar',
   data: {
     labels: months,
@@ -3077,7 +3077,7 @@ const noiPctPlugin = {
     ctx.restore();
   }
 };
-new Chart(document.getElementById('incomeDonut'), {
+window.__LH_incomeDonut = new Chart(document.getElementById('incomeDonut'), {
   type: 'doughnut',
   data: {
     labels: ['Net Rental Income','Utility Income','Other Income','Operating Expenses','Fixed Expenses'],
@@ -3101,6 +3101,46 @@ new Chart(document.getElementById('incomeDonut'), {
     return ctx.label+': $'+ctx.parsed.toLocaleString()+' ('+pct+'%)';
   }}}} }
 });
+
+// --- Make the NOI chart + income donut data-driven ---------------------------
+// Both charts above ship with hardcoded seed arrays so the mockup renders
+// before any upload. applyNOI() replaces those with the parsed "II.
+// Operational Template" data staged by importNOIMaster: the monthly Budget vs
+// Actual/Forecast NOI curve, and the annual income/expense composition for
+// the donut. Called after an upload and on page load (from the staged blob in
+// localStorage) so the Operational Performance section reflects real data,
+// not the seed.
+window.LH_applyNOI = function applyNOI(noi) {
+  if (!noi) return;
+  try {
+    var c = window.__LH_noiChart;
+    if (c && (Array.isArray(noi.budget) || Array.isArray(noi.forecast))) {
+      if (Array.isArray(noi.budget)   && noi.budget.length)   c.data.datasets[0].data = noi.budget;
+      if (Array.isArray(noi.forecast) && noi.forecast.length) c.data.datasets[1].data = noi.forecast;
+      // Months up to and including the current one read as actual (ember);
+      // the rest are forecast (navy).
+      var actualN = (new Date()).getMonth() + 1;
+      c.data.datasets[1].backgroundColor =
+        c.data.datasets[1].data.map(function (_, i) {
+          return i < actualN ? 'rgba(229,85,0,.85)' : 'rgba(0,53,82,.75)';
+        });
+      c.update();
+    }
+    var d = window.__LH_incomeDonut, comp = noi.composition;
+    if (d && comp) {
+      d.data.datasets[0].data = [
+        comp.netRental || 0, comp.utility || 0, comp.other || 0,
+        comp.opex || 0, comp.fixed || 0,
+      ];
+      d.update();
+    }
+  } catch (e) { console.warn('[LH] applyNOI failed:', e); }
+};
+// Hydrate from the last staged upload in this browser on load.
+try {
+  var _stagedNoi = (JSON.parse(localStorage.getItem('lh_ie_staged_v1') || '{}') || {}).noi;
+  if (_stagedNoi) window.LH_applyNOI(_stagedNoi);
+} catch (_) {}
 
 // --- SITE MAP / UNIT GRID & TABLE (driven by Data Table) ---
 const unitData = [{"addr":"7403 Hadley Meadow Lane","num":"7403","fp":"Raven","type":"F1","bed":"3 Bed","sf":1852,"phase":5,"status":"Turned"},{"addr":"7431 Leighton Meadow Lane","num":"7431","fp":"Sparrow","type":"E1","bed":"2 Bed","sf":1635,"phase":3,"status":"Tenant Occupied"},{"addr":"22029 Lesley Grove Lane","num":"22029","fp":"Phoenix","type":"D2","bed":"4 Bed","sf":2431,"phase":2,"status":"Renewal"},{"addr":"7435 Hadley Meadow Lane","num":"7435","fp":"Falcon","type":"C3","bed":"3 Bed","sf":1909,"phase":5,"status":"Tenant Occupied"},{"addr":"7430 Hadley Meadow Lane","num":"7430","fp":"Mallard","type":"B2","bed":"3 Bed","sf":1685,"phase":5,"status":"Tenant Occupied"},{"addr":"7426 Hadley Meadow Lane","num":"7426","fp":"Mallard","type":"B1","bed":"3 Bed","sf":1685,"phase":5,"status":"Tenant Occupied"},{"addr":"7419 Leighton Meadow Lane","num":"7419","fp":"Mallard","type":"B1","bed":"3 Bed","sf":1685,"phase":3,"status":"Tenant Occupied"},{"addr":"7419 Hadley Meadow Lane","num":"7419","fp":"Mallard","type":"B2","bed":"3 Bed","sf":1685,"phase":5,"status":"Tenant Occupied"},{"addr":"7415 Hadley Meadow Lane","num":"7415","fp":"Mallard","type":"B3","bed":"3 Bed","sf":1685,"phase":5,"status":"Tenant Occupied"},{"addr":"7411 Hadley Meadow Lane","num":"7411","fp":"Raven","type":"F2","bed":"3 Bed","sf":1852,"phase":5,"status":"Tenant Occupied"},{"addr":"7338 Hadley Meadow Lane","num":"7338","fp":"Mallard","type":"B1","bed":"3 Bed","sf":1685,"phase":6,"status":"Tenant Occupied"},{"addr":"7330 Leighton Meadow Lane","num":"7330","fp":"Canary","type":"A3","bed":"2 Bed","sf":1425,"phase":4,"status":"Tenant Occupied"},{"addr":"7326 Leighton Meadow Lane","num":"7326","fp":"Mallard","type":"B1","bed":"3 Bed","sf":1685,"phase":4,"status":"Tenant Occupied"},{"addr":"7323 Hadley Meadow Lane","num":"7323","fp":"Mallard","type":"B1","bed":"3 Bed","sf":1685,"phase":6,"status":"Tenant Occupied"},{"addr":"7322 Corey Rushing Lane","num":"7322","fp":"Phoenix","type":"D2","bed":"4 Bed","sf":2431,"phase":2,"status":"Tenant Occupied"},{"addr":"7307 Leighton Meadow Lane","num":"7307","fp":"Mallard","type":"B2","bed":"3 Bed","sf":1685,"phase":4,"status":"Tenant Occupied"},{"addr":"7306 Corey Rushing Lane","num":"7306","fp":"Mallard","type":"B3","bed":"3 Bed","sf":1685,"phase":2,"status":"Leased"},{"addr":"7303 Hadley Meadow Lane","num":"7303","fp":"Raven","type":"F3","bed":"3 Bed","sf":1852,"phase":6,"status":"Tenant Occupied"},{"addr":"7302 Corey Rushing Lane","num":"7302","fp":"Mallard","type":"B1","bed":"3 Bed","sf":1685,"phase":2,"status":"Tenant Occupied"},{"addr":"22046 Ferguson Meadow Lane","num":"22046","fp":"Mallard","type":"B3","bed":"3 Bed","sf":1685,"phase":1,"status":"Tenant Occupied"},{"addr":"22045 Lesley Grove Lane","num":"22045","fp":"Canary","type":"A1","bed":"2 Bed","sf":1425,"phase":1,"status":"Tenant Occupied"},{"addr":"22042 Ferguson Meadow Lane","num":"22042","fp":"Raven","type":"F2","bed":"3 Bed","sf":1852,"phase":1,"status":"Tenant Occupied"},{"addr":"22041 Lesley Grove Lane","num":"22041","fp":"Canary","type":"A3","bed":"2 Bed","sf":1425,"phase":2,"status":"Tenant Occupied"},{"addr":"22038 Ferguson Meadow Lane","num":"22038","fp":"Canary","type":"A1","bed":"2 Bed","sf":1425,"phase":1,"status":"Tenant Occupied"},{"addr":"22037 Lesley Grove Lane","num":"22037","fp":"Sparrow","type":"E2","bed":"2 Bed","sf":1635,"phase":2,"status":"Tenant Occupied"},{"addr":"22035 Ferguson Meadow Lane","num":"22035","fp":"Mallard","type":"B1","bed":"3 Bed","sf":1685,"phase":1,"status":"Tenant Occupied"},{"addr":"22034 Ferguson Meadow Lane","num":"22034","fp":"Canary","type":"A2","bed":"2 Bed","sf":1425,"phase":1,"status":"Tenant Occupied"},{"addr":"22033 Lesley Grove Lane","num":"22033","fp":"Canary","type":"A1","bed":"2 Bed","sf":1425,"phase":2,"status":"Tenant Occupied"},{"addr":"22031 Ferguson Meadow Lane","num":"22031","fp":"Mallard","type":"B3","bed":"3 Bed","sf":1685,"phase":1,"status":"Tenant Occupied"},{"addr":"22030 Ferguson Meadow Lane","num":"22030","fp":"Canary","type":"A3","bed":"2 Bed","sf":1425,"phase":1,"status":"Tenant Occupied"},{"addr":"22027 Ferguson Meadow Lane","num":"22027","fp":"Mallard","type":"B2","bed":"3 Bed","sf":1685,"phase":1,"status":"Tenant Occupied"},{"addr":"22026 Lesley Grove Lane","num":"22026","fp":"Phoenix","type":"D1","bed":"4 Bed","sf":2431,"phase":2,"status":"Tenant Occupied"},{"addr":"22026 Ferguson Meadow Lane","num":"22026","fp":"Sparrow","type":"E1","bed":"2 Bed","sf":1635,"phase":1,"status":"Tenant Occupied"},{"addr":"22025 Lesley Grove Lane","num":"22025","fp":"Falcon","type":"C1","bed":"3 Bed","sf":1909,"phase":2,"status":"Tenant Occupied"},{"addr":"22023 Ferguson Meadow Lane","num":"22023","fp":"Raven","type":"F1","bed":"3 Bed","sf":1852,"phase":1,"status":"Tenant Occupied"},{"addr":"22019 Ferguson Meadow Lane","num":"22019","fp":"Sparrow","type":"E3","bed":"2 Bed","sf":1635,"phase":1,"status":"Tenant Occupied"},{"addr":"22018 Ferguson Meadow Lane","num":"22018","fp":"Mallard","type":"B2","bed":"3 Bed","sf":1685,"phase":1,"status":"Tenant Occupied"},{"addr":"22015 Ferguson Meadow Lane","num":"22015","fp":"Canary","type":"A2","bed":"2 Bed","sf":1425,"phase":1,"status":"Tenant Occupied"},{"addr":"22014 Ferguson Meadow Lane","num":"22014","fp":"Canary","type":"A1","bed":"2 Bed","sf":1425,"phase":1,"status":"Tenant Occupied"},{"addr":"22013 Lesley Grove Lane","num":"22013","fp":"Raven","type":"F1","bed":"3 Bed","sf":1852,"phase":2,"status":"Tenant Occupied"},{"addr":"22011 Ferguson Meadow Lane","num":"22011","fp":"Canary","type":"B1","bed":"2 Bed","sf":1425,"phase":1,"status":"Tenant Occupied"},{"addr":"22005 Lesley Grove Lane","num":"22005","fp":"Falcon","type":"C3","bed":"3 Bed","sf":1909,"phase":2,"status":"Tenant Occupied"},{"addr":"22002 Ferguson Meadow Lane","num":"22002","fp":"Canary","type":"A2","bed":"2 Bed","sf":1425,"phase":1,"status":"Tenant Occupied"},{"addr":"21954 Bobby Meadow Lane","num":"21954","fp":"Mallard","type":"B2","bed":"3 Bed","sf":1685,"phase":3,"status":"Tenant Occupied"},{"addr":"21950 Bobby Meadow Lane","num":"21950","fp":"Canary","type":"A1","bed":"2 Bed","sf":1425,"phase":3,"status":"Tenant Occupied"},{"addr":"21946 Bobby Meadow Lane","num":"21946","fp":"Canary","type":"A2","bed":"2 Bed","sf":1425,"phase":3,"status":"Tenant Occupied"},{"addr":"21939 Bobby Meadow Lane","num":"21939","fp":"Mallard","type":"B1","bed":"3 Bed","sf":1685,"phase":3,"status":"Tenant Occupied"},{"addr":"21938 Bobby Meadow Lane","num":"21938","fp":"Canary","type":"A2","bed":"2 Bed","sf":1425,"phase":3,"status":"Tenant Occupied"},{"addr":"21935 Bobby Meadow Lane","num":"21935","fp":"Mallard","type":"B3","bed":"3 Bed","sf":1685,"phase":3,"status":"Tenant Occupied"},{"addr":"21923 Bobby Meadow Lane","num":"21923","fp":"Sparrow","type":"E1","bed":"2 Bed","sf":1635,"phase":3,"status":"Tenant Occupied"},{"addr":"21917 Bruce Rushing Lane","num":"21917","fp":"Mallard","type":"B1","bed":"3 Bed","sf":1685,"phase":3,"status":"Tenant Occupied"},{"addr":"21915 Bobby Meadow Lane","num":"21915","fp":"Canary","type":"A1","bed":"2 Bed","sf":1425,"phase":5,"status":"Tenant Occupied"},{"addr":"21914 Ferguson Meadow Lane","num":"21914","fp":"Canary","type":"A1","bed":"2 Bed","sf":1425,"phase":6,"status":"Tenant Occupied"},{"addr":"21910 Ferguson Meadow Lane","num":"21910","fp":"Sparrow","type":"E2","bed":"2 Bed","sf":1635,"phase":6,"status":"Tenant Occupied"},{"addr":"21906 Ferguson Meadow Lane","num":"21906","fp":"Mallard","type":"B3","bed":"3 Bed","sf":1685,"phase":6,"status":"Tenant Occupied"},{"addr":"21903 Bobby Meadow Lane","num":"21903","fp":"Raven","type":"F2","bed":"3 Bed","sf":1852,"phase":5,"status":"Tenant Occupied"},{"addr":"21902 Ferguson Meadow Lane","num":"21902","fp":"Raven","type":"F1","bed":"3 Bed","sf":1852,"phase":6,"status":"Tenant Occupied"},{"addr":"21901 Bruce Rushing Lane","num":"21901","fp":"Raven","type":"F3","bed":"3 Bed","sf":1852,"phase":3,"status":"Turned"},{"addr":"21905 Bruce Rushing Lane","num":"21905","fp":"Raven","type":"F2","bed":"3 Bed","sf":1852,"phase":3,"status":"Turned"},{"addr":"21907 Bobby Meadow Lane","num":"21907","fp":"Phoenix","type":"D1","bed":"4 Bed","sf":2431,"phase":5,"status":"Turned"},{"addr":"21909 Bruce Rushing Lane","num":"21909","fp":"Canary","type":"A1","bed":"2 Bed","sf":1425,"phase":3,"status":"Turned"},{"addr":"21913 Bruce Rushing Lane","num":"21913","fp":"Canary","type":"A3","bed":"2 Bed","sf":1425,"phase":3,"status":"Turned"},{"addr":"21919 Bobby Meadow Lane","num":"21919","fp":"Canary","type":"A2","bed":"2 Bed","sf":1425,"phase":5,"status":"Turned"},{"addr":"21921 Bruce Rushing Lane","num":"21921","fp":"Raven","type":"F2","bed":"3 Bed","sf":1852,"phase":3,"status":"Turned"},{"addr":"21927 Bobby Meadow Lane","num":"21927","fp":"Mallard","type":"B3","bed":"3 Bed","sf":1685,"phase":3,"status":"Turned"},{"addr":"21931 Bobby Meadow Lane","num":"21931","fp":"Raven","type":"B2","bed":"3 Bed","sf":1852,"phase":3,"status":"Turned"},{"addr":"21942 Bobby Meadow Lane","num":"21942","fp":"Canary","type":"A3","bed":"2 Bed","sf":1425,"phase":3,"status":"Turned"},{"addr":"22001 Lesley Grove Lane","num":"22001","fp":"Phoenix","type":"D1","bed":"4 Bed","sf":2431,"phase":2,"status":"Turned"},{"addr":"22006 Ferguson Meadow Lane","num":"22006","fp":"Sparrow","type":"E3","bed":"2 Bed","sf":1635,"phase":1,"status":"Turned"},{"addr":"22009 Lesley Grove Lane","num":"22009","fp":"Falcon","type":"C2","bed":"3 Bed","sf":1909,"phase":2,"status":"Turned"},{"addr":"22010 Ferguson Meadow Lane","num":"22010","fp":"Mallard","type":"B3","bed":"3 Bed","sf":1685,"phase":1,"status":"Turned"},{"addr":"22014 Lesley Grove Lane","num":"22014","fp":"Phoenix","type":"D2","bed":"4 Bed","sf":2431,"phase":2,"status":"Turned"},{"addr":"22017 Lesley Grove Lane","num":"22017","fp":"Raven","type":"F3","bed":"3 Bed","sf":1852,"phase":2,"status":"Turned"},{"addr":"22018 Lesley Grove Lane","num":"22018","fp":"Falcon","type":"C1","bed":"3 Bed","sf":1909,"phase":2,"status":"Turned"},{"addr":"22021 Lesley Grove Lane","num":"22021","fp":"Falcon","type":"C3","bed":"3 Bed","sf":1909,"phase":2,"status":"Turned"},{"addr":"22022 Ferguson Meadow Lane","num":"22022","fp":"Raven","type":"F3","bed":"3 Bed","sf":1852,"phase":1,"status":"Turned"},{"addr":"22022 Lesley Grove Lane","num":"22022","fp":"Raven","type":"F2","bed":"3 Bed","sf":1852,"phase":2,"status":"Turned"},{"addr":"7303 Leighton Meadow Lane","num":"7303","fp":"Raven","type":"F1","bed":"3 Bed","sf":1852,"phase":4,"status":"Turned"},{"addr":"7307 Hadley Meadow Lane","num":"7307","fp":"Falcon","type":"C3","bed":"3 Bed","sf":1909,"phase":6,"status":"Turned"},{"addr":"7310 Corey Rushing Lane","num":"7310","fp":"Sparrow","type":"E2","bed":"2 Bed","sf":1635,"phase":2,"status":"Turned"},{"addr":"7311 Hadley Meadow Lane","num":"7311","fp":"Falcon","type":"C2","bed":"3 Bed","sf":1909,"phase":6,"status":"Turned"},{"addr":"7311 Leighton Meadow Lane","num":"7311","fp":"Sparrow","type":"E2","bed":"2 Bed","sf":1635,"phase":4,"status":"Turned"},{"addr":"7314 Corey Rushing Lane","num":"7314","fp":"Sparrow","type":"E3","bed":"2 Bed","sf":1635,"phase":2,"status":"Turned"},{"addr":"7314 Leighton Meadow Lane","num":"7314","fp":"Sparrow","type":"E3","bed":"2 Bed","sf":1635,"phase":4,"status":"Turned"},{"addr":"7315 Hadley Meadow Lane","num":"7315","fp":"Raven","type":"F1","bed":"3 Bed","sf":1852,"phase":6,"status":"Turned"},{"addr":"7315 Leighton Meadow Lane","num":"7315","fp":"Sparrow","type":"E1","bed":"2 Bed","sf":1635,"phase":4,"status":"Turned"},{"addr":"7318 Corey Rushing Lane","num":"7318","fp":"Falcon","type":"C1","bed":"3 Bed","sf":1909,"phase":2,"status":"Turned"},{"addr":"7318 Hadley Meadow Lane","num":"7318","fp":"Sparrow","type":"E1","bed":"2 Bed","sf":1635,"phase":6,"status":"Turned"},{"addr":"7318 Leighton Meadow Lane","num":"7318","fp":"Canary","type":"A1","bed":"2 Bed","sf":1425,"phase":4,"status":"Turned"},{"addr":"7319 Hadley Meadow Lane","num":"7319","fp":"Raven","type":"F3","bed":"3 Bed","sf":1852,"phase":6,"status":"Turned"},{"addr":"7319 Leighton Meadow Lane","num":"7319","fp":"Canary","type":"A2","bed":"2 Bed","sf":1425,"phase":4,"status":"Turned"},{"addr":"7322 Hadley Meadow Lane","num":"7322","fp":"Canary","type":"A3","bed":"2 Bed","sf":1425,"phase":6,"status":"Turned"},{"addr":"7322 Leighton Meadow Lane","num":"7322","fp":"Mallard","type":"B2","bed":"3 Bed","sf":1685,"phase":4,"status":"Turned"},{"addr":"7323 Leighton Meadow Lane","num":"7323","fp":"Sparrow","type":"E2","bed":"2 Bed","sf":1635,"phase":4,"status":"Turned"},{"addr":"7326 Hadley Meadow Lane","num":"7326","fp":"Canary","type":"A1","bed":"2 Bed","sf":1425,"phase":6,"status":"Turned"},{"addr":"7327 Hadley Meadow Lane","num":"7327","fp":"Raven","type":"F2","bed":"3 Bed","sf":1852,"phase":6,"status":"Turned"},{"addr":"7330 Hadley Meadow Lane","num":"7330","fp":"Canary","type":"A2","bed":"2 Bed","sf":1425,"phase":6,"status":"Turned"},{"addr":"7331 Hadley Meadow Lane","num":"7331","fp":"Falcon","type":"C1","bed":"3 Bed","sf":1909,"phase":6,"status":"Turned"},{"addr":"7334 Hadley Meadow Lane","num":"7334","fp":"Mallard","type":"B3","bed":"3 Bed","sf":1685,"phase":6,"status":"Turned"},{"addr":"7334 Leighton Meadow Lane","num":"7334","fp":"Canary","type":"A1","bed":"2 Bed","sf":1425,"phase":4,"status":"Turned"},{"addr":"7335 Hadley Meadow Lane","num":"7335","fp":"Falcon","type":"C2","bed":"3 Bed","sf":1909,"phase":6,"status":"Turned"},{"addr":"7339 Hadley Meadow Lane","num":"7339","fp":"Falcon","type":"C3","bed":"3 Bed","sf":1909,"phase":6,"status":"Turned"},{"addr":"7402 Hadley Meadow Lane","num":"7402","fp":"Canary","type":"A2","bed":"2 Bed","sf":1425,"phase":5,"status":"Turned"},{"addr":"7403 Leighton Meadow Lane","num":"7403","fp":"Canary","type":"A3","bed":"2 Bed","sf":1425,"phase":4,"status":"Turned"},{"addr":"7406 Hadley Meadow Lane","num":"7406","fp":"Canary","type":"A1","bed":"2 Bed","sf":1425,"phase":5,"status":"Turned"},{"addr":"7407 Hadley Meadow Lane","num":"7407","fp":"Falcon","type":"C1","bed":"3 Bed","sf":1909,"phase":5,"status":"Turned"},{"addr":"7407 Leighton Meadow Lane","num":"7407","fp":"Sparrow","type":"E1","bed":"2 Bed","sf":1635,"phase":4,"status":"Turned"},{"addr":"7410 Hadley Meadow Lane","num":"7410","fp":"Canary","type":"A3","bed":"2 Bed","sf":1425,"phase":5,"status":"Turned"},{"addr":"7411 Leighton Meadow Lane","num":"7411","fp":"Raven","type":"F3","bed":"3 Bed","sf":1852,"phase":4,"status":"Turned"},{"addr":"7414 Hadley Meadow Lane","num":"7414","fp":"Canary","type":"A2","bed":"2 Bed","sf":1425,"phase":5,"status":"Turned"},{"addr":"7415 Leighton Meadow Lane","num":"7415","fp":"Falcon","type":"C1","bed":"3 Bed","sf":1909,"phase":4,"status":"Turned"},{"addr":"7418 Hadley Meadow Lane","num":"7418","fp":"Sparrow","type":"E3","bed":"2 Bed","sf":1635,"phase":5,"status":"Turned"},{"addr":"7422 Hadley Meadow Lane","num":"7422","fp":"Sparrow","type":"E2","bed":"2 Bed","sf":1635,"phase":5,"status":"Tenant Occupied"},{"addr":"7423 Hadley Meadow Lane","num":"7423","fp":"Falcon","type":"C2","bed":"3 Bed","sf":1909,"phase":5,"status":"Turned"},{"addr":"7423 Leighton Meadow Lane","num":"7423","fp":"Raven","type":"F2","bed":"3 Bed","sf":1852,"phase":3,"status":"Turned"},{"addr":"7427 Hadley Meadow Lane","num":"7427","fp":"Falcon","type":"C3","bed":"3 Bed","sf":1909,"phase":5,"status":"Turned"},{"addr":"7427 Leighton Meadow Lane","num":"7427","fp":"Sparrow","type":"E3","bed":"2 Bed","sf":1635,"phase":3,"status":"Turned"}];
@@ -4146,6 +4186,7 @@ renderUnits('all');
     });
 
     const units = [];
+    const TODAY = new Date().toISOString().slice(0, 10);
     for (let r = hdrRow + 1; r < aoa.length; r++) {
       const row = aoa[r];
       const addr = String(row[iAddr] || '').trim();
@@ -4157,6 +4198,24 @@ renderUnits('all');
       if (tenantRaw === 0 || tenantRaw === '0') tenantRaw = null;
       const tenant = tenantRaw == null ? null : String(tenantRaw).trim() || null;
 
+      const leaseEx = iLeaseEx >= 0 ? toIsoDate(row[iLeaseEx]) : null;
+      const moveIn  = iMoveIn  >= 0 ? toIsoDate(row[iMoveIn])  : null;
+      const moveOut = iMoveOut >= 0 ? toIsoDate(row[iMoveOut]) : null;
+
+      // Derive the display status from the lease lifecycle, not the raw
+      // Status text. The Data Table Status column has no "Leased" value, so
+      // a pre-leased unit (lease executed, not yet moved in) would otherwise
+      // render as available on the site map. Priority: moved out → Turned;
+      // moved in → Occupied; lease executed → Leased; else the raw status.
+      // Renewal / Model are lifecycle-independent, so they pass through.
+      const rawStatus = normalizeUnitStatus(row[iSt]);
+      let status = rawStatus;
+      if (rawStatus !== 'Renewal' && rawStatus !== 'Model') {
+        if (moveOut && moveOut <= TODAY)    status = 'Turned';
+        else if (moveIn && moveIn <= TODAY) status = 'Tenant Occupied';
+        else if (leaseEx)                   status = 'Leased';
+      }
+
       units.push({
         addr,
         num:    iNum  >= 0 ? String(row[iNum]  || '').trim() : '',
@@ -4165,12 +4224,12 @@ renderUnits('all');
         bed:    iBed  >= 0 ? String(row[iBed]  || '').trim() : '',
         sf:     iSf   >= 0 ? num(row[iSf])   : null,
         phase:  iPh   >= 0 ? num(row[iPh])   : null,
-        status: normalizeUnitStatus(row[iSt]),
+        status,
         // Resident / lease metadata — surfaced in the Site Map popover.
         tenant_name:         tenant,
-        lease_executed_date: iLeaseEx >= 0 ? toIsoDate(row[iLeaseEx]) : null,
-        move_in_date:        iMoveIn  >= 0 ? toIsoDate(row[iMoveIn])  : null,
-        move_out_date:       iMoveOut >= 0 ? toIsoDate(row[iMoveOut]) : null,
+        lease_executed_date: leaseEx,
+        move_in_date:        moveIn,
+        move_out_date:       moveOut,
       });
     }
 
@@ -4341,6 +4400,19 @@ renderUnits('all');
       return out;
     }
 
+    // Income/expense composition drives the donut. Capture the annual total
+    // (sum of the 12 monthly values, abs) for each category the FIRST time we
+    // see it — i.e. in the BUDGET section, before the forecast block.
+    const comp = {};
+    const compMap = [
+      ['netRental', /net rental income/],
+      ['utility',   /utility income/],
+      ['other',     /other income/],
+      ['opex',      /operating expenses/],
+      ['fixed',     /fixed expenses/],
+    ];
+    const sumAbs = (row) => rowNumbers(row, 12).reduce((a, b) => a + Math.abs(b), 0);
+
     let budget = [], forecast = [];
     let sectionIsForecast = false;
     for (let r = 0; r < aoa.length; r++) {
@@ -4348,6 +4420,12 @@ renderUnits('all');
       const label = String(row[0] || row[1] || '').toLowerCase().trim();
       if (!label) continue;
       if (label.includes('forecast')) sectionIsForecast = true;
+      // Composition — budget section only, first hit per category.
+      if (!sectionIsForecast) {
+        for (const [key, re] of compMap) {
+          if (comp[key] == null && re.test(label)) { comp[key] = sumAbs(row); break; }
+        }
+      }
       // Match "NOI" or "NOI/Cash Flow" — but NOT "noi/cash flow" sub-headers
       // that already include digits (those are the same row, fine).
       const isNoi = /^noi\b/.test(label) || label.includes('noi/cash');
@@ -4356,12 +4434,17 @@ renderUnits('all');
       if (nums.length < 6) continue; // need real monthly data
       if (!sectionIsForecast && !budget.length) budget = nums;
       else if (sectionIsForecast && !forecast.length) forecast = nums;
-      if (budget.length && forecast.length) break;
+      // Don't break early — keep scanning so composition rows below the
+      // budget NOI line are still captured.
     }
 
     if (!budget.length && !forecast.length) return { count: 0, sheets: 0 };
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    stage('noi', { months, budget, forecast });
+    const composition = Object.keys(comp).length ? comp : null;
+    const noi = { months, budget, forecast, composition };
+    stage('noi', noi);
+    // Re-render the live Operational Performance charts immediately.
+    if (typeof window.LH_applyNOI === 'function') window.LH_applyNOI(noi);
     return { count: budget.length + forecast.length, sheets: 1 };
   }
 
