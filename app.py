@@ -1247,6 +1247,14 @@ def _vd_jsonb_post(table, require_units=False):
 # and read internally by /api/verticals/snapshot.
 for _path, _table in [
     ("/api/verticals/psr",          "vd_psr_data"),
+    # Per-tab GET/POST the ported LightHaven dashboard expects. GET lets a
+    # fresh browser hydrate each tab from the server; the normal write path
+    # is still the single /api/verticals/upload. Thin wrappers over the same
+    # vd_*_data tables the upload already populates.
+    ("/api/verticals/noi",          "vd_noi_data"),
+    ("/api/verticals/rents",        "vd_rents_data"),
+    ("/api/verticals/leasing-pace", "vd_leasing_pace_data"),
+    ("/api/verticals/traffic",      "vd_traffic_data"),
 ]:
     # Bind table name in default arg to avoid late-binding closure bug.
     def _vd_get(table=_table): return _vd_jsonb_get(table)
