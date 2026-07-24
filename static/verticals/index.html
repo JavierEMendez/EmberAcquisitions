@@ -3674,6 +3674,22 @@ renderUnits('all');
 
     var leased  = leasedCount;
     var occ     = occCount;
+
+    // Authoritative override — when the "I. LeaseUp Template" tab carries the
+    // leasing team's own computed KPI band (Total Leases / Current Occupancy),
+    // show those exact figures instead of the date-derived approximation,
+    // which uses a stricter definition and reads a few units low. Staged by
+    // importLeaseUpSummary on upload; percentages are recomputed from the
+    // counts so they stay internally consistent with the tiles.
+    try {
+      var _sum = (JSON.parse(localStorage.getItem('lh_ie_staged_v1') || '{}') || {}).leaseSummary;
+      if (_sum) {
+        if (typeof _sum.totalUnits === 'number' && _sum.totalUnits > 0) total = _sum.totalUnits;
+        if (_sum.leases     && _sum.leases.count     != null) leased = _sum.leases.count;
+        if (_sum.currentOcc && _sum.currentOcc.count != null) occ    = _sum.currentOcc.count;
+      }
+    } catch (_) {}
+
     // Leased Not Occupied = leased - occupied (a derived cell; non-negative)
     var lno     = Math.max(0, leased - occ);
     // Available = everything not leased
@@ -4436,6 +4452,57 @@ renderUnits('all');
   }
 
   // ─────────────────────────────────────────────────────────────
+  // 6) LEASE-UP SUMMARY — the authoritative Total Leases / Current
+  //    Occupancy / Ending Occupancy figures the leasing team reports,
+  //    read straight from the "I. LeaseUp Template" tab's KPI band.
+  //    The dashboard otherwise re-derives these from unit dates, which
+  //    uses a stricter definition and reads a few units low; these are
+  //    the numbers that match the source workbook exactly.
+  // ─────────────────────────────────────────────────────────────
+  function importLeaseUpSummary(wb) {
+    const ws = findSheet(wb, ['I. LeaseUp Template','LeaseUp Template','I. Lease Up','Lease Up']);
+    if (!ws) return { count: 0, sheets: 0 };
+    const aoa = sheetToAoa(ws);
+    if (!aoa.length) return { count: 0, sheets: 0 };
+    const norm  = (v) => String(v == null ? '' : v).toLowerCase().replace(/\s+/g, ' ').trim();
+    const isNum = (v) => typeof v === 'number' && !isNaN(v);
+
+    // Total Units — first number to the right of the "Total Units" label.
+    let totalUnits = null;
+    for (const row of aoa) {
+      const i = row.findIndex(c => norm(c) === 'total units');
+      if (i >= 0) {
+        for (let j = i + 1; j < row.length; j++) { if (isNum(row[j])) { totalUnits = row[j]; break; } }
+        break;
+      }
+    }
+    // KPI band: a label row (Total Leases / Current Occupancy / Ending
+    // Occupancy) with the counts two rows above and the %s one row below.
+    let lr = -1;
+    for (let i = 0; i < aoa.length; i++) {
+      if (aoa[i].some(c => norm(c).includes('total leases'))) { lr = i; break; }
+    }
+    const summary = { totalUnits };
+    if (lr >= 2) {
+      const labels = aoa[lr], counts = aoa[lr - 2] || [], pcts = aoa[lr + 1] || [];
+      const pull = (c) => ({
+        count: isNum(counts[c]) ? Math.round(counts[c]) : null,
+        pct:   isNum(pcts[c])   ? +(pcts[c] * 100).toFixed(1) : null,
+      });
+      for (let c = 0; c < labels.length; c++) {
+        const l = norm(labels[c]);
+        if (!l) continue;
+        if (l.includes('total leases'))                          summary.leases     = pull(c);
+        else if (l.includes('current occ'))                      summary.currentOcc = pull(c);
+        else if (l.includes('ending occ') && !summary.endingOcc) summary.endingOcc  = pull(c);
+      }
+    }
+    if (totalUnits == null && !summary.leases && !summary.currentOcc) return { count: 0, sheets: 0 };
+    stage('leaseSummary', summary);
+    return { count: 1, sheets: 1 };
+  }
+
+  // ─────────────────────────────────────────────────────────────
   // ALL-IN-ONE — every tab from the master xlsx in a single pass.
   // ─────────────────────────────────────────────────────────────
   function importAll(wb) {
@@ -4455,6 +4522,7 @@ renderUnits('all');
     safe(importTrafficMaster,       'Weekly Traffic');
     safe(importRentsMaster,         'Rents');
     safe(importLeasingPaceMaster,   'Leasing Pace');
+    safe(importLeaseUpSummary,      'I. LeaseUp Template');
 
     if (totals.sheets === 0) {
       throw new Error(totals.errors.join(' · ') || 'No recognized sheets found in workbook');
