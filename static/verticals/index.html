@@ -4353,35 +4353,47 @@ renderUnits('all');
   // 4) RENTS — per-floorplan averages from the master "Rents" sheet.
   // ─────────────────────────────────────────────────────────────
   function importRentsMaster(wb) {
-    const ws = findSheet(wb, ['Rents','Rent']);
+    // Derive per-floorplan rent stats from the actual unit roster (the Data
+    // Table "Average Rent" column) rather than the standalone "Rents" sheet.
+    // That sheet has no clean avg/min/max columns (it's a wide pricing model
+    // with "Market Rents", "Avg Eff Rent", etc.), so the old header lookup
+    // produced blank/wrong rents. The per-unit rent on Data Table is the
+    // authoritative figure and always lines up with the roster.
+    const ws = findSheet(wb, ['Data Table','Units','Leasing']);
     if (!ws) return { count: 0, sheets: 0 };
     const aoa = sheetToAoa(ws);
     if (!aoa.length) return { count: 0, sheets: 0 };
 
-    // Find the header row containing "floorplan"
     let hdrRow = -1;
-    for (let i = 0; i < aoa.length; i++) {
-      if (aoa[i].some(c => String(c||'').toLowerCase().includes('floorplan'))) { hdrRow = i; break; }
+    for (let i = 0; i < Math.min(8, aoa.length); i++) {
+      if (aoa[i].some(c => String(c||'').toLowerCase().trim() === 'address')) { hdrRow = i; break; }
     }
     if (hdrRow < 0) return { count: 0, sheets: 0 };
-
     const h = aoa[hdrRow];
-    const iFp  = headerIndex(h, 'floorplan');
-    const iAvg = headerIndex(h, 'avg');
-    const iMin = headerIndex(h, 'min');
-    const iMax = headerIndex(h, 'max');
-    if (iFp < 0) return { count: 0, sheets: 0 };
+    const iFp   = headerIndex(h, 'floorplan');
+    const iRent = headerIndex(h, 'average', 'rent');
+    if (iFp < 0 || iRent < 0) return { count: 0, sheets: 0 };
 
-    const byFp = {};
+    const acc = {};
     for (let r = hdrRow + 1; r < aoa.length; r++) {
       const fp = String(aoa[r][iFp] || '').trim();
-      if (!fp) continue;
-      byFp[fp] = {
-        avg: iAvg >= 0 ? num(aoa[r][iAvg]) : null,
-        min: iMin >= 0 ? num(aoa[r][iMin]) : null,
-        max: iMax >= 0 ? num(aoa[r][iMax]) : null,
-      };
+      const rent = num(aoa[r][iRent]);
+      if (!fp || !(rent > 0)) continue;
+      const b = acc[fp] || (acc[fp] = { sum: 0, n: 0, min: Infinity, max: 0 });
+      b.sum += rent; b.n += 1;
+      if (rent < b.min) b.min = rent;
+      if (rent > b.max) b.max = rent;
     }
+    const byFp = {};
+    Object.keys(acc).forEach(fp => {
+      const b = acc[fp];
+      byFp[fp] = {
+        avg:   Math.round(b.sum / b.n),
+        min:   b.min === Infinity ? null : b.min,
+        max:   b.max || null,
+        units: b.n,
+      };
+    });
     const count = Object.keys(byFp).length;
     if (!count) return { count: 0, sheets: 0 };
     stage('rents', { byFloorplan: byFp });
@@ -4397,19 +4409,28 @@ renderUnits('all');
     const aoa = sheetToAoa(ws);
     if (!aoa.length) return { count: 0, sheets: 0 };
 
-    let months = [], budget = [], actual = [];
-    aoa.forEach(row => {
-      const label = String(row[0]||'').toLowerCase().trim();
-      if (!label) return;
-      if (label.includes('month') && !months.length) {
-        months = row.slice(1).filter(v => v !== '' && v !== null && v !== undefined).map(v => String(v).trim());
-      } else if (label.includes('budget') && !budget.length) {
-        budget = row.slice(1).filter(v => typeof v === 'number');
-      } else if (label.includes('actual') && !actual.length) {
-        actual = row.slice(1).filter(v => typeof v === 'number');
-      }
-    });
-    if (!months.length && !budget.length && !actual.length) return { count: 0, sheets: 0 };
+    // The master's Leasing Pace tab keeps its row labels in column B (column
+    // A is blank) and lays the year out as two blocks: an actual "Occupancy"
+    // block with an "Ending Occupied" row, and a "2026 Budget" block with an
+    // "Ending Occ" row — months spread across the remaining columns as dates.
+    // The old parser only looked at column A for 'month'/'budget'/'actual',
+    // so it imported nothing and the chart stayed on seed data.
+    const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const labelOf = (row) =>
+      String((row[0] != null && row[0] !== '') ? row[0] : (row[1] || '')).toLowerCase().trim();
+
+    let budget = [], actual = [];
+    for (const row of aoa) {
+      const lab = labelOf(row);
+      if (!lab) continue;
+      const nums = row.filter(v => typeof v === 'number').slice(0, 12);
+      if (lab.includes('ending occupied') && !actual.length) actual = nums;   // actual block
+      else if (lab === 'ending occ' && !budget.length)       budget = nums;   // budget block
+    }
+    if (!budget.length && !actual.length) return { count: 0, sheets: 0 };
+    // Calendar-year layout (Jan→Dec); label from the fixed month names to
+    // avoid timezone drift on the date header cells.
+    const months = MON.slice(0, Math.max(budget.length, actual.length) || 12);
     stage('leasingPace', { months, budget, actual });
     return { count: months.length + budget.length + actual.length, sheets: 1 };
   }
