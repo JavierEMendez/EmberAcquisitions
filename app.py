@@ -1160,6 +1160,15 @@ def _vd_normalize_status(s):
 def _vd_pct(n, d):
     return round((n / d) * 1000) / 10 if d else 0
 
+def _vd_psr_has_content(p):
+    """True if a parsed PSR blob carries real data. Used to refuse an
+    empty/mis-parsed PSR upload before it overwrites the last good one."""
+    if not isinstance(p, dict):
+        return False
+    info   = p.get("info")   if isinstance(p.get("info"), dict)   else {}
+    budget = p.get("budget") if isinstance(p.get("budget"), dict) else {}
+    return bool(info.get("projectName") or budget.get("lines") or p.get("metrics"))
+
 # ── UNITS ────────────────────────────────────────────────────────────
 @app.route("/api/verticals/units", methods=["GET"])
 @login_required
@@ -1199,7 +1208,7 @@ def _vd_jsonb_get(table):
         return jsonify({"hasData": False, "vertical": v})
     return jsonify({"hasData": True, "vertical": v, **dict(row)})
 
-def _vd_jsonb_post(table):
+def _vd_jsonb_post(table, require_units=False):
     v = _vd_vertical()
     if not v:
         return jsonify({"error": "Unknown vertical"}), 400
@@ -1207,6 +1216,13 @@ def _vd_jsonb_post(table):
     data = body.get("data")
     if not isinstance(data, dict):
         return jsonify({"error": "Missing data object"}), 400
+    # Guard against a half-parsed upload wiping the last good snapshot.
+    # This blob is stored DELETE-then-INSERT, so an empty payload used to
+    # clear the table with nothing to put back. Mirrors the LightHaven
+    # upload guard (vd_post_upload) added after the same class of bug.
+    if require_units and not (isinstance(data.get("units"), list) and data["units"]):
+        return jsonify({"error": "Refusing to overwrite: upload had no units "
+                        "(the parse likely failed). Existing data was kept."}), 400
     updated_by = body.get("updatedBy") or session.get("username") or "anonymous"
     conn = get_db(); cur = conn.cursor()
     try:
@@ -1254,7 +1270,8 @@ def vd_get_hawthorne():
 def vd_post_hawthorne():
     # Mirrors the Node app's quirk: any logged-in user can update the
     # Hawthorne master xlsx blob — the in-browser UI is what writes.
-    return _vd_jsonb_post("vd_hawthorne_data")
+    # require_units=True so a mis-parsed workbook can't wipe the roster.
+    return _vd_jsonb_post("vd_hawthorne_data", require_units=True)
 
 # ── PSR raw xlsx round-trip ──
 # Node app wrote raw bytes to public/tgp_psr_template.xlsx so the next
@@ -1489,6 +1506,12 @@ def vd_post_upload():
         for tbl, payload in jsonb_puts:
             if payload is None:
                 continue
+            # A PSR workbook always parses to a fully-formed blob (cells just
+            # come back null/'') even when the wrong sheet was picked, so it
+            # sails past the `is None` check and would DELETE-then-INSERT an
+            # empty PSR over the last good one. Require real content first.
+            if tbl == "vd_psr_data" and not _vd_psr_has_content(payload):
+                continue
             cur.execute(f"DELETE FROM {tbl} WHERE vertical = %s", (v,))
             cur.execute(
                 f"INSERT INTO {tbl} (vertical, data, updated_by) VALUES (%s, %s, %s)",
@@ -1716,12 +1739,14 @@ def _vd_hawthorne_snapshot():
 
     total = closed = avail = snc = 0
     closed_dollar = 0
+    closed_sf = 0
     closed_price_sum = 0; closed_price_n = 0
     for u in units:
         total += 1
         c = categorize(u); d = unit_dollar(u, c)
         if c == "closed":
             closed += 1; closed_dollar += d
+            closed_sf += u.get("sqft") or u.get("sf") or 0
             cp = u.get("purchasePrice") or u.get("listPrice") or 0
             if cp > 0:
                 closed_price_sum += cp; closed_price_n += 1
@@ -1756,16 +1781,33 @@ def _vd_hawthorne_snapshot():
     stacking = []
     for lvl in sorted(floor_map.keys(), reverse=True):
         units_on_floor = sorted(floor_map[lvl], key=lambda u: str(u.get("title") or ""))
-        stacking.append([categorize(u) for u in units_on_floor])
+        # Carry the real floor level so the report labels floors correctly.
+        # (The renderer used to assume a 5-floor low-rise: "Floor 4-fi".)
+        stacking.append({"level": lvl, "cells": [categorize(u) for u in units_on_floor]})
 
     months, month_keys = [], []
     try:
         as_of_d = datetime.date.fromisoformat(as_of_date)
     except Exception:
         as_of_d = datetime.date.today()
+    # End the 12-month window at the furthest future SNC closing rather than
+    # at as_of. SNC units close *after* as_of by definition, so a window that
+    # stopped at as_of dropped every SNC bucket (the chart's orange series was
+    # always zero). Slide the window forward to capture them.
+    window_end = as_of_d
+    for u in units:
+        if u.get("status") == "SOLD" and u.get("closingDate"):
+            cd = str(u["closingDate"])[:10]
+            if cd > as_of_date:
+                try:
+                    cdd = datetime.date.fromisoformat(cd).replace(day=1)
+                    if cdd > window_end:
+                        window_end = cdd
+                except Exception:
+                    pass
     for i in range(11, -1, -1):
-        m = as_of_d.month - i
-        y = as_of_d.year + (m - 1) // 12
+        m = window_end.month - i
+        y = window_end.year + (m - 1) // 12
         mm = ((m - 1) % 12) + 1
         months.append(datetime.date(y, mm, 1).strftime("%b"))
         month_keys.append(f"{y:04d}-{mm:02d}")
@@ -1809,19 +1851,23 @@ def _vd_hawthorne_snapshot():
     ], key=lambda x: x["fp"])
 
     bg = bp.get("budget") or {}; pf = bp.get("proforma") or {}
+    # `unit` tells the renderer how to format each row: "$M" for millions,
+    # "$" for a raw dollar figure. Revenue per SF is a ~$900 quantity, not a
+    # $-millions one — it used to be divided by 1e3 (nonsense) with a
+    # hardcoded $0 actual; now it's computed from realized closed $ / SF.
     proforma = [
-        {"line": "Gross Sales Revenue",
+        {"line": "Gross Sales Revenue", "unit": "$M",
          "budget":   bg.get("totalSales", 0) / 1e6,
          "actual":   closed_dollar / 1e6,
          "forecast": (pf.get("totalSales") or bg.get("totalSales", 0)) / 1e6},
-        {"line": "Avg Revenue / Unit",
-         "budget":   bg.get("revenuePerUnit", 0) / 1e6,
-         "actual":   ((closed_price_sum / closed_price_n) if closed_price_n else 0) / 1e6,
-         "forecast": pf.get("revenuePerUnit", 0) / 1e6},
-        {"line": "Revenue per SF",
-         "budget":   bg.get("revenuePerSF", 0) / 1e3,
-         "actual":   0,
-         "forecast": pf.get("revenuePerSF", 0) / 1e3},
+        {"line": "Avg Revenue / Unit", "unit": "$",
+         "budget":   bg.get("revenuePerUnit", 0),
+         "actual":   round(closed_price_sum / closed_price_n) if closed_price_n else 0,
+         "forecast": pf.get("revenuePerUnit", 0)},
+        {"line": "Revenue per SF", "unit": "$",
+         "budget":   bg.get("revenuePerSF", 0),
+         "actual":   round(closed_dollar / closed_sf) if closed_sf else 0,
+         "forecast": pf.get("revenuePerSF", 0)},
     ]
 
     comments = _vd_fetch_comments_map("hawthorne")

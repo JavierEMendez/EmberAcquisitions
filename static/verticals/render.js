@@ -569,10 +569,17 @@
                 </div>
               </div>
               <div class="stacking" style="height:170px;">
-                ${d.stacking.map((floor, fi) => `
-                  <div class="floor" style="grid-template-columns:repeat(${floor.length}, 1fr);">
-                    ${floor.map((u, ui) => `<div class="unit s-${u}" title="Floor ${4 - fi}">${4 - fi}-${(ui + 1).toString().padStart(2,'0')}</div>`).join('')}
-                  </div>`).join('')}
+                ${d.stacking.map((floor, fi) => {
+                  // Snapshot now sends {level, cells}; tolerate the legacy
+                  // array shape (and derive a descending floor number) so a
+                  // stale cached payload still renders.
+                  const cells = Array.isArray(floor) ? floor : (floor.cells || []);
+                  const level = Array.isArray(floor) ? (d.stacking.length - fi) : floor.level;
+                  return `
+                  <div class="floor" style="grid-template-columns:repeat(${cells.length}, 1fr);">
+                    ${cells.map((u, ui) => `<div class="unit s-${u}" title="Floor ${level}">${level}-${(ui + 1).toString().padStart(2,'0')}</div>`).join('')}
+                  </div>`;
+                }).join('')}
               </div>
             </div>
           </div>
@@ -651,12 +658,17 @@
                 ${d.proforma.map(p => {
                   const variance = p.forecast - p.budget;
                   const isFav = (p.line.toLowerCase().includes('revenue') || p.line.toLowerCase().includes('proceeds')) ? variance >= 0 : variance <= 0;
+                  // Rows carry a unit: '$M' (millions) or '$' (raw dollars, e.g.
+                  // revenue per SF). Legacy/mock rows omit it → default '$M'.
+                  const unit = p.unit || '$M';
+                  const fmtV   = (x) => unit === '$M' ? ('$' + x.toFixed(2) + 'M') : fmtUsd0(x);
+                  const fmtVar = (x) => (x >= 0 ? '+' : '−') + (unit === '$M' ? ('$' + Math.abs(x).toFixed(2) + 'M') : fmtUsd0(Math.abs(x)));
                   return `<tr>
                     <td>${escapeHtml(p.line)}</td>
-                    <td class="num">$${p.budget.toFixed(2)}M</td>
-                    <td class="num">$${p.actual.toFixed(2)}M</td>
-                    <td class="num">$${p.forecast.toFixed(2)}M</td>
-                    <td class="num"><span style="color:${isFav ? '#1F7A4D' : '#C0311A'};font-weight:700;">${variance >= 0 ? '+' : ''}$${variance.toFixed(2)}M</span></td>
+                    <td class="num">${fmtV(p.budget)}</td>
+                    <td class="num">${fmtV(p.actual)}</td>
+                    <td class="num">${fmtV(p.forecast)}</td>
+                    <td class="num"><span style="color:${isFav ? '#1F7A4D' : '#C0311A'};font-weight:700;">${fmtVar(variance)}</span></td>
                   </tr>`;
                 }).join('')}
               </tbody>

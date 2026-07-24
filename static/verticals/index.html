@@ -6629,6 +6629,9 @@ renderUnits('all');
     if (!f) return;
     try {
       const next = await readMasterXLSX(f);
+      if (!next.units || !next.units.length) {
+        throw new Error('No units found in the workbook — check the Units tab. Existing data was kept.');
+      }
       UNITS = next.units;
       BP    = next.bp;
       // Stamp the report date with this upload's timestamp so the "Report as of"
@@ -7812,6 +7815,19 @@ renderUnits('all');
       const buf = await f.arrayBuffer();
       const wb = XLSX.read(buf, { type:'array', cellDates:true });
       const parsed = parsePSRWorkbook(wb);
+      // parsePSRWorkbook always returns a fully-formed object (it falls back
+      // to the first sheet), so a wrong/blank workbook parses "successfully"
+      // as empty cells. Validate real content before we overwrite the view
+      // or push to the server — otherwise a stray file wipes the last PSR.
+      const hasContent = parsed && (
+        (parsed.info && parsed.info.projectName) ||
+        (parsed.budget && Array.isArray(parsed.budget.lines) && parsed.budget.lines.length) ||
+        parsed.metrics
+      );
+      if (!hasContent) {
+        setStatus('✗ No PSR data found in ' + f.name + ' — check the sheet/layout. Nothing was changed.', 'err');
+        return;
+      }
       TGP_STATE = parsed;
       renderAll();
 
@@ -7827,15 +7843,20 @@ renderUnits('all');
         pushPSRtoServer(parsed, f.name),
         pushPSRRawBytesToServer(f),
       ]);
+      // The raw-bytes archive endpoint is admin-only; a non-admin uploader
+      // saves the parsed data fine but can't refresh the downloadable xlsx,
+      // which surfaces as http-403 here (the old 'no-key' branch was dead
+      // Node-era code that hid this).
       const rawNote = pushRaw.success ? ' · raw xlsx archived for download'
-                    : pushRaw.reason === 'no-key' ? ''
-                    : ' · raw archive failed (' + pushRaw.reason + ')';
+                    : (pushRaw.reason === 'http-403')
+                        ? ' · (download template not refreshed — needs admin)'
+                        : ' · raw archive failed (' + pushRaw.reason + ')';
       if (push.success && !push.offline) {
         setStatus('✓ Imported ' + f.name + ' · saved to server' + rawNote, 'ok');
       } else if (push.offline) {
         setStatus('✓ Parsed ' + f.name + ' · preview mode (no server)', 'ok');
-      } else if (push.reason === 'no-key') {
-        setStatus('✓ Parsed ' + f.name + ' locally · unlock with the Edit Comments key to save to server', 'ok');
+      } else if (push.reason === 'http-403') {
+        setStatus('✗ Parsed locally but you lack permission to save (needs upload access).', 'err');
       } else {
         setStatus('Parsed locally but server save failed (' + push.reason + ')', 'err');
       }
