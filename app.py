@@ -27,6 +27,7 @@ from waller_parser import parse_waller_monthly
 from hpermits_parser import parse_hpermits
 from uw_parser import parse_uw
 from ember_budget_parser import parse_ember_budget
+from unit_economics_parser import parse_unit_economics, blend_blocks, sum_units
 import sage_intacct
 from frp_mapping import roll_up_balance_sheet, summarize_bs
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -305,6 +306,25 @@ def init_db():
         CREATE INDEX IF NOT EXISTS invoice_periods_period_start_idx
             ON invoice_periods (period_start DESC);
 
+        -- ── Unit Economics ──────────────────────────────────────────
+        -- One row per (community, entity) holding the parsed "Unit
+        -- Economics" tab of that entity's pro-forma model. A community
+        -- (Grand Prairie / Dennison / Windrose) can span several entity
+        -- models whose sections blend into shared phases, so re-uploads
+        -- replace only their own entity's row (UPSERT on the unique key).
+        CREATE TABLE IF NOT EXISTS ue_models (
+            id SERIAL PRIMARY KEY,
+            community TEXT NOT NULL,
+            entity_name TEXT NOT NULL,
+            data JSONB NOT NULL,
+            source_filename TEXT,
+            actuals_date TEXT,
+            uploaded_by INTEGER REFERENCES users(id),
+            uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (community, entity_name)
+        );
+        CREATE INDEX IF NOT EXISTS ue_models_community_idx ON ue_models(community);
+
         -- ── Financial Statements (Sage Intacct cache) ──────────────
         -- Caches the parsed trial balance per (entity, period) so the
         -- /financials dashboard renders without re-hitting Sage on
@@ -381,6 +401,13 @@ def init_db():
     # `bva` gates the Budget vs Actuals dashboard (dev-team financial data).
     # Defaults FALSE; admins always pass and grant it to the dev team per user.
     cur.execute("UPDATE users SET page_access = page_access || '{\"bva\": false}'::jsonb WHERE page_access->>'bva' IS NULL")
+    # `unit_economics` gates the Unit Economics dashboard (pro-forma section
+    # margins — money data). Same convention as `budget`: admins start
+    # visible, everyone else starts hidden and is granted per user.
+    cur.execute("UPDATE users SET page_access = page_access || '{\"unit_economics\": true}'::jsonb "
+                "WHERE page_access->>'unit_economics' IS NULL AND is_admin = true")
+    cur.execute("UPDATE users SET page_access = page_access || '{\"unit_economics\": false}'::jsonb "
+                "WHERE page_access->>'unit_economics' IS NULL AND (is_admin = false OR is_admin IS NULL)")
     # Owner account is a full admin (manage users, all dashboards, Sage tools).
     cur.execute("UPDATE users SET is_admin = TRUE WHERE username = %s", ("carlossaldierna",))
 
@@ -2822,6 +2849,231 @@ def bva_page():
     if not session.get("is_admin") and not pa.get("bva", False):
         return redirect(url_for("home"))
     return render_template("bva.html",
+                           username=session.get("username"),
+                           is_admin=session.get("is_admin", False),
+                           page_access=pa)
+
+
+# ─── UNIT ECONOMICS ──────────────────────────────────────────────────────────
+# Per-section profitability from the "Unit Economics" tab of each entity's
+# pro-forma model, viewable at four levels: section, phase, entity, community.
+# A community can span several entity models; sections carry their own phase
+# tag, so phases blend sections across entities. Section counts and phase
+# assignments are dynamic — everything above section level is recomputed here
+# rather than read from the workbook (verified to match the model's own
+# rollups exactly).
+
+# The master-planned communities we hold models for (key → display name).
+_UE_COMMUNITIES = [
+    ("GPD",      "Grand Prairie Development"),
+    ("Dennison", "Dennison"),
+    ("WRG",      "Windrose"),
+]
+
+
+def _ue_can_view() -> bool:
+    """View gate: admins always; else page_access.unit_economics."""
+    if session.get("is_admin"):
+        return True
+    return bool(_refresh_page_access_from_db().get("unit_economics", False))
+
+
+def _ue_phase_sort_key(phase: str):
+    m = re.search(r"(\d+)", phase or "")
+    return (int(m.group(1)) if m else 999, phase or "")
+
+
+def _ue_load_community(cur, community: str) -> list:
+    cur.execute("SELECT entity_name, data, source_filename, actuals_date, uploaded_at "
+                "FROM ue_models WHERE community = %s ORDER BY entity_name", (community,))
+    return cur.fetchall()
+
+
+def _ue_build_community(rows: list) -> dict:
+    """Assemble the four levels for one community from its stored entity rows."""
+    entities = []
+    all_sections = []            # section dicts tagged with their entity name
+    entity_rollups = []          # one blended-or-parsed block per entity
+    total_units = {"front_feet": 0, "acreage": 0, "lots": 0}
+    for row in rows:
+        d = row["data"] or {}
+        secs = d.get("sections") or []
+        for s in secs:
+            all_sections.append(dict(s, entity=row["entity_name"]))
+        units = d.get("entity_units") or sum_units([s.get("info") or {} for s in secs])
+        # Entity level: the model's own rollup (it carries to-date history
+        # from closed-out sections); fall back to a blend of its sections.
+        rollup = d.get("entity_rollup") or blend_blocks(
+            [s.get("rows") or [] for s in secs],
+            sum_units([s.get("info") or {} for s in secs]))
+        entity_rollups.append((rollup, units))
+        for k in total_units:
+            total_units[k] += units.get(k) or 0
+        entities.append({
+            "name": row["entity_name"],
+            "actuals_date": row["actuals_date"] or d.get("actuals_date") or "",
+            "uploaded_at": row["uploaded_at"].isoformat() if row["uploaded_at"] else "",
+            "source_filename": row["source_filename"] or "",
+            "units": units,
+            "rows": rollup,
+            "section_count": len(secs),
+        })
+    # Phase level: blend sections sharing a phase tag, across all entities.
+    phases = []
+    for phase in sorted({s.get("phase") or "" for s in all_sections if s.get("phase")},
+                        key=_ue_phase_sort_key):
+        members = [s for s in all_sections if s.get("phase") == phase]
+        units = sum_units([s.get("info") or {} for s in members])
+        phases.append({
+            "phase": phase,
+            "units": units,
+            "rows": blend_blocks([s.get("rows") or [] for s in members], units),
+            "sections": [{"entity": s["entity"], "key": s["key"]} for s in members],
+        })
+    community_block = {
+        "units": total_units,
+        "rows": blend_blocks([r for r, _u in entity_rollups], total_units) if entity_rollups else [],
+    }
+    sections_out = [{
+        "entity": s["entity"], "key": s["key"], "number": s.get("number"),
+        "phase": s.get("phase") or "", "info": s.get("info") or {},
+        "units": {
+            "front_feet": (s.get("info") or {}).get("total_front_feet") or 0,
+            "acreage": (s.get("info") or {}).get("total_acreage") or 0,
+            "lots": (s.get("info") or {}).get("total_lots") or 0,
+        },
+        "rows": s.get("rows") or [],
+    } for s in sorted(all_sections, key=lambda s: (s["entity"], s.get("number") or 0))]
+    return {"entities": entities, "sections": sections_out,
+            "phases": phases, "community": community_block}
+
+
+@app.route("/api/unit-economics/data", methods=["GET"])
+@login_required
+def api_ue_data():
+    """All communities with their four computed levels."""
+    if not _ue_can_view():
+        return jsonify({"error": "forbidden"}), 403
+    conn = get_db(); cur = conn.cursor()
+    try:
+        out = []
+        for key, label in _UE_COMMUNITIES:
+            rows = _ue_load_community(cur, key)
+            block = _ue_build_community(rows) if rows else {
+                "entities": [], "sections": [], "phases": [], "community": None}
+            out.append(dict(block, key=key, label=label))
+    finally:
+        cur.close(); conn.close()
+    return jsonify({"communities": out})
+
+
+@app.route("/api/unit-economics/upload", methods=["POST"])
+@login_required
+def api_ue_upload():
+    """Ingest an entity model workbook (must contain a "Unit Economics" tab).
+
+    Form fields: community (GPD|Dennison|WRG), entity (optional name).
+    Without an entity name, the upload is matched to an existing entity of
+    that community by section-number overlap; when nothing matches, the
+    response asks the client to assign one (needs_entity) and stores nothing.
+    """
+    if not _ue_can_view():
+        return jsonify({"error": "forbidden"}), 403
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No file uploaded"}), 400
+    if not (f.filename or "").lower().endswith((".xlsx", ".xlsm")):
+        return jsonify({"error": "Expected an .xlsx/.xlsm workbook"}), 400
+    community = (request.form.get("community") or "").strip()
+    if community not in {k for k, _l in _UE_COMMUNITIES}:
+        return jsonify({"error": "Specify community= one of: %s" %
+                        ", ".join(k for k, _l in _UE_COMMUNITIES)}), 400
+    try:
+        parsed = parse_unit_economics(f.read())
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": "Could not parse workbook: %s" % e}), 400
+
+    conn = get_db(); cur = conn.cursor()
+    try:
+        existing = _ue_load_community(cur, community)
+        entity = (request.form.get("entity") or "").strip()[:80]
+        matched = False
+        if not entity:
+            # Identify the entity by section-number overlap with a prior
+            # upload — section sets are stable for a given entity even as
+            # phases move, so a majority overlap is a confident match.
+            new_secs = {s["number"] for s in parsed["sections"]}
+            best, best_score = None, 0.0
+            for row in existing:
+                old_secs = {s.get("number") for s in (row["data"] or {}).get("sections") or []}
+                if not old_secs:
+                    continue
+                score = len(new_secs & old_secs) / max(1, len(new_secs | old_secs))
+                if score > best_score:
+                    best, best_score = row["entity_name"], score
+            if best and best_score >= 0.5:
+                entity, matched = best, True
+            else:
+                return jsonify({
+                    "needs_entity": True,
+                    "community": community,
+                    "entities": [r["entity_name"] for r in existing],
+                    "sections": len(parsed["sections"]),
+                    "actuals_date": parsed["actuals_date"],
+                }), 200
+        cur.execute("""
+            INSERT INTO ue_models (community, entity_name, data, source_filename,
+                                   actuals_date, uploaded_by, uploaded_at)
+            VALUES (%s, %s, %s, %s, %s, %s, NOW())
+            ON CONFLICT (community, entity_name) DO UPDATE
+              SET data = EXCLUDED.data,
+                  source_filename = EXCLUDED.source_filename,
+                  actuals_date = EXCLUDED.actuals_date,
+                  uploaded_by = EXCLUDED.uploaded_by,
+                  uploaded_at = NOW()
+        """, (community, entity, json.dumps(parsed), f.filename,
+              parsed["actuals_date"], session.get("user_id")))
+        conn.commit()
+    finally:
+        cur.close(); conn.close()
+    return jsonify({
+        "ok": True, "community": community, "entity": entity, "matched": matched,
+        "sections": len(parsed["sections"]),
+        "phases": sorted({s["phase"] for s in parsed["sections"] if s.get("phase")},
+                         key=_ue_phase_sort_key),
+        "actuals_date": parsed["actuals_date"],
+    })
+
+
+@app.route("/api/unit-economics/entity", methods=["DELETE"])
+@login_required
+@admin_required
+def api_ue_delete_entity():
+    """Remove one entity's model from a community (fixing a mis-assigned upload)."""
+    community = (request.args.get("community") or "").strip()
+    entity = (request.args.get("entity") or "").strip()
+    if not community or not entity:
+        return jsonify({"error": "community and entity are required"}), 400
+    conn = get_db(); cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM ue_models WHERE community = %s AND entity_name = %s",
+                    (community, entity))
+        deleted = cur.rowcount
+        conn.commit()
+    finally:
+        cur.close(); conn.close()
+    return jsonify({"ok": True, "deleted": deleted})
+
+
+@app.route("/unit-economics", methods=["GET"])
+@login_required
+def unit_economics_page():
+    pa = _refresh_page_access_from_db() or {}
+    if not session.get("is_admin") and not pa.get("unit_economics", False):
+        return redirect(url_for("home"))
+    return render_template("unit_economics.html",
                            username=session.get("username"),
                            is_admin=session.get("is_admin", False),
                            page_access=pa)

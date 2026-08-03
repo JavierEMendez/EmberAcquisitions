@@ -1,0 +1,591 @@
+{# ============================================================
+   Ember · Unit Economics
+   Per-section profitability parsed from each entity model's
+   "Unit Economics" tab, viewable at four levels: Section, Phase,
+   Entity, Community. Phases blend sections across entity models.
+   ============================================================ #}
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Unit Economics · Ember Acquisitions</title>
+<link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="/static/theme.css?v=3"/>
+<link rel="stylesheet" href="/static/css/unit_economics.css?v=1"/>
+<script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
+<style>
+  /* App shell — canonical sidebar chrome (same as /financials). */
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;}
+  body{background:var(--eax-bg);color:var(--eax-ink);font-family:'DM Sans','Plus Jakarta Sans',system-ui,sans-serif;overflow:hidden;}
+  #app{display:flex;height:100vh;overflow:hidden;}
+  #sidebar{width:240px;background:var(--eax-bg-2);border-right:1px solid var(--eax-line);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;}
+  .sidebar-logo{padding:16px 18px 14px;border-bottom:1px solid var(--eax-line)}
+  .logo-img{width:100%;max-width:160px;height:auto;display:block;margin:0 auto}
+  img.logo-light{display:none;}
+  [data-theme="light"] img.logo-dark{display:none;}
+  [data-theme="light"] img.logo-light{display:block;margin:0 auto;}
+  .logo-sub{font-size:10px;color:var(--eax-subtle);letter-spacing:0.2em;text-transform:uppercase;margin-top:8px;text-align:center;font-weight:700}
+  .sidebar-section{padding:8px 16px 4px;font-size:9px;line-height:1.2;color:var(--eax-subtle);letter-spacing:0.22em;text-transform:uppercase;margin-top:8px;font-weight:700}
+  .sidebar-item{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;border-radius:8px;margin:1px 8px;transition:all .15s;color:var(--eax-muted);font-size:13px;line-height:1.2;text-decoration:none;font-weight:500}
+  .sidebar-item:hover{background:var(--eax-accent-soft);color:var(--eax-ink);text-decoration:none}
+  .sidebar-item.active{background:var(--eax-surface);color:var(--eax-ink);font-weight:600;border:1px solid var(--eax-line);position:relative}
+  .sidebar-item.active::before{content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:2px;background:var(--eax-accent);border-radius:2px}
+  .sidebar-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0}
+  .sidebar-item.active .icon{opacity:1;color:var(--eax-accent)}
+  #main-content{flex:1;overflow:hidden;min-width:0;display:flex;}
+  .ue-page{flex:1;min-width:0;overflow:auto;padding:28px 36px 80px;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  {# ── SIDEBAR ────────────────────────────────────────────────── #}
+  <nav id="sidebar">
+    <div class="sidebar-logo">
+      <img src="/static/img/ember_logo.png"        alt="Ember" class="logo-img logo-dark">
+      <img src="/static/img/ember_logo_light.png"  alt="Ember" class="logo-img logo-light">
+      <div class="logo-sub">Unit Economics</div>
+    </div>
+    <div class="sidebar-section">Apps &amp; Dashboards</div>
+    {% if page_access.get('mpc_underwriting', true) %}
+    <a href="/" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+      MPC Underwriting
+    </a>
+    {% endif %}
+    {% if page_access.get('returns', true) %}
+    <a href="/returns" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Project Returns
+    </a>
+    {% endif %}
+    {% if page_access.get('loans', true) %}
+    <a href="/loans" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Loans &amp; Debt
+    </a>
+    {% endif %}
+    {% if is_admin or page_access.get('budget', false) %}
+    <a href="/budget" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 13l3 3 3-5 4 4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Operating Budget
+    </a>
+    {% endif %}
+    {% if page_access.get('operations', true) %}
+    <a href="/operations" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Operating Revenues
+    </a>
+    {% endif %}
+    {% if page_access.get('invoice_dashboard', true) %}
+    <a href="/invoice-dashboard" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 2h6a2 2 0 012 2v16l-3-2-2 2-2-2-2 2-3-2V4a2 2 0 012-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 7h6M9 11h6M9 15h4" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Invoice Dashboard
+    </a>
+    {% endif %}
+    {% if page_access.get('financials', true) %}
+    <a href="/financials" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M9 17V9m4 8V5m4 12v-7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Financial Statements
+    </a>
+    {% endif %}
+    {% if is_admin or page_access.get('unit_economics', false) %}
+    <a href="/unit-economics" class="sidebar-item active">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 2l9 5-9 5-9-5 9-5z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 12l9 5 9-5M3 17l9 5 9-5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Unit Economics
+    </a>
+    {% endif %}
+    {% if page_access.get('macro', true) %}
+    <a href="/macro" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="1.5"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Macro Dashboard
+    </a>
+    {% endif %}
+    {% if page_access.get('portfolio', true) %}
+    <a href="/ember-capital" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 3.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Ember Capital
+    </a>
+    {% endif %}
+    {% if page_access.get('sales', true) %}
+    <a href="/sales" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l3-3 4 4 5-6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Community Sales
+    </a>
+    {% endif %}
+    {% if page_access.get('verticals', true) %}
+    <a href="/verticals" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      Vertical Dashboard
+    </a>
+    {% endif %}
+    {% if is_admin or page_access.get('bva', false) %}
+    <a href="/bva" class="sidebar-item"><svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="7" y="10" width="3" height="7" rx="0.5"/><rect x="12" y="6" width="3" height="11" rx="0.5"/><rect x="17" y="13" width="3" height="4" rx="0.5"/></svg>Budget vs Actuals</a>
+    {% endif %}
+    <div style="flex:1"></div>
+    {% include "_partials/_sidebar_foot.html" %}
+  </nav>
+
+  <div id="main-content">
+    <div class="ue-page">
+      {# ── Header ──────────────────────────────────────────── #}
+      <div class="ue-eyebrow">FINANCE &middot; PRO FORMA MODELS</div>
+      <h1 class="ue-title">Unit Economics</h1>
+      <p class="ue-sub">
+        Section-level revenues, costs, and margins parsed from each entity model's
+        <b>Unit Economics</b> tab, rolled up by phase, entity, and community.
+        Phases blend sections across entity models within a community.
+      </p>
+
+      {# ── Controls ────────────────────────────────────────── #}
+      <div class="ue-controls">
+        <div class="ue-control">
+          <label for="ue-community">Community</label>
+          <select id="ue-community"></select>
+        </div>
+        <div class="ue-control ue-control-actions">
+          <label>&nbsp;</label>
+          <div class="ue-levelnav" id="ue-levelnav">
+            <button class="ue-level is-active" data-level="community">Community</button>
+            <button class="ue-level" data-level="entity">Entity</button>
+            <button class="ue-level" data-level="phase">Phase</button>
+            <button class="ue-level" data-level="section">Section</button>
+          </div>
+        </div>
+        <div class="ue-control" id="ue-item-wrap" style="display:none;">
+          <label for="ue-item" id="ue-item-label">Entity</label>
+          <select id="ue-item"></select>
+        </div>
+        <div class="ue-control ue-control-actions" style="margin-left:auto;">
+          <label>&nbsp;</label>
+          <button id="ue-upload-btn" class="ue-btn primary">
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3M12 4v12m0-12l-4 4m4-4l4 4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Upload Model
+          </button>
+          <input type="file" id="ue-file" accept=".xlsx,.xlsm" style="display:none;">
+        </div>
+      </div>
+      <div id="ue-status" class="ue-status"></div>
+
+      {# ── Assign-entity panel (shown when an upload needs one) ── #}
+      <div class="ue-panel" id="ue-assign-panel" style="display:none;">
+        <div class="ue-panel-title">Assign this model to an entity</div>
+        <div class="ue-panel-body" id="ue-assign-body">
+          This workbook doesn't match any entity already uploaded for this community.
+          Pick the entity it belongs to, or name a new one.
+        </div>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+          <select id="ue-assign-existing" style="display:none; background:var(--eax-surface); border:1px solid var(--eax-line); border-radius:8px; color:var(--eax-ink); padding:9px 12px; font-family:inherit; font-size:13px;"></select>
+          <input type="text" id="ue-assign-name" placeholder="Entity name (e.g. Data Center)" maxlength="80">
+          <button class="ue-btn primary" id="ue-assign-confirm">Save Upload</button>
+          <button class="ue-btn" id="ue-assign-cancel">Cancel</button>
+        </div>
+      </div>
+
+      {# ── Content ─────────────────────────────────────────── #}
+      <div id="ue-content">
+        <div class="ue-empty" id="ue-loading">
+          <span class="ember-loader ember-loader--lg">
+            <svg class="loader-wave" viewBox="0 0 56 28"><rect x="1" y="10" width="4" height="8" rx="1"/><rect x="7" y="8" width="4" height="12" rx="1"/><rect x="13" y="5" width="4" height="18" rx="1"/><rect x="19" y="2" width="4" height="24" rx="1"/><rect x="25" y="5" width="4" height="18" rx="1"/><rect x="31" y="8" width="4" height="12" rx="1"/><rect x="37" y="10" width="4" height="8" rx="1"/><rect x="43" y="12" width="4" height="4" rx="1"/><rect x="49" y="13" width="4" height="2" rx="1"/></svg>
+            <span class="ember-loader__label">LOADING</span>
+          </span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% include "_partials/_account_modal.html" %}
+
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const IS_ADMIN = {{ 'true' if is_admin else 'false' }};
+
+  const state = {
+    data: null,          // /api/unit-economics/data payload
+    community: null,     // community key
+    level: "community",  // community | entity | phase | section
+    item: null,          // selected index at the current level
+    pendingFile: null,   // file awaiting entity assignment
+  };
+
+  // ── formatting ─────────────────────────────────────────────
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g,
+      c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function fmtMoney(n) {
+    if (n === null || n === undefined || isNaN(n)) return '—';
+    const r = Math.round(n);
+    const s = '$' + Math.abs(r).toLocaleString('en-US');
+    return r < 0 ? '(' + s + ')' : s;
+  }
+  function fmtUnit(n) {
+    if (n === null || n === undefined || isNaN(n)) return '—';
+    const a = Math.abs(n);
+    const s = '$' + a.toLocaleString('en-US', a >= 100
+      ? {maximumFractionDigits: 0}
+      : {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    return n < 0 ? '(' + s + ')' : s;
+  }
+  function fmtPct(n) {
+    if (n === null || n === undefined || isNaN(n)) return '—';
+    return Math.round(n * 100) + '%';
+  }
+  function fmtQty(n, dp) {
+    if (n === null || n === undefined || isNaN(n)) return '—';
+    return Number(n).toLocaleString('en-US', {maximumFractionDigits: dp ?? 0});
+  }
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso.length <= 10 ? iso + 'T00:00:00' : iso);
+    if (isNaN(d)) return iso;
+    return d.toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
+  }
+  function setStatus(msg, cls) {
+    const el = $('ue-status');
+    el.textContent = msg || '';
+    el.className = 'ue-status' + (cls ? ' ' + cls : '');
+  }
+
+  // ── data ───────────────────────────────────────────────────
+  async function loadData(keepSelection) {
+    const res = await fetch('/api/unit-economics/data');
+    if (!res.ok) {
+      $('ue-content').innerHTML =
+        '<div class="ue-empty"><div class="ue-empty-title">Could not load data</div></div>';
+      return;
+    }
+    state.data = await res.json();
+    const comms = state.data.communities || [];
+    if (!keepSelection || !comms.some(c => c.key === state.community)) {
+      const withData = comms.find(c => (c.entities || []).length);
+      state.community = (withData || comms[0] || {}).key || null;
+    }
+    renderCommunitySelect();
+    renderItemSelect();
+    render();
+  }
+  function currentCommunity() {
+    return (state.data?.communities || []).find(c => c.key === state.community) || null;
+  }
+
+  // ── controls ───────────────────────────────────────────────
+  function renderCommunitySelect() {
+    const sel = $('ue-community');
+    sel.innerHTML = (state.data?.communities || []).map(c => {
+      const n = (c.entities || []).length;
+      const suffix = n ? ` (${n} ${n === 1 ? 'entity' : 'entities'})` : ' — no data';
+      return `<option value="${escapeHtml(c.key)}"${c.key === state.community ? ' selected' : ''}>` +
+             `${escapeHtml(c.label)}${suffix}</option>`;
+    }).join('');
+  }
+
+  function renderItemSelect() {
+    const c = currentCommunity();
+    const wrap = $('ue-item-wrap'), sel = $('ue-item'), lbl = $('ue-item-label');
+    if (!c || state.level === 'community') { wrap.style.display = 'none'; state.item = null; return; }
+    let opts = [];
+    if (state.level === 'entity') {
+      lbl.textContent = 'Entity';
+      opts = (c.entities || []).map((e, i) =>
+        [i, `${e.name} · ${e.section_count} sections`]);
+    } else if (state.level === 'phase') {
+      lbl.textContent = 'Phase';
+      opts = (c.phases || []).map((p, i) =>
+        [i, `${p.phase} · ${p.sections.length} ${p.sections.length === 1 ? 'section' : 'sections'}`]);
+    } else {
+      lbl.textContent = 'Section';
+      const multi = (c.entities || []).length > 1;
+      opts = (c.sections || []).map((s, i) =>
+        [i, `${s.key} · ${s.phase}${multi ? ' · ' + s.entity : ''}`]);
+    }
+    wrap.style.display = opts.length ? '' : 'none';
+    if (state.item === null || state.item >= opts.length) state.item = 0;
+    sel.innerHTML = opts.map(([v, t]) =>
+      `<option value="${v}"${v === state.item ? ' selected' : ''}>${escapeHtml(t)}</option>`).join('');
+  }
+
+  // ── view resolution ────────────────────────────────────────
+  function currentView() {
+    const c = currentCommunity();
+    if (!c || !(c.entities || []).length) return null;
+    if (state.level === 'entity') {
+      const e = c.entities[state.item || 0];
+      return e && {
+        name: e.name, tag: 'Entity', rows: e.rows, units: e.units,
+        meta: `Actuals through ${fmtDate(e.actuals_date)}`,
+        rail: railEntity(c, e),
+      };
+    }
+    if (state.level === 'phase') {
+      const p = c.phases[state.item || 0];
+      return p && {
+        name: p.phase, tag: 'Phase', rows: p.rows, units: p.units,
+        meta: `${p.sections.length} sections across ${new Set(p.sections.map(s => s.entity)).size} ` +
+              `${new Set(p.sections.map(s => s.entity)).size === 1 ? 'entity' : 'entities'}`,
+        rail: railPhase(p),
+      };
+    }
+    if (state.level === 'section') {
+      const s = c.sections[state.item || 0];
+      return s && {
+        name: `${s.entity} · ${s.key}`, tag: s.phase || 'Section', rows: s.rows, units: s.units,
+        meta: '', rail: railSection(s),
+      };
+    }
+    return {
+      name: c.label, tag: 'Community', rows: (c.community || {}).rows || [],
+      units: (c.community || {}).units || {},
+      meta: `${c.entities.length} ${c.entities.length === 1 ? 'entity' : 'entities'} · ` +
+            `${c.sections.length} sections · ${c.phases.length} phases`,
+      rail: railCommunity(c),
+    };
+  }
+
+  // ── rail cards ─────────────────────────────────────────────
+  function factsCard(title, facts) {
+    const rows = facts.filter(f => f[1] !== null && f[1] !== undefined && f[1] !== '')
+      .map(f => `<div class="ue-fact"><span class="ue-fact-label">${escapeHtml(f[0])}</span>` +
+                `<span class="ue-fact-value">${f[1]}</span></div>`).join('');
+    return rows ? `<div class="ue-card"><div class="ue-card-title">${escapeHtml(title)}</div>${rows}</div>` : '';
+  }
+  function unitsCard(units) {
+    return factsCard('Denominators', [
+      ['Front Feet', fmtQty(units.front_feet)],
+      ['Lots', fmtQty(units.lots)],
+      ['Acreage', fmtQty(units.acreage, 1)],
+    ]);
+  }
+  function railSection(s) {
+    const i = s.info || {};
+    return factsCard('Section Info', [
+      ['Phase', escapeHtml(s.phase || '—')],
+      ['Front Feet', fmtQty(i.total_front_feet)],
+      ['Lots', fmtQty(i.total_lots)],
+      ['Acreage', fmtQty(i.total_acreage, 2)],
+      ['Land Purchase', escapeHtml(i.land_purchase || '')],
+      ['Price / Acre', i.price_per_acre != null ? fmtMoney(i.price_per_acre) : ''],
+      ['Blended Price / Acre', i.blended_price_per_acre != null ? fmtMoney(i.blended_price_per_acre) : ''],
+    ]);
+  }
+  function railPhase(p) {
+    const chips = p.sections.map(s =>
+      `<span class="ue-chip">${escapeHtml(s.key)} <small>${escapeHtml(s.entity)}</small></span>`).join('');
+    return unitsCard(p.units) +
+      `<div class="ue-card"><div class="ue-card-title">Sections in ${escapeHtml(p.phase)}</div>` +
+      `<div class="ue-chips">${chips}</div></div>`;
+  }
+  function railEntity(c, e) {
+    let html = unitsCard(e.units) + factsCard('Model', [
+      ['Actuals Date', fmtDate(e.actuals_date)],
+      ['Uploaded', fmtDate(e.uploaded_at)],
+      ['Source', escapeHtml(e.source_filename || '')],
+      ['Sections', fmtQty(e.section_count)],
+    ]);
+    if (IS_ADMIN) {
+      html += `<div class="ue-card"><div class="ue-card-title">Admin</div>` +
+        `<button class="ue-btn" id="ue-delete-entity" data-entity="${escapeHtml(e.name)}">Remove this entity's data</button></div>`;
+    }
+    return html;
+  }
+  function railCommunity(c) {
+    const chips = c.entities.map(e =>
+      `<span class="ue-chip">${escapeHtml(e.name)} <small>${e.section_count} sections</small></span>`).join('');
+    return unitsCard((c.community || {}).units || {}) +
+      `<div class="ue-card"><div class="ue-card-title">Entities</div><div class="ue-chips">${chips}</div></div>`;
+  }
+
+  // ── main render ────────────────────────────────────────────
+  function render() {
+    const c = currentCommunity();
+    const view = currentView();
+    if (!view) {
+      $('ue-content').innerHTML =
+        `<div class="ue-empty">
+           <div class="ue-empty-title">No models uploaded for ${escapeHtml(c ? c.label : 'this community')}</div>
+           <div class="ue-empty-body">Upload an entity's pro-forma model (.xlsx with a
+           <b>Unit Economics</b> tab) using the <b>Upload Model</b> button above.
+           Each upload is one entity; a community can hold several.</div>
+         </div>`;
+      return;
+    }
+    const rows = view.rows || [];
+    const revTotal = rows.find(r => r.group === 'revenue_total');
+    const find = (lbl) => rows.find(r => r.group === 'summary' && r.label.toLowerCase() === lbl);
+    const grossMargin = find('gross margin'), netCosts = find('net costs'), netMargin = find('net margin');
+    const marginPct = (netMargin && revTotal && revTotal.total) ? netMargin.total / revTotal.total : null;
+
+    const kpi = (label, row, cls) => `
+      <div class="ue-kpi"><div class="ue-kpi-label">${label}</div>
+        <div class="ue-kpi-value${cls || ''}">${row ? fmtMoney(row.total) : '—'}</div>
+        <div class="ue-kpi-sub">${row && row.per_ff != null ? fmtUnit(row.per_ff) + ' /FF' : ''}</div>
+      </div>`;
+    const signCls = (row) => row && row.total != null ? (row.total < 0 ? ' bad' : ' good') : '';
+
+    const kpis = `
+      <div class="ue-kpis">
+        ${kpi('Total Revenue', revTotal)}
+        ${kpi('Gross Margin', grossMargin, signCls(grossMargin))}
+        ${kpi('Net Costs', netCosts)}
+        ${kpi('Net Margin', netMargin, signCls(netMargin))}
+        <div class="ue-kpi"><div class="ue-kpi-label">Net Margin %</div>
+          <div class="ue-kpi-value${marginPct != null && marginPct < 0 ? ' bad' : ' good'}">${fmtPct(marginPct)}</div>
+          <div class="ue-kpi-sub">of total revenue</div>
+        </div>
+      </div>`;
+
+    $('ue-content').innerHTML = kpis +
+      `<div class="ue-body">
+         <div class="ue-main">
+           <div class="ue-statement">
+             <div class="ue-stmt-head">
+               <span class="ue-stmt-name">${escapeHtml(view.name)}</span>
+               <span class="ue-stmt-tag">${escapeHtml(view.tag)}</span>
+               <span class="ue-stmt-meta">${view.meta || ''}</span>
+             </div>
+             ${renderTable(rows)}
+           </div>
+         </div>
+         <div class="ue-rail">${view.rail || ''}</div>
+       </div>` + footer(c);
+    const del = $('ue-delete-entity');
+    if (del) del.addEventListener('click', () => deleteEntity(del.dataset.entity));
+  }
+
+  function renderTable(rows) {
+    const head = `<thead><tr>
+      <th>Line Item</th><th>To Date</th><th>Remaining</th><th>Total</th>
+      <th>$/FF</th><th>$/Lot</th><th>$/Acre</th><th>% of Costs</th><th>% of Rev</th>
+    </tr></thead>`;
+    let body = '', lastGroup = null;
+    for (const r of rows) {
+      if (r.group === 'revenue' && lastGroup !== 'revenue') {
+        body += `<tr class="band"><td colspan="9">Revenues</td></tr>`;
+      } else if (r.group === 'cost' && lastGroup !== 'cost') {
+        body += `<tr class="band"><td colspan="9">Costs</td></tr>`;
+      }
+      lastGroup = r.group;
+      const cls = [];
+      if (r.indent) cls.push('sub');
+      if (r.bold) cls.push('strong');
+      if (r.group === 'revenue_total' || r.label.toLowerCase() === 'net margin') cls.push('accent');
+      else if (r.group === 'summary' && r.bold) cls.push('rule');
+      const money = (v) => `<td${v != null && v < 0 ? ' class="neg"' : ''}>${fmtMoney(v)}</td>`;
+      const unit  = (v) => `<td${v != null && v < 0 ? ' class="neg"' : ''}>${fmtUnit(v)}</td>`;
+      body += `<tr class="${cls.join(' ')}">
+        <td>${escapeHtml(r.label)}</td>
+        ${money(r.to_date)}${money(r.remaining)}${money(r.total)}
+        ${unit(r.per_ff)}${unit(r.per_lot)}${unit(r.per_acre)}
+        <td>${fmtPct(r.pct_costs)}</td><td>${fmtPct(r.pct_rev)}</td>
+      </tr>`;
+    }
+    return `<table class="ue-table">${head}<tbody>${body}</tbody></table>`;
+  }
+
+  function footer(c) {
+    if (!c || !(c.entities || []).length) return '';
+    const parts = c.entities.map(e =>
+      `<span class="ddf-item"><span class="ddf-lbl">${escapeHtml(e.name)}</span>` +
+      `<span class="ddf-val">actuals ${fmtDate(e.actuals_date)} · uploaded ${fmtDate(e.uploaded_at)}</span></span>`);
+    return `<div class="ue-data-dates">${parts.join('<span class="ddf-sep">|</span>')}</div>`;
+  }
+
+  // ── upload flow ────────────────────────────────────────────
+  async function doUpload(file, entityName) {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('community', state.community || '');
+    if (entityName) fd.append('entity', entityName);
+    setStatus('Uploading & parsing ' + file.name + '…');
+    let d;
+    try {
+      const res = await fetch('/api/unit-economics/upload', {method: 'POST', body: fd});
+      d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Upload failed');
+    } catch (err) {
+      setStatus(err.message || 'Upload failed', 'err');
+      return;
+    }
+    if (d.needs_entity) {
+      state.pendingFile = file;
+      const sel = $('ue-assign-existing');
+      if ((d.entities || []).length) {
+        sel.style.display = '';
+        sel.innerHTML = '<option value="">— assign to existing entity —</option>' +
+          d.entities.map(e => `<option value="${escapeHtml(e)}">${escapeHtml(e)}</option>`).join('');
+      } else {
+        sel.style.display = 'none';
+        sel.innerHTML = '';
+      }
+      $('ue-assign-body').textContent =
+        `Parsed ${d.sections} sections (actuals through ${fmtDate(d.actuals_date)}). ` +
+        `This workbook doesn't match an entity already uploaded for this community — ` +
+        `pick one or name a new entity.`;
+      $('ue-assign-name').value = '';
+      $('ue-assign-panel').style.display = '';
+      setStatus('');
+      return;
+    }
+    $('ue-assign-panel').style.display = 'none';
+    state.pendingFile = null;
+    setStatus(`Saved ${d.entity} (${d.community}): ${d.sections} sections, ` +
+              `${(d.phases || []).length} phases` + (d.matched ? ' — matched to existing entity' : ''), 'ok');
+    await loadData(true);
+  }
+
+  async function deleteEntity(name) {
+    if (!confirm(`Remove all Unit Economics data for "${name}" in this community?`)) return;
+    const res = await fetch(`/api/unit-economics/entity?community=${encodeURIComponent(state.community)}` +
+                            `&entity=${encodeURIComponent(name)}`, {method: 'DELETE'});
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { setStatus(d.error || 'Delete failed', 'err'); return; }
+    setStatus(`Removed ${name}.`, 'ok');
+    state.item = null;
+    await loadData(true);
+  }
+
+  // ── wiring ─────────────────────────────────────────────────
+  $('ue-community').addEventListener('change', (e) => {
+    state.community = e.target.value; state.item = null;
+    renderItemSelect(); render();
+  });
+  $('ue-levelnav').addEventListener('click', (e) => {
+    const btn = e.target.closest('.ue-level');
+    if (!btn) return;
+    state.level = btn.dataset.level; state.item = null;
+    document.querySelectorAll('.ue-level').forEach(b => b.classList.toggle('is-active', b === btn));
+    renderItemSelect(); render();
+  });
+  $('ue-item').addEventListener('change', (e) => {
+    state.item = parseInt(e.target.value, 10) || 0; render();
+  });
+  $('ue-upload-btn').addEventListener('click', () => $('ue-file').click());
+  $('ue-file').addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    if (f) doUpload(f, null);
+  });
+  $('ue-assign-confirm').addEventListener('click', () => {
+    if (!state.pendingFile) return;
+    const chosen = $('ue-assign-existing').value || $('ue-assign-name').value.trim();
+    if (!chosen) { setStatus('Pick an existing entity or type a name.', 'err'); return; }
+    doUpload(state.pendingFile, chosen);
+  });
+  $('ue-assign-cancel').addEventListener('click', () => {
+    state.pendingFile = null;
+    $('ue-assign-panel').style.display = 'none';
+    setStatus('Upload cancelled.');
+  });
+
+  loadData(false);
+})();
+</script>
+</body>
+</html>
