@@ -1,0 +1,393 @@
+/* ────────────────────────────────────────────────────────────
+   Unit Economics dashboard — per-section profitability from the
+   pro-forma models, blended by phase / entity / community.
+   Lives at /unit-economics. Visual language mirrors /financials.
+   ──────────────────────────────────────────────────────────── */
+
+.ue-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--eax-accent);
+  margin-bottom: 8px;
+}
+.ue-title {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--eax-ink);
+  letter-spacing: -0.02em;
+  margin: 0 0 8px;
+}
+.ue-sub {
+  font-size: 13px;
+  color: var(--eax-muted);
+  line-height: 1.55;
+  max-width: 760px;
+  margin: 0 0 24px;
+}
+
+/* ── Controls row ──────────────────────────────────────────── */
+.ue-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.ue-control {
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+}
+.ue-control label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--eax-subtle);
+  margin-bottom: 6px;
+}
+.ue-control select {
+  background: var(--eax-bg-2);
+  border: 1px solid var(--eax-line);
+  border-radius: 8px;
+  color: var(--eax-ink);
+  padding: 9px 12px;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.ue-control select:focus { border-color: var(--eax-accent); }
+.ue-control select:disabled { opacity: 0.55; cursor: not-allowed; }
+.ue-control-actions { min-width: auto; }
+
+.ue-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid var(--eax-line-2);
+  color: var(--eax-muted);
+  padding: 9px 16px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+}
+.ue-btn:hover { border-color: var(--eax-accent); color: var(--eax-accent); }
+.ue-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.ue-btn.primary {
+  background: var(--eax-accent);
+  color: var(--eax-accent-fg);
+  border-color: var(--eax-accent);
+  box-shadow: 0 4px 12px rgba(242, 89, 41, 0.18);
+}
+.ue-btn.primary:hover {
+  filter: brightness(1.05);
+  color: var(--eax-accent-fg);
+  border-color: var(--eax-accent);
+}
+
+.ue-status {
+  margin: 6px 0 14px;
+  font-size: 12px;
+  color: var(--eax-muted);
+  min-height: 14px;
+}
+.ue-status.err { color: var(--eax-bad); }
+.ue-status.ok  { color: var(--eax-good); }
+
+/* ── Level pills ───────────────────────────────────────────── */
+.ue-levelnav {
+  display: inline-flex;
+  gap: 4px;
+  background: var(--eax-bg-2);
+  border: 1px solid var(--eax-line);
+  padding: 4px;
+  border-radius: 999px;
+}
+.ue-level {
+  background: transparent;
+  border: none;
+  padding: 7px 16px;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--eax-muted);
+  cursor: pointer;
+  transition: all .15s;
+  white-space: nowrap;
+}
+.ue-level:hover { color: var(--eax-ink); }
+.ue-level.is-active {
+  background: var(--eax-accent);
+  color: var(--eax-accent-fg);
+  font-weight: 700;
+  box-shadow: 0 2px 10px rgba(242, 89, 41, 0.22);
+}
+
+/* ── Upload / assign-entity panel ──────────────────────────── */
+.ue-panel {
+  background: var(--eax-bg-2);
+  border: 1px solid var(--eax-line);
+  border-radius: 8px;
+  padding: 16px;
+  margin: 12px 0;
+}
+.ue-panel-title { font-weight: 600; margin-bottom: 8px; font-size: 13px; }
+.ue-panel-body  { font-size: 12px; color: var(--eax-muted); margin-bottom: 12px; line-height: 1.5; }
+.ue-panel input[type="text"] {
+  background: var(--eax-surface);
+  border: 1px solid var(--eax-line);
+  border-radius: 8px;
+  color: var(--eax-ink);
+  padding: 9px 12px;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  min-width: 240px;
+}
+.ue-panel input[type="text"]:focus { border-color: var(--eax-accent); }
+
+/* ── KPI band ──────────────────────────────────────────────── */
+.ue-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin: 18px 0;
+}
+.ue-kpi {
+  background: var(--eax-surface);
+  border: 1px solid var(--eax-line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: var(--eax-shadow-card);
+}
+.ue-kpi-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--eax-subtle);
+  margin-bottom: 6px;
+  white-space: nowrap;
+}
+.ue-kpi-value {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--eax-ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ue-kpi-value.good { color: var(--eax-good); }
+.ue-kpi-value.bad  { color: var(--eax-bad); }
+.ue-kpi-sub { font-size: 11px; color: var(--eax-muted); margin-top: 2px; }
+
+/* ── Layout: statement + info rail ─────────────────────────── */
+.ue-body {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+.ue-main { flex: 1; min-width: 0; }
+.ue-rail { width: 280px; flex-shrink: 0; }
+@media (max-width: 1100px) {
+  .ue-body { flex-direction: column; }
+  .ue-rail { width: 100%; }
+}
+
+/* ── Statement card + table (mirrors the model's tab) ─────── */
+.ue-statement {
+  background: var(--eax-bg-2);
+  border: 1px solid var(--eax-line);
+  border-radius: 12px;
+  padding: 24px 28px;
+  overflow-x: auto;
+}
+.ue-stmt-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--eax-line);
+}
+.ue-stmt-name {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--eax-ink);
+}
+.ue-stmt-tag {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--eax-accent);
+  background: var(--eax-accent-soft);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+.ue-stmt-meta { font-size: 12px; color: var(--eax-muted); margin-left: auto; }
+
+.ue-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  min-width: 860px;
+}
+.ue-table th, .ue-table td {
+  padding: 5px 10px;
+  text-align: right;
+  white-space: nowrap;
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  font-size: 12px;
+  color: var(--eax-ink-2);
+}
+.ue-table th:first-child, .ue-table td:first-child {
+  text-align: left;
+  font-family: 'DM Sans', 'Plus Jakarta Sans', sans-serif;
+  font-size: 13px;
+  width: 100%;
+}
+.ue-table thead th {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--eax-subtle);
+  border-bottom: 1px solid var(--eax-line);
+  padding: 8px 10px;
+}
+/* Section band rows: "Revenues" / "Costs" */
+.ue-table tr.band td {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--eax-ink);
+  padding-top: 14px;
+  padding-bottom: 4px;
+}
+.ue-table tr.sub td:first-child {
+  padding-left: 28px;
+  font-style: italic;
+  color: var(--eax-muted);
+}
+.ue-table tr.sub td { color: var(--eax-muted); }
+.ue-table tr.strong td { font-weight: 700; color: var(--eax-ink); }
+.ue-table tr.rule { border-top: 1px solid var(--eax-line-2); }
+.ue-table tr.accent td {
+  font-weight: 700;
+  color: var(--eax-accent);
+  border-top: 2px solid var(--eax-line-2);
+  border-bottom: 2px solid var(--eax-line-2);
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.ue-table td.neg { color: var(--eax-bad); }
+.ue-table tbody tr:hover td { background: var(--eax-accent-soft); }
+
+/* ── Info rail cards ───────────────────────────────────────── */
+.ue-card {
+  background: var(--eax-surface);
+  border: 1px solid var(--eax-line);
+  border-radius: 12px;
+  padding: 16px 18px;
+  box-shadow: var(--eax-shadow-card);
+  margin-bottom: 14px;
+}
+.ue-card-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--eax-subtle);
+  margin-bottom: 10px;
+}
+.ue-fact {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 0;
+  font-size: 12.5px;
+  border-bottom: 1px dashed var(--eax-line);
+}
+.ue-fact:last-child { border-bottom: none; }
+.ue-fact-label { color: var(--eax-muted); }
+.ue-fact-value {
+  font-weight: 600;
+  color: var(--eax-ink-2);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.ue-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ue-chip {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--eax-ink-2);
+  background: var(--eax-bg-2);
+  border: 1px solid var(--eax-line);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+.ue-chip small { color: var(--eax-subtle); font-weight: 500; }
+
+/* ── Empty state ───────────────────────────────────────────── */
+.ue-empty {
+  background: var(--eax-bg-2);
+  border: 1px solid var(--eax-line);
+  border-radius: 12px;
+  text-align: center;
+  padding: 64px 32px;
+}
+.ue-empty-title {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--eax-ink-2);
+  margin-bottom: 10px;
+}
+.ue-empty-body {
+  font-size: 13px;
+  color: var(--eax-muted);
+  line-height: 1.55;
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+/* ── Data dates footer ─────────────────────────────────────── */
+.ue-data-dates {
+  margin-top: 24px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--eax-line);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 11px;
+  color: var(--eax-subtle);
+  flex-wrap: wrap;
+}
+.ue-data-dates .ddf-lbl {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--eax-muted);
+}
+.ue-data-dates .ddf-val {
+  font-weight: 600;
+  color: var(--eax-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.ue-data-dates .ddf-sep { color: var(--eax-line-2); }
