@@ -147,6 +147,15 @@
           <label for="ue-community">Community</label>
           <select id="ue-community"></select>
         </div>
+        {% if is_admin %}
+        <div class="ue-control ue-control-actions">
+          <label>&nbsp;</label>
+          <button id="ue-manage-btn" class="ue-btn" title="Rename, add, or remove communities">
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M11 4H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-5M17.5 3.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 8.5-8.5z" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Manage
+          </button>
+        </div>
+        {% endif %}
         <div class="ue-control ue-control-actions">
           <label>&nbsp;</label>
           <div class="ue-levelnav" id="ue-levelnav">
@@ -185,6 +194,26 @@
           <button class="ue-btn" id="ue-assign-cancel">Cancel</button>
         </div>
       </div>
+
+      {% if is_admin %}
+      {# ── Manage-communities panel (admin) ────────────────── #}
+      <div class="ue-panel" id="ue-manage-panel" style="display:none;">
+        <div class="ue-panel-title">Manage communities</div>
+        <div class="ue-panel-body">
+          Communities are the master rollup level; each holds one or more entity models.
+          Renaming keeps all uploaded data — only the display name changes.
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+          <input type="text" id="ue-rename-input" maxlength="80" placeholder="Community name">
+          <button class="ue-btn primary" id="ue-rename-save">Rename Selected</button>
+          <span style="color:var(--eax-line-2); padding:0 4px;">|</span>
+          <input type="text" id="ue-newcomm-input" maxlength="80" placeholder="New community name">
+          <button class="ue-btn" id="ue-newcomm-add">Add Community</button>
+          <span style="color:var(--eax-line-2); padding:0 4px;">|</span>
+          <button class="ue-btn" id="ue-comm-delete">Delete Selected</button>
+        </div>
+      </div>
+      {% endif %}
 
       {# ── Content ─────────────────────────────────────────── #}
       <div id="ue-content">
@@ -583,6 +612,69 @@
     $('ue-assign-panel').style.display = 'none';
     setStatus('Upload cancelled.');
   });
+
+  // ── manage communities (admin) ─────────────────────────────
+  const manageBtn = $('ue-manage-btn');
+  if (manageBtn) {
+    const panel = $('ue-manage-panel');
+    const syncManagePanel = () => {
+      const c = currentCommunity();
+      $('ue-rename-input').value = c ? c.label : '';
+      const n = c ? (c.entities || []).length : 0;
+      const del = $('ue-comm-delete');
+      del.disabled = !c || n > 0;
+      del.title = n > 0 ? 'Remove its entity models first' : '';
+    };
+    manageBtn.addEventListener('click', () => {
+      if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
+      syncManagePanel();
+      panel.style.display = '';
+    });
+    $('ue-community').addEventListener('change', syncManagePanel);
+    const commReq = async (method, payload, query) => {
+      const res = await fetch('/api/unit-economics/community' + (query || ''), {
+        method,
+        headers: payload ? {'Content-Type': 'application/json'} : undefined,
+        body: payload ? JSON.stringify(payload) : undefined,
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || 'Request failed');
+      return d;
+    };
+    $('ue-rename-save').addEventListener('click', async () => {
+      const label = $('ue-rename-input').value.trim();
+      if (!label) { setStatus('Type the new community name first.', 'err'); return; }
+      try {
+        await commReq('PUT', {key: state.community, label});
+        setStatus(`Renamed community to ${label}.`, 'ok');
+        await loadData(true);
+        syncManagePanel();
+      } catch (e) { setStatus(e.message, 'err'); }
+    });
+    $('ue-newcomm-add').addEventListener('click', async () => {
+      const label = $('ue-newcomm-input').value.trim();
+      if (!label) { setStatus('Type a name for the new community.', 'err'); return; }
+      try {
+        const d = await commReq('POST', {label});
+        $('ue-newcomm-input').value = '';
+        state.community = d.key;
+        setStatus(`Added community ${label}.`, 'ok');
+        await loadData(true);
+        syncManagePanel();
+      } catch (e) { setStatus(e.message, 'err'); }
+    });
+    $('ue-comm-delete').addEventListener('click', async () => {
+      const c = currentCommunity();
+      if (!c || !confirm(`Delete the empty community "${c.label}"?`)) return;
+      try {
+        await commReq('DELETE', null, '?key=' + encodeURIComponent(c.key));
+        setStatus(`Deleted ${c.label}.`, 'ok');
+        state.community = null;
+        await loadData(false);
+        syncManagePanel();
+      } catch (e) { setStatus(e.message, 'err'); }
+    });
+  }
 
   loadData(false);
 })();

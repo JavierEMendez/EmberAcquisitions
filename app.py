@@ -324,6 +324,16 @@ def init_db():
             UNIQUE (community, entity_name)
         );
         CREATE INDEX IF NOT EXISTS ue_models_community_idx ON ue_models(community);
+        -- Master-planned communities the Unit Economics models roll up to.
+        -- Admin-managed (rename / add / delete-when-empty) — the entity ↔
+        -- community structure changed once already (the original hardcoded
+        -- list mislabeled entities as communities), so labels live in data.
+        -- `key` is the stable identifier ue_models.community points at.
+        CREATE TABLE IF NOT EXISTS ue_communities (
+            key TEXT PRIMARY KEY,
+            label TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
 
         -- ── Financial Statements (Sage Intacct cache) ──────────────
         -- Caches the parsed trial balance per (entity, period) so the
@@ -401,6 +411,18 @@ def init_db():
     # `bva` gates the Budget vs Actuals dashboard (dev-team financial data).
     # Defaults FALSE; admins always pass and grant it to the dev team per user.
     cur.execute("UPDATE users SET page_access = page_access || '{\"bva\": false}'::jsonb WHERE page_access->>'bva' IS NULL")
+    # Seed Unit Economics communities. The master communities are Grand
+    # Prairie (holding the Grand Prairie Development and Dennison entity
+    # models) and Windrose — the first release mislabeled entities as
+    # communities, so the GPD key gets the corrected "Grand Prairie" label
+    # here. Then adopt any community keys already present in ue_models
+    # (label = key) so previously uploaded data never orphans.
+    cur.execute("INSERT INTO ue_communities (key, label) VALUES "
+                "('GPD', 'Grand Prairie'), ('WRG', 'Windrose') "
+                "ON CONFLICT (key) DO NOTHING")
+    cur.execute("INSERT INTO ue_communities (key, label) "
+                "SELECT DISTINCT community, community FROM ue_models "
+                "ON CONFLICT (key) DO NOTHING")
     # `unit_economics` gates the Unit Economics dashboard (pro-forma section
     # margins — money data). Same convention as `budget`: admins start
     # visible, everyone else starts hidden and is granted per user.
@@ -2863,12 +2885,11 @@ def bva_page():
 # rather than read from the workbook (verified to match the model's own
 # rollups exactly).
 
-# The master-planned communities we hold models for (key → display name).
-_UE_COMMUNITIES = [
-    ("GPD",      "Grand Prairie Development"),
-    ("Dennison", "Dennison"),
-    ("WRG",      "Windrose"),
-]
+def _ue_communities(cur) -> list:
+    """Admin-managed community registry (key → display label), seeded in
+    init_db and edited from the dashboard's Manage Communities panel."""
+    cur.execute("SELECT key, label FROM ue_communities ORDER BY created_at, key")
+    return [(r["key"], r["label"]) for r in cur.fetchall()]
 
 
 def _ue_can_view() -> bool:
@@ -2957,7 +2978,7 @@ def api_ue_data():
     conn = get_db(); cur = conn.cursor()
     try:
         out = []
-        for key, label in _UE_COMMUNITIES:
+        for key, label in _ue_communities(cur):
             rows = _ue_load_community(cur, key)
             block = _ue_build_community(rows) if rows else {
                 "entities": [], "sections": [], "phases": [], "community": None}
@@ -2985,9 +3006,6 @@ def api_ue_upload():
     if not (f.filename or "").lower().endswith((".xlsx", ".xlsm")):
         return jsonify({"error": "Expected an .xlsx/.xlsm workbook"}), 400
     community = (request.form.get("community") or "").strip()
-    if community not in {k for k, _l in _UE_COMMUNITIES}:
-        return jsonify({"error": "Specify community= one of: %s" %
-                        ", ".join(k for k, _l in _UE_COMMUNITIES)}), 400
     try:
         parsed = parse_unit_economics(f.read())
     except ValueError as e:
@@ -2997,6 +3015,8 @@ def api_ue_upload():
 
     conn = get_db(); cur = conn.cursor()
     try:
+        if community not in {k for k, _l in _ue_communities(cur)}:
+            return jsonify({"error": "Unknown community %r" % community}), 400
         existing = _ue_load_community(cur, community)
         entity = (request.form.get("entity") or "").strip()[:80]
         matched = False
@@ -3065,6 +3085,53 @@ def api_ue_delete_entity():
     finally:
         cur.close(); conn.close()
     return jsonify({"ok": True, "deleted": deleted})
+
+
+@app.route("/api/unit-economics/community", methods=["POST", "PUT", "DELETE"])
+@login_required
+@admin_required
+def api_ue_community():
+    """Admin management of the community registry.
+
+    POST   {label}       — create (key derived from the label, stable after)
+    PUT    {key, label}  — rename
+    DELETE ?key=         — remove, only when no entity models point at it
+    """
+    conn = get_db(); cur = conn.cursor()
+    try:
+        if request.method == "DELETE":
+            key = (request.args.get("key") or "").strip()
+            cur.execute("SELECT COUNT(*) AS cnt FROM ue_models WHERE community = %s", (key,))
+            if cur.fetchone()["cnt"]:
+                return jsonify({"error": "Community still has entity models — "
+                                         "remove those first"}), 400
+            cur.execute("DELETE FROM ue_communities WHERE key = %s", (key,))
+            if not cur.rowcount:
+                return jsonify({"error": "Unknown community %r" % key}), 404
+            conn.commit()
+            return jsonify({"ok": True, "deleted": key})
+
+        body = request.get_json(silent=True) or {}
+        label = (body.get("label") or "").strip()[:80]
+        if not label:
+            return jsonify({"error": "label is required"}), 400
+        if request.method == "PUT":
+            key = (body.get("key") or "").strip()
+            cur.execute("UPDATE ue_communities SET label = %s WHERE key = %s", (label, key))
+            if not cur.rowcount:
+                return jsonify({"error": "Unknown community %r" % key}), 404
+        else:
+            key = re.sub(r"[^A-Za-z0-9]+", "-", label).strip("-") or "community"
+            cur.execute("SELECT 1 FROM ue_communities WHERE key = %s OR label = %s",
+                        (key, label))
+            if cur.fetchone():
+                return jsonify({"error": "A community with that name already exists"}), 400
+            cur.execute("INSERT INTO ue_communities (key, label) VALUES (%s, %s)",
+                        (key, label))
+        conn.commit()
+    finally:
+        cur.close(); conn.close()
+    return jsonify({"ok": True, "key": key, "label": label})
 
 
 @app.route("/unit-economics", methods=["GET"])
