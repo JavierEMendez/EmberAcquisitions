@@ -2786,6 +2786,16 @@ def api_bva_data():
     gl = _bva_load_gl()
     budgets = _bva_load_budgets()
     commits = _bva_load_commitments()
+    # Project IDs Sage has retired — flagged "DNU"/"Do Not Use" in the project
+    # NAME (e.g. GP_Sundancer -> "GP The Sundancer - DNU"). Build the ID set
+    # from the GL names and drop those IDs everywhere (actuals + commitments),
+    # so retired projects don't clutter the page with phantom numbers.
+    dnu_ids = set()
+    for _recs in gl.values():
+        for r in (_recs or []):
+            nm = (r.get("project", "") or "").lower()
+            if "dnu" in nm or "do not use" in nm:
+                dnu_ids.add(r.get("projectId", ""))
     blocks = []
     for label, eid in _BVA_ENTITIES:
         recs = gl.get(label, []) or []
@@ -2797,6 +2807,8 @@ def api_bva_data():
         for rec in recs:
             proj = rec.get("project", ""); task = rec.get("task", ""); sub = rec.get("subtask", "")
             projid = rec.get("projectId", ""); subid = rec.get("subtaskId", "")
+            if projid in dnu_ids:
+                continue
             bkey = proj + _BVA_KEYSEP + sub
             ckey = projid + _BVA_KEYSEP + subid
             seen_bud.add(bkey); seen_com.add(ckey)
@@ -2817,6 +2829,8 @@ def api_bva_data():
             if ckey in seen_com:
                 continue
             projid, _, subid = ckey.partition(_BVA_KEYSEP)
+            if projid in dnu_ids:
+                continue
             rows.append({"category": _bva_category(projid), "project": projid,
                          "projectName": projid, "task": "", "subtask": subid,
                          "budget": 0, "committed": round(float(amt or 0)), "actual": 0})
