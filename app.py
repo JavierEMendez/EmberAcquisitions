@@ -2455,17 +2455,17 @@ def _parse_bva_gl(file_bytes: bytes, force_entity: str = None) -> dict:
     return out
 
 
-# Sage Purchasing "Type" values that are actuals (billings), not commitments.
-_BVA_ACTUAL_TYPE_PREFIX = "3-vendor invoice"
-
 def _parse_bva_commitments(file_bytes: bytes, force_entity: str = None) -> dict:
     """Parse a Sage Purchasing transaction export (CSV or HTML .xls) into
     {entity_label: {'<projectId>\\x1f<subtaskId>': committed}}.
 
-    Committed = signed sum of `Total` for commitment documents (POs, change
-    orders, proposals, closes, reclass) per Project ID + Subtask ID. Rows whose
-    Type is a Vendor Invoice are skipped — those are actuals (from the GL).
-    force_entity assigns every row to that tab; else route by Owner name."""
+    Committed = signed sum of EVERY document's `Total` per Project ID + Subtask
+    ID. All lifecycle rows count (proposals, POs, change orders, vendor
+    invoices, closes, reclass): the PO lifecycle nets through these rows so the
+    per-subtask total equals the gross committed contract — this ties to Sage's
+    BvCvA "Total Contract" (e.g. GPD ~$160.7M), which totalling the Purchasing
+    export by Owner reproduces. force_entity assigns every row to that tab;
+    else route by Owner name."""
     rows = _bva_rows_from_bytes(file_bytes)
     if not rows:
         return {}
@@ -2480,16 +2480,12 @@ def _parse_bva_commitments(file_bytes: bytes, force_entity: str = None) -> dict:
     c_projid = idx.get("Project ID")
     c_subid = idx.get("Subtask ID")
     c_total = idx.get("Total")
-    c_type = idx.get("Type")
     def g(r, i):
         return (r[i].strip() if i is not None and i < len(r) else "")
     agg: dict = {}
     for r in rows:
         projid = g(r, c_projid)
         if not projid or projid == "Project ID":
-            continue
-        typ = g(r, c_type).lower()
-        if not typ or typ.startswith(_BVA_ACTUAL_TYPE_PREFIX):
             continue
         ent = force_entity or _bva_owner_to_entity("", g(r, c_oname))
         if not ent:
