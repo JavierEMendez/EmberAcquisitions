@@ -2284,10 +2284,13 @@ _BVA_LOT_RE = re.compile(r"s\d+-b\d+-l\d+")   # individual lot id
 # Display order on the page/exports — development cost first, then financial,
 # with Lot Taxes / Other at the bottom.
 _BVA_CAT_ORDER = [
-    "Land Acquisition", "Professional Services", "Amenities", "Sections",
-    "Collector Roads", "Detention & Drainage", "Plant & Utilities", "Site Work",
-    "Dry Utilities", "Marketing", "MUD / HOA", "Soft Costs", "Taxes", "Lot Taxes",
-    "Financing", "Other",
+    # Sage's own project-group categories (from the BAC report)
+    "Land", "Sections & Pods", "Amenities", "Major Infrastructure",
+    "Other Sectional Costs", "Financing", "Taxes", "Soft Costs",
+    # legacy keyword categories (GL/PO fallback when no BAC category)
+    "Land Acquisition", "Professional Services", "Sections", "Collector Roads",
+    "Detention & Drainage", "Plant & Utilities", "Site Work", "Dry Utilities",
+    "Marketing", "MUD / HOA", "Lot Taxes", "Other",
 ]
 
 
@@ -2503,6 +2506,55 @@ def _parse_bva_commitments(file_bytes: bytes, force_entity: str = None) -> dict:
     return {ent: {k: round(v) for k, v in kv.items()} for ent, kv in agg.items()}
 
 
+def _bva_norm_name(s: str) -> str:
+    """Normalize a project name for matching BAC names to GL names."""
+    return re.sub(r"[^a-z0-9]+", " ", str(s or "").lower()).strip()
+
+
+def _bva_parse_bac(file_bytes: bytes) -> dict:
+    """Parse a Sage BAC ('Budget vs Committed vs Actuals by Project') .xlsx into
+    {entity_label: {norm_name: {"committed", "name", "category"}}}.
+
+    Committed = the 'Total Commitments' column (F = Initial Contract + Change
+    Orders) — Sage's authoritative committed, which unlike the Purchasing
+    export captures non-PO commitments (financing, fees, closed contracts).
+    Projects are the indent-8 rows; the enclosing indent-4 row is the Sage
+    category group. Route by name prefix: EW=Dennison, EA=WRG, else GPD."""
+    import openpyxl, io as _io
+    wb = openpyxl.load_workbook(_io.BytesIO(file_bytes), data_only=True)
+    ws = wb[wb.sheetnames[0]]
+    def num(v):
+        try: return float(v)
+        except (TypeError, ValueError): return 0.0
+    def ind(s):
+        s = str(s or ""); return len(s) - len(s.lstrip(" "))
+    def route(name):
+        p = name.strip()[:3].upper()
+        if p.startswith("EW"): return "Dennison"
+        if p.startswith("EA"): return "WRG"
+        return "GPD"
+    out: dict = {}
+    cat = None
+    for r in range(1, ws.max_row + 1):
+        a = ws.cell(r, 1).value
+        if a is None:
+            continue
+        lab = str(a).strip()
+        if not lab or lab.startswith("Rollup") or lab.startswith("Total"):
+            continue
+        i = ind(a)
+        if i == 4:
+            cat = lab
+            continue
+        if i != 8:
+            continue
+        com = round(num(ws.cell(r, 6).value))     # F = Total Commitments
+        ent = route(lab)
+        out.setdefault(ent, {})[_bva_norm_name(lab)] = {
+            "committed": com, "name": lab, "category": cat or "Other"}
+    return out
+
+
 def _bva_load_commitments() -> dict:
     """Stored PO commitments: {entity_label: {'<projId>\\x1f<subId>': committed}}."""
     conn = get_db(); cur = conn.cursor()
@@ -2571,33 +2623,38 @@ def api_bva_gl_upload():
 @app.route("/api/bva/commitments-upload", methods=["POST"])
 @login_required
 def api_bva_commitments_upload():
-    """Ingest a Sage Purchasing transaction export (PO/commitment detail) for
-    ONE entity. Committed is summed per Project ID + Subtask ID and stored
-    separately from the GL; /api/bva/data joins them on that key. ?entity=."""
+    """Ingest committed. Two accepted sources, auto-detected:
+      - Sage **BAC** ('Budget vs Committed vs Actuals by Project') .xlsx →
+        committed = "Total Commitments" per project (the authoritative number,
+        captures non-PO commitments). Stored as {norm_name: {committed,...}}.
+      - Sage **Purchasing** transaction export (.xls HTML) → committed summed
+        per Project ID + Subtask ID (legacy; understates closed contracts).
+    Both refresh every entity the file contains; /api/bva/data merges with GL."""
     if not _bva_can_view():
         return jsonify({"error": "forbidden"}), 403
     f = request.files.get("file")
     if not f:
         return jsonify({"error": "No file uploaded"}), 400
-    # The Purchasing export is naturally combined (all entities, tagged by
-    # Owner name), so by default we route by Owner and refresh every entity it
-    # contains. Pass ?entity=GPD to force a single-entity file instead.
+    raw = f.read()
     valid = {lbl for lbl, _e in _BVA_ENTITIES}
     ent = request.args.get("entity")
-    force = ent if ent in valid else None
+    is_bac = raw[:2] == b"PK"      # .xlsx (zip) = BAC report; else HTML = PO export
     try:
-        parsed = _parse_bva_commitments(f.read(), force_entity=force)
+        parsed = _bva_parse_bac(raw) if is_bac \
+                 else _parse_bva_commitments(raw, force_entity=(ent if ent in valid else None))
     except Exception as e:
-        return jsonify({"error": "Could not parse commitments export: %s" % e}), 400
+        return jsonify({"error": "Could not parse commitments file: %s" % e}), 400
     if not parsed:
-        return jsonify({"error": "No commitment lines with a Project ID found in the file."}), 400
+        return jsonify({"error": "No commitments found in the file."}), 400
     existing = _bva_load_commitments()
     for e, m in parsed.items():        # replace each entity the file carried
         existing[e] = m
     _bva_save_commitments(existing)
-    return jsonify({"ok": True,
-                    "entities": {e: round(sum(m.values())) for e, m in parsed.items()},
-                    "committed": round(sum(sum(m.values()) for m in parsed.values()))})
+    def _tot(m):
+        return sum((v["committed"] if isinstance(v, dict) else v) for v in m.values())
+    return jsonify({"ok": True, "source": "BAC" if is_bac else "PO",
+                    "entities": {e: round(_tot(m)) for e, m in parsed.items()},
+                    "committed": round(sum(_tot(m) for m in parsed.values()))})
 
 
 def _gen_bva_template_xlsx(blocks: list) -> bytes:
@@ -2805,51 +2862,65 @@ def api_bva_data():
                 dnu_ids.add(r.get("projectId", ""))
     blocks = []
     for label, eid in _BVA_ENTITIES:
-        recs = gl.get(label, []) or []
+        recs = [r for r in (gl.get(label, []) or []) if r.get("projectId", "") not in dnu_ids]
         ebud = budgets.get(label, {}) or {}
-        ecom = commits.get(label, {}) or {}      # {projId\x1fsubId: committed}
+        ecom = commits.get(label, {}) or {}
+        # BAC mode: committed stored per project name as {committed, name,
+        # category}. PO mode (legacy): committed per projId+subId as a number.
+        bac_mode = any(isinstance(v, dict) for v in ecom.values())
         rows = []
-        seen_bud = set()      # project+subtask NAME key (budget join)
-        seen_com = set()      # projId+subId key (commitments join)
+        seen_bud = set()
+        matched_bac = set()
+        # Group GL records by project (preserving first-seen order).
+        groups, order = {}, []
         for rec in recs:
-            proj = rec.get("project", ""); task = rec.get("task", ""); sub = rec.get("subtask", "")
-            projid = rec.get("projectId", ""); subid = rec.get("subtaskId", "")
-            if projid in dnu_ids:
-                continue
-            bkey = proj + _BVA_KEYSEP + sub
-            ckey = projid + _BVA_KEYSEP + subid
-            seen_bud.add(bkey); seen_com.add(ckey)
-            bud = round(float(ebud.get(bkey, 0) or 0))
-            # Committed: prefer the uploaded Purchasing (PO) export; fall back to
-            # the GL PO books only when no commitments file has been uploaded.
-            com = round(float(ecom.get(ckey, 0) or 0)) if ecom else round(rec.get("committed", 0))
-            act = round(sum((rec.get("months") or {}).values()))
-            # Group and label by Project ID (what the user filters in Sage) —
-            # Sage's display name can differ (e.g. ID GP_Rec Center 1 shows as
-            # "GP The Sundancer"). Keep the name available for reference.
-            rows.append({"category": _bva_category(projid, task),
-                         "project": projid or proj, "projectName": proj,
-                         "task": task, "subtask": sub,
-                         "budget": bud, "committed": com, "actual": act})
-        # Committed lines from the PO export that have no GL actuals yet.
-        for ckey, amt in ecom.items():
-            if ckey in seen_com:
-                continue
-            projid, _, subid = ckey.partition(_BVA_KEYSEP)
-            if projid in dnu_ids:
-                continue
-            rows.append({"category": _bva_category(projid), "project": projid,
-                         "projectName": projid, "task": "", "subtask": subid,
-                         "budget": 0, "committed": round(float(amt or 0)), "actual": 0})
+            key = (rec.get("projectId", ""), rec.get("project", ""))
+            if key not in groups:
+                groups[key] = []; order.append(key)
+            groups[key].append(rec)
+        for (projid, projname) in order:
+            grp = groups[(projid, projname)]
+            nm = _bva_norm_name(projname)
+            entry = ecom.get(nm) if bac_mode else None
+            if bac_mode:
+                proj_com = entry["committed"] if entry else 0
+                cat = entry["category"] if entry else _bva_category(projid, grp[0].get("task", ""))
+                if entry:
+                    matched_bac.add(nm)
+            else:
+                proj_com = None
+                cat = _bva_category(projid, grp[0].get("task", ""))
+            first = True
+            for rec in grp:
+                task = rec.get("task", ""); sub = rec.get("subtask", ""); subid = rec.get("subtaskId", "")
+                bkey = projname + _BVA_KEYSEP + sub; seen_bud.add(bkey)
+                bud = round(float(ebud.get(bkey, 0) or 0))
+                act = round(sum((rec.get("months") or {}).values()))
+                if bac_mode:
+                    com = proj_com if first else 0     # project-level committed on the first row
+                elif ecom:
+                    com = round(float(ecom.get(projid + _BVA_KEYSEP + subid, 0) or 0))
+                else:
+                    com = round(rec.get("committed", 0))   # GL PO-book fallback
+                rows.append({"category": cat, "project": projid or projname, "projectName": projname,
+                             "task": task, "subtask": sub, "budget": bud, "committed": com, "actual": act})
+                first = False
+        # BAC-committed projects with no GL activity yet (e.g. not-started sections).
+        if bac_mode:
+            for nm, e in ecom.items():
+                if nm in matched_bac or not isinstance(e, dict):
+                    continue
+                rows.append({"category": e["category"], "project": e["name"], "projectName": e["name"],
+                             "task": "", "subtask": "", "budget": 0,
+                             "committed": e["committed"], "actual": 0})
         # Budgeted lines with no GL activity yet still show.
         for bkey, amt in ebud.items():
             if bkey in seen_bud:
                 continue
             proj, _, sub = bkey.partition(_BVA_KEYSEP)
-            amt = round(float(amt or 0))
             rows.append({"category": _bva_category(proj), "project": proj,
                          "projectName": proj, "task": "", "subtask": sub,
-                         "budget": amt, "committed": 0, "actual": 0})
+                         "budget": round(float(amt or 0)), "committed": 0, "actual": 0})
         rows.sort(key=lambda r: (_bva_cat_rank(r["category"]), r["project"], r["subtask"]))
         blocks.append({"label": label, "entity": eid, "rows": rows})
     return jsonify({"configured": True, "has_gl": bool(gl),
