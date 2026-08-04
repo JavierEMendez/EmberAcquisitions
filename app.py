@@ -2301,6 +2301,24 @@ def _bva_cat_rank(cat: str) -> int:
         return len(_BVA_CAT_ORDER)
 
 
+# Legacy keyword categories -> the BAC's Sage-group names, so GL projects that
+# aren't in the BAC land in the SAME (single) category instead of creating a
+# duplicate ("Sections" alongside "Sections & Pods").
+_BVA_CAT_ALIAS = {
+    "Land Acquisition":     "Land",
+    "Sections":             "Sections & Pods",
+    "Detention & Drainage": "Drainage",
+    "Plant & Utilities":    "Plant Facilities",
+    "Marketing":            "Marketing and Advertising",
+    "MUD / HOA":            "Operations",
+    "Lot Taxes":            "Taxes",
+}
+
+
+def _bva_cat_alias(c: str) -> str:
+    return _BVA_CAT_ALIAS.get(c, c)
+
+
 def _bva_category(project_name: str, task: str = "") -> str:
     """Major cost category for a GL line, from project name + task.
     Task overrides come first, then individual lots, then project keywords."""
@@ -2858,6 +2876,13 @@ def api_bva_data():
     gl = _bva_load_gl()
     budgets = _bva_load_budgets()
     commits = _bva_load_commitments()
+    # BAC category -> its display order, so GL-only projects sort into the
+    # right BAC group instead of at the end.
+    bac_cat_order = {}
+    for _ec in commits.values():
+        for _e in (_ec or {}).values():
+            if isinstance(_e, dict):
+                bac_cat_order.setdefault(_e.get("category", ""), _e.get("catOrder", 900))
     # Project IDs Sage has retired — flagged "DNU"/"Do Not Use" in the project
     # NAME (e.g. GP_Sundancer -> "GP The Sundancer - DNU"). Build the ID set
     # from the GL names and drop those IDs everywhere (actuals + commitments),
@@ -2891,12 +2916,16 @@ def api_bva_data():
             nm = _bva_norm_name(projname)
             entry = ecom.get(nm) if bac_mode else None
             if bac_mode:
-                proj_com = entry["committed"] if entry else 0
-                cat = entry["category"] if entry else _bva_category(projid, grp[0].get("task", ""))
-                co = entry.get("catOrder", 900) if entry else 900
-                po = entry.get("projOrder", 900000) if entry else 900000
                 if entry:
+                    proj_com = entry["committed"]; cat = entry["category"]
+                    co = entry.get("catOrder", 900); po = entry.get("projOrder", 900000)
                     matched_bac.add(nm)
+                else:
+                    # GL project not in the BAC — alias its keyword category onto
+                    # the BAC's group so it doesn't spawn a duplicate.
+                    proj_com = 0
+                    cat = _bva_cat_alias(_bva_category(projid, grp[0].get("task", "")))
+                    co = bac_cat_order.get(cat, 900); po = 900000
             else:
                 proj_com = None; co = po = 0
                 cat = _bva_category(projid, grp[0].get("task", ""))
@@ -2930,10 +2959,11 @@ def api_bva_data():
             if bkey in seen_bud:
                 continue
             proj, _, sub = bkey.partition(_BVA_KEYSEP)
-            rows.append({"category": _bva_category(proj), "project": proj,
+            _bcat = _bva_cat_alias(_bva_category(proj))
+            rows.append({"category": _bcat, "project": proj,
                          "projectName": proj, "task": "", "subtask": sub,
                          "budget": round(float(amt or 0)), "committed": 0, "actual": 0,
-                         "_co": 950, "_po": 950000})
+                         "_co": bac_cat_order.get(_bcat, 950), "_po": 950000})
         if bac_mode:
             # Match the BAC's own group/project ordering.
             rows.sort(key=lambda r: (r.get("_co", 999), r.get("_po", 999999), r["subtask"]))
