@@ -145,11 +145,14 @@
           <p>Actuals + Commitments from the uploaded Sage GL report, vs your Budget — grouped by category → project → subtask. 1) Upload the GL report, 2) Generate the template, fill Budget, upload it back.</p>
         </div>
         <div class="bva-actions">
-          <span class="gl-label">Upload GL:</span>
+          <span class="gl-label">Upload GL (Actuals):</span>
           <button class="btn gl-up" data-ent="GPD">GPD</button>
           <button class="btn gl-up" data-ent="Dennison">Dennison</button>
           <button class="btn gl-up" data-ent="WRG">WRG</button>
-          <input type="file" id="gl-file" accept=".csv" style="display:none;">
+          <input type="file" id="gl-file" accept=".csv,.xls,.xlsx" style="display:none;">
+          <span class="gl-sep">·</span>
+          <button class="btn" id="commit-btn">⬆ Commitments (all entities)</button>
+          <input type="file" id="commit-file" accept=".xls,.xlsx,.csv" style="display:none;">
           <span class="gl-sep">·</span>
           <a class="btn" href="/api/bva/template.xlsx">⬇ Template</a>
           <button class="btn" id="upload-btn">⬆ Budget</button>
@@ -309,6 +312,26 @@
       const d = await res.json();
       if (!res.ok) { st.textContent = d.error || "Upload failed"; return; }
       st.textContent = `${d.entity}: ${d.lines} lines · actuals $${(d.actual||0).toLocaleString()} · committed $${(d.committed||0).toLocaleString()}`;
+      load();
+    } catch (err) { st.textContent = "Upload failed: " + err; }
+    e.target.value = "";
+  });
+
+  // Commitments upload — the Sage Purchasing (PO) export, combined for all
+  // entities. Committed is routed by Owner and overrides the GL PO books.
+  $("#commit-btn").addEventListener("click", () => $("#commit-file").click());
+  $("#commit-file").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const st = $("#upload-status"); st.textContent = "Parsing commitments…";
+    const fd = new FormData(); fd.append("file", file);
+    try {
+      const res = await fetch("/api/bva/commitments-upload", { method: "POST", body: fd });
+      const d = await res.json();
+      if (!res.ok) { st.textContent = d.error || "Upload failed"; return; }
+      const parts = Object.entries(d.entities || {})
+        .map(([k, v]) => `${k} $${(v || 0).toLocaleString()}`).join(" · ");
+      st.textContent = `Commitments loaded — ${parts || ("$" + (d.committed || 0).toLocaleString())}`;
       load();
     } catch (err) { st.textContent = "Upload failed: " + err; }
     e.target.value = "";

@@ -2341,41 +2341,78 @@ def _bva_month_key(s: str) -> str:
     return ""
 
 
-def _parse_bva_gl(file_bytes: bytes, force_entity: str = None) -> dict:
-    """Parse a Sage 'General Ledger report' CSV (ACCRUAL + commitment books
-    combined) into {entity_label: [{project, task, subtask, committed, months}]}
-    where months = {'YYYY-MM': actual} (actuals), committed = PO-book total.
+def _bva_html_rows(file_bytes: bytes) -> list:
+    """Parse a Sage HTML export (Sage saves .xls as an HTML table) into a list
+    of rows, each a list of cell strings."""
+    from html.parser import HTMLParser
+    class _P(HTMLParser):
+        def __init__(self):
+            super().__init__(); self.rows = []; self.cur = None; self.cell = False; self.buf = ""
+        def handle_starttag(self, t, a):
+            if t == "tr": self.cur = []
+            elif t in ("td", "th"): self.cell = True; self.buf = ""
+        def handle_endtag(self, t):
+            if t in ("td", "th") and self.cell:
+                self.cur.append(self.buf.strip()); self.cell = False
+            elif t == "tr" and self.cur is not None:
+                self.rows.append(self.cur); self.cur = None
+        def handle_data(self, d):
+            if self.cell: self.buf += d
+    p = _P(); p.feed(file_bytes.decode("utf-8", errors="replace"))
+    return p.rows
 
-    - Account from the section-header rows; cost accounts only (16xxx/70xxx).
-    - signed = Debit − Credit; actuals (by month) = non-commitment journals,
-      commitments = COMMITMENTS / CJ_PO / CJ_CLOSE.
-    - force_entity: assign every row to that tab (per-entity upload); else route
-      by Owner. Grouped by project name + task + subtask."""
+
+def _bva_rows_from_bytes(file_bytes: bytes) -> list:
+    """List-of-rows from either a Sage HTML (.xls) export or a plain CSV."""
+    if file_bytes[:400].lstrip()[:1] in (b"<",):
+        return _bva_html_rows(file_bytes)
     import csv as _csv, io as _sio
     text = file_bytes.decode("utf-8-sig", errors="replace")
-    rows = list(_csv.reader(_sio.StringIO(text)))
+    return list(_csv.reader(_sio.StringIO(text)))
+
+
+def _bva_num(s):
+    s = (s or "").strip().replace(",", "").replace("$", "").replace("(", "-").replace(")", "")
+    try:
+        return float(s or 0)
+    except ValueError:
+        return 0.0
+
+
+def _parse_bva_gl(file_bytes: bytes, force_entity: str = None) -> dict:
+    """Parse a Sage 'General Ledger report' (CSV or HTML .xls) into
+    {entity_label: [{projectId, project, task, subtaskId, subtask, committed, months}]}.
+    Records are keyed for matching by **Project ID + Subtask ID** so the separate
+    commitments export joins on the same key. months = {'YYYY-MM': actual}.
+
+    - Account from the section-header rows; cost accounts only (16xxx/70xxx).
+    - signed = Debit − Credit; actuals (by month) = non-commitment journals.
+    - committed here = GL PO books (fallback only; the Purchasing export is the
+      preferred commitment source and overrides this in /api/bva/data).
+    - force_entity assigns every row to that tab; else route by Owner."""
+    rows = _bva_rows_from_bytes(file_bytes)
     if not rows:
         return {}
-    hdr = [h.strip() for h in rows[0]]
+    hdr = None
+    for r in rows:
+        if r and any((c or "").strip() == "Posted dt." for c in r):
+            hdr = [(c or "").strip() for c in r]; break
+    if hdr is None:
+        hdr = [(c or "").strip() for c in rows[0]]
     idx = {h: i for i, h in enumerate(hdr)}
     c_owner, c_oname = idx.get("Owner"), idx.get("Owner name")
-    c_proj, c_task, c_sub = idx.get("Project name"), idx.get("Task name"), idx.get("Subtask name")
+    c_projid, c_proj = idx.get("Project"), idx.get("Project name")
+    c_subid, c_sub, c_task = idx.get("Subtask"), idx.get("Subtask name"), idx.get("Task name")
     c_jnl, c_deb, c_cred, c_date = idx.get("JNL"), idx.get("Debit"), idx.get("Credit"), idx.get("Posted dt.")
     date_re = re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$")
     acct_re = re.compile(r"^\s*(\d[\w.-]*)\s+-\s+")
     COMMIT = {"COMMITMENTS", "CJ_PO", "CJ_CLOSE"}
-    def num(s):
-        s = (s or "").strip().replace(",", "")
-        try:
-            return float(s)
-        except ValueError:
-            return 0.0
     def g(r, i):
         return (r[i].strip() if i is not None and i < len(r) else "")
 
     cur_acct = None
     agg: dict = {}
-    for r in rows[1:]:
+    for r in rows:
         if not r:
             continue
         first = (r[0] or "").strip()
@@ -2389,12 +2426,18 @@ def _parse_bva_gl(file_bytes: bytes, force_entity: str = None) -> dict:
         ent = force_entity or _bva_owner_to_entity(g(r, c_owner), g(r, c_oname))
         if not ent:
             continue
-        proj = g(r, c_proj)
-        if not proj:
+        projid = g(r, c_projid) or g(r, c_proj)
+        if not projid:
             continue
-        key = (proj, g(r, c_task), g(r, c_sub))
-        signed = num(g(r, c_deb)) - num(g(r, c_cred))
-        d = agg.setdefault(ent, {}).setdefault(key, {"committed": 0.0, "months": {}})
+        subid = g(r, c_subid)
+        key = (projid, subid)
+        d = agg.setdefault(ent, {}).setdefault(key, {
+            "projectId": projid, "project": g(r, c_proj) or projid,
+            "task": g(r, c_task), "subtaskId": subid, "subtask": g(r, c_sub),
+            "committed": 0.0, "months": {}})
+        if not d["subtask"] and g(r, c_sub): d["subtask"] = g(r, c_sub)
+        if not d["task"] and g(r, c_task): d["task"] = g(r, c_task)
+        signed = _bva_num(g(r, c_deb)) - _bva_num(g(r, c_cred))
         if g(r, c_jnl) in COMMIT:
             d["committed"] += signed
         else:
@@ -2404,11 +2447,74 @@ def _parse_bva_gl(file_bytes: bytes, force_entity: str = None) -> dict:
 
     out: dict = {}
     for ent, kv in agg.items():
-        out[ent] = [{"project": p, "task": t, "subtask": s,
+        out[ent] = [{"projectId": d["projectId"], "project": d["project"],
+                     "task": d["task"], "subtaskId": d["subtaskId"], "subtask": d["subtask"],
                      "committed": round(d["committed"]),
                      "months": {mk: round(v) for mk, v in d["months"].items()}}
-                    for (p, t, s), d in kv.items()]
+                    for d in kv.values()]
     return out
+
+
+# Sage Purchasing "Type" values that are actuals (billings), not commitments.
+_BVA_ACTUAL_TYPE_PREFIX = "3-vendor invoice"
+
+def _parse_bva_commitments(file_bytes: bytes, force_entity: str = None) -> dict:
+    """Parse a Sage Purchasing transaction export (CSV or HTML .xls) into
+    {entity_label: {'<projectId>\\x1f<subtaskId>': committed}}.
+
+    Committed = signed sum of `Total` for commitment documents (POs, change
+    orders, proposals, closes, reclass) per Project ID + Subtask ID. Rows whose
+    Type is a Vendor Invoice are skipped — those are actuals (from the GL).
+    force_entity assigns every row to that tab; else route by Owner name."""
+    rows = _bva_rows_from_bytes(file_bytes)
+    if not rows:
+        return {}
+    hdr = None
+    for r in rows:
+        if r and any((c or "").strip() == "Project ID" for c in r):
+            hdr = [(c or "").strip() for c in r]; break
+    if hdr is None:
+        return {}
+    idx = {h: i for i, h in enumerate(hdr)}
+    c_oname = idx.get("Owner name")
+    c_projid = idx.get("Project ID")
+    c_subid = idx.get("Subtask ID")
+    c_total = idx.get("Total")
+    c_type = idx.get("Type")
+    def g(r, i):
+        return (r[i].strip() if i is not None and i < len(r) else "")
+    agg: dict = {}
+    for r in rows:
+        projid = g(r, c_projid)
+        if not projid or projid == "Project ID":
+            continue
+        typ = g(r, c_type).lower()
+        if not typ or typ.startswith(_BVA_ACTUAL_TYPE_PREFIX):
+            continue
+        ent = force_entity or _bva_owner_to_entity("", g(r, c_oname))
+        if not ent:
+            continue
+        k = projid + _BVA_KEYSEP + g(r, c_subid)
+        agg.setdefault(ent, {})
+        agg[ent][k] = agg[ent].get(k, 0.0) + _bva_num(g(r, c_total))
+    return {ent: {k: round(v) for k, v in kv.items()} for ent, kv in agg.items()}
+
+
+def _bva_load_commitments() -> dict:
+    """Stored PO commitments: {entity_label: {'<projId>\\x1f<subId>': committed}}."""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT data FROM reports WHERE report_type = 'bva_commitments' "
+                "ORDER BY uploaded_at DESC LIMIT 1")
+    row = cur.fetchone(); cur.close(); conn.close()
+    return ((row["data"] if row else {}) or {}).get("entities", {}) or {}
+
+
+def _bva_save_commitments(entities: dict) -> None:
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM reports WHERE report_type = 'bva_commitments'")
+    cur.execute("INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+                ("bva_commitments", json.dumps({"entities": entities}), session.get("user_id")))
+    conn.commit(); cur.close(); conn.close()
 
 
 def _bva_load_gl() -> dict:
@@ -2457,6 +2563,38 @@ def api_bva_gl_upload():
     committed = sum(r["committed"] for r in recs)
     return jsonify({"ok": True, "entity": ent, "lines": len(recs),
                     "actual": round(actual), "committed": round(committed)})
+
+
+@app.route("/api/bva/commitments-upload", methods=["POST"])
+@login_required
+def api_bva_commitments_upload():
+    """Ingest a Sage Purchasing transaction export (PO/commitment detail) for
+    ONE entity. Committed is summed per Project ID + Subtask ID and stored
+    separately from the GL; /api/bva/data joins them on that key. ?entity=."""
+    if not _bva_can_view():
+        return jsonify({"error": "forbidden"}), 403
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No file uploaded"}), 400
+    # The Purchasing export is naturally combined (all entities, tagged by
+    # Owner name), so by default we route by Owner and refresh every entity it
+    # contains. Pass ?entity=GPD to force a single-entity file instead.
+    valid = {lbl for lbl, _e in _BVA_ENTITIES}
+    ent = request.args.get("entity")
+    force = ent if ent in valid else None
+    try:
+        parsed = _parse_bva_commitments(f.read(), force_entity=force)
+    except Exception as e:
+        return jsonify({"error": "Could not parse commitments export: %s" % e}), 400
+    if not parsed:
+        return jsonify({"error": "No commitment lines with a Project ID found in the file."}), 400
+    existing = _bva_load_commitments()
+    for e, m in parsed.items():        # replace each entity the file carried
+        existing[e] = m
+    _bva_save_commitments(existing)
+    return jsonify({"ok": True,
+                    "entities": {e: round(sum(m.values())) for e, m in parsed.items()},
+                    "committed": round(sum(sum(m.values()) for m in parsed.values()))})
 
 
 def _gen_bva_template_xlsx(blocks: list) -> bytes:
@@ -2651,25 +2789,40 @@ def api_bva_data():
         return jsonify({"error": "forbidden"}), 403
     gl = _bva_load_gl()
     budgets = _bva_load_budgets()
+    commits = _bva_load_commitments()
     blocks = []
     for label, eid in _BVA_ENTITIES:
         recs = gl.get(label, []) or []
         ebud = budgets.get(label, {}) or {}
+        ecom = commits.get(label, {}) or {}      # {projId\x1fsubId: committed}
         rows = []
-        seen = set()
+        seen_bud = set()      # project+subtask NAME key (budget join)
+        seen_com = set()      # projId+subId key (commitments join)
         for rec in recs:
             proj = rec.get("project", ""); task = rec.get("task", ""); sub = rec.get("subtask", "")
+            projid = rec.get("projectId", ""); subid = rec.get("subtaskId", "")
             bkey = proj + _BVA_KEYSEP + sub
-            seen.add(bkey)
+            ckey = projid + _BVA_KEYSEP + subid
+            seen_bud.add(bkey); seen_com.add(ckey)
             bud = round(float(ebud.get(bkey, 0) or 0))
-            com = round(rec.get("committed", 0))
+            # Committed: prefer the uploaded Purchasing (PO) export; fall back to
+            # the GL PO books only when no commitments file has been uploaded.
+            com = round(float(ecom.get(ckey, 0) or 0)) if ecom else round(rec.get("committed", 0))
             act = round(sum((rec.get("months") or {}).values()))
             rows.append({"category": _bva_category(proj, task), "project": proj,
                          "task": task, "subtask": sub,
                          "budget": bud, "committed": com, "actual": act})
+        # Committed lines from the PO export that have no GL actuals yet.
+        for ckey, amt in ecom.items():
+            if ckey in seen_com:
+                continue
+            projid, _, subid = ckey.partition(_BVA_KEYSEP)
+            rows.append({"category": _bva_category(projid), "project": projid,
+                         "task": "", "subtask": subid,
+                         "budget": 0, "committed": round(float(amt or 0)), "actual": 0})
         # Budgeted lines with no GL activity yet still show.
         for bkey, amt in ebud.items():
-            if bkey in seen:
+            if bkey in seen_bud:
                 continue
             proj, _, sub = bkey.partition(_BVA_KEYSEP)
             amt = round(float(amt or 0))
@@ -2678,7 +2831,8 @@ def api_bva_data():
                          "budget": amt, "committed": 0, "actual": 0})
         rows.sort(key=lambda r: (_bva_cat_rank(r["category"]), r["project"], r["subtask"]))
         blocks.append({"label": label, "entity": eid, "rows": rows})
-    return jsonify({"configured": True, "has_gl": bool(gl), "blocks": blocks})
+    return jsonify({"configured": True, "has_gl": bool(gl),
+                    "has_commitments": bool(commits), "blocks": blocks})
 
 
 @app.route("/api/bva/budget", methods=["POST"])
