@@ -2534,7 +2534,9 @@ def _bva_parse_bac(file_bytes: bytes) -> dict:
         if p.startswith("EA"): return "WRG"
         return "GPD"
     out: dict = {}
-    cat = None
+    top = sub = None
+    cat_order: dict = {}      # category -> first-seen index (BAC display order)
+    proj_i = 0                # running project index (BAC row order)
     for r in range(1, ws.max_row + 1):
         a = ws.cell(r, 1).value
         if a is None:
@@ -2543,15 +2545,21 @@ def _bva_parse_bac(file_bytes: bytes) -> dict:
         if not lab or lab.startswith("Rollup") or lab.startswith("Total"):
             continue
         i = ind(a)
-        if i == 4:
-            cat = lab
-            continue
+        if i == 4:                 # top group (e.g. "Major Infrastructure")
+            top = lab; sub = None; continue
+        if i == 6:                 # sub-group (e.g. "Collector Roads") = category
+            sub = lab; continue
         if i != 8:
             continue
+        category = sub or top or "Other"
+        if category not in cat_order:
+            cat_order[category] = len(cat_order)
         com = round(num(ws.cell(r, 6).value))     # F = Total Commitments
         ent = route(lab)
         out.setdefault(ent, {})[_bva_norm_name(lab)] = {
-            "committed": com, "name": lab, "category": cat or "Other"}
+            "committed": com, "name": lab, "category": category,
+            "catOrder": cat_order[category], "projOrder": proj_i}
+        proj_i += 1
     return out
 
 
@@ -2885,10 +2893,12 @@ def api_bva_data():
             if bac_mode:
                 proj_com = entry["committed"] if entry else 0
                 cat = entry["category"] if entry else _bva_category(projid, grp[0].get("task", ""))
+                co = entry.get("catOrder", 900) if entry else 900
+                po = entry.get("projOrder", 900000) if entry else 900000
                 if entry:
                     matched_bac.add(nm)
             else:
-                proj_com = None
+                proj_com = None; co = po = 0
                 cat = _bva_category(projid, grp[0].get("task", ""))
             first = True
             for rec in grp:
@@ -2903,7 +2913,8 @@ def api_bva_data():
                 else:
                     com = round(rec.get("committed", 0))   # GL PO-book fallback
                 rows.append({"category": cat, "project": projid or projname, "projectName": projname,
-                             "task": task, "subtask": sub, "budget": bud, "committed": com, "actual": act})
+                             "task": task, "subtask": sub, "budget": bud, "committed": com, "actual": act,
+                             "_co": co, "_po": po})
                 first = False
         # BAC-committed projects with no GL activity yet (e.g. not-started sections).
         if bac_mode:
@@ -2912,7 +2923,8 @@ def api_bva_data():
                     continue
                 rows.append({"category": e["category"], "project": e["name"], "projectName": e["name"],
                              "task": "", "subtask": "", "budget": 0,
-                             "committed": e["committed"], "actual": 0})
+                             "committed": e["committed"], "actual": 0,
+                             "_co": e.get("catOrder", 900), "_po": e.get("projOrder", 900000)})
         # Budgeted lines with no GL activity yet still show.
         for bkey, amt in ebud.items():
             if bkey in seen_bud:
@@ -2920,8 +2932,13 @@ def api_bva_data():
             proj, _, sub = bkey.partition(_BVA_KEYSEP)
             rows.append({"category": _bva_category(proj), "project": proj,
                          "projectName": proj, "task": "", "subtask": sub,
-                         "budget": round(float(amt or 0)), "committed": 0, "actual": 0})
-        rows.sort(key=lambda r: (_bva_cat_rank(r["category"]), r["project"], r["subtask"]))
+                         "budget": round(float(amt or 0)), "committed": 0, "actual": 0,
+                         "_co": 950, "_po": 950000})
+        if bac_mode:
+            # Match the BAC's own group/project ordering.
+            rows.sort(key=lambda r: (r.get("_co", 999), r.get("_po", 999999), r["subtask"]))
+        else:
+            rows.sort(key=lambda r: (_bva_cat_rank(r["category"]), r["project"], r["subtask"]))
         blocks.append({"label": label, "entity": eid, "rows": rows})
     return jsonify({"configured": True, "has_gl": bool(gl),
                     "has_commitments": bool(commits), "blocks": blocks})
