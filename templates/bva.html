@@ -197,7 +197,7 @@
     if (!b || !b.rows.length) { host.innerHTML = `<div class="empty">No cost activity or budget for ${b ? b.label : "this project"} yet.</div>`; return; }
 
     const q = query.trim().toLowerCase();
-    const rows = q ? b.rows.filter(r => ((r.project||"")+" "+(r.subtask||"")+" "+(r.task||"")).toLowerCase().includes(q)) : b.rows;
+    const rows = q ? b.rows.filter(r => ((r.project||"")+" "+(r.projectName||"")+" "+(r.subtask||"")+" "+(r.task||"")).toLowerCase().includes(q)) : b.rows;
     const expand = !!q;   // searching → show detail expanded
     if (!rows.length) { host.innerHTML = `<div class="empty">No projects match “${query}”.</div>`; return; }
 
@@ -245,7 +245,9 @@
           return `<tr class="det det-${ci}" ${hid}><td class="left muted">${r.subtask || ""}</td><td class="left muted">${r.task || ""}</td>${vcells(r.budget, r.committed, r.actual)}</tr>`;
         }).join("");
         cB += pB; cC += pC; cA += pA;
-        projHtml += `<tr class="proj-head det det-${ci}" ${hid}><td class="left" colspan="2">${proj}</td>${vcells(pB, pC, pA)}</tr>${inner}`;
+        const pname = (pr[0] && pr[0].projectName && pr[0].projectName !== proj)
+          ? ` <span class="muted" style="font-weight:400">· ${pr[0].projectName}</span>` : "";
+        projHtml += `<tr class="proj-head det det-${ci}" ${hid}><td class="left" colspan="2">${proj}${pname}</td>${vcells(pB, pC, pA)}</tr>${inner}`;
       });
       rowsHtml += `<tr class="cat-head ${expand ? "open" : ""}" data-cat="${ci}"><td class="left" colspan="2"><span class="caret">${caret}</span> ${cat}</td>${vcells(cB, cC, cA)}</tr>${projHtml}`;
     });

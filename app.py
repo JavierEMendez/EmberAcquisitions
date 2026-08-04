@@ -2805,7 +2805,11 @@ def api_bva_data():
             # the GL PO books only when no commitments file has been uploaded.
             com = round(float(ecom.get(ckey, 0) or 0)) if ecom else round(rec.get("committed", 0))
             act = round(sum((rec.get("months") or {}).values()))
-            rows.append({"category": _bva_category(proj, task), "project": proj,
+            # Group and label by Project ID (what the user filters in Sage) —
+            # Sage's display name can differ (e.g. ID GP_Rec Center 1 shows as
+            # "GP The Sundancer"). Keep the name available for reference.
+            rows.append({"category": _bva_category(projid, task),
+                         "project": projid or proj, "projectName": proj,
                          "task": task, "subtask": sub,
                          "budget": bud, "committed": com, "actual": act})
         # Committed lines from the PO export that have no GL actuals yet.
@@ -2814,7 +2818,7 @@ def api_bva_data():
                 continue
             projid, _, subid = ckey.partition(_BVA_KEYSEP)
             rows.append({"category": _bva_category(projid), "project": projid,
-                         "task": "", "subtask": subid,
+                         "projectName": projid, "task": "", "subtask": subid,
                          "budget": 0, "committed": round(float(amt or 0)), "actual": 0})
         # Budgeted lines with no GL activity yet still show.
         for bkey, amt in ebud.items():
@@ -2823,7 +2827,7 @@ def api_bva_data():
             proj, _, sub = bkey.partition(_BVA_KEYSEP)
             amt = round(float(amt or 0))
             rows.append({"category": _bva_category(proj), "project": proj,
-                         "task": "", "subtask": sub,
+                         "projectName": proj, "task": "", "subtask": sub,
                          "budget": amt, "committed": 0, "actual": 0})
         rows.sort(key=lambda r: (_bva_cat_rank(r["category"]), r["project"], r["subtask"]))
         blocks.append({"label": label, "entity": eid, "rows": rows})
