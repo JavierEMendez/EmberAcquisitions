@@ -2301,6 +2301,24 @@ def _bva_cat_rank(cat: str) -> int:
         return len(_BVA_CAT_ORDER)
 
 
+# The pro-forma (Data Center Model) has one tab per cost category. Every one of
+# these must have a home in the flat Budget Entry sheet so no budget is dropped
+# — even categories Sage has no committed/actual for yet (future work). Names
+# are the BVA/BAC category names.
+#   - Fencing is NOT a category: in Sage it's a subtask ("WIP - Fence", task
+#     "Fencing") inside each Section project, so it already appears under
+#     Sections & Pods and needs no standalone row.
+#   - Commercial Sites / Residential Pods have no Sage activity yet (future);
+#     they get a placeholder entry row.
+_BVA_PROFORMA_CATEGORIES = [
+    "Land", "Sections & Pods", "Amenities", "Collector Roads", "Drainage",
+    "Plant Facilities", "Dry Utilities", "Site Work",
+    "Commercial Sites", "Residential Pods", "Professional Services",
+    "Soft Costs", "Marketing and Advertising", "Financing", "Taxes",
+    "Operations", "Contingency Group",
+]
+
+
 # Legacy keyword categories -> the BAC's Sage-group names, so GL projects that
 # aren't in the BAC land in the SAME (single) category instead of creating a
 # duplicate ("Sections" alongside "Sections & Pods").
@@ -2313,6 +2331,34 @@ _BVA_CAT_ALIAS = {
     "MUD / HOA":            "Operations",
     "Lot Taxes":            "Taxes",
 }
+
+
+# Display projects in the pro-forma's naming (Section 1, The Sundancer, …) rather
+# than Sage's (GP Sec. 01, GP The Sundancer), so budget lines (keyed by pro-forma
+# name) sit on the SAME project as their Sage committed/actuals. Sections are
+# handled algorithmically (always correct); a small explicit map covers exact
+# non-section matches. Fuzzy road/amenity guesses are deliberately NOT renamed —
+# renaming live actuals on a wrong guess would mislabel them.
+_BVA_SAGE_RENAME = {
+    "gp insurance": "Insurance",
+    "gp legal": "Legal",
+    "gp roundabout_kermier mallard": "Roundabout - Kermier/Mallard",
+    "gp the overlook": "The Overlook",
+    "gp the sundancer": "The Sundancer",
+}
+_BVA_SEC_RE = re.compile(r"^gp\s+sec\.?\s*0*(\d+)\s*$", re.I)
+_BVA_SEC_LAND_RE = re.compile(r"^gp\s+section\s*0*(\d+)\s+landscape", re.I)
+_BVA_LOTTAX_SEC_RE = re.compile(r"^lot taxes\b.*?sec\w*\s*0*(\d+)\s*$", re.I)
+
+
+def _bva_canon_name(name: str) -> str:
+    """Sage project name -> pro-forma display name (safe: sections algorithmic,
+    plus a small exact map). Unknown names pass through unchanged."""
+    s = (name or "").strip()
+    m = _BVA_SEC_RE.match(s) or _BVA_SEC_LAND_RE.match(s) or _BVA_LOTTAX_SEC_RE.match(s)
+    if m:
+        return "Section %d" % int(m.group(1))
+    return _BVA_SAGE_RENAME.get(s.lower(), s)
 
 
 def _bva_cat_alias(c: str) -> str:
@@ -2586,9 +2632,10 @@ def _bva_parse_bac(file_bytes: bytes) -> dict:
         if category not in cat_order:
             cat_order[category] = len(cat_order)
         com = round(num(ws.cell(r, 6).value))     # F = Total Commitments
+        bud = round(num(ws.cell(r, 2).value))     # B = Budget (Sage's LOP budget)
         ent = route(lab)
         out.setdefault(ent, {})[_bva_norm_name(lab)] = {
-            "committed": com, "name": lab, "category": category,
+            "committed": com, "budget": bud, "name": lab, "category": category,
             "catOrder": cat_order[category], "projOrder": proj_i}
         proj_i += 1
     return out
@@ -2725,6 +2772,91 @@ def _gen_bva_template_xlsx(blocks: list) -> bytes:
             s = base[:28] + "_%d" % i; i += 1
         used.add(s); return s
 
+    # ── Flat "Budget Entry" tab (first sheet) ────────────────────────────────
+    # Every project × subtask across ALL entities on one contiguous sheet so a
+    # whole Budget column can be pasted at once (no interspersed subtotals).
+    # Budget is pre-seeded from Sage where present; Committed & Actuals are
+    # pulled from Sage. Live tie-out totals (grand + per-entity) sit up top and
+    # stay frozen so you can watch budget tie to the pro-forma while filling.
+    # Every pro-forma cost category is guaranteed a row even with no Sage data.
+    used.add("Budget Entry")
+    flat = wb.create_sheet("Budget Entry")
+    flat.cell(1, 1, "Budget Entry — all entities (flat)").font = Font(name="Calibri", bold=True, size=14, color=ACCENT)
+    flat.cell(2, 1, "Fill / adjust the Budget column (one row per project × subtask). Committed & Actuals are from Sage. The totals row updates live — budget should tie to your pro-forma. Add rows anywhere; keep the Entity column filled so they import.").font = F(False, "888888", 9)
+    fhdr = ["Entity", "Category", "Project", "Subtask", "Budget", "Committed", "Actuals", "Budget − Actuals"]
+    HR = 5                       # header row
+    d0 = HR + 1                  # first data row
+    for ci, h in enumerate(fhdr, 1):
+        c = flat.cell(HR, ci, h); c.font = F(True, "1A1A1A", 9); c.fill = HDR; c.border = border
+        if ci >= 5:
+            c.alignment = rightal
+    # Collect every row, entity-prefixed, in each block's existing (BAC) order.
+    present_cats = set()
+    rr = d0
+    for blk in blocks:
+        for row in blk.get("rows", []):
+            present_cats.add(row.get("category") or "")
+            flat.cell(rr, 1, blk["label"]).border = border
+            flat.cell(rr, 2, row.get("category") or "").border = border
+            flat.cell(rr, 3, row.get("projectName") or row.get("project") or "").border = border
+            flat.cell(rr, 4, row.get("subtask") or "").border = border
+            bc = flat.cell(rr, 5); money(bc, int(round(row.get("budget") or 0)) or None); bc.border = border
+            cc = flat.cell(rr, 6); money(cc, int(round(row.get("committed") or 0))); cc.border = border
+            ac = flat.cell(rr, 7); money(ac, int(round(row.get("actual") or 0))); ac.border = border
+            vc = flat.cell(rr, 8); vc.value = "=E%d-G%d" % (rr, rr); money(vc); vc.border = border
+            rr += 1
+    # Guarantee a home for every pro-forma cost category with no Sage data yet,
+    # so future-project budget is never lost (defaults to GPD — change as needed).
+    for cat in _BVA_PROFORMA_CATEGORIES:
+        if cat in present_cats:
+            continue
+        flat.cell(rr, 1, "GPD").border = border
+        flat.cell(rr, 2, cat).border = border
+        flat.cell(rr, 3, "").border = border
+        flat.cell(rr, 4, "").border = border
+        bc = flat.cell(rr, 5); money(bc); bc.border = border
+        cc = flat.cell(rr, 6); money(cc, 0); cc.border = border
+        ac = flat.cell(rr, 7); money(ac, 0); ac.border = border
+        vc = flat.cell(rr, 8); vc.value = "=E%d-G%d" % (rr, rr); money(vc); vc.border = border
+        rr += 1
+    dN = rr - 1                  # last data row
+    # Frozen live-total row (row 3, always visible while scrolling/filling).
+    flat.cell(3, 4, "LIVE TOTAL →").font = F(True, ACCENT); flat.cell(3, 4).alignment = rightal
+    for col in (5, 6, 7):
+        L = get_column_letter(col)
+        lc = flat.cell(3, col); lc.value = "=SUM(%s%d:%s%d)" % (L, d0, L, dN)
+        money(lc); lc.font = F(True, ACCENT); lc.fill = CAT
+    # Grand-total row (SUM of the whole contiguous data block).
+    for ci in range(1, len(fhdr) + 1):
+        flat.cell(rr, ci).fill = CAT; flat.cell(rr, ci).border = border
+    flat.cell(rr, 1, "TOTAL — all entities").font = F(True, ACCENT)
+    for col in (5, 6, 7):
+        L = get_column_letter(col)
+        tc = flat.cell(rr, col); tc.value = "=SUM(%s%d:%s%d)" % (L, d0, L, dN); money(tc); tc.font = F(True, ACCENT)
+    flat.cell(rr, 8).value = "=E%d-G%d" % (rr, rr); money(flat.cell(rr, 8)); flat.cell(rr, 8).font = F(True, ACCENT)
+    grand = rr
+    # Per-entity tie-out block below the grand total (SUMIF on the Entity col).
+    rr += 2
+    flat.cell(rr, 1, "Tie-out by entity").font = F(True)
+    flat.cell(rr, 5, "Budget").font = F(True, "1A1A1A", 9); flat.cell(rr, 5).alignment = rightal
+    flat.cell(rr, 6, "Committed").font = F(True, "1A1A1A", 9); flat.cell(rr, 6).alignment = rightal
+    flat.cell(rr, 7, "Actuals").font = F(True, "1A1A1A", 9); flat.cell(rr, 7).alignment = rightal
+    for k, (lbl, _e) in enumerate(_BVA_ENTITIES):
+        er = rr + 1 + k
+        flat.cell(er, 1, lbl)
+        for col in (5, 6, 7):
+            L = get_column_letter(col)
+            cc = flat.cell(er, col)
+            cc.value = '=SUMIF($A$%d:$A$%d,"%s",$%s$%d:$%s$%d)' % (d0, dN, lbl, L, d0, L, dN)
+            money(cc)
+    flat.freeze_panes = "A%d" % d0
+    flat.column_dimensions["A"].width = 12
+    flat.column_dimensions["B"].width = 22
+    flat.column_dimensions["C"].width = 30
+    flat.column_dimensions["D"].width = 16
+    for col in ("E", "F", "G", "H"):
+        flat.column_dimensions[col].width = 15
+
     # Cols: A Category, B Project, C Task, D Subtask, E Budget, F Committed,
     # G Actuals, H Budget−Committed, I Committed−Actuals, J Budget−Actuals
     headers = ["Category", "Project", "Task", "Subtask", "Budget", "Committed",
@@ -2771,7 +2903,7 @@ def _gen_bva_template_xlsx(blocks: list) -> bytes:
                     ws.cell(r, 2, pn).border = border
                     ws.cell(r, 3, row.get("task") or "").border = border
                     ws.cell(r, 4, row.get("subtask") or "").border = border
-                    bc = ws.cell(r, 5); money(bc); bc.border = border                      # Budget blank
+                    bc = ws.cell(r, 5); money(bc, int(round(row.get("budget") or 0)) or None); bc.border = border  # Budget (seeded from Sage where present)
                     cc = ws.cell(r, 6); money(cc, int(round(row.get("committed") or 0))); cc.border = border
                     ac = ws.cell(r, 7); money(ac, int(round(row.get("actual") or 0))); ac.border = border
                     var_cells(r)
@@ -2864,14 +2996,34 @@ def _bva_save_budgets(budgets: dict) -> None:
     conn.commit(); cur.close(); conn.close()
 
 
-def _bva_build_blocks():
+def _bud_amt(v):
+    """Budget value may be a bare number (legacy) or {'amt','cat'} (with category)."""
+    if isinstance(v, dict):
+        try: return float(v.get("amt", 0) or 0)
+        except (TypeError, ValueError): return 0.0
+    try: return float(v or 0)
+    except (TypeError, ValueError): return 0.0
+
+
+def _bud_cat(v):
+    """Stored category for a budget line (empty if legacy number)."""
+    return (v.get("cat", "") or "") if isinstance(v, dict) else ""
+
+
+def _bva_build_blocks(gl=None, budgets=None, commits=None):
     """Merge GL actuals + BAC/PO committed + budgets into per-entity blocks
     (Category → Project → Subtask), grouped and ordered like the BAC. Shared by
     the page (/api/bva/data) and the template export (/api/bva/template.xlsx)
-    so both show the same committed. Returns (blocks, has_gl, has_commitments)."""
-    gl = _bva_load_gl()
-    budgets = _bva_load_budgets()
-    commits = _bva_load_commitments()
+    so both show the same committed. Returns (blocks, has_gl, has_commitments).
+
+    gl/budgets/commits may be injected (for offline verification); otherwise
+    they're loaded from the DB."""
+    if gl is None:
+        gl = _bva_load_gl()
+    if budgets is None:
+        budgets = _bva_load_budgets()
+    if commits is None:
+        commits = _bva_load_commitments()
     # BAC category -> its display order, so GL-only projects sort into the
     # right BAC group instead of at the end.
     bac_cat_order = {}
@@ -2918,6 +3070,7 @@ def _bva_build_blocks():
                     sum(sum((rec.get("months") or {}).values()) for rec in grp))
                 continue
             nm = _bva_norm_name(projname)
+            disp = _bva_canon_name(projname)   # pro-forma display name
             entry = ecom.get(nm) if bac_mode else None
             if bac_mode:
                 if entry:
@@ -2937,11 +3090,22 @@ def _bva_build_blocks():
             ov = _BVA_PROJECT_CAT_OVERRIDE.get(nm) or _BVA_PROJECT_CAT_OVERRIDE.get(_bva_norm_name(projid))
             if ov:
                 cat = ov; co = bac_cat_order.get(cat, co)
+            # Seed budget from the BAC's Budget column (project-level, on the
+            # first row) when the user hasn't entered a per-subtask template
+            # budget for this project. Template entries always win.
+            proj_has_tmpl = any(
+                (disp + _BVA_KEYSEP + (rec.get("subtask", "") or "")) in ebud for rec in grp)
+            # Seed from the BAC Budget column only when the entity has NO uploaded
+            # budget (else the uploaded pro-forma budget is authoritative and
+            # BAC-seeding would double-count).
+            bac_bud = (entry.get("budget", 0) if (bac_mode and entry and not ebud) else 0)
             first = True
             for rec in grp:
                 task = rec.get("task", ""); sub = rec.get("subtask", ""); subid = rec.get("subtaskId", "")
-                bkey = projname + _BVA_KEYSEP + sub; seen_bud.add(bkey)
-                bud = round(float(ebud.get(bkey, 0) or 0))
+                bkey = disp + _BVA_KEYSEP + sub; seen_bud.add(bkey)
+                bud = round(_bud_amt(ebud.get(bkey, 0)))
+                if first and not proj_has_tmpl and bac_bud:
+                    bud = bac_bud
                 act = round(sum((rec.get("months") or {}).values()))
                 if bac_mode:
                     com = proj_com if first else 0     # project-level committed on the first row
@@ -2949,14 +3113,14 @@ def _bva_build_blocks():
                     com = round(float(ecom.get(projid + _BVA_KEYSEP + subid, 0) or 0))
                 else:
                     com = round(rec.get("committed", 0))   # GL PO-book fallback
-                rows.append({"category": cat, "project": projid or projname, "projectName": projname,
+                rows.append({"category": cat, "project": projid or disp, "projectName": disp,
                              "task": task, "subtask": sub, "budget": bud, "committed": com, "actual": act,
                              "_co": co, "_po": po})
                 first = False
         # One rolled-up lot-tax line per section (Taxes category).
         _tax_co = bac_cat_order.get("Taxes", 900)
         for sec, a in sorted(lot_sections.items()):
-            label_ = "Lot Taxes — Sec %s" % sec
+            label_ = _bva_canon_name("Lot Taxes — Sec %s" % sec)
             rows.append({"category": "Taxes", "project": label_, "projectName": label_,
                          "task": "", "subtask": "", "budget": 0, "committed": 0, "actual": a,
                          "_co": _tax_co, "_po": 800000 + (int(sec) if sec.isdigit() else 0)})
@@ -2969,19 +3133,28 @@ def _bva_build_blocks():
                 ov = _BVA_PROJECT_CAT_OVERRIDE.get(nm) or _BVA_PROJECT_CAT_OVERRIDE.get(_bva_norm_name(e["name"]))
                 if ov:
                     cat = ov; co = bac_cat_order.get(cat, co)
-                rows.append({"category": cat, "project": e["name"], "projectName": e["name"],
-                             "task": "", "subtask": "", "budget": 0,
+                _disp = _bva_canon_name(e["name"])
+                _bk = _disp + _BVA_KEYSEP + ""
+                seen_bud.add(_bk)
+                _bb = round(_bud_amt(ebud.get(_bk)) or (float(e.get("budget", 0) or 0) if not ebud else 0))
+                rows.append({"category": cat, "project": _disp, "projectName": _disp,
+                             "task": "", "subtask": "", "budget": _bb,
                              "committed": e["committed"], "actual": 0,
                              "_co": co, "_po": e.get("projOrder", 900000)})
-        # Budgeted lines with no GL activity yet still show.
-        for bkey, amt in ebud.items():
+        # Budgeted lines with no GL activity yet still show. Category comes from
+        # the uploaded budget (stored per line) so it lands in the right group
+        # instead of being keyword-guessed into "Other".
+        for bkey, v in ebud.items():
             if bkey in seen_bud:
                 continue
+            amt = _bud_amt(v)
+            if not amt:
+                continue
             proj, _, sub = bkey.partition(_BVA_KEYSEP)
-            _bcat = _bva_cat_alias(_bva_category(proj))
+            _bcat = _bud_cat(v) or _bva_cat_alias(_bva_category(proj))
             rows.append({"category": _bcat, "project": proj,
                          "projectName": proj, "task": "", "subtask": sub,
-                         "budget": round(float(amt or 0)), "committed": 0, "actual": 0,
+                         "budget": round(amt), "committed": 0, "actual": 0,
                          "_co": bac_cat_order.get(_bcat, 950), "_po": 950000})
         # Drop empty rows (0 budget, 0 committed, 0 actual). Budget lines added
         # later carry a budget, so they survive.
@@ -3010,7 +3183,14 @@ def api_bva_data():
 @login_required
 def api_bva_budget_upload():
     """Ingest a filled-in BVA template (the workbook from /api/bva/template.xlsx)
-    and store its Budget column, keyed by entity + project + cost type."""
+    and store its Budget column, keyed by entity + project + cost type.
+
+    Two sheet layouts are accepted, auto-detected per worksheet:
+      - the flat "Budget Entry" sheet, which carries an **Entity** column so a
+        single sheet populates every entity;
+      - the legacy per-entity sheets, whose entity comes from the sheet title.
+    Each entity a sheet writes to is cleared once first, so blanked/removed
+    rows don't linger from a prior upload."""
     if not _bva_can_view():
         return jsonify({"error": "forbidden"}), 403
     f = request.files.get("file")
@@ -3022,14 +3202,10 @@ def api_bva_budget_upload():
     except Exception as e:
         return jsonify({"error": "Could not read workbook: %s" % e}), 400
     budgets = _bva_load_budgets()
+    valid = {lbl for lbl, _e in _BVA_ENTITIES}
     imported = 0
+    cleared: set = set()
     for ws in wb.worksheets:
-        label = None
-        for lbl, _e in _BVA_ENTITIES:
-            if ws.title.strip().lower().startswith(lbl.strip().lower()[:28]):
-                label = lbl; break
-        if not label:
-            continue
         # Locate the header row (has both "project" and "budget").
         hdr = None; cols = {}
         for r in range(1, min(ws.max_row, 15) + 1):
@@ -3040,19 +3216,37 @@ def api_bva_budget_upload():
         if not hdr:
             continue
         pcol, scol, bcol = cols.get("project"), cols.get("subtask"), cols.get("budget")
+        ecol = cols.get("entity"); catcol = cols.get("category")
         if not (pcol and scol and bcol):
             continue
-        ebud = budgets.setdefault(label, {})
+        # Entity from the sheet title (legacy per-entity sheets); None means the
+        # sheet must carry a per-row Entity column (the flat sheet).
+        title_label = None
+        for lbl, _e in _BVA_ENTITIES:
+            if ws.title.strip().lower().startswith(lbl.strip().lower()[:28]):
+                title_label = lbl; break
+        if not (ecol or title_label):
+            continue
         for r in range(hdr + 1, ws.max_row + 1):
             proj = str(ws.cell(r, pcol).value or "").strip()
             sub = str(ws.cell(r, scol).value or "").strip()
             if not proj or "total" in proj.lower():
                 continue
+            if ecol:
+                lab = str(ws.cell(r, ecol).value or "").strip().lower()
+                label = next((l for l in valid if lab.startswith(l.lower())), None)
+                if not label:
+                    continue
+            else:
+                label = title_label
             try:
                 amt = float(ws.cell(r, bcol).value)
             except (TypeError, ValueError):
                 continue
-            ebud[proj + _BVA_KEYSEP + sub] = amt
+            if label not in cleared:
+                budgets[label] = {}; cleared.add(label)
+            cat = str(ws.cell(r, catcol).value or "").strip() if catcol else ""
+            budgets[label][proj + _BVA_KEYSEP + sub] = ({"amt": amt, "cat": cat} if cat else amt)
             imported += 1
     _bva_save_budgets(budgets)
     return jsonify({"ok": True, "imported": imported})
