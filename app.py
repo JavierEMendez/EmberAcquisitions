@@ -2740,7 +2740,7 @@ def _gen_bva_template_xlsx(blocks: list) -> bytes:
             cat = row.get("category") or "Other"
             if cat not in cat_groups:
                 cat_groups[cat] = {"projs": {}, "order": []}; cat_order.append(cat)
-            pn = row.get("project") or "(no project)"
+            pn = row.get("projectName") or row.get("project") or "(no project)"
             cg = cat_groups[cat]
             if pn not in cg["projs"]:
                 cg["projs"][pn] = []; cg["order"].append(pn)
@@ -2813,23 +2813,9 @@ def api_bva_template():
     rows = each project's GL Project × Subtask lines with Actuals + Committed
     pre-filled and Budget left blank to fill in. Sourced from the uploaded GL
     report (upload it first)."""
-    gl = _bva_load_gl()
-    if not gl:
+    blocks, has_gl, _has_com = _bva_build_blocks()
+    if not has_gl:
         return jsonify({"error": "No GL report uploaded yet — upload the Sage GL report first."}), 400
-    blocks = []
-    for label, eid in _BVA_ENTITIES:
-        rows = []
-        for rec in gl.get(label, []) or []:
-            proj = rec.get("project", ""); task = rec.get("task", "")
-            rows.append({
-                "project":   proj,
-                "category":  _bva_category(proj, task),
-                "task":      task,
-                "subtask":   rec.get("subtask", ""),
-                "actual":    sum((rec.get("months") or {}).values()),
-                "committed": rec.get("committed", 0.0),
-            })
-        blocks.append({"label": label, "entity": eid, "rows": rows})
     xlsx = _gen_bva_template_xlsx(blocks)
     fname = "BVA_Template_%s.xlsx" % datetime.datetime.now().strftime("%Y-%m-%d")
     return send_file(io.BytesIO(xlsx),
@@ -2865,14 +2851,11 @@ def _bva_save_budgets(budgets: dict) -> None:
     conn.commit(); cur.close(); conn.close()
 
 
-@app.route("/api/bva/data", methods=["GET"])
-@login_required
-def api_bva_data():
-    """Per-project Budget vs Committed vs Actuals for GPD/Dennison/WRG, from the
-    uploaded GL report (actuals + commitments) merged with stored budgets,
-    grouped Category → Project name → Subtask."""
-    if not _bva_can_view():
-        return jsonify({"error": "forbidden"}), 403
+def _bva_build_blocks():
+    """Merge GL actuals + BAC/PO committed + budgets into per-entity blocks
+    (Category → Project → Subtask), grouped and ordered like the BAC. Shared by
+    the page (/api/bva/data) and the template export (/api/bva/template.xlsx)
+    so both show the same committed. Returns (blocks, has_gl, has_commitments)."""
     gl = _bva_load_gl()
     budgets = _bva_load_budgets()
     commits = _bva_load_commitments()
@@ -2970,8 +2953,18 @@ def api_bva_data():
         else:
             rows.sort(key=lambda r: (_bva_cat_rank(r["category"]), r["project"], r["subtask"]))
         blocks.append({"label": label, "entity": eid, "rows": rows})
-    return jsonify({"configured": True, "has_gl": bool(gl),
-                    "has_commitments": bool(commits), "blocks": blocks})
+    return blocks, bool(gl), bool(commits)
+
+
+@app.route("/api/bva/data", methods=["GET"])
+@login_required
+def api_bva_data():
+    """Per-project Budget vs Committed vs Actuals for GPD/Dennison/WRG."""
+    if not _bva_can_view():
+        return jsonify({"error": "forbidden"}), 403
+    blocks, has_gl, has_com = _bva_build_blocks()
+    return jsonify({"configured": True, "has_gl": has_gl,
+                    "has_commitments": has_com, "blocks": blocks})
 
 
 @app.route("/api/bva/budget", methods=["POST"])
