@@ -2319,6 +2319,19 @@ def _bva_cat_alias(c: str) -> str:
     return _BVA_CAT_ALIAS.get(c, c)
 
 
+# Manual project -> category corrections (from the BVA template's column A),
+# keyed by normalized project name/id. Extend as more corrections come in.
+_BVA_PROJECT_CAT_OVERRIDE = {
+    "gp lotsales sec07":       "Taxes",
+    "gp lotsales sec08":       "Taxes",
+    "gp receivables and bond": "Soft Costs",
+}
+
+# Individual-lot project id (e.g. GP_S01-B01-L01) — aggregated into one line
+# per section instead of one row per lot. Group 1 = section number.
+_BVA_LOT_ID_RE = re.compile(r"s(\d+)-b\d+-l\d+", re.I)
+
+
 def _bva_category(project_name: str, task: str = "") -> str:
     """Major cost category for a GL line, from project name + task.
     Task overrides come first, then individual lots, then project keywords."""
@@ -2894,8 +2907,16 @@ def _bva_build_blocks():
             if key not in groups:
                 groups[key] = []; order.append(key)
             groups[key].append(rec)
+        lot_sections = {}     # section number -> aggregated actuals (per-lot rollup)
         for (projid, projname) in order:
             grp = groups[(projid, projname)]
+            # Individual lots -> roll up into one line per section (not per lot).
+            lot_m = _BVA_LOT_ID_RE.search(projid) or _BVA_LOT_ID_RE.search(projname)
+            if lot_m:
+                sec = lot_m.group(1)
+                lot_sections[sec] = lot_sections.get(sec, 0) + round(
+                    sum(sum((rec.get("months") or {}).values()) for rec in grp))
+                continue
             nm = _bva_norm_name(projname)
             entry = ecom.get(nm) if bac_mode else None
             if bac_mode:
@@ -2912,6 +2933,10 @@ def _bva_build_blocks():
             else:
                 proj_com = None; co = po = 0
                 cat = _bva_category(projid, grp[0].get("task", ""))
+            # Manual category override (template column A).
+            ov = _BVA_PROJECT_CAT_OVERRIDE.get(nm) or _BVA_PROJECT_CAT_OVERRIDE.get(_bva_norm_name(projid))
+            if ov:
+                cat = ov; co = bac_cat_order.get(cat, co)
             first = True
             for rec in grp:
                 task = rec.get("task", ""); sub = rec.get("subtask", ""); subid = rec.get("subtaskId", "")
@@ -2928,15 +2953,26 @@ def _bva_build_blocks():
                              "task": task, "subtask": sub, "budget": bud, "committed": com, "actual": act,
                              "_co": co, "_po": po})
                 first = False
+        # One rolled-up lot-tax line per section (Taxes category).
+        _tax_co = bac_cat_order.get("Taxes", 900)
+        for sec, a in sorted(lot_sections.items()):
+            label_ = "Lot Taxes — Sec %s" % sec
+            rows.append({"category": "Taxes", "project": label_, "projectName": label_,
+                         "task": "", "subtask": "", "budget": 0, "committed": 0, "actual": a,
+                         "_co": _tax_co, "_po": 800000 + (int(sec) if sec.isdigit() else 0)})
         # BAC-committed projects with no GL activity yet (e.g. not-started sections).
         if bac_mode:
             for nm, e in ecom.items():
                 if nm in matched_bac or not isinstance(e, dict):
                     continue
-                rows.append({"category": e["category"], "project": e["name"], "projectName": e["name"],
+                cat = e["category"]; co = e.get("catOrder", 900)
+                ov = _BVA_PROJECT_CAT_OVERRIDE.get(nm) or _BVA_PROJECT_CAT_OVERRIDE.get(_bva_norm_name(e["name"]))
+                if ov:
+                    cat = ov; co = bac_cat_order.get(cat, co)
+                rows.append({"category": cat, "project": e["name"], "projectName": e["name"],
                              "task": "", "subtask": "", "budget": 0,
                              "committed": e["committed"], "actual": 0,
-                             "_co": e.get("catOrder", 900), "_po": e.get("projOrder", 900000)})
+                             "_co": co, "_po": e.get("projOrder", 900000)})
         # Budgeted lines with no GL activity yet still show.
         for bkey, amt in ebud.items():
             if bkey in seen_bud:
@@ -2947,6 +2983,9 @@ def _bva_build_blocks():
                          "projectName": proj, "task": "", "subtask": sub,
                          "budget": round(float(amt or 0)), "committed": 0, "actual": 0,
                          "_co": bac_cat_order.get(_bcat, 950), "_po": 950000})
+        # Drop empty rows (0 budget, 0 committed, 0 actual). Budget lines added
+        # later carry a budget, so they survive.
+        rows = [r for r in rows if r.get("budget") or r.get("committed") or r.get("actual")]
         if bac_mode:
             # Match the BAC's own group/project ordering.
             rows.sort(key=lambda r: (r.get("_co", 999), r.get("_po", 999999), r["subtask"]))
