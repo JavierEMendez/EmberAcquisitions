@@ -2350,6 +2350,30 @@ _BVA_SAGE_RENAME = {
     "gp roundabout_kermier mallard": "Roundabout - Kermier/Mallard",
     "gp the overlook": "The Overlook",
     "gp the sundancer": "The Sundancer",
+    # Collector roads: Sage names → pro-forma budget names so they line up.
+    "gp baethe rd ph01": "Baethe Rd",
+    "gp baethe rd ph02": "Baethe Rd Ph 2",
+    "gp baethe rd ph03": "Baethe Rd Ph 3",
+    "gp baethe rd phase 1 north": "Baethe Rd Ph 1 North",
+    "gp baethe rd ph 1 south": "Baethe Rd South",
+    "gp kermier rd ph01": "Kermier Rd Ph 1",
+    "gp kermier rd ph02": "Kermier Rd Ph 2",
+    "gp school collector road": "School Collector",
+}
+# Projects to hide entirely (old / irrelevant — e.g. commitments-only leftovers).
+_BVA_DROP_NAMES = ("hill + pond", "section 7 & kermier rd landscaping")
+
+
+def _bva_is_dropped(name):
+    n = (name or "").lower()
+    return any(d in n for d in _BVA_DROP_NAMES)
+
+
+# Completed projects (called out by the dev team) where the actual spend IS the
+# budget — keyed by canon/display (GP-stripped) name, lowercased.
+_BVA_ACTUALS_PROJECTS = {
+    "delta & foxtrot ponds landscaping",
+    "detention phase 1 landscaping",
 }
 _BVA_SEC_RE = re.compile(r"^gp\s+sec\.?\s*0*(\d+)\s*$", re.I)
 _BVA_SEC_LAND_RE = re.compile(r"^gp\s+section\s*0*(\d+)\s+landscape", re.I)
@@ -3069,7 +3093,7 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
     for _recs in gl.values():
         for r in (_recs or []):
             nm = (r.get("project", "") or "").lower()
-            if "dnu" in nm or "do not use" in nm or "hill + pond" in nm:
+            if "dnu" in nm or "do not use" in nm or _bva_is_dropped(nm):
                 dnu_ids.add(r.get("projectId", ""))
     blocks = []
     for label, eid in _BVA_ENTITIES:
@@ -3086,6 +3110,8 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
                 proj_phase[_p] = _ph
 
         def _is_phase1(name):
+            if (name or "").strip().lower() in _BVA_ACTUALS_PROJECTS:
+                return True                 # called-out completed projects
             if (proj_phase.get(name, "") or "").strip().lower() == "phase 1":
                 return True
             return bool(re.match(r"^section\s+[1-5]\b", str(name or ""), re.I))
@@ -3193,6 +3219,8 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
         if bac_mode:
             for nm, e in ecom.items():
                 if nm in matched_bac or not isinstance(e, dict):
+                    continue
+                if _bva_is_dropped(e["name"]):
                     continue
                 cat = e["category"]; co = e.get("catOrder", 900)
                 ov = _BVA_PROJECT_CAT_OVERRIDE.get(nm) or _BVA_PROJECT_CAT_OVERRIDE.get(_bva_norm_name(e["name"]))
