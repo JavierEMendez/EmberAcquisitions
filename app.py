@@ -3178,14 +3178,21 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
         def _catrank(r):
             b = _BVA_CAT_BOTTOM.get(r["category"])
             return 2000 + b if b is not None else None
+        _sec_re = re.compile(r"^section\s+(\d+)\b", re.I)
+
+        def _projkey(r):
+            # "Section N" projects sort numerically (1, 2, 3, …); everything else
+            # keeps its BAC project order.
+            m = _sec_re.match(str(r.get("projectName", "") or ""))
+            return (0, int(m.group(1)), "") if m else (1, r.get("_po", 999999), r.get("projectName", ""))
         if bac_mode:
             # BAC group/project ordering, but with Contingency / Financing / Taxes
-            # / Soft Costs pushed to the bottom.
+            # / Soft Costs pushed to the bottom, and sections sorted numerically.
             rows.sort(key=lambda r: (_catrank(r) if _catrank(r) is not None else r.get("_co", 999),
-                                     r.get("_po", 999999), r["subtask"]))
+                                     _projkey(r), r["subtask"]))
         else:
             rows.sort(key=lambda r: (_catrank(r) if _catrank(r) is not None else _bva_cat_rank(r["category"]),
-                                     r["project"], r["subtask"]))
+                                     _projkey(r), r["subtask"]))
         blocks.append({"label": label, "entity": eid, "rows": rows})
     return blocks, bool(gl), bool(commits)
 
