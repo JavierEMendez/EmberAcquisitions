@@ -2641,11 +2641,14 @@ def _bva_parse_bac(file_bytes: bytes) -> dict:
         category = sub or top or "Other"
         if category not in cat_order:
             cat_order[category] = len(cat_order)
-        com = round(num(ws.cell(r, 6).value))     # F = Total Commitments
+        com = round(num(ws.cell(r, 6).value))     # F = Total Commitments (final)
+        ini = round(num(ws.cell(r, 4).value))     # D = Initial Contract (original)
+        cco = round(num(ws.cell(r, 5).value))     # E = Change Orders
         bud = round(num(ws.cell(r, 2).value))     # B = Budget (Sage's LOP budget)
         ent = route(lab)
         out.setdefault(ent, {})[_bva_norm_name(lab)] = {
-            "committed": com, "budget": bud, "name": lab, "category": category,
+            "committed": com, "initial": ini, "changeOrders": cco, "budget": bud,
+            "name": lab, "category": category,
             "catOrder": cat_order[category], "projOrder": proj_i}
         proj_i += 1
     return out
@@ -3085,16 +3088,17 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
             if bac_mode:
                 if entry:
                     proj_com = entry["committed"]; cat = entry["category"]
+                    proj_ini = entry.get("initial", 0); proj_cco = entry.get("changeOrders", 0)
                     co = entry.get("catOrder", 900); po = entry.get("projOrder", 900000)
                     matched_bac.add(nm)
                 else:
                     # GL project not in the BAC — alias its keyword category onto
                     # the BAC's group so it doesn't spawn a duplicate.
-                    proj_com = 0
+                    proj_com = 0; proj_ini = proj_cco = 0
                     cat = _bva_cat_alias(_bva_category(projid, grp[0].get("task", "")))
                     co = bac_cat_order.get(cat, 900); po = 900000
             else:
-                proj_com = None; co = po = 0
+                proj_com = None; proj_ini = proj_cco = 0; co = po = 0
                 cat = _bva_category(projid, grp[0].get("task", ""))
             # Manual category override (template column A).
             ov = _BVA_PROJECT_CAT_OVERRIDE.get(nm) or _BVA_PROJECT_CAT_OVERRIDE.get(_bva_norm_name(projid))
@@ -3125,6 +3129,7 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
                     com = round(rec.get("committed", 0))   # GL PO-book fallback
                 rows.append({"category": cat, "project": disp, "projectName": disp,
                              "task": task, "subtask": sub, "budget": bud, "committed": com, "actual": act,
+                             "cInit": (proj_ini if first else 0), "cCO": (proj_cco if first else 0),
                              "_co": co, "_po": po})
                 first = False
         # One rolled-up lot-tax line per section (Taxes category).
@@ -3150,6 +3155,7 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
                 rows.append({"category": cat, "project": _disp, "projectName": _disp,
                              "task": "", "subtask": "", "budget": _bb,
                              "committed": e["committed"], "actual": 0,
+                             "cInit": e.get("initial", 0), "cCO": e.get("changeOrders", 0),
                              "_co": co, "_po": e.get("projOrder", 900000)})
         # Budgeted lines with no GL activity yet still show. Category comes from
         # the uploaded budget (stored per line) so it lands in the right group

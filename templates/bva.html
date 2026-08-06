@@ -66,6 +66,11 @@
   table.bva-table{width:100%;border-collapse:collapse;font-size:12px;background:var(--eax-surface);border:1px solid var(--eax-line);border-radius:10px;}
   .bva-table th{font-size:9px;letter-spacing:0.08em;text-transform:uppercase;color:var(--eax-subtle);font-weight:700;padding:10px 12px;text-align:right;border-bottom:1px solid var(--eax-line);white-space:nowrap;position:sticky;top:0;z-index:3;background:var(--eax-bg-2);}
   .bva-table th.left{text-align:left;}
+  .cb-toggle-row{margin:6px 0 0;}
+  .cb-toggle{background:none;border:1px solid var(--eax-line);border-radius:6px;color:var(--eax-subtle);font-size:10px;font-weight:600;padding:4px 10px;cursor:pointer;letter-spacing:.03em;}
+  .cb-toggle:hover{color:var(--eax-fg);border-color:var(--eax-subtle);}
+  .bva-table th.cb, .bva-table td.cb{background:color-mix(in srgb, var(--eax-accent) 6%, transparent);}
+  .bva-table td.cb{font-style:italic;}
   .bva-table tr.cat-head{cursor:pointer;}
   .bva-table tr.cat-head:hover td{filter:brightness(0.98);}
   .caret{display:inline-block;width:10px;color:var(--eax-accent);font-size:10px;}
@@ -183,7 +188,7 @@
     const n = Math.round(v);
     return (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString();
   };
-  let BLOCKS = [], active = 0, query = "";
+  let BLOCKS = [], active = 0, query = "", showCB = false;
 
   function renderTabs() {
     const t = $("#proj-tabs");
@@ -204,8 +209,8 @@
     if (!rows.length) { host.innerHTML = `<div class="empty">No projects match “${query}”.</div>`; return; }
 
     // KPI totals (filtered)
-    let tB = 0, tC = 0, tA = 0;
-    rows.forEach(r => { tB += r.budget; tC += r.committed; tA += r.actual; });
+    let tB = 0, tC = 0, tA = 0, tCI = 0, tCCO = 0;
+    rows.forEach(r => { tB += r.budget; tC += r.committed; tA += r.actual; tCI += (r.cInit||0); tCCO += (r.cCO||0); });
     const tBC = tB - tC;   // uncommitted budget remaining
     const tCA = tC - tA;   // open commitment still to be billed
     const tBA = tB - tA;   // budget remaining vs actual spend
@@ -215,9 +220,10 @@
     // Committed − Actuals: just informational (open commitment); show neutral
     const caCls = (v) => v < 0 ? "over" : "muted";
 
-    const vcells = (B, C, A) => {
+    const vcells = (B, C, A, CI, CCO) => {
       const bc = B - C, ca = C - A, ba = B - A;
-      return `<td>${fmt(B)}</td><td>${fmt(C)}</td><td>${fmt(A)}</td>`
+      const cb = showCB ? `<td class="cb muted">${fmt(CI||0)}</td><td class="cb muted">${fmt(CCO||0)}</td>` : "";
+      return `<td>${fmt(B)}</td>${cb}<td>${fmt(C)}</td><td>${fmt(A)}</td>`
         + `<td class="${bcCls(bc)}">${fmt(bc)}</td>`
         + `<td class="${caCls(ca)}">${fmt(ca)}</td>`
         + `<td class="${bcCls(ba)}">${fmt(ba)}</td>`;
@@ -238,20 +244,20 @@
     let rowsHtml = "";
     catOrder.forEach((cat, ci) => {
       const cg = cats[cat];
-      let cB = 0, cC = 0, cA = 0, projHtml = "";
+      let cB = 0, cC = 0, cA = 0, cCI = 0, cCCO = 0, projHtml = "";
       cg.order.forEach(proj => {
         const pr = cg.projects[proj];
-        let pB = 0, pC = 0, pA = 0;
+        let pB = 0, pC = 0, pA = 0, pCI = 0, pCCO = 0;
         const inner = pr.map(r => {
-          pB += r.budget; pC += r.committed; pA += r.actual;
-          return `<tr class="det det-${ci}" ${hid}><td class="left muted">${r.subtask || ""}</td><td class="left muted">${r.task || ""}</td>${vcells(r.budget, r.committed, r.actual)}</tr>`;
+          pB += r.budget; pC += r.committed; pA += r.actual; pCI += (r.cInit || 0); pCCO += (r.cCO || 0);
+          return `<tr class="det det-${ci}" ${hid}><td class="left muted">${r.subtask || ""}</td><td class="left muted">${r.task || ""}</td>${vcells(r.budget, r.committed, r.actual, r.cInit, r.cCO)}</tr>`;
         }).join("");
-        cB += pB; cC += pC; cA += pA;
+        cB += pB; cC += pC; cA += pA; cCI += pCI; cCCO += pCCO;
         const pname = (pr[0] && pr[0].projectName && pr[0].projectName !== proj)
           ? ` <span class="muted" style="font-weight:400">· ${pr[0].projectName}</span>` : "";
-        projHtml += `<tr class="proj-head det det-${ci}" ${hid}><td class="left" colspan="2">${proj}${pname}</td>${vcells(pB, pC, pA)}</tr>${inner}`;
+        projHtml += `<tr class="proj-head det det-${ci}" ${hid}><td class="left" colspan="2">${proj}${pname}</td>${vcells(pB, pC, pA, pCI, pCCO)}</tr>${inner}`;
       });
-      rowsHtml += `<tr class="cat-head ${expand ? "open" : ""}" data-cat="${ci}"><td class="left" colspan="2"><span class="caret">${caret}</span> ${cat}</td>${vcells(cB, cC, cA)}</tr>${projHtml}`;
+      rowsHtml += `<tr class="cat-head ${expand ? "open" : ""}" data-cat="${ci}"><td class="left" colspan="2"><span class="caret">${caret}</span> ${cat}</td>${vcells(cB, cC, cA, cCI, cCCO)}</tr>${projHtml}`;
     });
 
     host.innerHTML = `
@@ -263,19 +269,25 @@
         <div class="kpi"><div class="l">Committed − Actuals</div><div class="v" style="${tCA<0?'color:#c0392b':''}">${fmt(tCA)}</div></div>
         <div class="kpi ${tBA<0?'':'good'}"><div class="l">Budget − Actuals</div><div class="v" style="${tBA<0?'color:#c0392b':''}">${fmt(tBA)}</div></div>
       </div>
+      <div class="cb-toggle-row">
+        <button id="cb-toggle" class="cb-toggle">${showCB ? "▾" : "▸"} Committed breakdown (Original Contract + Change Orders = Final)</button>
+      </div>
       <table class="bva-table">
         <thead><tr>
           <th class="left">Subtask</th><th class="left">Task</th>
-          <th>Budget</th><th>Committed</th><th>Actuals</th>
+          <th>Budget</th>${showCB ? `<th class="cb">Original Contract</th><th class="cb">Change Orders</th>` : ""}<th>Committed${showCB ? " <span class='col-formula'>= Final</span>" : ""}</th><th>Actuals</th>
           <th>Budget − Committed<span class="col-formula">budget left to commit</span></th>
           <th>Committed − Actuals<span class="col-formula">committed, not yet billed</span></th>
           <th>Budget − Actuals<span class="col-formula">budget vs actual spend</span></th>
         </tr></thead>
         <tbody>
           ${rowsHtml}
-          <tr class="grand"><td class="left">All Projects</td><td></td><td>${fmt(tB)}</td><td>${fmt(tC)}</td><td>${fmt(tA)}</td><td class="${bcCls(tBC)}">${fmt(tBC)}</td><td class="${caCls(tCA)}">${fmt(tCA)}</td><td class="${bcCls(tBA)}">${fmt(tBA)}</td></tr>
+          <tr class="grand"><td class="left">All Projects</td><td></td><td>${fmt(tB)}</td>${showCB ? `<td class="cb">${fmt(tCI)}</td><td class="cb">${fmt(tCCO)}</td>` : ""}<td>${fmt(tC)}</td><td>${fmt(tA)}</td><td class="${bcCls(tBC)}">${fmt(tBC)}</td><td class="${caCls(tCA)}">${fmt(tCA)}</td><td class="${bcCls(tBA)}">${fmt(tBA)}</td></tr>
         </tbody>
       </table>`;
+
+    const cbt = $("#cb-toggle");
+    if (cbt) cbt.addEventListener("click", () => { showCB = !showCB; renderBody(); });
 
     // Collapsible categories — detail hidden by default, click to expand.
     host.querySelectorAll(".cat-head").forEach(h => {
