@@ -2359,6 +2359,11 @@ _BVA_SAGE_RENAME = {
     "gp kermier rd ph01": "Kermier Rd Ph 1",
     "gp kermier rd ph02": "Kermier Rd Ph 2",
     "gp school collector road": "School Collector",
+    # Landscaping actuals → their pro-forma budget project.
+    "gp baethe ph03 landscaping": "Baethe Rd Ph3 + Kickapoo RAB Landscape",
+    "gp panhandle detention landscaping": "Panhandle Detention",
+    "gp sec 8 & kermier rd round-a-bout landscaping": "Roundabout - Kermier/Baethe",
+    "gp kermier rd ph01 landscape": "Kermier Rd Ph 1",
 }
 # Projects to hide entirely (old / irrelevant — e.g. commitments-only leftovers).
 _BVA_DROP_NAMES = ("hill + pond", "section 7 & kermier rd landscaping")
