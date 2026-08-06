@@ -3225,6 +3225,16 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
                          "projectName": proj, "task": task, "subtask": sub, "phase": _bud_phase(v),
                          "budget": round(amt), "committed": 0, "actual": 0,
                          "_co": _co2, "_po": _po2})
+        # Rows with no phase inherit their project's phase (e.g. Section 7's
+        # actuals follow the project's Phase 2), so a project reads as one phase.
+        proj_ph = {}
+        for _r in rows:
+            _p = _r.get("phase")
+            if _p and _r["projectName"] not in proj_ph:
+                proj_ph[_r["projectName"]] = _p
+        for _r in rows:
+            if not _r.get("phase"):
+                _r["phase"] = proj_ph.get(_r["projectName"], "")
         # Drop empty rows (0 budget, 0 committed, 0 actual). Budget lines added
         # later carry a budget, so they survive.
         rows = [r for r in rows if r.get("budget") or r.get("committed") or r.get("actual")]
