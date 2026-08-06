@@ -3181,7 +3181,12 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
                              "_co": co, "_po": e.get("projOrder", 900000)})
         # Budgeted lines with no GL activity yet still show. Category comes from
         # the uploaded budget (stored per line) so it lands in the right group
-        # instead of being keyword-guessed into "Other".
+        # instead of being keyword-guessed into "Other". Budget lines for a
+        # project that already exists (has actuals/committed) inherit that
+        # project's sort position so they sit WITH it, not dumped at the bottom.
+        proj_sort = {}
+        for _r in rows:
+            proj_sort.setdefault(_r["project"], (_r.get("_co", 950), _r.get("_po", 950000)))
         for bkey, v in ebud.items():
             if bkey in seen_bud:
                 continue
@@ -3192,10 +3197,11 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
             if _is_phase1(proj):
                 continue                    # Phase 1 uses actuals, not the pro-forma budget
             _bcat = _bud_cat(v) or _bva_cat_alias(_bva_category(proj))
+            _co2, _po2 = proj_sort.get(proj, (bac_cat_order.get(_bcat, 950), 950000))
             rows.append({"category": _bcat, "project": proj,
                          "projectName": proj, "task": "", "subtask": sub, "phase": _bud_phase(v),
                          "budget": round(amt), "committed": 0, "actual": 0,
-                         "_co": bac_cat_order.get(_bcat, 950), "_po": 950000})
+                         "_co": _co2, "_po": _po2})
         # Drop empty rows (0 budget, 0 committed, 0 actual). Budget lines added
         # later carry a budget, so they survive.
         rows = [r for r in rows if r.get("budget") or r.get("committed") or r.get("actual")]
