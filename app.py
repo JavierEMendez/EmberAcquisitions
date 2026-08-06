@@ -2301,6 +2301,11 @@ def _bva_cat_rank(cat: str) -> int:
         return len(_BVA_CAT_ORDER)
 
 
+# Financial / wrap-up categories forced to the bottom of the display, in this
+# order, regardless of the BAC's own group order.
+_BVA_CAT_BOTTOM = {"Contingency Group": 0, "Financing": 1, "Taxes": 2, "Soft Costs": 3}
+
+
 # The pro-forma (Data Center Model) has one tab per cost category. Every one of
 # these must have a home in the flat Budget Entry sheet so no budget is dropped
 # — even categories Sage has no committed/actual for yet (future work). Names
@@ -3159,11 +3164,17 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
         # Drop empty rows (0 budget, 0 committed, 0 actual). Budget lines added
         # later carry a budget, so they survive.
         rows = [r for r in rows if r.get("budget") or r.get("committed") or r.get("actual")]
+        def _catrank(r):
+            b = _BVA_CAT_BOTTOM.get(r["category"])
+            return 2000 + b if b is not None else None
         if bac_mode:
-            # Match the BAC's own group/project ordering.
-            rows.sort(key=lambda r: (r.get("_co", 999), r.get("_po", 999999), r["subtask"]))
+            # BAC group/project ordering, but with Contingency / Financing / Taxes
+            # / Soft Costs pushed to the bottom.
+            rows.sort(key=lambda r: (_catrank(r) if _catrank(r) is not None else r.get("_co", 999),
+                                     r.get("_po", 999999), r["subtask"]))
         else:
-            rows.sort(key=lambda r: (_bva_cat_rank(r["category"]), r["project"], r["subtask"]))
+            rows.sort(key=lambda r: (_catrank(r) if _catrank(r) is not None else _bva_cat_rank(r["category"]),
+                                     r["project"], r["subtask"]))
         blocks.append({"label": label, "entity": eid, "rows": rows})
     return blocks, bool(gl), bool(commits)
 
