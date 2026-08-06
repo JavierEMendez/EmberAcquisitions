@@ -2357,13 +2357,18 @@ _BVA_LOTTAX_SEC_RE = re.compile(r"^lot taxes\b.*?sec\w*\s*0*(\d+)\s*$", re.I)
 
 
 def _bva_canon_name(name: str) -> str:
-    """Sage project name -> pro-forma display name (safe: sections algorithmic,
-    plus a small exact map). Unknown names pass through unchanged."""
+    """Sage project name -> pro-forma display name: sections become 'Section N',
+    a small exact map covers special cases, and the 'GP'/'GP_' prefix is stripped
+    from everything else so budget lines (pro-forma-named) sit on the same project
+    as their Sage committed/actuals."""
     s = (name or "").strip()
     m = _BVA_SEC_RE.match(s) or _BVA_SEC_LAND_RE.match(s) or _BVA_LOTTAX_SEC_RE.match(s)
     if m:
         return "Section %d" % int(m.group(1))
-    return _BVA_SAGE_RENAME.get(s.lower(), s)
+    low = s.lower()
+    if low in _BVA_SAGE_RENAME:
+        return _BVA_SAGE_RENAME[low]
+    return re.sub(r"^gp[_\s]+", "", s, flags=re.I) or s
 
 
 def _bva_cat_alias(c: str) -> str:
