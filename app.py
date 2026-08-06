@@ -3035,6 +3035,11 @@ def _bud_phase(v):
     return (v.get("phase", "") or "") if isinstance(v, dict) else ""
 
 
+def _bud_task(v):
+    """Stored task (cost code) for a budget line (empty if none)."""
+    return (v.get("task", "") or "") if isinstance(v, dict) else ""
+
+
 def _bva_build_blocks(gl=None, budgets=None, commits=None):
     """Merge GL actuals + BAC/PO committed + budgets into per-entity blocks
     (Category → Project → Subtask), grouped and ordered like the BAC. Shared by
@@ -3187,7 +3192,7 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
                 seen_bud.add(_bk)
                 _bb = round(_bud_amt(ebud.get(_bk)) or (float(e.get("budget", 0) or 0) if not ebud else 0))
                 rows.append({"category": cat, "project": _disp, "projectName": _disp,
-                             "task": "", "subtask": "", "budget": _bb,
+                             "task": "Total commitment", "subtask": "", "budget": _bb,
                              "committed": e["committed"], "actual": 0,
                              "cInit": e.get("initial", 0), "cCO": e.get("changeOrders", 0),
                              "_co": co, "_po": e.get("projOrder", 900000)})
@@ -3205,13 +3210,19 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
             amt = _bud_amt(v)
             if not amt:
                 continue
-            proj, _, sub = bkey.partition(_BVA_KEYSEP)
+            parts = bkey.split(_BVA_KEYSEP)
+            proj = parts[0]
+            if len(parts) >= 3:
+                task, sub = parts[1], parts[2]
+            else:                            # legacy 2-part key
+                task, sub = "", (parts[1] if len(parts) > 1 else "")
+            task = _bud_task(v) or task
             if _is_phase1(proj):
                 continue                    # Phase 1 uses actuals, not the pro-forma budget
             _bcat = _bud_cat(v) or _bva_cat_alias(_bva_category(proj))
             _co2, _po2 = proj_sort.get((_bcat, proj), (bac_cat_order.get(_bcat, 950), 950000))
             rows.append({"category": _bcat, "project": proj,
-                         "projectName": proj, "task": "", "subtask": sub, "phase": _bud_phase(v),
+                         "projectName": proj, "task": task, "subtask": sub, "phase": _bud_phase(v),
                          "budget": round(amt), "committed": 0, "actual": 0,
                          "_co": _co2, "_po": _po2})
         # Drop empty rows (0 budget, 0 committed, 0 actual). Budget lines added
@@ -3288,7 +3299,8 @@ def api_bva_budget_upload():
             continue
         pcol, scol, bcol = cols.get("project"), cols.get("subtask"), cols.get("budget")
         ecol = cols.get("entity"); catcol = cols.get("category"); phcol = cols.get("phase")
-        if not (pcol and scol and bcol):
+        tcol = cols.get("task")
+        if not (pcol and bcol):
             continue
         # Entity from the sheet title (legacy per-entity sheets); None means the
         # sheet must carry a per-row Entity column (the flat sheet).
@@ -3300,7 +3312,8 @@ def api_bva_budget_upload():
             continue
         for r in range(hdr + 1, ws.max_row + 1):
             proj = str(ws.cell(r, pcol).value or "").strip()
-            sub = str(ws.cell(r, scol).value or "").strip()
+            sub = str(ws.cell(r, scol).value or "").strip() if scol else ""
+            task = str(ws.cell(r, tcol).value or "").strip() if tcol else ""
             if not proj or "total" in proj.lower():
                 continue
             if ecol:
@@ -3318,8 +3331,10 @@ def api_bva_budget_upload():
                 budgets[label] = {}; cleared.add(label)
             cat = str(ws.cell(r, catcol).value or "").strip() if catcol else ""
             phase = str(ws.cell(r, phcol).value or "").strip() if phcol else ""
-            budgets[label][proj + _BVA_KEYSEP + sub] = (
-                {"amt": amt, "cat": cat, "phase": phase} if (cat or phase) else amt)
+            # Key on project + task + subtask so the cost code (Task) stays unique
+            # even when the Subtask cell is blank.
+            budgets[label][proj + _BVA_KEYSEP + task + _BVA_KEYSEP + sub] = {
+                "amt": amt, "cat": cat, "phase": phase, "task": task}
             imported += 1
     _bva_save_budgets(budgets)
     return jsonify({"ok": True, "imported": imported})
