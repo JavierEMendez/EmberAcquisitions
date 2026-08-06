@@ -3123,7 +3123,7 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
                     com = round(float(ecom.get(projid + _BVA_KEYSEP + subid, 0) or 0))
                 else:
                     com = round(rec.get("committed", 0))   # GL PO-book fallback
-                rows.append({"category": cat, "project": projid or disp, "projectName": disp,
+                rows.append({"category": cat, "project": disp, "projectName": disp,
                              "task": task, "subtask": sub, "budget": bud, "committed": com, "actual": act,
                              "_co": co, "_po": po})
                 first = False
