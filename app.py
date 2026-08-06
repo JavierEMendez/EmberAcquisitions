@@ -3023,6 +3023,11 @@ def _bud_cat(v):
     return (v.get("cat", "") or "") if isinstance(v, dict) else ""
 
 
+def _bud_phase(v):
+    """Stored phase tag for a budget line (empty if none)."""
+    return (v.get("phase", "") or "") if isinstance(v, dict) else ""
+
+
 def _bva_build_blocks(gl=None, budgets=None, commits=None):
     """Merge GL actuals + BAC/PO committed + budgets into per-entity blocks
     (Category → Project → Subtask), grouped and ordered like the BAC. Shared by
@@ -3169,7 +3174,7 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
             proj, _, sub = bkey.partition(_BVA_KEYSEP)
             _bcat = _bud_cat(v) or _bva_cat_alias(_bva_category(proj))
             rows.append({"category": _bcat, "project": proj,
-                         "projectName": proj, "task": "", "subtask": sub,
+                         "projectName": proj, "task": "", "subtask": sub, "phase": _bud_phase(v),
                          "budget": round(amt), "committed": 0, "actual": 0,
                          "_co": bac_cat_order.get(_bcat, 950), "_po": 950000})
         # Drop empty rows (0 budget, 0 committed, 0 actual). Budget lines added
@@ -3245,7 +3250,7 @@ def api_bva_budget_upload():
         if not hdr:
             continue
         pcol, scol, bcol = cols.get("project"), cols.get("subtask"), cols.get("budget")
-        ecol = cols.get("entity"); catcol = cols.get("category")
+        ecol = cols.get("entity"); catcol = cols.get("category"); phcol = cols.get("phase")
         if not (pcol and scol and bcol):
             continue
         # Entity from the sheet title (legacy per-entity sheets); None means the
@@ -3275,7 +3280,9 @@ def api_bva_budget_upload():
             if label not in cleared:
                 budgets[label] = {}; cleared.add(label)
             cat = str(ws.cell(r, catcol).value or "").strip() if catcol else ""
-            budgets[label][proj + _BVA_KEYSEP + sub] = ({"amt": amt, "cat": cat} if cat else amt)
+            phase = str(ws.cell(r, phcol).value or "").strip() if phcol else ""
+            budgets[label][proj + _BVA_KEYSEP + sub] = (
+                {"amt": amt, "cat": cat, "phase": phase} if (cat or phase) else amt)
             imported += 1
     _bva_save_budgets(budgets)
     return jsonify({"ok": True, "imported": imported})
