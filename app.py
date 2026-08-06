@@ -2365,6 +2365,8 @@ _BVA_SAGE_RENAME = {
     "gp panhandle detention landscaping": "Panhandle Detention",
     "gp sec 8 & kermier rd round-a-bout landscaping": "Roundabout - Kermier/Baethe",
     "gp kermier rd ph01 landscape": "Kermier Rd Ph 1",
+    "gp lake charlie_s landscape": "Lake Charle South",
+    "gp delta & foxtrot ponds landscaping": "Delta Channel + Lake Foxtrot",
 }
 # Projects to hide entirely (old / irrelevant — e.g. commitments-only leftovers).
 _BVA_DROP_NAMES = ("hill + pond", "section 7 & kermier rd landscaping")
@@ -2378,8 +2380,8 @@ def _bva_is_dropped(name):
 # Completed projects (called out by the dev team) where the actual spend IS the
 # budget — keyed by canon/display (GP-stripped) name, lowercased.
 _BVA_ACTUALS_PROJECTS = {
-    "delta & foxtrot ponds landscaping",
     "detention phase 1 landscaping",
+    "lake ember amenitization",
 }
 _BVA_SEC_RE = re.compile(r"^gp\s+sec\.?\s*0*(\d+)\s*$", re.I)
 _BVA_SEC_LAND_RE = re.compile(r"^gp\s+section\s*0*(\d+)\s+landscape", re.I)
