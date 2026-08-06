@@ -3064,6 +3064,19 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
         recs = [r for r in (gl.get(label, []) or []) if r.get("projectId", "") not in dnu_ids]
         ebud = budgets.get(label, {}) or {}
         ecom = commits.get(label, {}) or {}
+        # Phase-1 work is complete, so its actuals ARE the budget — use actuals
+        # instead of a pro-forma estimate. A project is Phase 1 if its uploaded
+        # budget is tagged "Phase 1", or it's Section 1-5 (per the dev team).
+        proj_phase = {}
+        for _k, _v in ebud.items():
+            _p = _k.partition(_BVA_KEYSEP)[0]; _ph = _bud_phase(_v)
+            if _ph and _p not in proj_phase:
+                proj_phase[_p] = _ph
+
+        def _is_phase1(name):
+            if (proj_phase.get(name, "") or "").strip().lower() == "phase 1":
+                return True
+            return bool(re.match(r"^section\s+[1-5]\b", str(name or ""), re.I))
         # BAC mode: committed stored per project name as {committed, name,
         # category}. PO mode (legacy): committed per projId+subId as a number.
         bac_mode = any(isinstance(v, dict) for v in ecom.values())
@@ -3126,6 +3139,8 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
                 if first and not proj_has_tmpl and bac_bud:
                     bud = bac_bud
                 act = round(sum((rec.get("months") or {}).values()))
+                if _is_phase1(disp):
+                    bud = act                          # Phase 1 complete: budget = actuals
                 if bac_mode:
                     com = proj_com if first else 0     # project-level committed on the first row
                 elif ecom:
@@ -3133,7 +3148,8 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
                 else:
                     com = round(rec.get("committed", 0))   # GL PO-book fallback
                 rows.append({"category": cat, "project": disp, "projectName": disp,
-                             "task": task, "subtask": sub, "budget": bud, "committed": com, "actual": act,
+                             "task": task, "subtask": sub, "phase": ("Phase 1" if _is_phase1(disp) else ""),
+                             "budget": bud, "committed": com, "actual": act,
                              "cInit": (proj_ini if first else 0), "cCO": (proj_cco if first else 0),
                              "_co": co, "_po": po})
                 first = False
@@ -3142,7 +3158,8 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
         for sec, a in sorted(lot_sections.items()):
             label_ = _bva_canon_name("Lot Taxes — Sec %s" % sec)
             rows.append({"category": "Taxes", "project": label_, "projectName": label_,
-                         "task": "", "subtask": "", "budget": 0, "committed": 0, "actual": a,
+                         "task": "", "subtask": "", "phase": ("Phase 1" if _is_phase1(label_) else ""),
+                         "budget": (a if _is_phase1(label_) else 0), "committed": 0, "actual": a,
                          "_co": _tax_co, "_po": 800000 + (int(sec) if sec.isdigit() else 0)})
         # BAC-committed projects with no GL activity yet (e.g. not-started sections).
         if bac_mode:
@@ -3172,6 +3189,8 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
             if not amt:
                 continue
             proj, _, sub = bkey.partition(_BVA_KEYSEP)
+            if _is_phase1(proj):
+                continue                    # Phase 1 uses actuals, not the pro-forma budget
             _bcat = _bud_cat(v) or _bva_cat_alias(_bva_category(proj))
             rows.append({"category": _bcat, "project": proj,
                          "projectName": proj, "task": "", "subtask": sub, "phase": _bud_phase(v),
