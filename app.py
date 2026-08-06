@@ -3052,7 +3052,7 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
     for _recs in gl.values():
         for r in (_recs or []):
             nm = (r.get("project", "") or "").lower()
-            if "dnu" in nm or "do not use" in nm:
+            if "dnu" in nm or "do not use" in nm or "hill + pond" in nm:
                 dnu_ids.add(r.get("projectId", ""))
     blocks = []
     for label, eid in _BVA_ENTITIES:
