@@ -2356,6 +2356,13 @@ _BVA_SEC_LAND_RE = re.compile(r"^gp\s+section\s*0*(\d+)\s+landscape", re.I)
 _BVA_LOTTAX_SEC_RE = re.compile(r"^lot taxes\b.*?sec\w*\s*0*(\d+)\s*$", re.I)
 
 
+def _bva_strip_wip(s: str) -> str:
+    """Drop the Sage 'WIP -' accounting prefix from a subtask for display
+    (the GL is still parsed/imported with the WIP codes intact)."""
+    out = re.sub(r"^\s*wip\s*-?\s*", "", str(s or ""), flags=re.I).strip()
+    return out or (s or "")
+
+
 def _bva_canon_name(name: str) -> str:
     """Sage project name -> pro-forma display name: sections become 'Section N',
     a small exact map covers special cases, and the 'GP'/'GP_' prefix is stripped
@@ -3147,11 +3154,16 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
                     com = round(float(ecom.get(projid + _BVA_KEYSEP + subid, 0) or 0))
                 else:
                     com = round(rec.get("committed", 0))   # GL PO-book fallback
-                rows.append({"category": cat, "project": disp, "projectName": disp,
-                             "task": task, "subtask": sub, "phase": ("Phase 1" if _is_phase1(disp) else ""),
+                # Fencing always lives under Amenities (consistent across sections).
+                row_cat, row_co = cat, co
+                if "fenc" in (task or "").lower() or "fenc" in (sub or "").lower():
+                    row_cat = "Amenities"; row_co = bac_cat_order.get("Amenities", co)
+                rows.append({"category": row_cat, "project": disp, "projectName": disp,
+                             "task": task, "subtask": _bva_strip_wip(sub),
+                             "phase": ("Phase 1" if _is_phase1(disp) else ""),
                              "budget": bud, "committed": com, "actual": act,
                              "cInit": (proj_ini if first else 0), "cCO": (proj_cco if first else 0),
-                             "_co": co, "_po": po})
+                             "_co": row_co, "_po": po})
                 first = False
         # One rolled-up lot-tax line per section (Taxes category).
         _tax_co = bac_cat_order.get("Taxes", 900)
@@ -3186,7 +3198,7 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
         # project's sort position so they sit WITH it, not dumped at the bottom.
         proj_sort = {}
         for _r in rows:
-            proj_sort.setdefault(_r["project"], (_r.get("_co", 950), _r.get("_po", 950000)))
+            proj_sort.setdefault((_r["category"], _r["project"]), (_r.get("_co", 950), _r.get("_po", 950000)))
         for bkey, v in ebud.items():
             if bkey in seen_bud:
                 continue
@@ -3197,7 +3209,7 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
             if _is_phase1(proj):
                 continue                    # Phase 1 uses actuals, not the pro-forma budget
             _bcat = _bud_cat(v) or _bva_cat_alias(_bva_category(proj))
-            _co2, _po2 = proj_sort.get(proj, (bac_cat_order.get(_bcat, 950), 950000))
+            _co2, _po2 = proj_sort.get((_bcat, proj), (bac_cat_order.get(_bcat, 950), 950000))
             rows.append({"category": _bcat, "project": proj,
                          "projectName": proj, "task": "", "subtask": sub, "phase": _bud_phase(v),
                          "budget": round(amt), "committed": 0, "actual": 0,
