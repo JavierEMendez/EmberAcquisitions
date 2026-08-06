@@ -3304,6 +3304,23 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
     return blocks, bool(gl), bool(commits)
 
 
+def _bva_load_flags() -> dict:
+    """Flagged projects that need attention: {entity_label: [project names]}."""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT data FROM reports WHERE report_type = 'bva_flags' "
+                "ORDER BY uploaded_at DESC LIMIT 1")
+    row = cur.fetchone(); cur.close(); conn.close()
+    return ((row["data"] if row else {}) or {}).get("flags", {}) or {}
+
+
+def _bva_save_flags(flags: dict) -> None:
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM reports WHERE report_type = 'bva_flags'")
+    cur.execute("INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+                ("bva_flags", json.dumps({"flags": flags}), session.get("user_id")))
+    conn.commit(); cur.close(); conn.close()
+
+
 @app.route("/api/bva/data", methods=["GET"])
 @login_required
 def api_bva_data():
@@ -3312,7 +3329,29 @@ def api_bva_data():
         return jsonify({"error": "forbidden"}), 403
     blocks, has_gl, has_com = _bva_build_blocks()
     return jsonify({"configured": True, "has_gl": has_gl,
-                    "has_commitments": has_com, "blocks": blocks})
+                    "has_commitments": has_com, "blocks": blocks,
+                    "flags": _bva_load_flags(), "is_admin": bool(session.get("is_admin"))})
+
+
+@app.route("/api/bva/flag", methods=["POST"])
+@login_required
+def api_bva_flag():
+    """Admin: flag/unflag a project (by name) so it can be filtered as needing
+    attention."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+    data = request.get_json(force=True, silent=True) or {}
+    ent = data.get("entity"); proj = (data.get("project") or "").strip()
+    flagged = bool(data.get("flagged"))
+    valid = {lbl for lbl, _e in _BVA_ENTITIES}
+    if ent not in valid or not proj:
+        return jsonify({"error": "bad request"}), 400
+    flags = _bva_load_flags()
+    cur = set(flags.get(ent, []) or [])
+    cur.add(proj) if flagged else cur.discard(proj)
+    flags[ent] = sorted(cur)
+    _bva_save_flags(flags)
+    return jsonify({"ok": True, "project": proj, "flagged": flagged})
 
 
 @app.route("/api/bva/budget", methods=["POST"])

@@ -69,6 +69,12 @@
   .cb-toggle-row{margin:6px 0 0;}
   .cb-toggle{background:none;border:1px solid var(--eax-line);border-radius:6px;color:var(--eax-subtle);font-size:10px;font-weight:600;padding:4px 10px;cursor:pointer;letter-spacing:.03em;}
   .cb-toggle:hover{color:var(--eax-fg);border-color:var(--eax-subtle);}
+  .cb-toggle.on{color:#c0392b;border-color:#c0392b;background:rgba(192,57,43,.06);}
+  .flag-btn{background:none;border:none;cursor:pointer;font-size:12px;padding:0 6px 0 0;opacity:.35;line-height:1;}
+  .flag-btn:hover{opacity:1;}
+  .flag-btn.on{opacity:1;}
+  .flag-btn[disabled]{cursor:default;opacity:1;}
+  .bva-table tr.proj-head.flagged td{background:rgba(192,57,43,.07);}
   .bva-table th.cb, .bva-table td.cb{background:color-mix(in srgb, var(--eax-accent) 6%, transparent);}
   .bva-table td.cb{font-style:italic;}
   .bva-table tr.cat-head{cursor:pointer;}
@@ -189,6 +195,18 @@
     return (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString();
   };
   let BLOCKS = [], active = 0, query = "", showCB = false;
+  let FLAGS = {}, IS_ADMIN = false, flaggedOnly = false;
+  const activeLabel = () => (BLOCKS[active] && BLOCKS[active].label) || "";
+  const isFlagged = (proj) => (FLAGS[activeLabel()] || []).includes(proj);
+  async function toggleFlag(proj, on) {
+    const ent = activeLabel();
+    const set = new Set(FLAGS[ent] || []);
+    on ? set.add(proj) : set.delete(proj);
+    FLAGS[ent] = [...set];
+    renderBody();
+    try { await fetch("/api/bva/flag", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entity: ent, project: proj, flagged: on }) }); } catch (e) {}
+  }
 
   function renderTabs() {
     const t = $("#proj-tabs");
@@ -205,7 +223,8 @@
 
     const q = query.trim().toLowerCase();
     const rows = q ? b.rows.filter(r => ((r.project||"")+" "+(r.projectName||"")+" "+(r.subtask||"")+" "+(r.task||"")).toLowerCase().includes(q)) : b.rows;
-    const expand = !!q;   // searching → show detail expanded
+    const expand = !!q || flaggedOnly;   // searching / flagged view → show detail expanded
+    const flaggedCount = (FLAGS[activeLabel()] || []).length;
     if (!rows.length) { host.innerHTML = `<div class="empty">No projects match “${query}”.</div>`; return; }
 
     // KPI totals (filtered)
@@ -246,6 +265,8 @@
       const cg = cats[cat];
       let cB = 0, cC = 0, cA = 0, cCI = 0, cCCO = 0, projHtml = "";
       cg.order.forEach(proj => {
+        const flg = isFlagged(proj);
+        if (flaggedOnly && !flg) return;              // "flagged only" filter
         const pr = cg.projects[proj];
         let pB = 0, pC = 0, pA = 0, pCI = 0, pCCO = 0;
         const inner = pr.map(r => {
@@ -255,9 +276,12 @@
         cB += pB; cC += pC; cA += pA; cCI += pCI; cCCO += pCCO;
         const pname = (pr[0] && pr[0].projectName && pr[0].projectName !== proj)
           ? ` <span class="muted" style="font-weight:400">· ${pr[0].projectName}</span>` : "";
-        projHtml += `<tr class="proj-head det det-${ci}" ${hid}><td class="left" colspan="3">${proj}${pname}</td>${vcells(pB, pC, pA, pCI, pCCO)}</tr>${inner}`;
+        const fbtn = (IS_ADMIN || flg)
+          ? `<button class="flag-btn ${flg ? "on" : ""}" data-proj="${encodeURIComponent(proj)}" title="${flg ? "Flagged — click to clear" : "Flag for attention"}"${IS_ADMIN ? "" : " disabled"}>${flg ? "🚩" : "⚑"}</button>`
+          : "";
+        projHtml += `<tr class="proj-head det det-${ci} ${flg ? "flagged" : ""}" ${hid}><td class="left" colspan="3">${fbtn}${proj}${pname}</td>${vcells(pB, pC, pA, pCI, pCCO)}</tr>${inner}`;
       });
-      rowsHtml += `<tr class="cat-head ${expand ? "open" : ""}" data-cat="${ci}"><td class="left" colspan="3"><span class="caret">${caret}</span> ${cat}</td>${vcells(cB, cC, cA, cCI, cCCO)}</tr>${projHtml}`;
+      if (projHtml) rowsHtml += `<tr class="cat-head ${expand ? "open" : ""}" data-cat="${ci}"><td class="left" colspan="3"><span class="caret">${caret}</span> ${cat}</td>${vcells(cB, cC, cA, cCI, cCCO)}</tr>${projHtml}`;
     });
 
     host.innerHTML = `
@@ -271,6 +295,7 @@
       </div>
       <div class="cb-toggle-row">
         <button id="cb-toggle" class="cb-toggle">${showCB ? "▾" : "▸"} Committed breakdown (Original Contract + Change Orders = Final)</button>
+        <button id="flag-only" class="cb-toggle ${flaggedOnly ? "on" : ""}">🚩 Flagged only${flaggedOnly ? " ✓" : ""}${flaggedCount ? ` (${flaggedCount})` : ""}</button>
       </div>
       <table class="bva-table">
         <thead><tr>
@@ -288,6 +313,15 @@
 
     const cbt = $("#cb-toggle");
     if (cbt) cbt.addEventListener("click", () => { showCB = !showCB; renderBody(); });
+    const fo = $("#flag-only");
+    if (fo) fo.addEventListener("click", () => { flaggedOnly = !flaggedOnly; renderBody(); });
+    host.querySelectorAll(".flag-btn:not([disabled])").forEach(b => {
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const proj = decodeURIComponent(b.dataset.proj);
+        toggleFlag(proj, !isFlagged(proj));
+      });
+    });
 
     // Collapsible categories — detail hidden by default, click to expand.
     host.querySelectorAll(".cat-head").forEach(h => {
@@ -308,6 +342,7 @@
       if (d.error) { $("#bva-body").innerHTML = `<div class="empty">${d.error}</div>`; return; }
       if (!d.has_gl) { $("#bva-body").innerHTML = `<div class="empty">No GL report loaded yet. Click <b>Upload GL Report</b> to load actuals &amp; commitments from Sage.</div>`; $("#proj-tabs").innerHTML = ""; return; }
       BLOCKS = d.blocks || [];
+      FLAGS = d.flags || {}; IS_ADMIN = !!d.is_admin;
       renderTabs(); renderBody();
     } catch (e) {
       $("#bva-body").innerHTML = `<div class="empty">Failed to load: ${e}</div>`;
