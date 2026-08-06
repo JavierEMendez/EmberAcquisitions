@@ -195,7 +195,7 @@
     return (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString();
   };
   let BLOCKS = [], active = 0, query = "", showCB = false;
-  let FLAGS = {}, IS_ADMIN = false, flaggedOnly = false;
+  let FLAGS = {}, IS_ADMIN = false, flaggedOnly = false, openCats = new Set();
   const activeLabel = () => (BLOCKS[active] && BLOCKS[active].label) || "";
   const isFlagged = (proj) => (FLAGS[activeLabel()] || []).includes(proj);
   async function toggleFlag(proj, on) {
@@ -258,10 +258,11 @@
       cg.projects[r.project].push(r);
     });
 
-    const hid = expand ? "" : "hidden";
-    const caret = expand ? "▾" : "▸";
     let rowsHtml = "";
     catOrder.forEach((cat, ci) => {
+      const open = expand || openCats.has(cat);   // remember which categories are expanded
+      const hid = open ? "" : "hidden";
+      const caret = open ? "▾" : "▸";
       const cg = cats[cat];
       let cB = 0, cC = 0, cA = 0, cCI = 0, cCCO = 0, projHtml = "";
       cg.order.forEach(proj => {
@@ -281,7 +282,7 @@
           : "";
         projHtml += `<tr class="proj-head det det-${ci} ${flg ? "flagged" : ""}" ${hid}><td class="left" colspan="3">${fbtn}${proj}${pname}</td>${vcells(pB, pC, pA, pCI, pCCO)}</tr>${inner}`;
       });
-      if (projHtml) rowsHtml += `<tr class="cat-head ${expand ? "open" : ""}" data-cat="${ci}"><td class="left" colspan="3"><span class="caret">${caret}</span> ${cat}</td>${vcells(cB, cC, cA, cCI, cCCO)}</tr>${projHtml}`;
+      if (projHtml) rowsHtml += `<tr class="cat-head ${open ? "open" : ""}" data-cat="${ci}" data-catname="${encodeURIComponent(cat)}"><td class="left" colspan="3"><span class="caret">${caret}</span> ${cat}</td>${vcells(cB, cC, cA, cCI, cCCO)}</tr>${projHtml}`;
     });
 
     host.innerHTML = `
@@ -328,6 +329,8 @@
       h.addEventListener("click", () => {
         const ci = h.dataset.cat;
         const open = h.classList.toggle("open");
+        const cat = decodeURIComponent(h.dataset.catname || "");
+        open ? openCats.add(cat) : openCats.delete(cat);
         h.querySelector(".caret").textContent = open ? "▾" : "▸";
         host.querySelectorAll(".det-" + ci).forEach(d => { d.hidden = !open; });
       });
