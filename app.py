@@ -3144,6 +3144,7 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
             # BAC-seeding would double-count).
             bac_bud = (entry.get("budget", 0) if (bac_mode and entry and not ebud) else 0)
             first = True
+            com_placed = False
             for rec in grp:
                 task = rec.get("task", ""); sub = rec.get("subtask", ""); subid = rec.get("subtaskId", "")
                 bkey = disp + _BVA_KEYSEP + sub; seen_bud.add(bkey)
@@ -3153,23 +3154,33 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
                 act = round(sum((rec.get("months") or {}).values()))
                 if _is_phase1(disp):
                     bud = act                          # Phase 1 complete: budget = actuals
+                # Fencing always lives under Amenities (consistent across sections).
+                is_fence = "fenc" in (task or "").lower() or "fenc" in (sub or "").lower()
+                row_cat, row_co = (("Amenities", bac_cat_order.get("Amenities", co))
+                                   if is_fence else (cat, co))
+                # Project-level committed (BAC Total Commitments) goes on the first
+                # row that stays in the project's MAIN category — not a fence row
+                # that got moved to Amenities (else the section looks uncommitted).
+                com_here = bac_mode and not is_fence and not com_placed
                 if bac_mode:
-                    com = proj_com if first else 0     # project-level committed on the first row
+                    com = proj_com if com_here else 0
+                    if com_here:
+                        com_placed = True
                 elif ecom:
                     com = round(float(ecom.get(projid + _BVA_KEYSEP + subid, 0) or 0))
                 else:
                     com = round(rec.get("committed", 0))   # GL PO-book fallback
-                # Fencing always lives under Amenities (consistent across sections).
-                row_cat, row_co = cat, co
-                if "fenc" in (task or "").lower() or "fenc" in (sub or "").lower():
-                    row_cat = "Amenities"; row_co = bac_cat_order.get("Amenities", co)
                 rows.append({"category": row_cat, "project": disp, "projectName": disp,
                              "task": task, "subtask": _bva_strip_wip(sub),
                              "phase": ("Phase 1" if _is_phase1(disp) else ""),
                              "budget": bud, "committed": com, "actual": act,
-                             "cInit": (proj_ini if first else 0), "cCO": (proj_cco if first else 0),
+                             "cInit": (proj_ini if com_here else 0), "cCO": (proj_cco if com_here else 0),
                              "_co": row_co, "_po": po})
                 first = False
+            # If every row was a fence row, still surface the committed on the last one.
+            if bac_mode and proj_com and not com_placed and rows:
+                rows[-1]["committed"] = proj_com
+                rows[-1]["cInit"] = proj_ini; rows[-1]["cCO"] = proj_cco
         # One rolled-up lot-tax line per section (Taxes category).
         _tax_co = bac_cat_order.get("Taxes", 900)
         for sec, a in sorted(lot_sections.items()):
