@@ -2358,6 +2358,7 @@ _BVA_SAGE_RENAME = {
     "gp baethe rd ph 1 south": "Baethe Rd South",
     "gp kermier rd ph01": "Kermier Rd Ph 1",
     "gp kermier rd ph02": "Kermier Rd Ph 2",
+    "gp kickapoo rd ph 1": "Kickapoo Rd East",
     "gp school collector road": "School Collector",
     # Landscaping actuals → their pro-forma budget project.
     "gp baethe ph03 landscaping": "Baethe Rd Ph3 + Kickapoo RAB Landscape",
