@@ -2367,6 +2367,7 @@ _BVA_SAGE_RENAME = {
     "gp kermier rd ph01 landscape": "Kermier Rd Ph 1",
     "gp lake charlie_s landscape": "Lake Charle South",
     "gp delta & foxtrot ponds landscaping": "Delta Channel + Lake Foxtrot",
+    "gp ltlwarren &baethe": "LTL @ Warren Ranch Road + Baethe",
 }
 # Projects to hide entirely (old / irrelevant — e.g. commitments-only leftovers).
 _BVA_DROP_NAMES = ("hill + pond", "section 7 & kermier rd landscaping")
@@ -3267,6 +3268,8 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
             if _is_phase1(proj):
                 continue                    # Phase 1 uses actuals, not the pro-forma budget
             _bcat = _bud_cat(v) or _bva_cat_alias(_bva_category(proj))
+            if _bcat == "Amenities" and proj.strip().lower().startswith("ltl @"):
+                continue                    # LTL landscape is a few $k — not a true cost
             _co2, _po2 = proj_sort.get((_bcat, proj), (bac_cat_order.get(_bcat, 950), 950000))
             rows.append({"category": _bcat, "project": proj,
                          "projectName": proj, "task": task, "subtask": sub, "phase": _bud_phase(v),
