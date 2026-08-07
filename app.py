@@ -2368,6 +2368,9 @@ _BVA_SAGE_RENAME = {
     "gp lake charlie_s landscape": "Lake Charle South",
     "gp delta & foxtrot ponds landscaping": "Delta Channel + Lake Foxtrot",
     "gp ltlwarren &baethe": "LTL @ Warren Ranch Road + Baethe",
+    "gp fdcoutfallchannel": "FDC Outfall Channel",
+    "gp fdcoutfallchnldtn": "FDC Outfall Channel MGD",
+    "gp fdcoutfallpondexp": "Panhandle Detention",
 }
 # Projects to hide entirely (old / irrelevant — e.g. commitments-only leftovers).
 _BVA_DROP_NAMES = ("hill + pond", "section 7 & kermier rd landscaping")
@@ -2383,6 +2386,8 @@ def _bva_is_dropped(name):
 _BVA_ACTUALS_PROJECTS = {
     "detention phase 1 landscaping",
     "lake ember amenitization",
+    "fdc outfall channel",
+    "fdc outfall channel mgd",
 }
 _BVA_SEC_RE = re.compile(r"^gp\s+sec\.?\s*0*(\d+)\s*$", re.I)
 _BVA_SEC_LAND_RE = re.compile(r"^gp\s+section\s*0*(\d+)\s+landscape", re.I)
