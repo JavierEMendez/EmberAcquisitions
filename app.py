@@ -2371,6 +2371,9 @@ _BVA_SAGE_RENAME = {
     "gp fdcoutfallchannel": "FDC Outfall Channel",
     "gp fdcoutfallchnldtn": "FDC Outfall Channel MGD",
     "gp fdcoutfallpondexp": "Panhandle Detention",
+    # Warren Ranch Left Turn Lane and LTL @ Warren+Baethe are the same work
+    # (two Sage projectIds) — merge onto the pro-forma-budgeted LTL name.
+    "gp warren ranch rd left turn lane": "LTL @ Warren Ranch Road + Baethe",
 }
 # Projects to hide entirely (old / irrelevant — e.g. commitments-only leftovers).
 _BVA_DROP_NAMES = ("hill + pond", "section 7 & kermier rd landscaping")
@@ -3291,6 +3294,18 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
         for _r in rows:
             if not _r.get("phase"):
                 _r["phase"] = proj_ph.get(_r["projectName"], "")
+        # When two Sage projectIds canon to one display name (a merge, e.g.
+        # Warren Ranch LTL + LTL @ Warren+Baethe), their rows can carry different
+        # BAC sort positions and get split apart by another project. Unify each
+        # (category, project) to a single position so its rows stay contiguous.
+        _grp_po = {}
+        for _r in rows:
+            _k = (_r["category"], _r["projectName"])
+            _v = (_r.get("_co", 999), _r.get("_po", 999999))
+            if _k not in _grp_po or _v < _grp_po[_k]:
+                _grp_po[_k] = _v
+        for _r in rows:
+            _r["_co"], _r["_po"] = _grp_po[(_r["category"], _r["projectName"])]
         # Drop empty rows (0 budget, 0 committed, 0 actual). Budget lines added
         # later carry a budget, so they survive.
         rows = [r for r in rows if r.get("budget") or r.get("committed") or r.get("actual")]
