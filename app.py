@@ -2388,6 +2388,7 @@ _BVA_ACTUALS_PROJECTS = {
     "lake ember amenitization",
     "fdc outfall channel",
     "fdc outfall channel mgd",
+    "mallard crossing",
 }
 _BVA_SEC_RE = re.compile(r"^gp\s+sec\.?\s*0*(\d+)\s*$", re.I)
 _BVA_SEC_LAND_RE = re.compile(r"^gp\s+section\s*0*(\d+)\s+landscape", re.I)
