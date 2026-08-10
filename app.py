@@ -3200,6 +3200,8 @@ def _bva_line_key(task: str, sub: str):
         return ("streetlight", None)
     if "urd" in toks_s or "power" in toks_s or "dry util" in s:
         return ("urd", None)
+    if "mailbox" in s:
+        return ("mailbox", None)      # "Mailboxes" budget <-> "Mailbox construction"
     ct = _bva_costtype(s)
     toks = []
     for t in s.split():
