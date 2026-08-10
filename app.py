@@ -3378,6 +3378,28 @@ def _bva_save_flags(flags: dict) -> None:
     conn.commit(); cur.close(); conn.close()
 
 
+# Project completeness tags — for filtering the BVA by how far along work is.
+_BVA_STATUSES = ("complete", "in_progress", "future")
+
+
+def _bva_load_status() -> dict:
+    """Completeness tag per project: {entity_label: {project_name: status}} where
+    status is one of _BVA_STATUSES."""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT data FROM reports WHERE report_type = 'bva_status' "
+                "ORDER BY uploaded_at DESC LIMIT 1")
+    row = cur.fetchone(); cur.close(); conn.close()
+    return ((row["data"] if row else {}) or {}).get("status", {}) or {}
+
+
+def _bva_save_status(status: dict) -> None:
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM reports WHERE report_type = 'bva_status'")
+    cur.execute("INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+                ("bva_status", json.dumps({"status": status}), session.get("user_id")))
+    conn.commit(); cur.close(); conn.close()
+
+
 @app.route("/api/bva/data", methods=["GET"])
 @login_required
 def api_bva_data():
@@ -3387,7 +3409,8 @@ def api_bva_data():
     blocks, has_gl, has_com = _bva_build_blocks()
     return jsonify({"configured": True, "has_gl": has_gl,
                     "has_commitments": has_com, "blocks": blocks,
-                    "flags": _bva_load_flags(), "is_admin": bool(session.get("is_admin"))})
+                    "flags": _bva_load_flags(), "status": _bva_load_status(),
+                    "is_admin": bool(session.get("is_admin"))})
 
 
 @app.route("/api/bva/flag", methods=["POST"])
@@ -3409,6 +3432,31 @@ def api_bva_flag():
     flags[ent] = sorted(cur)
     _bva_save_flags(flags)
     return jsonify({"ok": True, "project": proj, "flagged": flagged})
+
+
+@app.route("/api/bva/status", methods=["POST"])
+@login_required
+def api_bva_status():
+    """Admin: tag a project's completeness (complete / in_progress / future),
+    or clear it (empty status), so the page can be filtered by how far along
+    work is."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+    data = request.get_json(force=True, silent=True) or {}
+    ent = data.get("entity"); proj = (data.get("project") or "").strip()
+    st = (data.get("status") or "").strip().lower()
+    valid = {lbl for lbl, _e in _BVA_ENTITIES}
+    if ent not in valid or not proj or (st and st not in _BVA_STATUSES):
+        return jsonify({"error": "bad request"}), 400
+    status = _bva_load_status()
+    ent_map = dict(status.get(ent, {}) or {})
+    if st:
+        ent_map[proj] = st
+    else:
+        ent_map.pop(proj, None)
+    status[ent] = ent_map
+    _bva_save_status(status)
+    return jsonify({"ok": True, "project": proj, "status": st})
 
 
 @app.route("/api/bva/budget", methods=["POST"])

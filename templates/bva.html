@@ -75,6 +75,20 @@
   .flag-btn.on{opacity:1;}
   .flag-btn[disabled]{cursor:default;opacity:1;}
   .bva-table tr.proj-head.flagged td{background:rgba(192,57,43,.07);}
+  .status-filter{display:inline-flex;align-items:center;gap:6px;margin-left:10px;}
+  .sf-label{font-size:10px;font-weight:700;color:var(--eax-subtle);letter-spacing:.03em;text-transform:uppercase;}
+  .cb-toggle.sf.on{color:#1a5f8a;border-color:#1a5f8a;background:rgba(26,95,138,.08);}
+  .status-sel{margin-left:10px;font-size:10px;font-weight:600;padding:1px 4px;border:1px solid var(--eax-line);border-radius:5px;background:var(--eax-bg-2);color:var(--eax-subtle);cursor:pointer;vertical-align:middle;}
+  .status-badge{margin-left:10px;font-size:10px;font-weight:700;padding:1px 7px;border-radius:5px;}
+  .status-badge.s-complete,.status-sel.s-complete{color:#1e7e34;}
+  .status-badge.s-in_progress,.status-sel.s-in_progress{color:#b7791f;}
+  .status-badge.s-future,.status-sel.s-future{color:#5a6b7b;}
+  .status-badge.s-complete{background:rgba(30,126,52,.10);}
+  .status-badge.s-in_progress{background:rgba(183,121,31,.12);}
+  .status-badge.s-future{background:rgba(90,107,123,.12);}
+  .bva-table tr.proj-head.s-complete td.left:first-child{box-shadow:inset 3px 0 0 #1e7e34;}
+  .bva-table tr.proj-head.s-in_progress td.left:first-child{box-shadow:inset 3px 0 0 #b7791f;}
+  .bva-table tr.proj-head.s-future td.left:first-child{box-shadow:inset 3px 0 0 #5a6b7b;}
   .bva-table th.cb, .bva-table td.cb{background:color-mix(in srgb, var(--eax-accent) 6%, transparent);}
   .bva-table td.cb{font-style:italic;}
   .bva-table tr.cat-head{cursor:pointer;}
@@ -200,8 +214,15 @@
   };
   let BLOCKS = [], active = 0, query = "", showCB = false;
   let FLAGS = {}, IS_ADMIN = false, flaggedOnly = false, openCats = new Set();
+  let STATUS = {}, statusFilter = "";   // "" = all; else complete/in_progress/future
+  const STATUS_META = {
+    complete:    { icon: "✅", label: "Complete" },
+    in_progress: { icon: "🔨", label: "In Progress" },
+    future:      { icon: "🗓️", label: "Future" },
+  };
   const activeLabel = () => (BLOCKS[active] && BLOCKS[active].label) || "";
   const isFlagged = (proj) => (FLAGS[activeLabel()] || []).includes(proj);
+  const projStatus = (proj) => (STATUS[activeLabel()] || {})[proj] || "";
   async function toggleFlag(proj, on) {
     const ent = activeLabel();
     const set = new Set(FLAGS[ent] || []);
@@ -210,6 +231,15 @@
     renderBody();
     try { await fetch("/api/bva/flag", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ entity: ent, project: proj, flagged: on }) }); } catch (e) {}
+  }
+  async function setStatus(proj, st) {
+    const ent = activeLabel();
+    const m = { ...(STATUS[ent] || {}) };
+    if (st) m[proj] = st; else delete m[proj];
+    STATUS[ent] = m;
+    renderBody();
+    try { await fetch("/api/bva/status", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entity: ent, project: proj, status: st }) }); } catch (e) {}
   }
 
   function renderTabs() {
@@ -235,9 +265,16 @@
     const flaggedCount = [...flagSet].filter(p => present.has(p)).length;
     if (!rows.length) { host.innerHTML = `<div class="empty">No projects match “${query}”.</div>`; return; }
 
-    // In "flagged only" mode the KPI tiles + grand total reflect just the
-    // flagged projects, not the whole entity.
-    const vrows = flaggedOnly ? rows.filter(r => flagSet.has(r.project)) : rows;
+    // Completeness counts (distinct present projects per status) for the chips.
+    const statusMap = STATUS[activeLabel()] || {};
+    const sCount = { complete: 0, in_progress: 0, future: 0 };
+    present.forEach(p => { const s = statusMap[p]; if (s in sCount) sCount[s]++; });
+
+    // The flagged-only + completeness filters also drive the KPI tiles and grand
+    // total, so the headline numbers match the visible subset.
+    const vrows = rows.filter(r =>
+      (!flaggedOnly || flagSet.has(r.project)) &&
+      (!statusFilter || (statusMap[r.project] || "") === statusFilter));
 
     // KPI totals (respect search + flagged-only filters)
     let tB = 0, tC = 0, tA = 0, tCI = 0, tCCO = 0;
@@ -279,7 +316,9 @@
       let cB = 0, cC = 0, cA = 0, cCI = 0, cCCO = 0, projHtml = "";
       cg.order.forEach(proj => {
         const flg = isFlagged(proj);
+        const st = projStatus(proj);
         if (flaggedOnly && !flg) return;              // "flagged only" filter
+        if (statusFilter && st !== statusFilter) return;   // completeness filter
         const pr = cg.projects[proj];
         let pB = 0, pC = 0, pA = 0, pCI = 0, pCCO = 0;
         const inner = pr.map(r => {
@@ -292,7 +331,14 @@
         const fbtn = (IS_ADMIN || flg)
           ? `<button class="flag-btn ${flg ? "on" : ""}" data-proj="${encodeURIComponent(proj)}" title="${flg ? "Flagged — click to clear" : "Flag for attention"}"${IS_ADMIN ? "" : " disabled"}>${flg ? "🚩" : "⚑"}</button>`
           : "";
-        projHtml += `<tr class="proj-head det det-${ci} ${flg ? "flagged" : ""}" ${hid}><td class="left" colspan="3">${fbtn}${proj}${pname}</td>${vcells(pB, pC, pA, pCI, pCCO)}</tr>${inner}`;
+        const sctrl = IS_ADMIN
+          ? `<select class="status-sel s-${st}" data-proj="${encodeURIComponent(proj)}">`
+            + `<option value="">— status —</option>`
+            + Object.keys(STATUS_META).map(k =>
+                `<option value="${k}" ${st === k ? "selected" : ""}>${STATUS_META[k].icon} ${STATUS_META[k].label}</option>`).join("")
+            + `</select>`
+          : (st ? `<span class="status-badge s-${st}">${STATUS_META[st].icon} ${STATUS_META[st].label}</span>` : "");
+        projHtml += `<tr class="proj-head det det-${ci} ${flg ? "flagged" : ""} ${st ? "s-" + st : ""}" ${hid}><td class="left" colspan="3">${fbtn}${proj}${pname}${sctrl}</td>${vcells(pB, pC, pA, pCI, pCCO)}</tr>${inner}`;
       });
       if (projHtml) rowsHtml += `<tr class="cat-head ${open ? "open" : ""}" data-cat="${ci}" data-catname="${encodeURIComponent(cat)}"><td class="left" colspan="3"><span class="caret">${caret}</span> ${cat}</td>${vcells(cB, cC, cA, cCI, cCCO)}</tr>${projHtml}`;
     });
@@ -309,6 +355,13 @@
       <div class="cb-toggle-row">
         <button id="cb-toggle" class="cb-toggle">${showCB ? "▾" : "▸"} Committed breakdown (Original Contract + Change Orders = Final)</button>
         <button id="flag-only" class="cb-toggle ${flaggedOnly ? "on" : ""}">🚩 Flagged only${flaggedOnly ? " ✓" : ""}${flaggedCount ? ` (${flaggedCount})` : ""}</button>
+        <span class="status-filter">
+          <span class="sf-label">Status:</span>
+          <button class="cb-toggle sf ${statusFilter === "" ? "on" : ""}" data-sf="">All</button>
+          <button class="cb-toggle sf ${statusFilter === "complete" ? "on" : ""}" data-sf="complete">✅ Complete${sCount.complete ? ` (${sCount.complete})` : ""}</button>
+          <button class="cb-toggle sf ${statusFilter === "in_progress" ? "on" : ""}" data-sf="in_progress">🔨 In Progress${sCount.in_progress ? ` (${sCount.in_progress})` : ""}</button>
+          <button class="cb-toggle sf ${statusFilter === "future" ? "on" : ""}" data-sf="future">🗓️ Future${sCount.future ? ` (${sCount.future})` : ""}</button>
+        </span>
       </div>
       <table class="bva-table">
         <thead><tr>
@@ -335,6 +388,13 @@
         toggleFlag(proj, !isFlagged(proj));
       });
     });
+    host.querySelectorAll("[data-sf]").forEach(b =>
+      b.addEventListener("click", () => { statusFilter = b.dataset.sf; renderBody(); }));
+    host.querySelectorAll(".status-sel").forEach(sel =>
+      sel.addEventListener("change", (e) => {
+        e.stopPropagation();
+        setStatus(decodeURIComponent(sel.dataset.proj), sel.value);
+      }));
 
     // Collapsible categories — detail hidden by default, click to expand.
     host.querySelectorAll(".cat-head").forEach(h => {
@@ -357,7 +417,7 @@
       if (d.error) { $("#bva-body").innerHTML = `<div class="empty">${d.error}</div>`; return; }
       if (!d.has_gl) { $("#bva-body").innerHTML = `<div class="empty">No GL report loaded yet. Click <b>Upload GL Report</b> to load actuals &amp; commitments from Sage.</div>`; $("#proj-tabs").innerHTML = ""; return; }
       BLOCKS = d.blocks || [];
-      FLAGS = d.flags || {}; IS_ADMIN = !!d.is_admin;
+      FLAGS = d.flags || {}; STATUS = d.status || {}; IS_ADMIN = !!d.is_admin;
       renderTabs(); renderBody();
     } catch (e) {
       $("#bva-body").innerHTML = `<div class="empty">Failed to load: ${e}</div>`;
