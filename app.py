@@ -3557,9 +3557,17 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
         # Put each line's budget and its actuals/committed on ONE row even when
         # the pro-forma and Sage name it slightly differently.
         rows = _bva_merge_lines(rows)
-        # Drop empty rows (0 budget, 0 committed, 0 actual). Budget lines added
-        # later carry a budget, so they survive.
-        rows = [r for r in rows if r.get("budget") or r.get("committed") or r.get("actual")]
+        # Drop empty rows (0 budget, 0 committed, 0 actual). Also drop committed-
+        # only strays on completed projects: a project whose budget = its actuals
+        # shouldn't carry a line that has committed but no budget and no actuals
+        # (a closed/left-over commitment, e.g. Detention Ph01 Landscape arch).
+        def _keep(r):
+            if r.get("budget") or r.get("actual"):
+                return True
+            if r.get("committed"):
+                return not _is_phase1(r.get("projectName", ""))
+            return False
+        rows = [r for r in rows if _keep(r)]
         def _catrank(r):
             b = _BVA_CAT_BOTTOM.get(r["category"])
             return 2000 + b if b is not None else None
