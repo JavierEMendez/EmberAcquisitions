@@ -2666,17 +2666,24 @@ def _bva_norm_name(s: str) -> str:
 
 
 def _bva_parse_bac(file_bytes: bytes, force_entity: str = None) -> dict:
-    """Parse a Sage BAC ('Budget vs Committed vs Actuals by Project') .xlsx into
-    {entity_label: {norm_name: {"committed", "name", "category"}}}.
+    """Parse a Sage BAC ('Budget vs Committed vs Actuals by ...') .xlsx into
+    {entity_label: {norm_name: {"committed","initial","changeOrders","budget",
+    "name","category","catOrder","projOrder","subs":[...]}}}.
 
     Committed = the 'Total Commitments' column (F = Initial Contract + Change
     Orders) — Sage's authoritative committed, which unlike the Purchasing
     export captures non-PO commitments (financing, fees, closed contracts).
-    Projects are the indent-8 rows; the enclosing indent-4 row is the Sage
-    category group. Route by name prefix: EW=Dennison, EA=WRG, else GPD —
-    UNLESS force_entity is given (a per-entity upload), in which case every
-    project is assigned to that entity (a single-entity export may not carry
-    the EW/EA prefix, so prefix-routing would wrongly dump it into GPD)."""
+    Category group is the indent-4/6 row; PROJECTS are indent-8; when the export
+    is 'by Subtask' each project also has indent-10 SUBTASK rows (carried in
+    'subs') so committed can be allocated to the right line instead of lumped on
+    the project. A project's totals come from its 'Total <name>' row when the
+    project row itself is blank (the by-Subtask layout). Both the by-Project and
+    by-Subtask exports parse; by-Project projects simply have empty subs.
+
+    Route by name prefix: EW=Dennison, EA=WRG, else GPD — UNLESS force_entity is
+    given (a per-entity upload), in which case every project is assigned to it (a
+    single-entity export may lack the EW/EA prefix, so prefix-routing would
+    wrongly dump it into GPD)."""
     import openpyxl, io as _io
     wb = openpyxl.load_workbook(_io.BytesIO(file_bytes), data_only=True)
     ws = wb[wb.sheetnames[0]]
@@ -2694,6 +2701,7 @@ def _bva_parse_bac(file_bytes: bytes, force_entity: str = None) -> dict:
         return "GPD"
     out: dict = {}
     top = sub = None
+    cur = None                # project currently being read (for its subtasks)
     cat_order: dict = {}      # category -> first-seen index (BAC display order)
     proj_i = 0                # running project index (BAC row order)
     for r in range(1, ws.max_row + 1):
@@ -2701,28 +2709,40 @@ def _bva_parse_bac(file_bytes: bytes, force_entity: str = None) -> dict:
         if a is None:
             continue
         lab = str(a).strip()
-        if not lab or lab.startswith("Rollup") or lab.startswith("Total"):
+        if not lab or lab.startswith("Rollup"):
             continue
-        i = ind(a)
-        if i == 4:                 # top group (e.g. "Major Infrastructure")
-            top = lab; sub = None; continue
-        if i == 6:                 # sub-group (e.g. "Collector Roads") = category
-            sub = lab; continue
-        if i != 8:
-            continue
-        category = sub or top or "Other"
-        if category not in cat_order:
-            cat_order[category] = len(cat_order)
+        i = ind(a); is_total = lab.startswith("Total")
         com = round(num(ws.cell(r, 6).value))     # F = Total Commitments (final)
         ini = round(num(ws.cell(r, 4).value))     # D = Initial Contract (original)
         cco = round(num(ws.cell(r, 5).value))     # E = Change Orders
         bud = round(num(ws.cell(r, 2).value))     # B = Budget (Sage's LOP budget)
-        ent = route(lab)
-        out.setdefault(ent, {})[_bva_norm_name(lab)] = {
-            "committed": com, "initial": ini, "changeOrders": cco, "budget": bud,
-            "name": lab, "category": category,
-            "catOrder": cat_order[category], "projOrder": proj_i}
-        proj_i += 1
+        if i <= 6:                                 # category grouping rows
+            if not is_total:
+                if i == 4:
+                    top = lab; sub = None
+                elif i == 6:
+                    sub = lab
+            continue
+        if i == 8 and not is_total:                # a project
+            category = sub or top or "Other"
+            if category not in cat_order:
+                cat_order[category] = len(cat_order)
+            ent = route(lab)
+            cur = {"committed": com, "initial": ini, "changeOrders": cco, "budget": bud,
+                   "name": lab, "category": category,
+                   "catOrder": cat_order[category], "projOrder": proj_i, "subs": []}
+            out.setdefault(ent, {})[_bva_norm_name(lab)] = cur
+            proj_i += 1
+            continue
+        if i == 8 and is_total and cur is not None:   # project total (by-Subtask)
+            if com or bud or ini or cco:
+                cur["committed"] = com; cur["budget"] = bud
+                cur["initial"] = ini; cur["changeOrders"] = cco
+            cur = None
+            continue
+        if i == 10 and not is_total and cur is not None:   # a subtask line
+            cur["subs"].append({"name": lab, "committed": com, "initial": ini,
+                                "changeOrders": cco, "budget": bud})
     return out
 
 
@@ -3276,6 +3296,9 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
             nm = _bva_norm_name(projname)
             disp = _bva_canon_name(projname)   # pro-forma display name
             entry = ecom.get(nm) if bac_mode else None
+            # When the BAC has subtask-level committed, it's emitted per line
+            # below (allocated), so don't also lump the project total here.
+            has_subs = bool(entry and entry.get("subs"))
             if bac_mode:
                 if entry:
                     proj_com = entry["committed"]; cat = entry["category"]
@@ -3329,7 +3352,8 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
                 # Project-level committed (BAC Total Commitments) goes on the first
                 # row that stays in the project's MAIN category — not a fence/tax
                 # row that got re-categorized (else the section looks uncommitted).
-                com_here = bac_mode and not is_fence and not is_ptax and not com_placed
+                com_here = (bac_mode and not has_subs and not is_fence
+                            and not is_ptax and not com_placed)
                 if bac_mode:
                     com = proj_com if com_here else 0
                     if com_here:
@@ -3346,7 +3370,7 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
                              "_co": row_co, "_po": po})
                 first = False
             # If every row was a fence row, still surface the committed on the last one.
-            if bac_mode and proj_com and not com_placed and rows:
+            if bac_mode and not has_subs and proj_com and not com_placed and rows:
                 rows[-1]["committed"] = proj_com
                 rows[-1]["cInit"] = proj_ini; rows[-1]["cCO"] = proj_cco
         # One rolled-up lot-tax line per section (Taxes category).
@@ -3357,10 +3381,45 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
                          "task": "", "subtask": "", "phase": ("Phase 1" if _is_phase1(label_) else ""),
                          "budget": (a if _is_phase1(label_) else 0), "committed": 0, "actual": a,
                          "_co": _tax_co, "_po": 800000 + (int(sec) if sec.isdigit() else 0)})
+        # Subtask-level committed (BAC 'by Subtask' export): emit one committed
+        # row per subtask so the merge lands it on the matching budget/actual
+        # line, instead of lumping the project total on one row. Covers every
+        # BAC project that has subs — whether or not it has GL activity.
+        if bac_mode:
+            for nm, e in ecom.items():
+                if not isinstance(e, dict) or not e.get("subs"):
+                    continue
+                if _bva_is_dropped(e["name"]):
+                    continue
+                _disp = _bva_canon_name(e["name"])
+                _cat = e["category"]; _co_e = e.get("catOrder", 900)
+                _po_e = e.get("projOrder", 900000)
+                _ov = (_BVA_PROJECT_CAT_OVERRIDE.get(nm)
+                       or _BVA_PROJECT_CAT_OVERRIDE.get(_bva_norm_name(e["name"])))
+                if _ov:
+                    _cat = _ov; _co_e = bac_cat_order.get(_cat, _co_e)
+                for s in e["subs"]:
+                    c = s.get("committed", 0); ci = s.get("initial", 0); cco = s.get("changeOrders", 0)
+                    if not (c or ci or cco):
+                        continue
+                    sname = _bva_strip_wip(s.get("name", ""))
+                    low = sname.lower()
+                    if "property tax" in low:
+                        r_cat, r_co = "Taxes", bac_cat_order.get("Taxes", _co_e)
+                    elif "fenc" in low:
+                        r_cat, r_co = "Amenities", bac_cat_order.get("Amenities", _co_e)
+                    else:
+                        r_cat, r_co = _cat, _co_e
+                    rows.append({"category": r_cat, "project": _disp, "projectName": _disp,
+                                 "task": "", "subtask": sname, "phase": "",
+                                 "budget": 0, "committed": c, "actual": 0,
+                                 "cInit": ci, "cCO": cco, "_co": r_co, "_po": _po_e})
         # BAC-committed projects with no GL activity yet (e.g. not-started sections).
         if bac_mode:
             for nm, e in ecom.items():
                 if nm in matched_bac or not isinstance(e, dict):
+                    continue
+                if e.get("subs"):          # already emitted per subtask above
                     continue
                 if _bva_is_dropped(e["name"]):
                     continue
