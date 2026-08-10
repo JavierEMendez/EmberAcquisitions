@@ -3383,12 +3383,13 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
                 # project itself sits, e.g. lot-sales carrying costs).
                 _tl = ((task or "") + " " + (sub or "")).lower()
                 is_fence = "fenc" in _tl
+                is_land = "landscap" in _tl
                 is_ptax = "property tax" in _tl
                 is_dryutil = ("streetlight" in _tl or "urd" in _tl.split()
                               or "power" in _tl.split() or "dry util" in _tl)
                 if is_ptax:
                     row_cat, row_co = "Taxes", bac_cat_order.get("Taxes", co)
-                elif is_fence:
+                elif is_fence or is_land:
                     row_cat, row_co = "Amenities", bac_cat_order.get("Amenities", co)
                 elif is_dryutil:
                     row_cat, row_co = "Dry Utilities", bac_cat_order.get("Dry Utilities", co)
@@ -3397,7 +3398,7 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
                 # Project-level committed (BAC Total Commitments) goes on the first
                 # row that stays in the project's MAIN category — not a fence/tax
                 # row that got re-categorized (else the section looks uncommitted).
-                com_here = (bac_mode and not has_subs and not is_fence
+                com_here = (bac_mode and not has_subs and not is_fence and not is_land
                             and not is_ptax and not is_dryutil and not com_placed)
                 if bac_mode:
                     com = proj_com if com_here else 0
@@ -3451,7 +3452,7 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
                     low = sname.lower()
                     if "property tax" in low:
                         r_cat, r_co = "Taxes", bac_cat_order.get("Taxes", _co_e)
-                    elif "fenc" in low:
+                    elif "fenc" in low or "landscap" in low:
                         r_cat, r_co = "Amenities", bac_cat_order.get("Amenities", _co_e)
                     elif ("streetlight" in low or "urd" in low.split()
                           or "power" in low.split() or "dry util" in low):
