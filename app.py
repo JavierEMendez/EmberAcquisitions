@@ -2409,6 +2409,7 @@ _BVA_ACTUALS_PROJECTS = {
     "water plant1 ph01",
     "liftstation1 + fm",
     "water plant 1-2",
+    "detention ph01",
 }
 _BVA_SEC_RE = re.compile(r"^(?:gp|ew)\s+sec\.?\s*0*(\d+)\s*$", re.I)
 _BVA_SEC_LAND_RE = re.compile(r"^(?:gp|ew)\s+section\s*0*(\d+)\s+landscape", re.I)
@@ -3453,6 +3454,12 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
         else:
             rows.sort(key=lambda r: (_catrank(r) if _catrank(r) is not None else _bva_cat_rank(r["category"]),
                                      _projkey(r), r["subtask"]))
+        # GPD's "Residential Pods" are data-center pods — relabel for display
+        # (cosmetic, after sort so ordering is unaffected).
+        if label == "GPD":
+            for _r in rows:
+                if _r.get("category") == "Residential Pods":
+                    _r["category"] = "Data Center Pod"
         blocks.append({"label": label, "entity": eid, "rows": rows})
     return blocks, bool(gl), bool(commits)
 
