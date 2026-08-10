@@ -2404,8 +2404,8 @@ _BVA_ACTUALS_PROJECTS = {
     "liftstation1 + fm",
     "water plant 1-2",
 }
-_BVA_SEC_RE = re.compile(r"^gp\s+sec\.?\s*0*(\d+)\s*$", re.I)
-_BVA_SEC_LAND_RE = re.compile(r"^gp\s+section\s*0*(\d+)\s+landscape", re.I)
+_BVA_SEC_RE = re.compile(r"^(?:gp|ew)\s+sec\.?\s*0*(\d+)\s*$", re.I)
+_BVA_SEC_LAND_RE = re.compile(r"^(?:gp|ew)\s+section\s*0*(\d+)\s+landscape", re.I)
 _BVA_LOTTAX_SEC_RE = re.compile(r"^lot taxes\b.*?sec\w*\s*0*(\d+)\s*$", re.I)
 
 
@@ -2428,7 +2428,7 @@ def _bva_canon_name(name: str) -> str:
     low = s.lower()
     if low in _BVA_SAGE_RENAME:
         return _BVA_SAGE_RENAME[low]
-    return re.sub(r"^gp[_\s]+", "", s, flags=re.I) or s
+    return re.sub(r"^(?:gp|ew)[_\s]+", "", s, flags=re.I) or s
 
 
 def _bva_cat_alias(c: str) -> str:
