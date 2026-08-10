@@ -3221,14 +3221,21 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
                 act = round(sum((rec.get("months") or {}).values()))
                 if _is_phase1(disp):
                     bud = act                          # Phase 1 complete: budget = actuals
-                # Fencing always lives under Amenities (consistent across sections).
+                # Fencing always lives under Amenities (consistent across sections);
+                # property-tax subtasks always move down to Taxes (wherever the
+                # project itself sits, e.g. lot-sales carrying costs).
                 is_fence = "fenc" in (task or "").lower() or "fenc" in (sub or "").lower()
-                row_cat, row_co = (("Amenities", bac_cat_order.get("Amenities", co))
-                                   if is_fence else (cat, co))
+                is_ptax = "property tax" in (sub or "").lower()
+                if is_ptax:
+                    row_cat, row_co = "Taxes", bac_cat_order.get("Taxes", co)
+                elif is_fence:
+                    row_cat, row_co = "Amenities", bac_cat_order.get("Amenities", co)
+                else:
+                    row_cat, row_co = cat, co
                 # Project-level committed (BAC Total Commitments) goes on the first
-                # row that stays in the project's MAIN category — not a fence row
-                # that got moved to Amenities (else the section looks uncommitted).
-                com_here = bac_mode and not is_fence and not com_placed
+                # row that stays in the project's MAIN category — not a fence/tax
+                # row that got re-categorized (else the section looks uncommitted).
+                com_here = bac_mode and not is_fence and not is_ptax and not com_placed
                 if bac_mode:
                     com = proj_com if com_here else 0
                     if com_here:
