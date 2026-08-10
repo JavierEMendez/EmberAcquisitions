@@ -2381,6 +2381,11 @@ _BVA_SAGE_RENAME = {
     "gp liftstation2 + fm": "Lift Station 2",
     "gp wwtp 1 ph02": "WWTP 1-2",
     "gp wwtp 1 ph03": "WWTP 1-3",
+    # Dennison (EW): merge Sage names onto the pro-forma budget names.
+    "ew dennisonlandscpng": "Dennison Landscaping",
+    "ew dennisondetention": "Dennison Detention",
+    "ew baethe rd ph01_n": "Baethe Rd",
+    "ew lift station2 +fm": "Lift Station 2 + FM",
 }
 # Projects to hide entirely (old / irrelevant — e.g. commitments-only leftovers).
 _BVA_DROP_NAMES = ("hill + pond", "section 7 & kermier rd landscaping")
