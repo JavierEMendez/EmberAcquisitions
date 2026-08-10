@@ -3154,11 +3154,29 @@ def _bva_costtype(s: str):
     return None
 
 
+_BVA_CT_RANK = {"Construction": 0, "Engineering": 1, "SWPPP": 2,
+                "Materials Testing": 3, "Architecture": 4}
+
+
+def _bva_line_sort(r: dict):
+    """Sort key within a project: keep each discipline's lines together (all WSD,
+    then all Paving, …) and order cost types Construction→Engineering→…, so
+    budget-only rows and merged rows for the same line sit next to each other."""
+    gk, ct = _bva_line_key(r.get("task", ""), r.get("subtask", ""))
+    return (gk, _BVA_CT_RANK.get(ct, 9), (r.get("subtask") or r.get("task") or ""))
+
+
 def _bva_line_key(task: str, sub: str):
     """(discipline group, cost type) for a row — the identity of a budget-vs-
     actual line. 'WSD Construction' and 'WSD - Construction' both -> ('wsd',
     'Construction'); a bare 'Construction' -> ('', 'Construction')."""
-    s = ((task or "") + " " + (sub or "")).lower()
+    # The subtask (Sage's detailed WIP line, or the pro-forma line) is the real
+    # identity of a line; the GL 'task' is a coarse tag that varies ("Power" on a
+    # dry-utilities line, "Engineering" on a survey) and would pollute the key.
+    # Use the subtask when present, and fall back to task only for budget-only
+    # rows that carry the descriptive name in task with a blank subtask.
+    s = ((sub or "").strip() or (task or "")).lower()
+    s = re.sub(r"(?<=\w)&(?=\w)", "", s)     # WS&D -> WSD (join, don't split)
     s = re.sub(r"[^a-z0-9]+", " ", s).strip()
     ct = _bva_costtype(s)
     toks = []
@@ -3509,10 +3527,10 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
             # BAC group/project ordering, but with Contingency / Financing / Taxes
             # / Soft Costs pushed to the bottom, and sections sorted numerically.
             rows.sort(key=lambda r: (_catrank(r) if _catrank(r) is not None else r.get("_co", 999),
-                                     _projkey(r), r["subtask"]))
+                                     _projkey(r), _bva_line_sort(r)))
         else:
             rows.sort(key=lambda r: (_catrank(r) if _catrank(r) is not None else _bva_cat_rank(r["category"]),
-                                     _projkey(r), r["subtask"]))
+                                     _projkey(r), _bva_line_sort(r)))
         # GPD's "Residential Pods" are data-center pods — relabel for display
         # (cosmetic, after sort so ordering is unaffected).
         if label == "GPD":
