@@ -4053,11 +4053,16 @@ def _ue_proj_norm(s: str) -> str:
 
 def _ue_match_project(bva_name: str, pool: list):
     """Best Allocation-tab project for a BVA project name: exact normalized
-    match, then containment, then token overlap — None below the confidence
-    bar (the caller falls back to line-level pro-rata)."""
+    match, then containment, then token overlap — with character-level typo
+    tolerance (the Dennison model spells "Detenion") that is only allowed
+    when the numbers in both names agree, so "Lift Station 1" can never
+    fuzzy-match "Lift Station 2". None below the confidence bar (the caller
+    falls back to line-level pro-rata)."""
+    import difflib
     nb = _ue_proj_norm(bva_name)
     if not nb:
         return None
+    digits_b = sorted(re.findall(r"\d+", nb))
     best, best_score = None, 0.0
     for proj in pool:
         nm = _ue_proj_norm(proj.get("name"))
@@ -4070,6 +4075,15 @@ def _ue_match_project(bva_name: str, pool: list):
         else:
             ta, tb = set(nb.split()), set(nm.split())
             score = len(ta & tb) / max(1, len(ta | tb))
+            digits_m = sorted(re.findall(r"\d+", nm))
+            if digits_m == digits_b:
+                score = max(score, difflib.SequenceMatcher(None, nb, nm).ratio())
+            elif not digits_m:
+                # Model name carries no numbers (e.g. "Dennison Detenion"), so a
+                # phase suffix on the Sage side can't contradict it — compare on
+                # the digit-stripped name.
+                nb2 = re.sub(r"\s+", " ", re.sub(r"\d+", " ", nb)).strip()
+                score = max(score, difflib.SequenceMatcher(None, nb2, nm).ratio())
         if score > best_score:
             best, best_score = proj, score
     return best if best_score >= 0.6 else None
@@ -4312,7 +4326,7 @@ def _ue_build_community(rows: list) -> dict:
             "lots": (s.get("info") or {}).get("total_lots") or 0,
         },
         "rows": s.get("rows") or [],
-    } for s in sorted(all_sections, key=lambda s: (s["entity"], s.get("number") or 0))]
+    } for s in sorted(all_sections, key=lambda s: (s.get("number") or 0, s["entity"]))]
     return {"entities": entities, "sections": sections_out,
             "phases": phases, "community": community_block}
 
