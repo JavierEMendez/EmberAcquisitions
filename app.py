@@ -4093,72 +4093,108 @@ def _ue_write_actuals(rows: list, amounts: dict) -> None:
         r["remaining"] = round((r.get("total") or 0) - (r.get("to_date") or 0), 2)
 
 
-def _ue_apply_actuals(d: dict, bva_rows: list) -> dict:
-    """Allocate one BVA entity's GL actuals across an entity model's sections
-    (mutating the parsed data in place) and return coverage stats."""
-    secs = d.get("sections") or []
-    by_num = {s.get("number"): s for s in secs}
-    # Allocation weights: each section's Total per line item.
-    line_tot = {}
-    for s in secs:
-        for r in s.get("rows") or []:
-            if r.get("group") in ("cost", "summary"):
-                line_tot.setdefault((r.get("label") or "").strip().lower(), {})[s["number"]] = r.get("total") or 0
-    alloc = {n: {} for n in by_num}     # section -> {line: $}
-    ent_line = {}                       # line -> entity total $
-    unmapped = {}
-    off_model = 0.0                     # dollars tied to sections not in the model (closed out)
-    for row in bva_rows:
-        act = float(row.get("actual") or 0)
-        if not act:
-            continue
-        line = _ue_line_for(row.get("category", ""), row.get("project", ""),
-                            row.get("task", ""), row.get("subtask", ""))
-        if not line:
-            cat = row.get("category") or "Other"
-            unmapped[cat] = unmapped.get(cat, 0) + act
-            continue
-        key = line.lower()
-        ent_line[key] = ent_line.get(key, 0) + act
-        m = _UE_SEC_PROJECT_RE.match((row.get("project") or "").strip())
-        if m:
-            num = int(m.group(1))
-            if num in by_num:
-                alloc[num][key] = alloc[num].get(key, 0) + act
-            else:
-                off_model += act        # spend on a closed-out section: entity level only
-            continue
-        weights = line_tot.get(key) or {}
-        wsum = sum(weights.values())
-        if wsum:
-            for num, w in weights.items():
-                if w:
-                    alloc[num][key] = alloc[num].get(key, 0) + act * (w / wsum)
-        else:
-            off_model += act            # line has no totals to allocate against
-    for s in secs:
-        _ue_write_actuals(s.get("rows") or [], alloc.get(s.get("number"), {}))
-    if d.get("entity_rollup"):
-        _ue_write_actuals(d["entity_rollup"], ent_line)
-    return {
-        "total": round(sum(ent_line.values())),
-        "unmapped": {k: round(v) for k, v in sorted(unmapped.items())},
-        "off_model": round(off_model),
-    }
-
-
 def _ue_attach_bva_actuals(rows: list, bva_blocks: list) -> None:
     """Feed each entity model's Actuals column from its matching BVA entity,
-    stashing coverage stats on the row for _ue_build_community to surface."""
+    stashing coverage stats on the row for _ue_build_community to surface.
+
+    Works at community scope because the community shares one section
+    numbering space across its entity models (e.g. Grand Prairie holds
+    Sections 1-8/13-33 in the GPD model and 9-12 in the Dennison model):
+    spend booked to a section the paying entity's model doesn't hold is
+    routed to the sibling model that owns that section. Pro-rata spend
+    stays within the paying entity's own model, whose line Totals carry
+    its allocation weights. Entity rollups keep the full ledger spend of
+    their own BVA entity, so the community blend counts dollars once."""
     by_label = {b.get("label"): b.get("rows") or [] for b in (bva_blocks or [])}
+    owners = {}                          # section number -> [entity rows holding it]
+    for row in rows:
+        for s in (row["data"] or {}).get("sections") or []:
+            if s.get("number") is not None:
+                owners.setdefault(s["number"], []).append(row)
+    alloc = {}                           # id(row) -> {sec_num: {line: $}}
+    ent_line = {}                        # id(row) -> {line: $} (full ledger spend)
+    matched = set()
+
+    def _add(target_row, num, key, amount):
+        alloc.setdefault(id(target_row), {}).setdefault(num, {})
+        alloc[id(target_row)][num][key] = alloc[id(target_row)][num].get(key, 0) + amount
+
     for row in rows:
         label = _ue_bva_entity(row["entity_name"])
         recs = by_label.get(label)
         if not label or not recs:
             continue
-        info = _ue_apply_actuals(row["data"] or {}, recs)
-        info["source"] = label
-        row["_actuals"] = info
+        matched.add(id(row))
+        d = row["data"] or {}
+        secs = d.get("sections") or []
+        own_nums = {s.get("number") for s in secs}
+        # Allocation weights: each of this entity's sections' Total per line.
+        line_tot = {}
+        for s in secs:
+            for r in s.get("rows") or []:
+                if r.get("group") in ("cost", "summary"):
+                    line_tot.setdefault((r.get("label") or "").strip().lower(), {})[s["number"]] = r.get("total") or 0
+        lines = ent_line.setdefault(id(row), {})
+        unmapped = {}
+        routed = 0.0                     # went to a sibling model's section
+        unknown = 0.0                    # section in no model / ambiguous / no weights
+        for rec in recs:
+            act = float(rec.get("actual") or 0)
+            if not act:
+                continue
+            line = _ue_line_for(rec.get("category", ""), rec.get("project", ""),
+                                rec.get("task", ""), rec.get("subtask", ""))
+            if not line:
+                cat = rec.get("category") or "Other"
+                unmapped[cat] = unmapped.get(cat, 0) + act
+                continue
+            key = line.lower()
+            lines[key] = lines.get(key, 0) + act
+            m = _UE_SEC_PROJECT_RE.match((rec.get("project") or "").strip())
+            if m:
+                num = int(m.group(1))
+                if num in own_nums:
+                    _add(row, num, key, act)
+                elif len(owners.get(num, [])) == 1:
+                    _add(owners[num][0], num, key, act)
+                    routed += act
+                else:
+                    unknown += act       # unknown or ambiguous section number
+                continue
+            weights = line_tot.get(key) or {}
+            wsum = sum(weights.values())
+            if wsum:
+                for num, w in weights.items():
+                    if w:
+                        _add(row, num, key, act * (w / wsum))
+            else:
+                unknown += act           # line has no totals to allocate against
+        row["_actuals"] = {
+            "source": label,
+            "total": round(sum(lines.values())),
+            "unmapped": {k: round(v) for k, v in sorted(unmapped.items())},
+            "routed": round(routed),
+            "unknown": round(unknown),
+        }
+
+    # Write pass — after every entity has contributed (cross-routes included).
+    for row in rows:
+        a = alloc.get(id(row), {})
+        d = row["data"] or {}
+        if id(row) in matched:
+            # Matched entities rewrite every section (stale workbook to-date
+            # values are replaced even where the ledger has nothing yet) and
+            # their rollup carries the full ledger spend.
+            for s in d.get("sections") or []:
+                _ue_write_actuals(s.get("rows") or [], a.get(s.get("number"), {}))
+            if d.get("entity_rollup"):
+                _ue_write_actuals(d["entity_rollup"], ent_line.get(id(row), {}))
+        elif a:
+            # Unmatched entities only take the sections that were routed in;
+            # the rest of the model (and its rollup) keeps its parsed values.
+            for s in d.get("sections") or []:
+                if s.get("number") in a:
+                    _ue_write_actuals(s.get("rows") or [], a[s["number"]])
 
 
 def _ue_build_community(rows: list) -> dict:

@@ -420,7 +420,8 @@
         ['Source', 'Budget vs Actuals · ' + escapeHtml(a.source)],
         ['Mapped Spend', fmtMoney(a.total)],
       ];
-      if (a.off_model) facts.push(['Closed-out Sections', fmtMoney(a.off_model)]);
+      if (a.routed) facts.push(['Routed to Sibling Model', fmtMoney(a.routed)]);
+      if (a.unknown) facts.push(['Unknown Sections / Lines', fmtMoney(a.unknown)]);
       const un = Object.entries(a.unmapped || {});
       if (un.length) facts.push(['Unmapped', un.map(([k, v]) =>
         `${escapeHtml(k)} ${fmtMoney(v)}`).join(' · ')]);
