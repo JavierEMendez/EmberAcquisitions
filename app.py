@@ -3255,6 +3255,20 @@ def _bva_merge_lines(rows: list) -> list:
                 if len(cands) == 1:
                     _bva_accum(cands[0], r)
                     rowlist.remove(r)
+        # A project that reduces to exactly one pure-budget row and one pure-
+        # actual/committed row is the same line split by naming (soft costs:
+        # budget tagged generically "Soft Costs" vs actuals "Accounting fees",
+        # "Development fee", …) — combine, keeping the descriptive actual label.
+        if len(rowlist) == 2:
+            def _pure_bud(r):
+                return (r.get("budget") or 0) and not (r.get("committed") or 0) and not (r.get("actual") or 0)
+            def _pure_act(r):
+                return not (r.get("budget") or 0) and ((r.get("committed") or 0) or (r.get("actual") or 0))
+            a, b = rowlist
+            if _pure_bud(a) and _pure_act(b):
+                _bva_accum(b, a); rowlist = [b]
+            elif _pure_bud(b) and _pure_act(a):
+                _bva_accum(a, b); rowlist = [a]
         out.extend(rowlist)
     for r in out:
         r.pop("_lk", None)
