@@ -224,12 +224,20 @@
     const q = query.trim().toLowerCase();
     const rows = q ? b.rows.filter(r => ((r.project||"")+" "+(r.projectName||"")+" "+(r.subtask||"")+" "+(r.task||"")).toLowerCase().includes(q)) : b.rows;
     const expand = !!q || flaggedOnly;   // searching / flagged view → show detail expanded
-    const flaggedCount = (FLAGS[activeLabel()] || []).length;
+    const flagSet = new Set(FLAGS[activeLabel()] || []);
+    // Count only flags that still match a live project — renaming or merging a
+    // project leaves its old flag name behind, which must not inflate the count.
+    const present = new Set(b.rows.map(r => r.project));
+    const flaggedCount = [...flagSet].filter(p => present.has(p)).length;
     if (!rows.length) { host.innerHTML = `<div class="empty">No projects match “${query}”.</div>`; return; }
 
-    // KPI totals (filtered)
+    // In "flagged only" mode the KPI tiles + grand total reflect just the
+    // flagged projects, not the whole entity.
+    const vrows = flaggedOnly ? rows.filter(r => flagSet.has(r.project)) : rows;
+
+    // KPI totals (respect search + flagged-only filters)
     let tB = 0, tC = 0, tA = 0, tCI = 0, tCCO = 0;
-    rows.forEach(r => { tB += r.budget; tC += r.committed; tA += r.actual; tCI += (r.cInit||0); tCCO += (r.cCO||0); });
+    vrows.forEach(r => { tB += r.budget; tC += r.committed; tA += r.actual; tCI += (r.cInit||0); tCCO += (r.cCO||0); });
     const tBC = tB - tC;   // uncommitted budget remaining
     const tCA = tC - tA;   // open commitment still to be billed
     const tBA = tB - tA;   // budget remaining vs actual spend
@@ -250,7 +258,7 @@
 
     // Group: category → project → subtask rows
     const cats = {}; const catOrder = [];
-    rows.forEach(r => {
+    vrows.forEach(r => {
       const c = r.category || "Other";
       if (!(c in cats)) { cats[c] = { projects: {}, order: [] }; catOrder.push(c); }
       const cg = cats[c];
