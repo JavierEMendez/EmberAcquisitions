@@ -3192,6 +3192,14 @@ def _bva_line_key(task: str, sub: str):
     s = ((sub or "").strip() or (task or "")).lower()
     s = re.sub(r"(?<=\w)&(?=\w)", "", s)     # WS&D -> WSD (join, don't split)
     s = re.sub(r"[^a-z0-9]+", " ", s).strip()
+    toks_s = s.split()
+    # Dry-utility lines collapse to two lines so budget ("Streetlights", "URD")
+    # merges with Sage actuals ("Streetlight construction", "Dry utilities
+    # construction"/"Power") regardless of the cost-type word.
+    if "streetlight" in s or "street light" in s:
+        return ("streetlight", None)
+    if "urd" in toks_s or "power" in toks_s or "dry util" in s:
+        return ("urd", None)
     ct = _bva_costtype(s)
     toks = []
     for t in s.split():
@@ -3373,19 +3381,24 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
                 # Fencing always lives under Amenities (consistent across sections);
                 # property-tax subtasks always move down to Taxes (wherever the
                 # project itself sits, e.g. lot-sales carrying costs).
-                is_fence = "fenc" in (task or "").lower() or "fenc" in (sub or "").lower()
-                is_ptax = "property tax" in (sub or "").lower()
+                _tl = ((task or "") + " " + (sub or "")).lower()
+                is_fence = "fenc" in _tl
+                is_ptax = "property tax" in _tl
+                is_dryutil = ("streetlight" in _tl or "urd" in _tl.split()
+                              or "power" in _tl.split() or "dry util" in _tl)
                 if is_ptax:
                     row_cat, row_co = "Taxes", bac_cat_order.get("Taxes", co)
                 elif is_fence:
                     row_cat, row_co = "Amenities", bac_cat_order.get("Amenities", co)
+                elif is_dryutil:
+                    row_cat, row_co = "Dry Utilities", bac_cat_order.get("Dry Utilities", co)
                 else:
                     row_cat, row_co = cat, co
                 # Project-level committed (BAC Total Commitments) goes on the first
                 # row that stays in the project's MAIN category — not a fence/tax
                 # row that got re-categorized (else the section looks uncommitted).
                 com_here = (bac_mode and not has_subs and not is_fence
-                            and not is_ptax and not com_placed)
+                            and not is_ptax and not is_dryutil and not com_placed)
                 if bac_mode:
                     com = proj_com if com_here else 0
                     if com_here:
@@ -3440,6 +3453,9 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
                         r_cat, r_co = "Taxes", bac_cat_order.get("Taxes", _co_e)
                     elif "fenc" in low:
                         r_cat, r_co = "Amenities", bac_cat_order.get("Amenities", _co_e)
+                    elif ("streetlight" in low or "urd" in low.split()
+                          or "power" in low.split() or "dry util" in low):
+                        r_cat, r_co = "Dry Utilities", bac_cat_order.get("Dry Utilities", _co_e)
                     else:
                         r_cat, r_co = _cat, _co_e
                     rows.append({"category": r_cat, "project": _disp, "projectName": _disp,
