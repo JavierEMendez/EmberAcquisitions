@@ -2722,6 +2722,20 @@ def _bva_parse_bac(file_bytes: bytes, force_entity: str = None) -> dict:
                     top = lab; sub = None
                 elif i == 6:
                     sub = lab
+                # A grouping row that carries its own committed with no project
+                # breakdown under it (e.g. "Marketing and Advertising") is a leaf
+                # — capture it as a project so its committed isn't lost. Real
+                # subgroup headers are blank, so the nonzero guard skips them.
+                if com or ini or cco or bud:
+                    if lab not in cat_order:
+                        cat_order[lab] = len(cat_order)
+                    ent = route(lab)
+                    out.setdefault(ent, {})[_bva_norm_name(lab)] = {
+                        "committed": com, "initial": ini, "changeOrders": cco,
+                        "budget": bud, "name": lab, "category": lab,
+                        "catOrder": cat_order[lab], "projOrder": proj_i, "subs": []}
+                    proj_i += 1
+                    cur = None
             continue
         if i == 8 and not is_total:                # a project
             category = sub or top or "Other"
