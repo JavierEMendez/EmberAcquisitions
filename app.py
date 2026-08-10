@@ -2374,6 +2374,13 @@ _BVA_SAGE_RENAME = {
     # Warren Ranch Left Turn Lane and LTL @ Warren+Baethe are the same work
     # (two Sage projectIds) — merge onto the pro-forma-budgeted LTL name.
     "gp warren ranch rd left turn lane": "LTL @ Warren Ranch Road + Baethe",
+    # Plant projects: merge each Sage name onto its pro-forma budget name so
+    # budget lines up with committed/actuals. (Ph02/Ph03 keep the pro-forma
+    # budget; Water Plant 1-2 is flipped to actuals via _BVA_ACTUALS_PROJECTS.)
+    "gp water plant1 ph02": "Water Plant 1-2",
+    "gp liftstation2 + fm": "Lift Station 2",
+    "gp wwtp 1 ph02": "WWTP 1-2",
+    "gp wwtp 1 ph03": "WWTP 1-3",
 }
 # Projects to hide entirely (old / irrelevant — e.g. commitments-only leftovers).
 _BVA_DROP_NAMES = ("hill + pond", "section 7 & kermier rd landscaping")
@@ -2394,6 +2401,8 @@ _BVA_ACTUALS_PROJECTS = {
     "mallard crossing",
     "wwtp 1 ph01",
     "water plant1 ph01",
+    "liftstation1 + fm",
+    "water plant 1-2",
 }
 _BVA_SEC_RE = re.compile(r"^gp\s+sec\.?\s*0*(\d+)\s*$", re.I)
 _BVA_SEC_LAND_RE = re.compile(r"^gp\s+section\s*0*(\d+)\s+landscape", re.I)
