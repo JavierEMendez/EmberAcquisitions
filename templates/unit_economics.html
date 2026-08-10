@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="/static/theme.css?v=3"/>
-<link rel="stylesheet" href="/static/css/unit_economics.css?v=1"/>
+<link rel="stylesheet" href="/static/css/unit_economics.css?v=2"/>
 <script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 <style>
   /* App shell — canonical sidebar chrome (same as /financials). */
@@ -138,7 +138,9 @@
       <p class="ue-sub">
         Section-level revenues, costs, and margins parsed from each entity model's
         <b>Unit Economics</b> tab, rolled up by phase, entity, and community.
-        Phases blend sections across entity models within a community.
+        Phases blend sections across entity models within a community. The
+        <b>Actuals</b> column is fed from the Budget vs Actuals GL data, allocated
+        to sections the same way the model allocates each line's Total.
       </p>
 
       {# ── Controls ────────────────────────────────────────── #}
@@ -249,22 +251,16 @@
     return String(s ?? '').replace(/[&<>"']/g,
       c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
+  // Same money convention as Budget vs Actuals: whole dollars, em-dash for
+  // empty/zero, "-$" for negatives.
   function fmtMoney(n) {
-    if (n === null || n === undefined || isNaN(n)) return '—';
+    if (n === null || n === undefined || n === 0 || isNaN(n)) return '—';
     const r = Math.round(n);
-    const s = '$' + Math.abs(r).toLocaleString('en-US');
-    return r < 0 ? '(' + s + ')' : s;
+    return (r < 0 ? '-$' : '$') + Math.abs(r).toLocaleString('en-US');
   }
-  function fmtUnit(n) {
-    if (n === null || n === undefined || isNaN(n)) return '—';
-    const a = Math.abs(n);
-    const s = '$' + a.toLocaleString('en-US', a >= 100
-      ? {maximumFractionDigits: 0}
-      : {minimumFractionDigits: 2, maximumFractionDigits: 2});
-    return n < 0 ? '(' + s + ')' : s;
-  }
+  const fmtUnit = fmtMoney;
   function fmtPct(n) {
-    if (n === null || n === undefined || isNaN(n)) return '—';
+    if (n === null || n === undefined || n === 0 || isNaN(n)) return '—';
     return Math.round(n * 100) + '%';
   }
   function fmtQty(n, dp) {
@@ -418,6 +414,19 @@
       ['Source', escapeHtml(e.source_filename || '')],
       ['Sections', fmtQty(e.section_count)],
     ]);
+    if (e.actuals) {
+      const a = e.actuals;
+      const facts = [
+        ['Source', 'Budget vs Actuals · ' + escapeHtml(a.source)],
+        ['Mapped Spend', fmtMoney(a.total)],
+      ];
+      if (a.routed) facts.push(['Routed to Sibling Model', fmtMoney(a.routed)]);
+      if (a.unknown) facts.push(['Unknown Sections / Lines', fmtMoney(a.unknown)]);
+      const un = Object.entries(a.unmapped || {});
+      if (un.length) facts.push(['Unmapped', un.map(([k, v]) =>
+        `${escapeHtml(k)} ${fmtMoney(v)}`).join(' · ')]);
+      html += factsCard('Actuals Feed', facts);
+    }
     if (IS_ADMIN) {
       html += `<div class="ue-card"><div class="ue-card-title">Admin</div>` +
         `<button class="ue-btn" id="ue-delete-entity" data-entity="${escapeHtml(e.name)}">Remove this entity's data</button></div>`;
@@ -490,29 +499,34 @@
 
   function renderTable(rows) {
     const head = `<thead><tr>
-      <th>Line Item</th><th>To Date</th><th>Remaining</th><th>Total</th>
+      <th class="left">Line Item</th><th>Actuals</th><th>Remaining</th><th>Total</th>
       <th>$/FF</th><th>$/Lot</th><th>$/Acre</th><th>% of Costs</th><th>% of Rev</th>
     </tr></thead>`;
     let body = '', lastGroup = null;
     for (const r of rows) {
       if (r.group === 'revenue' && lastGroup !== 'revenue') {
-        body += `<tr class="band"><td colspan="9">Revenues</td></tr>`;
+        body += `<tr class="band"><td class="left" colspan="9">Revenues</td></tr>`;
       } else if (r.group === 'cost' && lastGroup !== 'cost') {
-        body += `<tr class="band"><td colspan="9">Costs</td></tr>`;
+        body += `<tr class="band"><td class="left" colspan="9">Costs</td></tr>`;
       }
       lastGroup = r.group;
+      const isMargin = r.group === 'summary' && r.label.toLowerCase().includes('margin');
       const cls = [];
       if (r.indent) cls.push('sub');
       if (r.bold) cls.push('strong');
       if (r.group === 'revenue_total' || r.label.toLowerCase() === 'net margin') cls.push('accent');
       else if (r.group === 'summary' && r.bold) cls.push('rule');
-      const money = (v) => `<td${v != null && v < 0 ? ' class="neg"' : ''}>${fmtMoney(v)}</td>`;
-      const unit  = (v) => `<td${v != null && v < 0 ? ' class="neg"' : ''}>${fmtUnit(v)}</td>`;
+      // Margin rows read like BVA variances: green when positive, red when negative.
+      const money = (v) => {
+        const c = v != null && v < 0 ? ' class="over"'
+                : (isMargin && v != null && v > 0 ? ' class="under"' : '');
+        return `<td${c}>${fmtMoney(v)}</td>`;
+      };
       body += `<tr class="${cls.join(' ')}">
-        <td>${escapeHtml(r.label)}</td>
+        <td class="left">${escapeHtml(r.label)}</td>
         ${money(r.to_date)}${money(r.remaining)}${money(r.total)}
-        ${unit(r.per_ff)}${unit(r.per_lot)}${unit(r.per_acre)}
-        <td>${fmtPct(r.pct_costs)}</td><td>${fmtPct(r.pct_rev)}</td>
+        ${money(r.per_ff)}${money(r.per_lot)}${money(r.per_acre)}
+        <td class="pct">${fmtPct(r.pct_costs)}</td><td class="pct">${fmtPct(r.pct_rev)}</td>
       </tr>`;
     }
     return `<table class="ue-table">${head}<tbody>${body}</tbody></table>`;
