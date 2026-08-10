@@ -3105,6 +3105,99 @@ def _bud_task(v):
     return (v.get("task", "") or "") if isinstance(v, dict) else ""
 
 
+# --- Line-item merge: put a project's budget and its actuals/committed on ONE
+# row even when the names differ slightly. The pro-forma labels a line
+# "WSD Construction" while Sage calls it "WSD - Construction"; both describe the
+# same (discipline group, cost type), so we key on that and combine.
+_BVA_LINE_DROP = {
+    "construction", "construct", "engineering", "engineer", "swppp", "swpp",
+    "materials", "material", "mat", "testing", "test", "architecture",
+    "architectural", "design", "roads", "road", "the", "of", "and",
+}
+_BVA_LINE_SYN = {"landscaping": "landscape", "streetlights": "streetlight",
+                 "fence": "fencing", "fences": "fencing", "utilities": "utility"}
+
+
+def _bva_costtype(s: str):
+    """Canonical cost type from a line label (or None if not one of the set)."""
+    if "swpp" in s:
+        return "SWPPP"
+    if "mat" in s and "test" in s:
+        return "Materials Testing"
+    if "engineer" in s:
+        return "Engineering"
+    if "architect" in s:
+        return "Architecture"
+    if "construct" in s:
+        return "Construction"
+    return None
+
+
+def _bva_line_key(task: str, sub: str):
+    """(discipline group, cost type) for a row — the identity of a budget-vs-
+    actual line. 'WSD Construction' and 'WSD - Construction' both -> ('wsd',
+    'Construction'); a bare 'Construction' -> ('', 'Construction')."""
+    s = ((task or "") + " " + (sub or "")).lower()
+    s = re.sub(r"[^a-z0-9]+", " ", s).strip()
+    ct = _bva_costtype(s)
+    toks = []
+    for t in s.split():
+        t = _BVA_LINE_SYN.get(t, t)
+        if t not in _BVA_LINE_DROP:
+            toks.append(t)
+    return (" ".join(sorted(set(toks))), ct)
+
+
+def _bva_accum(dst: dict, src: dict) -> None:
+    """Fold src's numbers into dst, keeping the most descriptive label."""
+    for k in ("budget", "committed", "actual", "cInit", "cCO"):
+        dst[k] = (dst.get(k) or 0) + (src.get(k) or 0)
+    if not (dst.get("phase") or "").strip():
+        dst["phase"] = src.get("phase", "")
+    dst["_co"] = min(dst.get("_co", 999), src.get("_co", 999))
+    dst["_po"] = min(dst.get("_po", 999999), src.get("_po", 999999))
+    # Prefer a descriptive subtask (Sage's "WSD - Construction") over a blank one.
+    if not (dst.get("subtask") or "").strip() and (src.get("subtask") or "").strip():
+        dst["subtask"] = src["subtask"]
+        if not (dst.get("task") or "").strip():
+            dst["task"] = src.get("task", "")
+
+
+def _bva_merge_lines(rows: list) -> list:
+    """Within each (category, project), merge rows that describe the same line
+    (same discipline group + cost type) so budget and actuals share one row.
+    A bare cost-type row ('Construction' with no group) folds into the single
+    grouped row of that cost type when there's exactly one (unambiguous)."""
+    from collections import OrderedDict
+    groups = OrderedDict()
+    for r in rows:
+        groups.setdefault((r["category"], r["projectName"]), []).append(r)
+    out = []
+    for _key, grp in groups.items():
+        merged = OrderedDict()
+        for r in grp:
+            gk, ct = _bva_line_key(r.get("task", ""), r.get("subtask", ""))
+            k = (gk, ct) if (gk or ct) else ("__id__", id(r))   # nothing to key on
+            if k in merged:
+                _bva_accum(merged[k], r)
+            else:
+                nr = dict(r); nr["_lk"] = (gk, ct); merged[k] = nr
+        rowlist = list(merged.values())
+        for r in list(rowlist):
+            gk, ct = r.get("_lk", ("", None))
+            if gk == "" and ct is not None:
+                cands = [o for o in rowlist if o is not r
+                         and o.get("_lk", ("", None))[1] == ct
+                         and o.get("_lk", ("", None))[0] != ""]
+                if len(cands) == 1:
+                    _bva_accum(cands[0], r)
+                    rowlist.remove(r)
+        out.extend(rowlist)
+    for r in out:
+        r.pop("_lk", None)
+    return out
+
+
 def _bva_build_blocks(gl=None, budgets=None, commits=None):
     """Merge GL actuals + BAC/PO committed + budgets into per-entity blocks
     (Category → Project → Subtask), grouped and ordered like the BAC. Shared by
@@ -3336,6 +3429,9 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
                 _grp_po[_k] = _v
         for _r in rows:
             _r["_co"], _r["_po"] = _grp_po[(_r["category"], _r["projectName"])]
+        # Put each line's budget and its actuals/committed on ONE row even when
+        # the pro-forma and Sage name it slightly differently.
+        rows = _bva_merge_lines(rows)
         # Drop empty rows (0 budget, 0 committed, 0 actual). Budget lines added
         # later carry a budget, so they survive.
         rows = [r for r in rows if r.get("budget") or r.get("committed") or r.get("actual")]
