@@ -162,7 +162,11 @@
           <button class="btn gl-up" data-ent="WRG">WRG</button>
           <input type="file" id="gl-file" accept=".csv,.xls,.xlsx" style="display:none;">
           <span class="gl-sep">·</span>
-          <button class="btn" id="commit-btn">⬆ Commitments (BAC)</button>
+          <span class="gl-label">Commitments (BAC):</span>
+          <button class="btn commit-up" data-ent="GPD">GPD</button>
+          <button class="btn commit-up" data-ent="Dennison">Dennison</button>
+          <button class="btn commit-up" data-ent="WRG">WRG</button>
+          <button class="btn commit-up" data-ent="">All</button>
           <input type="file" id="commit-file" accept=".xls,.xlsx,.csv" style="display:none;">
           <span class="gl-sep">·</span>
           <a class="btn" href="/api/bva/template.xlsx">⬇ Template</a>
@@ -379,16 +383,20 @@
     e.target.value = "";
   });
 
-  // Commitments upload — the Sage Purchasing (PO) export, combined for all
-  // entities. Committed is routed by Owner and overrides the GL PO books.
-  $("#commit-btn").addEventListener("click", () => $("#commit-file").click());
+  // Commitments upload (Sage BAC). Per-entity buttons force that entity so a
+  // single-entity BAC never clobbers another entity's committed; "All" routes
+  // a combined BAC by name prefix. Only the uploaded entities are replaced.
+  let commitEntity = null;
+  document.querySelectorAll(".commit-up").forEach(b =>
+    b.addEventListener("click", () => { commitEntity = b.dataset.ent; $("#commit-file").click(); }));
   $("#commit-file").addEventListener("change", async (e) => {
     const file = e.target.files[0];
-    if (!file) return;
-    const st = $("#upload-status"); st.textContent = "Parsing commitments…";
+    if (file == null) return;
+    const st = $("#upload-status"); st.textContent = `Parsing ${commitEntity || "all"} commitments…`;
     const fd = new FormData(); fd.append("file", file);
     try {
-      const res = await fetch("/api/bva/commitments-upload", { method: "POST", body: fd });
+      const url = "/api/bva/commitments-upload" + (commitEntity ? "?entity=" + encodeURIComponent(commitEntity) : "");
+      const res = await fetch(url, { method: "POST", body: fd });
       const d = await res.json();
       if (!res.ok) { st.textContent = d.error || "Upload failed"; return; }
       const parts = Object.entries(d.entities || {})

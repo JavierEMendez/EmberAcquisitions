@@ -2658,7 +2658,7 @@ def _bva_norm_name(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(s or "").lower()).strip()
 
 
-def _bva_parse_bac(file_bytes: bytes) -> dict:
+def _bva_parse_bac(file_bytes: bytes, force_entity: str = None) -> dict:
     """Parse a Sage BAC ('Budget vs Committed vs Actuals by Project') .xlsx into
     {entity_label: {norm_name: {"committed", "name", "category"}}}.
 
@@ -2666,7 +2666,10 @@ def _bva_parse_bac(file_bytes: bytes) -> dict:
     Orders) — Sage's authoritative committed, which unlike the Purchasing
     export captures non-PO commitments (financing, fees, closed contracts).
     Projects are the indent-8 rows; the enclosing indent-4 row is the Sage
-    category group. Route by name prefix: EW=Dennison, EA=WRG, else GPD."""
+    category group. Route by name prefix: EW=Dennison, EA=WRG, else GPD —
+    UNLESS force_entity is given (a per-entity upload), in which case every
+    project is assigned to that entity (a single-entity export may not carry
+    the EW/EA prefix, so prefix-routing would wrongly dump it into GPD)."""
     import openpyxl, io as _io
     wb = openpyxl.load_workbook(_io.BytesIO(file_bytes), data_only=True)
     ws = wb[wb.sheetnames[0]]
@@ -2676,6 +2679,8 @@ def _bva_parse_bac(file_bytes: bytes) -> dict:
     def ind(s):
         s = str(s or ""); return len(s) - len(s.lstrip(" "))
     def route(name):
+        if force_entity:
+            return force_entity
         p = name.strip()[:3].upper()
         if p.startswith("EW"): return "Dennison"
         if p.startswith("EA"): return "WRG"
@@ -2798,9 +2803,10 @@ def api_bva_commitments_upload():
     valid = {lbl for lbl, _e in _BVA_ENTITIES}
     ent = request.args.get("entity")
     is_bac = raw[:2] == b"PK"      # .xlsx (zip) = BAC report; else HTML = PO export
+    force = ent if ent in valid else None   # per-entity upload → force that entity
     try:
-        parsed = _bva_parse_bac(raw) if is_bac \
-                 else _parse_bva_commitments(raw, force_entity=(ent if ent in valid else None))
+        parsed = _bva_parse_bac(raw, force_entity=force) if is_bac \
+                 else _parse_bva_commitments(raw, force_entity=force)
     except Exception as e:
         return jsonify({"error": "Could not parse commitments file: %s" % e}), 400
     if not parsed:
