@@ -420,6 +420,7 @@
         ['Source', 'Budget vs Actuals · ' + escapeHtml(a.source)],
         ['Mapped Spend', fmtMoney(a.total)],
       ];
+      if (a.by_project) facts.push(['Project Footprints', fmtMoney(a.by_project)]);
       if (a.routed) facts.push(['Routed to Sibling Model', fmtMoney(a.routed)]);
       if (a.unknown) facts.push(['Unknown Sections / Lines', fmtMoney(a.unknown)]);
       const un = Object.entries(a.unmapped || {});

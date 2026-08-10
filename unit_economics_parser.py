@@ -187,6 +187,99 @@ def _find_phase_tag(ws, row: int, start_col: int, span: int = 12) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Allocation tab — per-project footprints for Drainage / Plant Facilities
+# ---------------------------------------------------------------------------
+
+def _parse_allocation_projects(wb) -> dict:
+    """Per-project section footprints from the "Allocation" tab.
+
+    Drainage Projects and Plant Facilities are the two Unit Economics lines
+    whose totals come from this tab: each project spreads its cost at a flat
+    $/FF over the sections flagged "Yes" in its column, and the tab's
+    per-section total is what the Unit Economics tab pulls. Capturing the
+    per-project split lets actuals follow each project's own footprint
+    instead of the line-level aggregate.
+
+    Returns {"drainage projects": [{name, total, sections: {"<num>": $}}],
+             "plant facilities": [...]} — empty when the tab is absent
+    (older models fall back to line-level pro-rata).
+    """
+    ws = None
+    for name in wb.sheetnames:
+        if name.strip().lower() == "allocation":
+            ws = wb[name]
+            break
+    if ws is None:
+        return {}
+    max_row, max_col = ws.max_row, min(ws.max_column, 60)
+    out = {}
+    for r in range(1, max_row + 1):
+        for c in range(1, 12):
+            # A block's header row reads: ... | Section | Phase | Total Front
+            # Feet | Total <X> Allocation | <project names...>
+            if (_str(ws.cell(row=r, column=c).value) != "Section"
+                    or _str(ws.cell(row=r, column=c + 1).value) != "Phase"):
+                continue
+            # Which line the block feeds, from the block title a few rows up.
+            line = None
+            for rr in range(r - 1, max(0, r - 25), -1):
+                for cc in range(1, c + 2):
+                    t = _str(ws.cell(row=rr, column=cc).value).lower()
+                    if t.startswith("drainage project"):
+                        line = "drainage projects"
+                    elif t.startswith("plant facilities"):
+                        line = "plant facilities"
+                    if line:
+                        break
+                if line:
+                    break
+            if not line:
+                continue
+            ff_col, tot_col = c + 2, c + 3
+            # Project columns run rightward from the total column until blank.
+            proj_cols = []
+            for pc in range(tot_col + 1, max_col + 1):
+                pname = _str(ws.cell(row=r, column=pc).value)
+                if not pname:
+                    break
+                proj_cols.append((pc, pname))
+            if not proj_cols:
+                continue
+            # Per-project $/FF and Total Cost sit in labelled rows above.
+            rate_row = cost_row = None
+            for rr in range(r - 1, max(0, r - 10), -1):
+                lab = _str(ws.cell(row=rr, column=ff_col).value).lower()
+                if lab == "$/ff":
+                    rate_row = rr
+                elif lab == "total cost":
+                    cost_row = rr
+            projects = [{"name": pname,
+                         "rate": _num(ws.cell(row=rate_row, column=pc).value) if rate_row else None,
+                         "total": _num(ws.cell(row=cost_row, column=pc).value) if cost_row else None,
+                         "sections": {}}
+                        for pc, pname in proj_cols]
+            blanks = 0
+            for rr in range(r + 1, max_row + 1):
+                sec = _str(ws.cell(row=rr, column=c).value)
+                m = _SECTION_RE.match(sec)
+                if not m:
+                    if sec.lower() == "sections allocated":
+                        continue
+                    blanks += 1
+                    if blanks >= 2:
+                        break
+                    continue
+                blanks = 0
+                ff = _num(ws.cell(row=rr, column=ff_col).value) or 0
+                for (pc, _pname), proj in zip(proj_cols, projects):
+                    flag = _str(ws.cell(row=rr, column=pc).value).lower()
+                    if flag == "yes" and ff and proj["rate"]:
+                        proj["sections"][m.group(1)] = round(ff * proj["rate"], 2)
+            out[line] = [p for p in projects if p["sections"]]
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Main entry
 # ---------------------------------------------------------------------------
 
@@ -306,6 +399,7 @@ def parse_unit_economics(file_bytes: bytes) -> dict:
         "entity_rollup": entity_rollup,
         "entity_units": entity_units,
         "phase_stats": phase_stats,
+        "alloc_projects": _parse_allocation_projects(wb),
     }
 
 
