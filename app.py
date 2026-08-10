@@ -4038,6 +4038,43 @@ def _ue_line_for(category: str, project: str, task: str = "", subtask: str = "")
     return None
 
 
+def _ue_proj_norm(s: str) -> str:
+    """Normalize a project name for matching BVA (Sage) names to the model's
+    Allocation-tab names: lowercase alphanumerics, letters split from digits
+    ("Plant1" -> "plant 1"), phase suffixes flattened ("Ph01" -> "1") — so
+    "WWTP 1 Ph02" lines up with "WWTP 1-2"."""
+    s = (s or "").lower()
+    s = re.sub(r"\bph\s*0*(\d+)\b", r"\1", s)
+    s = re.sub(r"(?<=[a-z])(?=\d)", " ", s)
+    s = re.sub(r"[^a-z0-9]+", " ", s).strip()
+    s = re.sub(r"\b0+(\d)", r"\1", s)
+    return s
+
+
+def _ue_match_project(bva_name: str, pool: list):
+    """Best Allocation-tab project for a BVA project name: exact normalized
+    match, then containment, then token overlap — None below the confidence
+    bar (the caller falls back to line-level pro-rata)."""
+    nb = _ue_proj_norm(bva_name)
+    if not nb:
+        return None
+    best, best_score = None, 0.0
+    for proj in pool:
+        nm = _ue_proj_norm(proj.get("name"))
+        if not nm:
+            continue
+        if nm == nb:
+            return proj
+        if nm in nb or nb in nm:
+            score = 0.9
+        else:
+            ta, tb = set(nb.split()), set(nm.split())
+            score = len(ta & tb) / max(1, len(ta | tb))
+        if score > best_score:
+            best, best_score = proj, score
+    return best if best_score >= 0.6 else None
+
+
 def _ue_write_actuals(rows: list, amounts: dict) -> None:
     """Rewrite a block's Actuals (to_date) column from {line-label-lower: $}.
     Cost leaves take their mapped amount, parents re-sum their children, and
@@ -4128,6 +4165,8 @@ def _ue_attach_bva_actuals(rows: list, bva_blocks: list) -> None:
         d = row["data"] or {}
         secs = d.get("sections") or []
         own_nums = {s.get("number") for s in secs}
+        # Per-project footprints (Allocation tab) for Drainage / Plant lines.
+        pools = {k.strip().lower(): v for k, v in (d.get("alloc_projects") or {}).items() if v}
         # Allocation weights: each of this entity's sections' Total per line.
         line_tot = {}
         for s in secs:
@@ -4138,6 +4177,8 @@ def _ue_attach_bva_actuals(rows: list, bva_blocks: list) -> None:
         unmapped = {}
         routed = 0.0                     # went to a sibling model's section
         unknown = 0.0                    # section in no model / ambiguous / no weights
+        by_project = 0.0                 # allocated via a project's own footprint
+        project_pairs = {}               # bva name -> model project name
         for rec in recs:
             act = float(rec.get("actual") or 0)
             if not act:
@@ -4161,6 +4202,23 @@ def _ue_attach_bva_actuals(rows: list, bva_blocks: list) -> None:
                 else:
                     unknown += act       # unknown or ambiguous section number
                 continue
+            # Footprinted lines (Drainage / Plant Facilities): when the BVA
+            # project matches an Allocation-tab project, its actuals spread
+            # only over that project's own sections — the model's exact
+            # methodology — instead of the line-level aggregate.
+            pool = pools.get(key)
+            if pool:
+                proj = _ue_match_project(rec.get("project", ""), pool)
+                psecs = {int(n): (v or 0) for n, v in (proj.get("sections") or {}).items()
+                         if int(n) in own_nums} if proj else {}
+                psum = sum(psecs.values())
+                if psum:
+                    for num, w in psecs.items():
+                        if w:
+                            _add(row, num, key, act * (w / psum))
+                    by_project += act
+                    project_pairs[rec.get("project", "")] = proj.get("name", "")
+                    continue
             weights = line_tot.get(key) or {}
             wsum = sum(weights.values())
             if wsum:
@@ -4175,6 +4233,8 @@ def _ue_attach_bva_actuals(rows: list, bva_blocks: list) -> None:
             "unmapped": {k: round(v) for k, v in sorted(unmapped.items())},
             "routed": round(routed),
             "unknown": round(unknown),
+            "by_project": round(by_project),
+            "project_pairs": project_pairs,
         }
 
     # Write pass — after every entity has contributed (cross-routes included).
