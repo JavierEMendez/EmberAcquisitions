@@ -3276,8 +3276,8 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
             if bkey in seen_bud:
                 continue
             amt = _bud_amt(v)
-            if not amt:
-                continue
+            if abs(amt) <= 1:
+                continue                    # $0/$1 pro-forma placeholders are noise
             parts = bkey.split(_BVA_KEYSEP)
             proj = parts[0]
             if len(parts) >= 3:
