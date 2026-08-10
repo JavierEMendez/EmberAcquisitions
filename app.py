@@ -3950,6 +3950,217 @@ def _ue_load_community(cur, community: str) -> list:
     return cur.fetchall()
 
 
+# ── BVA actuals → Unit Economics ────────────────────────────────────────────
+# The Actuals column is fed from the Budget vs Actuals dashboard's GL data
+# (per-project actuals by entity) rather than the workbook's own sparse
+# "To Date" column. Each BVA row maps to the Unit Economics line item it
+# belongs to, then allocates to sections the same way the model allocates
+# that line's Total: projects named for a specific section go straight to
+# that section; everything else distributes pro-rata by each section's
+# share of the line's Total — which already encodes the model's FF /
+# acreage / Allocation-tab weights, so a road project that's 40% allocated
+# to a section sends 40% of its actual spend there too.
+
+_UE_SEC_PROJECT_RE = re.compile(r"^section\s+0*(\d+)$", re.I)
+
+# UE entity models (named by the uploader) → BVA entity labels, by keyword.
+_UE_BVA_ENTITY_KEYWORDS = [
+    ("Dennison", ("dennison", "wrrd")),
+    ("WRG",      ("windrose", "wrg", "angleton")),
+    ("GPD",      ("grand prairie", "gpd", "data center")),
+]
+
+
+def _ue_bva_entity(entity_name: str):
+    low = (entity_name or "").lower()
+    for label, kws in _UE_BVA_ENTITY_KEYWORDS:
+        if any(k in low for k in kws):
+            return label
+    return None
+
+
+def _ue_line_for(category: str, project: str, task: str = "", subtask: str = ""):
+    """Unit Economics line item a BVA row's actuals belong to (None = unmapped).
+    Row-level keywords override first — mirroring the BVA page's own
+    re-categorization of fence / landscape / dry-utility / property-tax lines —
+    then the category string decides."""
+    t = " %s %s " % ((task or "").lower(), (subtask or "").lower())
+    p = (project or "").lower()
+    c = (category or "").lower()
+    if "property tax" in t or "property tax" in p:
+        return "Property Taxes"
+    if "mailbox" in t or "mailbox" in p:
+        return "Mailboxes"
+    if "fenc" in t:
+        return "Fencing"
+    if "landscap" in t or "landscap" in p:
+        return "Landscaping"
+    if ("streetlight" in t or "street light" in t or " urd " in t
+            or " power " in t or "dry util" in t):
+        return "Dry Utilities"
+    if " mud " in t or " hoa " in t or "mud advance" in p or "hoa advance" in p:
+        return "Legal & MUD Advances"
+    if c.startswith("landscap"):
+        return "Landscaping"
+    if c.startswith("land"):                      # Land / Land Acquisition
+        return "Land (Blended)"
+    if "professional" in c:
+        return "Professional Services"
+    if "collector" in c or "road" in c:
+        return "Collector Roads"
+    if "drainage" in c or "detention" in c:
+        return "Drainage Projects"
+    if "plant" in c:
+        return "Plant Facilities"
+    if "dry util" in c:
+        return "Dry Utilities"
+    if "site work" in c or "sitework" in c:
+        return "Site Work"
+    if "pod" in p:
+        return "Pod/Comm. Connections"
+    if "section" in c:                            # Sections / Sections & Pods
+        return "Sections"
+    if "amenit" in c:
+        return "General Project Amenities"
+    if "marketing" in c:
+        return "Marketing"
+    if "tax" in c:
+        # Per-section lot-tax rollups arrive as project "Section N".
+        return "Lot Taxes" if _UE_SEC_PROJECT_RE.match((project or "").strip()) else "Property Taxes"
+    if "mud" in c or "hoa" in c:
+        return "Legal & MUD Advances"
+    if "contingency" in c:
+        return "Contingency"
+    if "soft cost" in c or "operation" in c or "g&a" in c:
+        return "Operations & Overhead"
+    if "financ" in c:
+        return "Financing"
+    return None
+
+
+def _ue_write_actuals(rows: list, amounts: dict) -> None:
+    """Rewrite a block's Actuals (to_date) column from {line-label-lower: $}.
+    Cost leaves take their mapped amount, parents re-sum their children, and
+    the summary rows recompute; Remaining re-derives as Total − Actuals on
+    every row written. Revenue rows keep the model's own values, so margins
+    only show an actual where the model reports revenue to date."""
+    n = len(rows)
+    for i, r in enumerate(rows):
+        if r.get("group") != "cost":
+            continue
+        is_parent = (not r.get("indent") and i + 1 < n
+                     and rows[i + 1].get("group") == "cost" and rows[i + 1].get("indent"))
+        if not is_parent:
+            label = (r.get("label") or "").strip().lower()
+            r["to_date"] = round(amounts[label], 2) if label in amounts else None
+            r["remaining"] = round((r.get("total") or 0) - (r["to_date"] or 0), 2)
+    for i, r in enumerate(rows):
+        if r.get("group") != "cost" or r.get("indent"):
+            continue
+        kids = []
+        j = i + 1
+        while j < n and rows[j].get("group") == "cost" and rows[j].get("indent"):
+            kids.append(rows[j]); j += 1
+        if kids:
+            vals = [k["to_date"] for k in kids if k.get("to_date") is not None]
+            r["to_date"] = round(sum(vals), 2) if vals else None
+            r["remaining"] = round((r.get("total") or 0) - (r["to_date"] or 0), 2)
+    top = [r for r in rows if r.get("group") == "cost" and not r.get("indent")]
+    gross = sum((r.get("to_date") or 0) for r in top)
+    any_cost = any(r.get("to_date") is not None for r in top)
+    rev = next((r for r in rows if r.get("group") == "revenue_total"), None)
+    rev_td = rev.get("to_date") if rev else None
+    ops = amounts.get("operations & overhead")
+    fin = amounts.get("financing")
+    net = gross + (ops or 0) + (fin or 0)
+    any_any = any_cost or ops is not None or fin is not None
+    for r in rows:
+        if r.get("group") != "summary":
+            continue
+        lab = (r.get("label") or "").strip().lower()
+        if lab == "gross costs":
+            r["to_date"] = round(gross, 2) if any_cost else None
+        elif lab == "operations & overhead":
+            r["to_date"] = round(ops, 2) if ops is not None else None
+        elif lab == "financing":
+            r["to_date"] = round(fin, 2) if fin is not None else None
+        elif lab == "net costs":
+            r["to_date"] = round(net, 2) if any_any else None
+        elif lab == "gross margin":
+            r["to_date"] = round((rev_td or 0) - gross, 2) if rev_td is not None else None
+        elif lab == "net margin":
+            r["to_date"] = round((rev_td or 0) - net, 2) if rev_td is not None else None
+        r["remaining"] = round((r.get("total") or 0) - (r.get("to_date") or 0), 2)
+
+
+def _ue_apply_actuals(d: dict, bva_rows: list) -> dict:
+    """Allocate one BVA entity's GL actuals across an entity model's sections
+    (mutating the parsed data in place) and return coverage stats."""
+    secs = d.get("sections") or []
+    by_num = {s.get("number"): s for s in secs}
+    # Allocation weights: each section's Total per line item.
+    line_tot = {}
+    for s in secs:
+        for r in s.get("rows") or []:
+            if r.get("group") in ("cost", "summary"):
+                line_tot.setdefault((r.get("label") or "").strip().lower(), {})[s["number"]] = r.get("total") or 0
+    alloc = {n: {} for n in by_num}     # section -> {line: $}
+    ent_line = {}                       # line -> entity total $
+    unmapped = {}
+    off_model = 0.0                     # dollars tied to sections not in the model (closed out)
+    for row in bva_rows:
+        act = float(row.get("actual") or 0)
+        if not act:
+            continue
+        line = _ue_line_for(row.get("category", ""), row.get("project", ""),
+                            row.get("task", ""), row.get("subtask", ""))
+        if not line:
+            cat = row.get("category") or "Other"
+            unmapped[cat] = unmapped.get(cat, 0) + act
+            continue
+        key = line.lower()
+        ent_line[key] = ent_line.get(key, 0) + act
+        m = _UE_SEC_PROJECT_RE.match((row.get("project") or "").strip())
+        if m:
+            num = int(m.group(1))
+            if num in by_num:
+                alloc[num][key] = alloc[num].get(key, 0) + act
+            else:
+                off_model += act        # spend on a closed-out section: entity level only
+            continue
+        weights = line_tot.get(key) or {}
+        wsum = sum(weights.values())
+        if wsum:
+            for num, w in weights.items():
+                if w:
+                    alloc[num][key] = alloc[num].get(key, 0) + act * (w / wsum)
+        else:
+            off_model += act            # line has no totals to allocate against
+    for s in secs:
+        _ue_write_actuals(s.get("rows") or [], alloc.get(s.get("number"), {}))
+    if d.get("entity_rollup"):
+        _ue_write_actuals(d["entity_rollup"], ent_line)
+    return {
+        "total": round(sum(ent_line.values())),
+        "unmapped": {k: round(v) for k, v in sorted(unmapped.items())},
+        "off_model": round(off_model),
+    }
+
+
+def _ue_attach_bva_actuals(rows: list, bva_blocks: list) -> None:
+    """Feed each entity model's Actuals column from its matching BVA entity,
+    stashing coverage stats on the row for _ue_build_community to surface."""
+    by_label = {b.get("label"): b.get("rows") or [] for b in (bva_blocks or [])}
+    for row in rows:
+        label = _ue_bva_entity(row["entity_name"])
+        recs = by_label.get(label)
+        if not label or not recs:
+            continue
+        info = _ue_apply_actuals(row["data"] or {}, recs)
+        info["source"] = label
+        row["_actuals"] = info
+
+
 def _ue_build_community(rows: list) -> dict:
     """Assemble the four levels for one community from its stored entity rows."""
     entities = []
@@ -3978,6 +4189,7 @@ def _ue_build_community(rows: list) -> dict:
             "units": units,
             "rows": rollup,
             "section_count": len(secs),
+            "actuals": row.get("_actuals"),
         })
     # Phase level: blend sections sharing a phase tag, across all entities.
     phases = []
@@ -4018,8 +4230,16 @@ def api_ue_data():
     conn = get_db(); cur = conn.cursor()
     try:
         out = []
+        bva_blocks = None       # built once, only when some community has data
         for key, label in _ue_communities(cur):
             rows = _ue_load_community(cur, key)
+            if rows:
+                if bva_blocks is None:
+                    try:
+                        bva_blocks, _hg, _hc = _bva_build_blocks()
+                    except Exception:
+                        bva_blocks = []
+                _ue_attach_bva_actuals(rows, bva_blocks)
             block = _ue_build_community(rows) if rows else {
                 "entities": [], "sections": [], "phases": [], "community": None}
             out.append(dict(block, key=key, label=label))

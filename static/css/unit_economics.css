@@ -164,23 +164,21 @@
 .ue-kpi {
   background: var(--eax-surface);
   border: 1px solid var(--eax-line);
-  border-radius: 12px;
-  padding: 14px 16px;
-  box-shadow: var(--eax-shadow-card);
+  border-radius: 10px;
+  padding: 12px 14px;
 }
 .ue-kpi-label {
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--eax-subtle);
-  margin-bottom: 6px;
   white-space: nowrap;
 }
 .ue-kpi-value {
-  font-family: 'Plus Jakarta Sans', sans-serif;
   font-size: 20px;
   font-weight: 700;
+  margin-top: 4px;
   color: var(--eax-ink);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -237,64 +235,65 @@
 }
 .ue-stmt-meta { font-size: 12px; color: var(--eax-muted); margin-left: auto; }
 
+/* Table look mirrors the Budget vs Actuals dashboard: 12px tabular-nums in
+   the body font, hairline row borders, sticky uppercase header, category
+   band rows on accent-soft, muted indented sub-lines. */
 .ue-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  min-width: 860px;
-}
-.ue-table th, .ue-table td {
-  padding: 5px 10px;
-  text-align: right;
-  white-space: nowrap;
-  font-family: 'JetBrains Mono', 'Courier New', monospace;
   font-size: 12px;
-  color: var(--eax-ink-2);
+  background: var(--eax-surface);
+  border: 1px solid var(--eax-line);
+  border-radius: 10px;
+  min-width: 900px;
 }
-.ue-table th:first-child, .ue-table td:first-child {
-  text-align: left;
-  font-family: 'DM Sans', 'Plus Jakarta Sans', sans-serif;
-  font-size: 13px;
-  width: 100%;
+.ue-table td {
+  padding: 8px 12px;
+  text-align: right;
+  border-bottom: 1px solid var(--eax-line);
+  font-variant-numeric: tabular-nums;
+  color: var(--eax-ink);
+  white-space: nowrap;
 }
-.ue-table thead th {
-  font-family: 'DM Sans', sans-serif;
+.ue-table td.left, .ue-table th.left { text-align: left; }
+.ue-table td.left { width: 100%; }
+.ue-table th {
   font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--eax-subtle);
-  border-bottom: 1px solid var(--eax-line);
-  padding: 8px 10px;
-}
-/* Section band rows: "Revenues" / "Costs" */
-.ue-table tr.band td {
-  font-family: 'Plus Jakarta Sans', sans-serif;
   font-weight: 700;
-  font-size: 13px;
-  color: var(--eax-ink);
-  padding-top: 14px;
-  padding-bottom: 4px;
+  padding: 10px 12px;
+  text-align: right;
+  border-bottom: 1px solid var(--eax-line);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--eax-bg-2);
 }
-.ue-table tr.sub td:first-child {
-  padding-left: 28px;
-  font-style: italic;
-  color: var(--eax-muted);
+/* Section band rows: "Revenues" / "Costs" — styled like BVA category heads */
+.ue-table tr.band td {
+  background: var(--eax-accent-soft);
+  font-weight: 800;
+  color: var(--eax-ink);
+  border-top: 2px solid var(--eax-line-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 11px;
 }
 .ue-table tr.sub td { color: var(--eax-muted); }
-.ue-table tr.strong td { font-weight: 700; color: var(--eax-ink); }
-.ue-table tr.rule { border-top: 1px solid var(--eax-line-2); }
+.ue-table tr.sub td.left { padding-left: 34px; }
+.ue-table tr.strong td { font-weight: 700; background: var(--eax-bg-2); }
+.ue-table tr.rule td { border-top: 2px solid var(--eax-line-2); }
 .ue-table tr.accent td {
-  font-weight: 700;
-  color: var(--eax-accent);
   border-top: 2px solid var(--eax-line-2);
-  border-bottom: 2px solid var(--eax-line-2);
-  padding-top: 8px;
-  padding-bottom: 8px;
+  font-weight: 800;
 }
-.ue-table td.neg { color: var(--eax-bad); }
-.ue-table tbody tr:hover td { background: var(--eax-accent-soft); }
+.ue-table tr.accent td.left { color: var(--eax-accent); }
+.ue-table td.pct { color: var(--eax-muted); }
+.ue-table td.over { color: #c0392b; font-weight: 600; }
+.ue-table td.under { color: var(--eax-good, #1F7A4D); }
 
 /* ── Info rail cards ───────────────────────────────────────── */
 .ue-card {
