@@ -2388,7 +2388,8 @@ _BVA_SAGE_RENAME = {
     "ew lift station2 +fm": "Lift Station 2 + FM",
 }
 # Projects to hide entirely (old / irrelevant — e.g. commitments-only leftovers).
-_BVA_DROP_NAMES = ("hill + pond", "section 7 & kermier rd landscaping")
+_BVA_DROP_NAMES = ("hill + pond", "section 7 & kermier rd landscaping",
+                   "densn sec sf-14")
 
 
 def _bva_is_dropped(name):
