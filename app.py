@@ -2853,13 +2853,16 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
     acct_re = re.compile(r"^\s*(\d[\w.-]*)\s+-\s+(.*)")
     def g(r, i):
         return (r[i].strip() if i is not None and i < len(r) else "")
-    def sec_of(pn):
+    def sec_of(pn, memo=""):
         lm = _BVA_LOT_SEC_RE.search(pn)
         if lm:
             return int(lm.group(1))
         sm = _BVA_SEC_NUM_RE.search(pn)
         if sm and "sec" in pn.lower():
             return int(sm.group(1))
+        mm = re.search(r"section\s*(\d+)", memo, re.I)   # e.g. "Weekley sale - Section 5"
+        if mm:
+            return int(mm.group(1))
         return None
     # First pass: launch-bond amounts (to exclude their matching requisitions).
     cur = None; launch_amts = set()
@@ -2900,7 +2903,7 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
             rev = -signed
             d = E(ent)
             grp = _BVA_REV_GROUP.get(cur, "other")
-            sec = sec_of(g(r, c_projn))
+            sec = sec_of(g(r, c_projn), g(r, c_memo))
             if grp in _BVA_REV_SECTION_GROUPS and sec is not None:
                 s = d["sec"].setdefault(sec, {"lotSales": 0.0, "premium": 0.0,
                                               "escalation": 0.0, "marketing": 0.0, "fence": 0.0})
