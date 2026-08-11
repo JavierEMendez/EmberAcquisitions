@@ -2794,6 +2794,180 @@ def _bva_save_gl(entities: dict) -> None:
     conn.commit(); cur.close(); conn.close()
 
 
+def _bva_bond_source(text: str) -> str:
+    """Classify a MUD bond-proceeds line to its district source."""
+    t = text.lower()
+    if "570" in t:
+        return "HC MUD 570D"
+    if "576" in t:
+        return "HC MUD 576"
+    if "164" in t or "wcid" in t:
+        return "HC WCID 164"
+    if "srb" in t:
+        return "NFA SRB"
+    return "Other"
+
+
+_BVA_REV_GROUP = {  # revenue account (5-digit) -> group
+    "40100": "lotSales", "40140": "lotSales", "40145": "lotSales",
+    "40150": "lotSales", "40160": "lotSales", "40165": "lotSales", "40170": "lotSales",
+    "40120": "premium", "40180": "escalation", "41020": "marketing",
+    "41001": "fence", "41019": "acreage",
+}
+_BVA_REV_SECTION_GROUPS = ("lotSales", "premium", "escalation", "marketing", "fence")
+_BVA_LOT_SEC_RE = re.compile(r"s(\d+)-b\d+-l\d+", re.I)
+_BVA_SEC_NUM_RE = re.compile(r"sec\w*\D*(\d+)", re.I)
+
+
+def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
+    """Pull the revenue / MUD-financing side of the GL that the cost BVA drops
+    (account ranges 4xxxx revenue, 169xx MUD receivable / bond proceeds).
+
+    Returns per entity:
+      revenueBySection : [{section, lotSales, premium, escalation, marketing,
+                           fence, total}]  (sales-driven revenue tagged to lots)
+      revenueOther     : [{label, amount}] (entity-level revenue: dev fees,
+                           acreage, participation, untagged lot sales, …)
+      acreageByCustomer: [{customer, amount}]  (who acreage was sold to)
+      revenueTotal
+      bonds/bondTotal  : bond proceeds collected by series+source (Launch excl.)
+      mudReceivable/netReceivable
+
+    Launch bonds are excluded: a "Clean up Launch bond" journal reverses its
+    equal same-amount requisition, so receipts matching a launch amount drop."""
+    rows = _bva_rows_from_bytes(file_bytes)
+    if not rows:
+        return {}
+    hdr = None
+    for r in rows:
+        if r and any((c or "").strip() == "Posted dt." for c in r):
+            hdr = [(c or "").strip() for c in r]; break
+    if hdr is None:
+        return {}
+    idx = {h: i for i, h in enumerate(hdr)}
+    c_owner, c_oname = idx.get("Owner"), idx.get("Owner name")
+    c_deb, c_cred = idx.get("Debit"), idx.get("Credit")
+    c_memo, c_doc, c_date = idx.get("Memo/Description"), idx.get("Doc"), idx.get("Posted dt.")
+    c_projn, c_cust = idx.get("Project name"), idx.get("Customer name")
+    date_re = re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$")
+    acct_re = re.compile(r"^\s*(\d[\w.-]*)\s+-\s+(.*)")
+    def g(r, i):
+        return (r[i].strip() if i is not None and i < len(r) else "")
+    def sec_of(pn):
+        lm = _BVA_LOT_SEC_RE.search(pn)
+        if lm:
+            return int(lm.group(1))
+        sm = _BVA_SEC_NUM_RE.search(pn)
+        if sm and "sec" in pn.lower():
+            return int(sm.group(1))
+        return None
+    # First pass: launch-bond amounts (to exclude their matching requisitions).
+    cur = None; launch_amts = set()
+    for r in rows:
+        if not r:
+            continue
+        first = (r[0] or "").strip()
+        if not date_re.match(first):
+            m = acct_re.match(first)
+            if m:
+                cur = m.group(1)
+            continue
+        if cur == "16902" and "launch" in g(r, c_memo).lower():
+            launch_amts.add(round(abs(_bva_num(g(r, c_deb)) - _bva_num(g(r, c_cred)))))
+    # Second pass.
+    cur = None; cur_name = ""
+    fin: dict = {}
+    def E(ent):
+        return fin.setdefault(ent, {"sec": {}, "other": {}, "acreage": {},
+                                    "bonds": {}, "bondTotal": 0.0, "mudReceivable": 0.0})
+    for r in rows:
+        if not r:
+            continue
+        first = (r[0] or "").strip()
+        if not date_re.match(first):
+            m = acct_re.match(first)
+            if m:
+                cur = m.group(1); cur_name = re.sub(r"\s*\(Balance forward.*$", "", m.group(2)).strip()
+            continue
+        if not cur or cur[0] not in ("4", "1"):
+            continue
+        ent = force_entity or _bva_owner_to_entity(g(r, c_owner), g(r, c_oname))
+        if not ent:
+            continue
+        signed = _bva_num(g(r, c_deb)) - _bva_num(g(r, c_cred))
+        # --- revenue (4xxxx): credit is positive revenue ---
+        if cur[0] == "4":
+            rev = -signed
+            d = E(ent)
+            grp = _BVA_REV_GROUP.get(cur, "other")
+            sec = sec_of(g(r, c_projn))
+            if grp in _BVA_REV_SECTION_GROUPS and sec is not None:
+                s = d["sec"].setdefault(sec, {"lotSales": 0.0, "premium": 0.0,
+                                              "escalation": 0.0, "marketing": 0.0, "fence": 0.0})
+                s[grp] += rev
+            else:
+                d["other"][cur_name] = d["other"].get(cur_name, 0.0) + rev
+                if grp == "acreage":
+                    d["acreage"][g(r, c_cust) or "(no customer)"] = \
+                        d["acreage"].get(g(r, c_cust) or "(no customer)", 0.0) + rev
+            continue
+        # --- MUD receivable / bond proceeds (169xx) ---
+        if cur == "16901":
+            E(ent)["mudReceivable"] += signed
+            continue
+        if cur == "16902":
+            memo = g(r, c_memo).lower()
+            if any(k in memo for k in ("to record issuance", "to correct", "clean up", "launch", "reclass")):
+                continue
+            if round(abs(signed)) in launch_amts:
+                continue
+            d = E(ent); proceeds = -signed
+            yr = g(r, c_date)[-4:]
+            series = "2024 Series" if yr == "2024" else yr
+            source = _bva_bond_source(g(r, c_doc) + " " + memo)
+            d["bonds"][(series, source)] = d["bonds"].get((series, source), 0.0) + proceeds
+            d["bondTotal"] += proceeds
+    out: dict = {}
+    for ent, d in fin.items():
+        bysec = []
+        for sec in sorted(d["sec"]):
+            s = d["sec"][sec]
+            tot = sum(s.values())
+            bysec.append({"section": "Section %d" % sec,
+                          "lotSales": round(s["lotSales"]), "premium": round(s["premium"]),
+                          "escalation": round(s["escalation"]), "marketing": round(s["marketing"]),
+                          "fence": round(s["fence"]), "total": round(tot)})
+        other = [{"label": k, "amount": round(a)} for k, a in
+                 sorted(d["other"].items(), key=lambda x: -x[1]) if round(a)]
+        acre = [{"customer": k, "amount": round(a)} for k, a in
+                sorted(d["acreage"].items(), key=lambda x: -x[1]) if round(a)]
+        rev_total = sum(x["total"] for x in bysec) + sum(x["amount"] for x in other)
+        bonds = [{"series": s, "source": src, "amount": round(a)}
+                 for (s, src), a in sorted(d["bonds"].items()) if round(a)]
+        recv = round(d["mudReceivable"])
+        out[ent] = {"revenueBySection": bysec, "revenueOther": other,
+                    "acreageByCustomer": acre, "revenueTotal": round(rev_total),
+                    "bonds": bonds, "bondTotal": round(d["bondTotal"]),
+                    "mudReceivable": recv, "netReceivable": recv - round(d["bondTotal"])}
+    return out
+
+
+def _bva_load_finance() -> dict:
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT data FROM reports WHERE report_type = 'bva_finance' "
+                "ORDER BY uploaded_at DESC LIMIT 1")
+    row = cur.fetchone(); cur.close(); conn.close()
+    return ((row["data"] if row else {}) or {}).get("entities", {}) or {}
+
+
+def _bva_save_finance(entities: dict) -> None:
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM reports WHERE report_type = 'bva_finance'")
+    cur.execute("INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+                ("bva_finance", json.dumps({"entities": entities}), session.get("user_id")))
+    conn.commit(); cur.close(); conn.close()
+
+
 @app.route("/api/bva/gl-upload", methods=["POST"])
 @login_required
 def api_bva_gl_upload():
@@ -2809,8 +2983,9 @@ def api_bva_gl_upload():
     valid = {lbl for lbl, _e in _BVA_ENTITIES}
     if ent not in valid:
         return jsonify({"error": "Specify ?entity= one of: %s" % ", ".join(sorted(valid))}), 400
+    raw = f.read()
     try:
-        parsed = _parse_bva_gl(f.read(), force_entity=ent)
+        parsed = _parse_bva_gl(raw, force_entity=ent)
     except Exception as e:
         return jsonify({"error": "Could not parse GL report: %s" % e}), 400
     recs = parsed.get(ent, [])
@@ -2819,6 +2994,13 @@ def api_bva_gl_upload():
     existing = _bva_load_gl()
     existing[ent] = recs   # replace just this entity
     _bva_save_gl(existing)
+    # Also pull MUD-financing figures (bond proceeds / receivable) for the Bond
+    # Proceeds view — same GL, revenue/receivable account range the BVA drops.
+    try:
+        fin = _bva_parse_finance(raw, force_entity=ent)
+        efin = _bva_load_finance(); efin[ent] = fin.get(ent, {}); _bva_save_finance(efin)
+    except Exception:
+        pass
     actual = sum(sum(r["months"].values()) for r in recs)
     committed = sum(r["committed"] for r in recs)
     return jsonify({"ok": True, "entity": ent, "lines": len(recs),
@@ -3645,6 +3827,7 @@ def api_bva_data():
     return jsonify({"configured": True, "has_gl": has_gl,
                     "has_commitments": has_com, "blocks": blocks,
                     "flags": _bva_load_flags(), "status": _bva_load_status(),
+                    "finance": _bva_load_finance(),
                     "is_admin": bool(session.get("is_admin"))})
 
 

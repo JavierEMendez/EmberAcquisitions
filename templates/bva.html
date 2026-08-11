@@ -66,6 +66,7 @@
   table.bva-table{width:100%;border-collapse:collapse;font-size:12px;background:var(--eax-surface);border:1px solid var(--eax-line);border-radius:10px;}
   .bva-table th{font-size:9px;letter-spacing:0.08em;text-transform:uppercase;color:var(--eax-subtle);font-weight:700;padding:10px 12px;text-align:right;border-bottom:1px solid var(--eax-line);white-space:nowrap;position:sticky;top:0;z-index:3;background:var(--eax-bg-2);}
   .bva-table th.left{text-align:left;}
+  .fin-h{margin:22px 0 6px;font-size:13px;font-weight:700;color:var(--eax-ink);}
   .cb-toggle-row{margin:6px 0 0;}
   .cb-toggle{background:none;border:1px solid var(--eax-line);border-radius:6px;color:var(--eax-subtle);font-size:10px;font-weight:600;padding:4px 10px;cursor:pointer;letter-spacing:.03em;}
   .cb-toggle:hover{color:var(--eax-fg);border-color:var(--eax-subtle);}
@@ -192,6 +193,12 @@
       </div>
 
       <div class="bva-toolbar">
+        <div class="seg" id="view-tabs">
+          <button class="seg-btn active" data-view="bva">Budget vs Actuals</button>
+          <button class="seg-btn" data-view="finance">Revenue &amp; MUD</button>
+        </div>
+      </div>
+      <div class="bva-toolbar">
         <div class="seg" id="proj-tabs"></div>
         <input id="bva-search" class="bva-search" type="text" placeholder="🔍 Search project or subtask…"
                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
@@ -215,6 +222,7 @@
   let BLOCKS = [], active = 0, query = "", showCB = false;
   let FLAGS = {}, IS_ADMIN = false, flaggedOnly = false, openCats = new Set();
   let STATUS = {}, statusFilter = "";   // "" = all; else complete/in_progress/future
+  let FINANCE = {}, viewMode = "bva";   // bva | finance
   const STATUS_META = {
     complete:    { icon: "✅", label: "Complete" },
     in_progress: { icon: "🔨", label: "In Progress" },
@@ -250,7 +258,65 @@
       btn.addEventListener("click", () => { active = +btn.dataset.i; renderTabs(); renderBody(); }));
   }
 
+  function renderFinance() {
+    const b = BLOCKS[active];
+    const host = $("#bva-body");
+    const f = (FINANCE || {})[b ? b.label : ""] || null;
+    if (!f || (!f.revenueTotal && !f.bondTotal && !f.mudReceivable)) {
+      host.innerHTML = `<div class="empty">No revenue / MUD financing in the loaded ${b ? b.label : ""} GL yet. Re-upload the GL report to populate.</div>`;
+      return;
+    }
+    const sec = f.revenueBySection || [], other = f.revenueOther || [],
+          acre = f.acreageByCustomer || [], bonds = f.bonds || [];
+    // Revenue by section
+    let secRows = sec.map(s =>
+      `<tr><td class="left">${s.section}</td><td>${fmt(s.lotSales)}</td><td>${fmt(s.premium)}</td>`
+      + `<td>${fmt(s.escalation)}</td><td>${fmt(s.marketing)}</td><td>${fmt(s.fence)}</td>`
+      + `<td><b>${fmt(s.total)}</b></td></tr>`).join("");
+    const secTotal = sec.reduce((a, s) => a + s.total, 0);
+    // Entity-level revenue
+    let otherRows = other.map(o => `<tr><td class="left" colspan="6">${o.label}</td><td>${fmt(o.amount)}</td></tr>`).join("");
+    const otherTotal = other.reduce((a, o) => a + o.amount, 0);
+    // Acreage by customer
+    let acreRows = acre.map(a => `<tr><td class="left" colspan="6">${a.customer}</td><td>${fmt(a.amount)}</td></tr>`).join("");
+    // Bond proceeds by series
+    const bySeries = {};
+    bonds.forEach(x => { (bySeries[x.series] = bySeries[x.series] || []).push(x); });
+    let bondRows = "";
+    Object.keys(bySeries).sort().forEach(series => {
+      const items = bySeries[series], sub = items.reduce((s, x) => s + x.amount, 0);
+      bondRows += `<tr class="proj-head"><td class="left" colspan="6">${series}</td><td>${fmt(sub)}</td></tr>`;
+      items.forEach(x => bondRows += `<tr><td class="left muted" colspan="6" style="padding-left:22px">${x.source}</td><td>${fmt(x.amount)}</td></tr>`);
+    });
+    host.innerHTML = `
+      <div class="kpi-band">
+        <div class="kpi good"><div class="l">Total Revenue (ITD)</div><div class="v">${fmt(f.revenueTotal)}</div></div>
+        <div class="kpi"><div class="l">Bond Proceeds Collected</div><div class="v">${fmt(f.bondTotal)}</div></div>
+        <div class="kpi"><div class="l">MUD Receivable (gross)</div><div class="v">${fmt(f.mudReceivable)}</div></div>
+        <div class="kpi"><div class="l">Net To Be Reimbursed</div><div class="v">${fmt(f.netReceivable)}</div></div>
+      </div>
+      <h3 class="fin-h">Revenue by Section</h3>
+      <table class="bva-table">
+        <thead><tr><th class="left">Section</th><th>Lot Sales</th><th>Premium</th><th>Escalation</th><th>Marketing</th><th>Fence</th><th>Total</th></tr></thead>
+        <tbody>${secRows}<tr class="grand"><td class="left">Section revenue</td><td></td><td></td><td></td><td></td><td></td><td>${fmt(secTotal)}</td></tr></tbody>
+      </table>
+      <h3 class="fin-h">Entity-level Revenue (not section-tagged)</h3>
+      <table class="bva-table">
+        <thead><tr><th class="left">Source</th><th colspan="5"></th><th>Amount</th></tr></thead>
+        <tbody>${otherRows}<tr class="grand"><td class="left" colspan="6">Entity-level revenue</td><td>${fmt(otherTotal)}</td></tr></tbody>
+      </table>
+      ${acre.length ? `<h3 class="fin-h">Acreage Sales — by Buyer</h3>
+      <table class="bva-table"><thead><tr><th class="left">Customer</th><th colspan="5"></th><th>Amount</th></tr></thead>
+        <tbody>${acreRows}</tbody></table>` : ""}
+      <h3 class="fin-h">Bond Proceeds Collected — by Series &amp; MUD Source <span class="muted" style="font-weight:400;font-size:11px">(Launch bonds excluded)</span></h3>
+      <table class="bva-table">
+        <thead><tr><th class="left">Series / Source</th><th colspan="5"></th><th>Proceeds</th></tr></thead>
+        <tbody>${bondRows}<tr class="grand"><td class="left" colspan="6">Total collected</td><td>${fmt(f.bondTotal)}</td></tr></tbody>
+      </table>`;
+  }
+
   function renderBody() {
+    if (viewMode === "finance") return renderFinance();
     const b = BLOCKS[active];
     const host = $("#bva-body");
     if (!b || !b.rows.length) { host.innerHTML = `<div class="empty">No cost activity or budget for ${b ? b.label : "this project"} yet.</div>`; return; }
@@ -417,12 +483,21 @@
       if (d.error) { $("#bva-body").innerHTML = `<div class="empty">${d.error}</div>`; return; }
       if (!d.has_gl) { $("#bva-body").innerHTML = `<div class="empty">No GL report loaded yet. Click <b>Upload GL Report</b> to load actuals &amp; commitments from Sage.</div>`; $("#proj-tabs").innerHTML = ""; return; }
       BLOCKS = d.blocks || [];
-      FLAGS = d.flags || {}; STATUS = d.status || {}; IS_ADMIN = !!d.is_admin;
+      FLAGS = d.flags || {}; STATUS = d.status || {}; FINANCE = d.finance || {}; IS_ADMIN = !!d.is_admin;
       renderTabs(); renderBody();
     } catch (e) {
       $("#bva-body").innerHTML = `<div class="empty">Failed to load: ${e}</div>`;
     }
   }
+
+  // View switch: Budget vs Actuals  |  Bond Proceeds & MUD
+  document.querySelectorAll("#view-tabs .seg-btn").forEach(btn =>
+    btn.addEventListener("click", () => {
+      viewMode = btn.dataset.view;
+      document.querySelectorAll("#view-tabs .seg-btn").forEach(b => b.classList.toggle("active", b === btn));
+      const sb = $("#bva-search"); if (sb) sb.style.display = (viewMode === "finance") ? "none" : "";
+      renderBody();
+    }));
 
   // GL report upload — one per entity (GPD / Dennison / WRG)
   let glEntity = null;
