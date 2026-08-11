@@ -2828,6 +2828,16 @@ _BVA_REV_GROUP = {  # revenue account (5-digit) -> group
     "41001": "fence", "41019": "acreage",
 }
 _BVA_REV_SECTION_GROUPS = ("lotSales", "premium", "escalation", "marketing", "fence")
+# Pro-forma budgeted total revenue per section (GPD Data Center Model, Lot Sales
+# tab col "Total Revenue"). Sold sections aren't in the go-forward model, so
+# they're absent here and fall back to actuals (budget = actual, delta 0).
+_BVA_REV_BUDGET = {
+    "GPD": {6: 6349131, 7: 8078984, 8: 5864392, 13: 8554219, 14: 6957431,
+            15: 7641769, 16: 2661312, 17: 8991434, 18: 6235075, 19: 1862919,
+            20: 8174031, 21: 7315000, 22: 8630738, 23: 8174031, 24: 10131997,
+            25: 7252077, 26: 10217539, 27: 9295584, 28: 10312586, 29: 13506161,
+            30: 3260950, 31: 6366938},
+}
 _BVA_LOT_SEC_RE = re.compile(r"s(\d+)-b\d+-l\d+", re.I)
 _BVA_SEC_NUM_RE = re.compile(r"sec[a-z]*\.?\s*0*(\d+)", re.I)   # Sec 10 -> 10 (not 0)
 
@@ -2962,14 +2972,20 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
             d["bondTotal"] += proceeds
     out: dict = {}
     for ent, d in fin.items():
+        rb = _BVA_REV_BUDGET.get(ent, {})
         bysec = []
-        for sec in sorted(d["sec"]):
-            s = d["sec"][sec]
+        for sec in sorted(set(d["sec"]) | set(rb)):
+            s = d["sec"].get(sec, {"lotSales": 0.0, "premium": 0.0, "escalation": 0.0,
+                                   "marketing": 0.0, "fence": 0.0})
             tot = sum(s.values())
+            bud = rb.get(sec)                    # pro-forma projection…
+            if bud is None:
+                bud = round(tot)                 # …or actual for sold sections
             bysec.append({"section": "Section %d" % sec,
                           "lotSales": round(s["lotSales"]), "premium": round(s["premium"]),
                           "escalation": round(s["escalation"]), "marketing": round(s["marketing"]),
-                          "fence": round(s["fence"]), "total": round(tot)})
+                          "fence": round(s["fence"]), "total": round(tot),
+                          "budget": round(bud), "delta": round(bud) - round(tot)})
         other = [{"label": k, "amount": round(a)} for k, a in
                  sorted(d["other"].items(), key=lambda x: -x[1]) if round(a)]
         acre = [{"customer": k, "amount": round(a)} for k, a in
@@ -2984,6 +3000,7 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
                  for (s, src), a in sorted(d["bonds"].items()) if round(a)]
         recv = round(d["mudReceivable"])
         out[ent] = {"revenueBySection": bysec, "revenueOther": other,
+                    "revenueBudgetTotal": sum(x["budget"] for x in bysec),
                     "acreageByCustomer": acre, "marketingByCustomer": mktg,
                     "modelHomePurchases": round(d.get("modelHome", 0.0)),
                     "bemBySection": bem, "bemTotal": bemTotal,

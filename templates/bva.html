@@ -268,12 +268,16 @@
     }
     const sec = f.revenueBySection || [], other = f.revenueOther || [],
           acre = f.acreageByCustomer || [], bonds = f.bonds || [];
-    // Revenue by section
+    // Revenue by section — budget vs actual like the cost BVA (delta = budget − actual)
+    const dCls = (v) => v < 0 ? "over" : (v > 0 ? "under" : "muted");
     let secRows = sec.map(s =>
       `<tr><td class="left">${s.section}</td><td>${fmt(s.lotSales)}</td><td>${fmt(s.premium)}</td>`
       + `<td>${fmt(s.escalation)}</td><td>${fmt(s.marketing)}</td><td>${fmt(s.fence)}</td>`
-      + `<td><b>${fmt(s.total)}</b></td></tr>`).join("");
+      + `<td><b>${fmt(s.total)}</b></td><td>${fmt(s.budget)}</td>`
+      + `<td class="${dCls(-(s.delta||0))}">${fmt(s.delta)}</td></tr>`).join("");
     const secTotal = sec.reduce((a, s) => a + s.total, 0);
+    const secBud = sec.reduce((a, s) => a + (s.budget || 0), 0);
+    const secDelta = secBud - secTotal;
     // Entity-level revenue
     let otherRows = other.map(o => `<tr><td class="left" colspan="6">${o.label}</td><td>${fmt(o.amount)}</td></tr>`).join("");
     const otherTotal = other.reduce((a, o) => a + o.amount, 0);
@@ -294,12 +298,14 @@
     host.innerHTML = `
       <div class="kpi-band">
         <div class="kpi good"><div class="l">Total Revenue (ITD)</div><div class="v">${fmt(f.revenueTotal)}</div></div>
+        <div class="kpi"><div class="l">Section Revenue Budget</div><div class="v">${fmt(secBud)}</div></div>
+        <div class="kpi ${secDelta>0?'good':''}"><div class="l">Budget − Actual (sections)</div><div class="v">${fmt(secDelta)}</div></div>
         <div class="kpi"><div class="l">Bond Proceeds Collected</div><div class="v">${fmt(f.bondTotal)}</div></div>
       </div>
-      <h3 class="fin-h">Revenue by Section</h3>
+      <h3 class="fin-h">Revenue by Section <span class="muted" style="font-weight:400;font-size:11px">(budget = pro-forma projection; sold-out sections use actuals)</span></h3>
       <table class="bva-table">
-        <thead><tr><th class="left">Section</th><th>Lot Sales</th><th>Premium</th><th>Escalation</th><th>Marketing</th><th>Fence</th><th>Total</th></tr></thead>
-        <tbody>${secRows}<tr class="grand"><td class="left">Section revenue</td><td></td><td></td><td></td><td></td><td></td><td>${fmt(secTotal)}</td></tr></tbody>
+        <thead><tr><th class="left">Section</th><th>Lot Sales</th><th>Premium</th><th>Escalation</th><th>Marketing</th><th>Fence</th><th>Actual Total</th><th>Budget</th><th>Budget − Actual<span class="col-formula">revenue still to come</span></th></tr></thead>
+        <tbody>${secRows}<tr class="grand"><td class="left">Section revenue</td><td></td><td></td><td></td><td></td><td></td><td>${fmt(secTotal)}</td><td>${fmt(secBud)}</td><td class="${dCls(-secDelta)}">${fmt(secDelta)}</td></tr></tbody>
       </table>
       ${f.modelHomePurchases ? `<p class="muted" style="margin:6px 0;font-size:11px;">Model-home / buyback postings are excluded from revenue and booked as a <b>cost</b> in Budget vs Actuals (GPD Office Purchase).</p>` : ""}
       <h3 class="fin-h">Entity-level Revenue (not section-tagged)</h3>
