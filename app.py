@@ -2881,7 +2881,8 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
     cur = None; cur_name = ""
     fin: dict = {}
     def E(ent):
-        return fin.setdefault(ent, {"sec": {}, "other": {}, "acreage": {},
+        return fin.setdefault(ent, {"sec": {}, "other": {}, "acreage": {}, "mktgCust": {},
+                                    "bem": {}, "bemOther": 0.0, "modelHome": 0.0,
                                     "bonds": {}, "bondTotal": 0.0, "mudReceivable": 0.0})
     for r in rows:
         if not r:
@@ -2892,27 +2893,43 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
             if m:
                 cur = m.group(1); cur_name = re.sub(r"\s*\(Balance forward.*$", "", m.group(2)).strip()
             continue
-        if not cur or cur[0] not in ("4", "1"):
+        if not cur or (cur[0] not in ("4", "1") and cur != "21060"):
             continue
         ent = force_entity or _bva_owner_to_entity(g(r, c_owner), g(r, c_oname))
         if not ent:
             continue
         signed = _bva_num(g(r, c_deb)) - _bva_num(g(r, c_cred))
+        # --- Builder earnest money (21060): deposits held, by section ---
+        if cur == "21060":
+            d = E(ent); sec = sec_of(g(r, c_projn), g(r, c_memo))
+            if sec is not None:
+                d["bem"][sec] = d["bem"].get(sec, 0.0) + signed
+            else:
+                d["bemOther"] = d.get("bemOther", 0.0) + signed
+            continue
         # --- revenue (4xxxx): credit is positive revenue ---
         if cur[0] == "4":
             rev = -signed
             d = E(ent)
+            memo = g(r, c_memo).lower()
+            # A "model home purchase" is the developer buying a lot back — a cost,
+            # not lot-sale revenue. Break it out separately, never in a section.
+            if "model home purchase" in memo:
+                d["modelHome"] = d.get("modelHome", 0.0) + rev
+                continue
             grp = _BVA_REV_GROUP.get(cur, "other")
-            sec = sec_of(g(r, c_projn), g(r, c_memo))
+            sec = sec_of(g(r, c_projn), memo)
             if grp in _BVA_REV_SECTION_GROUPS and sec is not None:
                 s = d["sec"].setdefault(sec, {"lotSales": 0.0, "premium": 0.0,
                                               "escalation": 0.0, "marketing": 0.0, "fence": 0.0})
                 s[grp] += rev
             else:
                 d["other"][cur_name] = d["other"].get(cur_name, 0.0) + rev
+                cust = g(r, c_cust) or "(no customer)"
                 if grp == "acreage":
-                    d["acreage"][g(r, c_cust) or "(no customer)"] = \
-                        d["acreage"].get(g(r, c_cust) or "(no customer)", 0.0) + rev
+                    d["acreage"][cust] = d["acreage"].get(cust, 0.0) + rev
+                if grp == "marketing":     # untagged marketing fee income — by payer
+                    d["mktgCust"][cust] = d["mktgCust"].get(cust, 0.0) + rev
             continue
         # --- MUD receivable / bond proceeds (169xx) ---
         if cur == "16901":
@@ -2944,12 +2961,20 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
                  sorted(d["other"].items(), key=lambda x: -x[1]) if round(a)]
         acre = [{"customer": k, "amount": round(a)} for k, a in
                 sorted(d["acreage"].items(), key=lambda x: -x[1]) if round(a)]
+        mktg = [{"customer": k, "amount": round(a)} for k, a in
+                sorted(d["mktgCust"].items(), key=lambda x: -x[1]) if round(a)]
+        bem = [{"section": "Section %d" % s, "amount": round(a)}
+               for s, a in sorted(d["bem"].items()) if round(a)]
+        bemTotal = round(sum(d["bem"].values()) + d.get("bemOther", 0.0))
         rev_total = sum(x["total"] for x in bysec) + sum(x["amount"] for x in other)
         bonds = [{"series": s, "source": src, "amount": round(a)}
                  for (s, src), a in sorted(d["bonds"].items()) if round(a)]
         recv = round(d["mudReceivable"])
         out[ent] = {"revenueBySection": bysec, "revenueOther": other,
-                    "acreageByCustomer": acre, "revenueTotal": round(rev_total),
+                    "acreageByCustomer": acre, "marketingByCustomer": mktg,
+                    "modelHomePurchases": round(d.get("modelHome", 0.0)),
+                    "bemBySection": bem, "bemTotal": bemTotal,
+                    "revenueTotal": round(rev_total),
                     "bonds": bonds, "bondTotal": round(d["bondTotal"]),
                     "mudReceivable": recv, "netReceivable": recv - round(d["bondTotal"])}
     return out

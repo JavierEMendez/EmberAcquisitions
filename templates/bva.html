@@ -277,8 +277,11 @@
     // Entity-level revenue
     let otherRows = other.map(o => `<tr><td class="left" colspan="6">${o.label}</td><td>${fmt(o.amount)}</td></tr>`).join("");
     const otherTotal = other.reduce((a, o) => a + o.amount, 0);
-    // Acreage by customer
+    // Acreage / marketing by customer
+    const mktg = f.marketingByCustomer || [], bem = f.bemBySection || [];
     let acreRows = acre.map(a => `<tr><td class="left" colspan="6">${a.customer}</td><td>${fmt(a.amount)}</td></tr>`).join("");
+    let mktgRows = mktg.map(a => `<tr><td class="left" colspan="6">${a.customer}</td><td>${fmt(a.amount)}</td></tr>`).join("");
+    let bemRows = bem.map(a => `<tr><td class="left" colspan="6">${a.section}</td><td>${fmt(a.amount)}</td></tr>`).join("");
     // Bond proceeds by series
     const bySeries = {};
     bonds.forEach(x => { (bySeries[x.series] = bySeries[x.series] || []).push(x); });
@@ -298,14 +301,21 @@
         <thead><tr><th class="left">Section</th><th>Lot Sales</th><th>Premium</th><th>Escalation</th><th>Marketing</th><th>Fence</th><th>Total</th></tr></thead>
         <tbody>${secRows}<tr class="grand"><td class="left">Section revenue</td><td></td><td></td><td></td><td></td><td></td><td>${fmt(secTotal)}</td></tr></tbody>
       </table>
+      ${f.modelHomePurchases ? `<p class="muted" style="margin:6px 0;font-size:11px;">Excluded from revenue — <b>model-home purchases / buybacks</b> (a cost, not a section sale): ${fmt(f.modelHomePurchases)}</p>` : ""}
       <h3 class="fin-h">Entity-level Revenue (not section-tagged)</h3>
       <table class="bva-table">
         <thead><tr><th class="left">Source</th><th colspan="5"></th><th>Amount</th></tr></thead>
         <tbody>${otherRows}<tr class="grand"><td class="left" colspan="6">Entity-level revenue</td><td>${fmt(otherTotal)}</td></tr></tbody>
       </table>
+      ${mktg.length ? `<h3 class="fin-h">Marketing Fee Income — by Payer <span class="muted" style="font-weight:400;font-size:11px">(the un-sectioned portion)</span></h3>
+      <table class="bva-table"><thead><tr><th class="left">Payer</th><th colspan="5"></th><th>Amount</th></tr></thead>
+        <tbody>${mktgRows}</tbody></table>` : ""}
       ${acre.length ? `<h3 class="fin-h">Acreage Sales — by Buyer</h3>
       <table class="bva-table"><thead><tr><th class="left">Customer</th><th colspan="5"></th><th>Amount</th></tr></thead>
         <tbody>${acreRows}</tbody></table>` : ""}
+      ${bem.length ? `<h3 class="fin-h">Builder Earnest Money — by Section <span class="muted" style="font-weight:400;font-size:11px">(deposits; net held ${fmt(f.bemTotal)})</span></h3>
+      <table class="bva-table"><thead><tr><th class="left">Section</th><th colspan="5"></th><th>Deposits</th></tr></thead>
+        <tbody>${bemRows}</tbody></table>` : ""}
       <h3 class="fin-h">Bond Proceeds Collected — by Series &amp; MUD Source <span class="muted" style="font-weight:400;font-size:11px">(Launch bonds excluded)</span></h3>
       <table class="bva-table">
         <thead><tr><th class="left">Series / Source</th><th colspan="5"></th><th>Proceeds</th></tr></thead>
