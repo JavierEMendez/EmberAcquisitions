@@ -2829,7 +2829,7 @@ _BVA_REV_GROUP = {  # revenue account (5-digit) -> group
 }
 _BVA_REV_SECTION_GROUPS = ("lotSales", "premium", "escalation", "marketing", "fence")
 _BVA_LOT_SEC_RE = re.compile(r"s(\d+)-b\d+-l\d+", re.I)
-_BVA_SEC_NUM_RE = re.compile(r"sec\w*\D*(\d+)", re.I)
+_BVA_SEC_NUM_RE = re.compile(r"sec[a-z]*\.?\s*0*(\d+)", re.I)   # Sec 10 -> 10 (not 0)
 
 
 def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
@@ -3785,6 +3785,11 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
         # shouldn't carry a line that has committed but no budget and no actuals
         # (a closed/left-over commitment, e.g. Detention Ph01 Landscape arch).
         def _keep(r):
+            # LotSales-Sec* projects are lot-closing trackers; their only real
+            # BVA line is the property tax (moved to Taxes) — drop the leftover
+            # closing-cost stubs ($200/$18 misc fees) elsewhere.
+            if "lotsales" in (r.get("projectName", "") or "").lower() and r.get("category") != "Taxes":
+                return False
             if r.get("budget") or r.get("actual"):
                 return True
             if r.get("committed"):
