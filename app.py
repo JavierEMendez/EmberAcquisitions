@@ -2448,6 +2448,7 @@ _BVA_PROJECT_CAT_OVERRIDE = {
     "gp lotsales sec07":       "Taxes",
     "gp lotsales sec08":       "Taxes",
     "gp receivables and bond": "Soft Costs",
+    "gpd office purchase":     "Amenities",   # model-home purchase (matches budget)
 }
 
 # Individual-lot project id (e.g. GP_S01-B01-L01) — aggregated into one line
@@ -2561,6 +2562,7 @@ def _parse_bva_gl(file_bytes: bytes, force_entity: str = None) -> dict:
     c_projid, c_proj = idx.get("Project"), idx.get("Project name")
     c_subid, c_sub, c_task = idx.get("Subtask"), idx.get("Subtask name"), idx.get("Task name")
     c_jnl, c_deb, c_cred, c_date = idx.get("JNL"), idx.get("Debit"), idx.get("Credit"), idx.get("Posted dt.")
+    c_memo = idx.get("Memo/Description")
     date_re = re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$")
     acct_re = re.compile(r"^\s*(\d[\w.-]*)\s+-\s+")
     COMMIT = {"COMMITMENTS", "CJ_PO", "CJ_CLOSE"}
@@ -2578,22 +2580,33 @@ def _parse_bva_gl(file_bytes: bytes, force_entity: str = None) -> dict:
             if m:
                 cur_acct = m.group(1)
             continue
-        if not (cur_acct and (cur_acct.startswith("16") or cur_acct.startswith("70"))):
+        # Model-home purchases are booked as a debit reversing lot-sale revenue
+        # (GPD bought the lot back) plus closing costs, offset by cash/loan — but
+        # they're really a COST. Route the revenue-reversal + cost legs (accts
+        # 4/5/7) to the "GPD Office Purchase" budget line as an actual; skip the
+        # cash/liability offset legs (10xxx/2xxxx) so they don't net it back out.
+        is_model = ("model home purchase" in g(r, c_memo).lower()
+                    and cur_acct and cur_acct[:1] in ("4", "5", "7"))
+        if not (cur_acct and (cur_acct.startswith("16") or cur_acct.startswith("70") or is_model)):
             continue
         ent = force_entity or _bva_owner_to_entity(g(r, c_owner), g(r, c_oname))
         if not ent:
             continue
-        projid = g(r, c_projid) or g(r, c_proj)
+        if is_model:
+            projid = proj = "GPD Office Purchase"; task_ = "Construction"; sub_ = subid = ""
+        else:
+            projid = g(r, c_projid) or g(r, c_proj)
+            proj = g(r, c_proj) or projid
+            task_ = g(r, c_task); sub_ = g(r, c_sub); subid = g(r, c_subid)
         if not projid:
             continue
-        subid = g(r, c_subid)
         key = (projid, subid)
         d = agg.setdefault(ent, {}).setdefault(key, {
-            "projectId": projid, "project": g(r, c_proj) or projid,
-            "task": g(r, c_task), "subtaskId": subid, "subtask": g(r, c_sub),
+            "projectId": projid, "project": proj,
+            "task": task_, "subtaskId": subid, "subtask": sub_,
             "committed": 0.0, "months": {}})
-        if not d["subtask"] and g(r, c_sub): d["subtask"] = g(r, c_sub)
-        if not d["task"] and g(r, c_task): d["task"] = g(r, c_task)
+        if not d["subtask"] and sub_: d["subtask"] = sub_
+        if not d["task"] and task_: d["task"] = task_
         signed = _bva_num(g(r, c_deb)) - _bva_num(g(r, c_cred))
         if g(r, c_jnl) in COMMIT:
             d["committed"] += signed
