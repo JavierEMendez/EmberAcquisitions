@@ -14714,6 +14714,23 @@ def upload_macro():
 
 
 # ─── COMMUNITY SALES TRACKER ──────────────────────────────────────────────────
+def _persist_sales_snapshot(data):
+    """Mirror the latest community-sales payload into the `reports` table
+    (report_type='sales') so sibling apps (the Maquina dashboard) can read it
+    from the shared Postgres. Best-effort — never breaks the API."""
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM reports WHERE report_type = 'sales'")
+        cur.execute("INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+                    ("sales", json.dumps(data), None))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"[sales_snapshot] persist failed: {e}", flush=True)
+
+
 @app.route("/sales")
 @login_required
 def sales_dashboard():
@@ -14739,6 +14756,7 @@ def sales_data():
     force = request.args.get("refresh") == "1" and session.get("is_admin")
     try:
         data = get_sales_dashboard_data(force_refresh=force)
+        _persist_sales_snapshot(data)
         return jsonify(data)
     except RuntimeError as e:
         # Missing API token or Pipsy error — surface a clear message
@@ -15172,12 +15190,13 @@ def api_health():
 # /sales doesn't pay the cold-start cost (~10–20 sec to pull six
 # GraphQL pages across the three properties).
 def _refresh_sales_cache():
-    """Background job — force-pull fresh sales data from Pipsy and
-    discard the result. The cache inside sales_parser stays warm
-    for the next request. Logs+swallows exceptions so a Pipsy outage
-    can't kill the scheduler thread."""
+    """Background job — force-pull fresh sales data from Pipsy. The cache
+    inside sales_parser stays warm for the next request, and the payload is
+    mirrored to the `reports` table so the snapshot sibling apps read stays
+    current even on days nobody opens /sales. Logs+swallows exceptions so a
+    Pipsy outage can't kill the scheduler thread."""
     try:
-        get_sales_dashboard_data(force_refresh=True)
+        _persist_sales_snapshot(get_sales_dashboard_data(force_refresh=True))
         print("[scheduler] sales cache refreshed from Pipsy")
     except Exception as e:
         print(f"[scheduler] sales cache refresh failed: {e}")
