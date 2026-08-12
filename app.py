@@ -2961,17 +2961,19 @@ _BVA_REV_ENTITY_MAP = (
     ("miscellaneous", "Other Revenues"),
 )
 # Budgeted MUD/WCID bond revenue by year, split by district (MUD Revenues tab,
-# "Total MUD/WCID Bond Proceeds to Developer"). Only future years are shown on
-# the page — past years are already realised in the bond proceeds collected.
+# "Total MUD/WCID Bond Proceeds to Developer").
 _BVA_MUD_BUDGET_YEARS = {
-    "GPD": (("2026", 6257056, 2177408), ("2027", 3529853, 1227432),
+    "GPD": (("2024", 7423067, 2583568), ("2025", 8837630, 3076308),
+            ("2026", 6257056, 2177408), ("2027", 3529853, 1227432),
             ("2028", 9875466, 3437821), ("2029", 18714681, 6516814),
             ("2030", 14874047, 5178993), ("2031", 14021944, 4882177),
             ("2032", 18043747, 6283105), ("2033", 10051126, 3499009),
             ("2034", 4463922, 1552799), ("2035", 1133572, 392728)),
     "Dennison": (("2026", 732549, 0), ("2027", 9007932, 0), ("2028", 1782434, 0)),
 }
-_BVA_MUD_FIRST_YEAR = 2026
+# Bond years that are fully issued — the budget is overridden with what was
+# actually collected, so those years read budget = actual (delta 0).
+_BVA_MUD_ACTUALIZED_YEARS = {"2024", "2025"}
 
 # Commercial site sales budget per site (Commercial Site Sales tab, net "Total
 # Revenue"), with the Sage customer whose acreage-sale actual belongs to it.
@@ -3197,8 +3199,7 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
                     "revenueBudgetTotal": (sum(x["budget"] for x in bysec)
                                            + sum(x["budget"] for x in other)),
                     "mudBudgetYears": [{"year": y, "mud": mu, "wcid": wc}
-                                       for y, mu, wc in _BVA_MUD_BUDGET_YEARS.get(ent, ())
-                                       if int(y) >= _BVA_MUD_FIRST_YEAR],
+                                       for y, mu, wc in _BVA_MUD_BUDGET_YEARS.get(ent, ())],
                     "acreageByCustomer": acre, "marketingByCustomer": mktg,
                     "modelHomePurchases": round(d.get("modelHome", 0.0)),
                     "bemBySection": bem, "bemTotal": bemTotal,
@@ -3275,8 +3276,7 @@ def _bva_finance_apply_budget(ent: str, fin: dict) -> dict:
     other.sort(key=lambda x: -(x["amount"] or x["budget"]))
     f["revenueOther"] = other
     f["mudBudgetYears"] = [{"year": y, "mud": mu, "wcid": wc}
-                           for y, mu, wc in _BVA_MUD_BUDGET_YEARS.get(ent, ())
-                           if int(y) >= _BVA_MUD_FIRST_YEAR]
+                           for y, mu, wc in _BVA_MUD_BUDGET_YEARS.get(ent, ())]
     f["revenueTotal"] = sum(s["total"] for s in out_sec) + sum(o["amount"] for o in other)
     f["revenueBudgetTotal"] = sum(s["budget"] for s in out_sec) + sum(o["budget"] for o in other)
     f["revenueRows"] = _bva_revenue_rows(ent, f, out_sec, other)
@@ -3321,6 +3321,14 @@ def _bva_revenue_rows(ent: str, f: dict, out_sec: list, other: list) -> list:
         "Escalation Revenues": "Escalation",
     }
     mud_years = f.get("mudBudgetYears") or []
+    # Lot premium / fence / lot-sale actuals with no section tag. Their budget
+    # already sits per-section, so show them as unallocated section revenue with
+    # no budget of their own instead of a bogus budget = actual line.
+    _UNALLOC = ("lot premium", "fence credit", "lot sales")
+    for o in list(other):
+        if any(k in o["label"].lower() for k in _UNALLOC):
+            add("Sections", "Unallocated (no section tag)", o["label"], 0, o["amount"])
+            other.remove(o)
     for o in other:
         lbl = o["label"]
         if lbl == "Commercial Site Sales":      # already broken out per site above
@@ -3329,11 +3337,26 @@ def _bva_revenue_rows(ent: str, f: dict, out_sec: list, other: list) -> list:
             continue
         cat = ent_cat.get(lbl, "Other Revenue")
         if lbl == "MUD + WCID Bond Revenues" and mud_years:
-            for y in mud_years:                 # budget by year, split by district
-                add(cat, "MUD", y["year"], y["mud"])
-                add(cat, "WCID", y["year"], y["wcid"])
-            for b in (f.get("bonds") or []):    # actuals = proceeds collected
-                add(cat, "Collected", "%s · %s" % (b["series"], b["source"]), 0, b["amount"])
+            # One project per bond year, split MUD vs WCID. Actuals = proceeds
+            # collected that year; for fully-issued years the budget is
+            # overridden with what was collected, so they read delta 0.
+            coll = {}
+            for b in (f.get("bonds") or []):
+                ym = re.search(r"(\d{4})", b.get("series", ""))
+                if not ym:
+                    continue
+                dist = "MUD" if "mud" in (b.get("source", "")).lower() else "WCID"
+                coll.setdefault(ym.group(1), {}).setdefault(dist, 0)
+                coll[ym.group(1)][dist] += b["amount"]
+            years = {y["year"]: y for y in mud_years}
+            for y in sorted(set(years) | set(coll)):
+                yb = years.get(y, {"mud": 0, "wcid": 0})
+                ya = coll.get(y, {})
+                done = y in _BVA_MUD_ACTUALIZED_YEARS
+                for dist, key in (("MUD", "mud"), ("WCID", "wcid")):
+                    act = ya.get(dist, 0)
+                    bud = act if done else yb.get(key, 0)
+                    add(cat, y, dist + (" · issued" if done else ""), bud, act)
             continue
         add(cat, lbl, "Total", o["budget"], o["amount"])
     return rows
