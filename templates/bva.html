@@ -271,10 +271,11 @@
     const vrows = q ? rows.filter(r => ((r.category||"")+" "+(r.project||"")+" "+(r.line||"")).toLowerCase().includes(q)) : rows;
     if (!vrows.length) { host.innerHTML = `<div class="empty">No revenue matches “${query}”.</div>`; return; }
     const expand = !!q;
+    // Revenue reads the opposite way to cost: beating budget is GOOD, so the
+    // variance is Actuals − Budget and a positive number is green.
     const dCls = (v) => v > 0 ? "under" : (v < 0 ? "over" : "muted");
-    // Budget / Actual / Budget − Actual, exactly like the cost view's columns.
     const vcells = (B, A) => `<td>${fmt(B)}</td><td>${fmt(A)}</td>`
-      + `<td class="${dCls(B - A)}">${fmt(B - A)}</td>`;
+      + `<td class="${dCls(A - B)}">${fmt(A - B)}</td>`;
 
     // Group: category → project → line rows (same shape as Budget vs Actuals)
     const cats = {}; const catOrder = [];
@@ -312,14 +313,14 @@
       <div class="kpi-band">
         <div class="kpi"><div class="l">Revenue Budget</div><div class="v">${fmt(tB)}</div></div>
         <div class="kpi good"><div class="l">Revenue Actuals</div><div class="v">${fmt(tA)}</div></div>
-        <div class="kpi ${(tB-tA)>0?'good':''}"><div class="l">Budget − Actuals<span class="col-formula" style="display:block">revenue still to come</span></div><div class="v">${fmt(tB - tA)}</div></div>
+        <div class="kpi"><div class="l">Actuals − Budget<span class="col-formula" style="display:block">+ over / − under budget</span></div><div class="v" style="color:${(tA-tB)>=0?'var(--eax-good,#1F7A4D)':'#c0392b'}">${fmt(tA - tB)}</div></div>
       </div>
       <p class="muted" style="margin:8px 0 4px;font-size:11px;">Budget = pro-forma life-of-project. Actuals = Sage GL, inception-to-date. Click a category to expand. Sold-out sections use actuals as their budget; MUD + WCID shows ${'' + (((f.mudBudgetYears||[])[0]||{}).year || '')} forward (earlier years are already in proceeds collected).</p>
       <table class="bva-table">
         <thead><tr>
           <th class="left">Line</th><th class="left">Detail</th><th></th>
           <th>Budget</th><th>Actuals</th>
-          <th>Budget − Actuals<span class="col-formula">revenue still to come</span></th>
+          <th>Actuals − Budget<span class="col-formula">+ over / − under budget</span></th>
         </tr></thead>
         <tbody>
           ${rowsHtml}

@@ -2893,14 +2893,37 @@ _BVA_REV_SECTION_GROUPS = ("lotSales", "premium", "escalation", "marketing", "fe
 # tab col "Total Revenue"). Sold sections aren't in the go-forward model, so
 # they're absent here and fall back to actuals (budget = actual, delta 0).
 _BVA_REV_BUDGET = {
-    # Live Desktop model (updated 2026-08-05), Lot Sales tab "Total Revenue" —
-    # ties to Consolidated CFs "Residential Lot Sales Revenues" $214,193,426.
-    "GPD": {1: 1039500, 2: 9977757, 3: 7361971, 4: 6751298, 5: 6513947,
-            6: 7152819, 7: 7363125, 8: 5938625, 13: 8554219, 14: 6957431,
-            15: 7641769, 16: 2964500, 17: 10445652, 18: 5930925, 19: 1862919,
-            20: 8174031, 21: 7315000, 22: 8630738, 23: 8174031, 24: 10131997,
-            25: 7252077, 26: 10217539, 27: 9295584, 28: 10312586, 29: 13021422,
-            30: 3260950, 31: 6366938, 32: 7812853, 33: 7771225},
+    # GROSS lot-sale revenue per section = Lot Sales tab "Lot Sale Price" x
+    # "Total Lots". Gross is the apples-to-apples basis: the GL books lot sales
+    # at the full sale price (Section 2: 64,800 x 159 = $10,303,200, exactly the
+    # recorded actual). The tab's "Total Revenue" column is NET of sales costs,
+    # so comparing it to gross actuals understated every section.
+    "GPD": {1: 1080000, 2: 10303200, 3: 7603200, 4: 6984000, 5: 6739200,
+            6: 7431500, 7: 7650000, 8: 6170000, 13: 8887500, 14: 7228500,
+            15: 7939500, 16: 3080000, 17: 10852625, 18: 6162000, 19: 1935500,
+            20: 8492500, 21: 7600000, 22: 8967000, 23: 8492500, 24: 10526750,
+            25: 7534625, 26: 10615625, 27: 9657750, 28: 10714375, 29: 13528750,
+            30: 3388000, 31: 6615000, 32: 8117250, 33: 8074000},
+}
+# Escalation per section (Lot Sales "$ - Escalations") — sums to $5,626,967,
+# the model's Escalation Revenues line to the dollar.
+_BVA_REV_BUDGET_ESC = {
+    "GPD": {1: 97118, 2: 288106, 3: 229895, 4: 195844, 5: 198370, 6: 167667,
+            7: 149957, 8: 131040, 13: 234788, 14: 190961, 15: 208602, 16: 81072,
+            17: 284621, 18: 161605, 19: 35157, 20: 149935, 21: 200047,
+            22: 234739, 23: 150759, 24: 275570, 25: 198326, 26: 186389,
+            27: 254211, 28: 280482, 29: 354157, 30: 89504, 31: 173802,
+            32: 212494, 33: 211749},
+}
+# Marketing fee revenue per section (Lot Sales "MKT Revenue"), $8,814,450 of the
+# model's $16,460,700 — the rest isn't section-tagged and sits on the entity line.
+_BVA_REV_BUDGET_MKT = {
+    "GPD": {1: 41250, 2: 437250, 3: 330000, 4: 291000, 5: 273000, 6: 310500,
+            7: 255000, 8: 264800, 13: 382500, 14: 335500, 15: 348500,
+            16: 136000, 17: 457250, 18: 253500, 19: 81500, 20: 112000,
+            21: 300000, 22: 414800, 23: 244000, 24: 470250, 25: 314000,
+            26: 140000, 27: 431250, 28: 446500, 29: 604250, 30: 149600,
+            31: 306000, 32: 338250, 33: 346000},
 }
 # Fence-fee + lot-premium budgets per section (pro-forma "Fence Fees" /
 # "Lot Premiums" tabs, parameter-block LOP values). Sections absent here fall
@@ -2935,8 +2958,7 @@ _BVA_REV_ENTITY_BUDGET = {
             ("Utility Income", 4577813),
             ("DC + Resi Pod Sales", 31164146),
             ("MUD + WCID Bond Revenues", 162100545),
-            ("Marketing Fees", 16460700),
-            ("Escalation Revenues", 5626966),
+            ("Marketing Fees", 7646250),
             ("Other Revenues", 22448833)),
     # Dennison Consolidated CFs "MUD Bond Revenues": 2026 $732,549 + 2027
     # $9,007,932 + 2028 $1,782,434. Series (MUD Revenues tab, all fund 12/2026+):
@@ -3223,6 +3245,8 @@ def _bva_finance_apply_budget(ent: str, fin: dict) -> dict:
     rb = _BVA_REV_BUDGET.get(ent, {})
     rfence = _BVA_REV_BUDGET_FENCE.get(ent, {})
     rprem = _BVA_REV_BUDGET_PREMIUM.get(ent, {})
+    resc = _BVA_REV_BUDGET_ESC.get(ent, {})
+    rmkt = _BVA_REV_BUDGET_MKT.get(ent, {})
     # ── sections ────────────────────────────────────────────────────────────
     bysec = {}
     for s in (f.get("revenueBySection") or []):
@@ -3234,12 +3258,13 @@ def _bva_finance_apply_budget(ent: str, fin: dict) -> dict:
         s = bysec.get(n) or {"section": "Section %d" % n}
         lot = round(s.get("lotSales") or 0); prem = round(s.get("premium") or 0)
         fen = round(s.get("fence") or 0)
-        tot = lot + prem + fen
-        bud = (rb.get(n) or lot) + (rfence.get(n) or fen) + (rprem.get(n) or prem)
+        esc = round(s.get("escalation") or 0); mkt = round(s.get("marketing") or 0)
+        tot = lot + prem + fen + esc + mkt
+        bud = ((rb.get(n) or lot) + (rfence.get(n) or fen) + (rprem.get(n) or prem)
+               + (resc.get(n) or esc) + (rmkt.get(n) or mkt))
         s.update({"section": "Section %d" % n, "lotSales": lot, "premium": prem,
-                  "fence": fen, "escalation": round(s.get("escalation") or 0),
-                  "marketing": round(s.get("marketing") or 0),
-                  "total": tot, "budget": bud, "delta": bud - tot})
+                  "fence": fen, "escalation": esc, "marketing": mkt,
+                  "total": tot, "budget": bud, "delta": tot - bud})
         out_sec.append(s)
     f["revenueBySection"] = out_sec
     # ── entity-level ────────────────────────────────────────────────────────
@@ -3265,11 +3290,6 @@ def _bva_finance_apply_budget(ent: str, fin: dict) -> dict:
             other.append({"label": lbl, "amount": amt, "budget": amt})
     if "MUD + WCID Bond Revenues" in ebud and "MUD + WCID Bond Revenues" not in prefolded:
         ebud["MUD + WCID Bond Revenues"]["amount"] += round(f.get("bondTotal") or 0)
-    # Section-tagged escalation/marketing actuals roll up to where their budgets
-    # live — skipped when an older record already folded them in.
-    for key, comp in (("Escalation Revenues", "escalation"), ("Marketing Fees", "marketing")):
-        if key in ebud and key not in prefolded:
-            ebud[key]["amount"] += sum(s.get(comp) or 0 for s in out_sec)
     other.extend(ebud.values())
     for e in other:
         e["delta"] = e["budget"] - e["amount"]
@@ -3296,12 +3316,8 @@ def _bva_revenue_rows(ent: str, f: dict, out_sec: list, other: list) -> list:
     rb = _BVA_REV_BUDGET.get(ent, {})
     rfence = _BVA_REV_BUDGET_FENCE.get(ent, {})
     rprem = _BVA_REV_BUDGET_PREMIUM.get(ent, {})
-    # Escalation/marketing roll up to their own entity categories only when the
-    # entity has a budget for them; otherwise keep them on the section so no
-    # revenue goes missing.
-    ent_budget_names = {n for n, _a in _BVA_REV_ENTITY_BUDGET.get(ent, ())}
-    esc_rolled = "Escalation Revenues" in ent_budget_names
-    mkt_rolled = "Marketing Fees" in ent_budget_names
+    resc = _BVA_REV_BUDGET_ESC.get(ent, {})
+    rmkt = _BVA_REV_BUDGET_MKT.get(ent, {})
     for s in out_sec:
         m = re.search(r"(\d+)", s.get("section", ""))
         n = int(m.group(1)) if m else 0
@@ -3309,10 +3325,8 @@ def _bva_revenue_rows(ent: str, f: dict, out_sec: list, other: list) -> list:
         add("Sections", p, "Lot Sales", rb.get(n) or s["lotSales"], s["lotSales"])
         add("Sections", p, "Lot Premium", rprem.get(n) or s["premium"], s["premium"])
         add("Sections", p, "Fence Fees", rfence.get(n) or s["fence"], s["fence"])
-        if not esc_rolled:
-            add("Sections", p, "Escalation", s["escalation"], s["escalation"])
-        if not mkt_rolled:
-            add("Sections", p, "Marketing", s["marketing"], s["marketing"])
+        add("Sections", p, "Escalation", resc.get(n) or s["escalation"], s["escalation"])
+        add("Sections", p, "Marketing", rmkt.get(n) or s["marketing"], s["marketing"])
     # ── Commercial sites: per-site budget, actual matched by Sage customer ──
     cust_act = {(a.get("customer") or "").strip().lower():
                 ((a.get("customer") or "").strip(), round(a.get("amount") or 0))
