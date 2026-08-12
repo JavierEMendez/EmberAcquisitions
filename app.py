@@ -2865,10 +2865,18 @@ _BVA_REV_BUDGET_PREMIUM = {
 # formula chain computes zero — both are model gaps, so those actual lines
 # fall back to budget = actual on the dashboard.
 _BVA_REV_ENTITY_BUDGET = {
+    # Consolidated CFs revenue rows (live model). Escalation / Marketing /
+    # Other are entity-level here because the model only carries LOP totals for
+    # them — their per-section ACTUALS stay visible in the section table's own
+    # columns but are excluded from the section Actual Total so nothing is
+    # counted twice. Sum of all these + section budgets = Total Revenues $494.3M.
     "GPD": (("Commercial Site Sales", 31267109),
             ("Utility Income", 4577813),
             ("DC + Resi Pod Sales", 31164146),
-            ("MUD + WCID Bond Revenues", 162100545)),
+            ("MUD + WCID Bond Revenues", 162100545),
+            ("Marketing Fees", 16460700),
+            ("Escalation Revenues", 5626966),
+            ("Other Revenues", 22448833)),
     # Dennison Consolidated CFs "MUD Bond Revenues": 2026 $732,549 + 2027
     # $9,007,932 + 2028 $1,782,434. Series (MUD Revenues tab, all fund 12/2026+):
     # HCWCID 164 Road Bond Issue 4 ($1,975,242 + $25,561 to WRRD) and HCMUD 576
@@ -2884,6 +2892,12 @@ _BVA_REV_ENTITY_MAP = (
     ("pod sale", "DC + Resi Pod Sales"),
     ("mud", "MUD + WCID Bond Revenues"),
     ("bond", "MUD + WCID Bond Revenues"),
+    ("marketing", "Marketing Fees"),
+    ("escalation", "Escalation Revenues"),
+    ("developer fee", "Other Revenues"),
+    ("development management", "Other Revenues"),
+    ("developer interest", "Other Revenues"),
+    ("miscellaneous", "Other Revenues"),
 )
 # Budgeted MUD/WCID bond revenue by year (Consolidated CFs "MUD Bond Revenues").
 _BVA_MUD_BUDGET_YEARS = {
@@ -3034,13 +3048,12 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
         for sec in sorted(set(d["sec"]) | set(rb) | set(rfence) | set(rprem)):
             s = d["sec"].get(sec, {"lotSales": 0.0, "premium": 0.0, "escalation": 0.0,
                                    "marketing": 0.0, "fence": 0.0})
-            tot = sum(s.values())
-            # Componentwise budget: the Lot Sales "Total Revenue" col covers
-            # lot price + escalation + marketing (+fees); fence and premium are
-            # separate pro-forma tabs. Each component falls back to its actual
-            # when the model has no figure (sold-out sections, model gaps).
-            core_act = s["lotSales"] + s["escalation"] + s["marketing"]
-            bud = (rb.get(sec) or round(core_act)) \
+            # Section Actual Total = lot sales + premium + fence only. Escalation
+            # and marketing are shown as columns for reference but roll up to the
+            # entity table, where their pro-forma budgets live (the model only
+            # gives LOP totals for those two) — so nothing double counts.
+            tot = s["lotSales"] + s["premium"] + s["fence"]
+            bud = (rb.get(sec) or round(s["lotSales"])) \
                 + (rfence.get(sec) or round(s["fence"])) \
                 + (rprem.get(sec) or round(s["premium"]))
             bysec.append({"section": "Section %d" % sec,
@@ -3065,6 +3078,14 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
         # Bond proceeds collected ARE the MUD revenue actuals for that line.
         if "MUD + WCID Bond Revenues" in ebud:
             ebud["MUD + WCID Bond Revenues"]["amount"] += round(d["bondTotal"])
+        # Escalation/marketing actuals tagged to sections roll up here, matching
+        # where their budgets live (they're excluded from the section total).
+        if "Escalation Revenues" in ebud:
+            ebud["Escalation Revenues"]["amount"] += round(
+                sum(s["escalation"] for s in d["sec"].values()))
+        if "Marketing Fees" in ebud:
+            ebud["Marketing Fees"]["amount"] += round(
+                sum(s["marketing"] for s in d["sec"].values()))
         for e in ebud.values():
             e.pop("_forced", None)
             other.append(e)
@@ -3194,7 +3215,7 @@ def api_bva_commitments_upload():
                     "committed": round(sum(_tot(m) for m in parsed.values()))})
 
 
-def _gen_bva_template_xlsx(blocks: list) -> bytes:
+def _gen_bva_template_xlsx(blocks: list, finance: dict = None) -> bytes:
     """Budget-vs-Actuals template: one sheet per project, rows = the project's
     real Sage PROJECT × COSTTYPE combos. Budget column is left blank for the
     user; Committed + Actuals are pre-filled from Sage; Variance is a formula."""
@@ -3223,95 +3244,11 @@ def _gen_bva_template_xlsx(blocks: list) -> bytes:
             s = base[:28] + "_%d" % i; i += 1
         used.add(s); return s
 
-    # ── Flat "Budget Entry" tab (first sheet) ────────────────────────────────
-    # Every project × subtask across ALL entities on one contiguous sheet so a
-    # whole Budget column can be pasted at once (no interspersed subtotals).
-    # Budget is pre-seeded from Sage where present; Committed & Actuals are
-    # pulled from Sage. Live tie-out totals (grand + per-entity) sit up top and
-    # stay frozen so you can watch budget tie to the pro-forma while filling.
-    # Every pro-forma cost category is guaranteed a row even with no Sage data.
-    used.add("Budget Entry")
-    flat = wb.create_sheet("Budget Entry")
-    flat.cell(1, 1, "Budget Entry — all entities (flat)").font = Font(name="Calibri", bold=True, size=14, color=ACCENT)
-    flat.cell(2, 1, "Fill / adjust the Budget column (one row per project × subtask). Committed & Actuals are from Sage. The totals row updates live — budget should tie to your pro-forma. Add rows anywhere; keep the Entity column filled so they import.").font = F(False, "888888", 9)
-    fhdr = ["Entity", "Category", "Project", "Subtask", "Budget", "Committed", "Actuals", "Budget − Actuals"]
-    HR = 5                       # header row
-    d0 = HR + 1                  # first data row
-    for ci, h in enumerate(fhdr, 1):
-        c = flat.cell(HR, ci, h); c.font = F(True, "1A1A1A", 9); c.fill = HDR; c.border = border
-        if ci >= 5:
-            c.alignment = rightal
-    # Collect every row, entity-prefixed, in each block's existing (BAC) order.
-    present_cats = set()
-    rr = d0
-    for blk in blocks:
-        for row in blk.get("rows", []):
-            present_cats.add(row.get("category") or "")
-            flat.cell(rr, 1, blk["label"]).border = border
-            flat.cell(rr, 2, row.get("category") or "").border = border
-            flat.cell(rr, 3, row.get("projectName") or row.get("project") or "").border = border
-            flat.cell(rr, 4, row.get("subtask") or "").border = border
-            bc = flat.cell(rr, 5); money(bc, int(round(row.get("budget") or 0)) or None); bc.border = border
-            cc = flat.cell(rr, 6); money(cc, int(round(row.get("committed") or 0))); cc.border = border
-            ac = flat.cell(rr, 7); money(ac, int(round(row.get("actual") or 0))); ac.border = border
-            vc = flat.cell(rr, 8); vc.value = "=E%d-G%d" % (rr, rr); money(vc); vc.border = border
-            rr += 1
-    # Guarantee a home for every pro-forma cost category with no Sage data yet,
-    # so future-project budget is never lost (defaults to GPD — change as needed).
-    for cat in _BVA_PROFORMA_CATEGORIES:
-        if cat in present_cats:
-            continue
-        flat.cell(rr, 1, "GPD").border = border
-        flat.cell(rr, 2, cat).border = border
-        flat.cell(rr, 3, "").border = border
-        flat.cell(rr, 4, "").border = border
-        bc = flat.cell(rr, 5); money(bc); bc.border = border
-        cc = flat.cell(rr, 6); money(cc, 0); cc.border = border
-        ac = flat.cell(rr, 7); money(ac, 0); ac.border = border
-        vc = flat.cell(rr, 8); vc.value = "=E%d-G%d" % (rr, rr); money(vc); vc.border = border
-        rr += 1
-    dN = rr - 1                  # last data row
-    # Frozen live-total row (row 3, always visible while scrolling/filling).
-    flat.cell(3, 4, "LIVE TOTAL →").font = F(True, ACCENT); flat.cell(3, 4).alignment = rightal
-    for col in (5, 6, 7):
-        L = get_column_letter(col)
-        lc = flat.cell(3, col); lc.value = "=SUM(%s%d:%s%d)" % (L, d0, L, dN)
-        money(lc); lc.font = F(True, ACCENT); lc.fill = CAT
-    # Grand-total row (SUM of the whole contiguous data block).
-    for ci in range(1, len(fhdr) + 1):
-        flat.cell(rr, ci).fill = CAT; flat.cell(rr, ci).border = border
-    flat.cell(rr, 1, "TOTAL — all entities").font = F(True, ACCENT)
-    for col in (5, 6, 7):
-        L = get_column_letter(col)
-        tc = flat.cell(rr, col); tc.value = "=SUM(%s%d:%s%d)" % (L, d0, L, dN); money(tc); tc.font = F(True, ACCENT)
-    flat.cell(rr, 8).value = "=E%d-G%d" % (rr, rr); money(flat.cell(rr, 8)); flat.cell(rr, 8).font = F(True, ACCENT)
-    grand = rr
-    # Per-entity tie-out block below the grand total (SUMIF on the Entity col).
-    rr += 2
-    flat.cell(rr, 1, "Tie-out by entity").font = F(True)
-    flat.cell(rr, 5, "Budget").font = F(True, "1A1A1A", 9); flat.cell(rr, 5).alignment = rightal
-    flat.cell(rr, 6, "Committed").font = F(True, "1A1A1A", 9); flat.cell(rr, 6).alignment = rightal
-    flat.cell(rr, 7, "Actuals").font = F(True, "1A1A1A", 9); flat.cell(rr, 7).alignment = rightal
-    for k, (lbl, _e) in enumerate(_BVA_ENTITIES):
-        er = rr + 1 + k
-        flat.cell(er, 1, lbl)
-        for col in (5, 6, 7):
-            L = get_column_letter(col)
-            cc = flat.cell(er, col)
-            cc.value = '=SUMIF($A$%d:$A$%d,"%s",$%s$%d:$%s$%d)' % (d0, dN, lbl, L, d0, L, dN)
-            money(cc)
-    flat.freeze_panes = "A%d" % d0
-    flat.column_dimensions["A"].width = 12
-    flat.column_dimensions["B"].width = 22
-    flat.column_dimensions["C"].width = 30
-    flat.column_dimensions["D"].width = 16
-    for col in ("E", "F", "G", "H"):
-        flat.column_dimensions[col].width = 15
-
     # Cols: A Category, B Project, C Task, D Subtask, E Budget, F Committed,
     # G Actuals, H Budget−Committed, I Committed−Actuals, J Budget−Actuals
-    headers = ["Category", "Project", "Task", "Subtask", "Budget", "Committed",
-               "Actuals", "Budget − Committed", "Committed − Actuals", "Budget − Actuals"]
+    headers = ["Category", "Project", "Task", "Subtask", "BUDGET #1",
+               "ACTUAL — Committed", "ACTUAL — Spent",
+               "Budget #1 − Committed", "Committed − Actual", "Budget #1 − Actual"]
     NC = len(headers)
     for blk in blocks:
         ws = wb.create_sheet(sheet_name(blk["label"]))
@@ -3397,6 +3334,106 @@ def _gen_bva_template_xlsx(blocks: list) -> bytes:
         for col in ("E", "F", "G", "H", "I", "J"):
             ws.column_dimensions[col].width = 14
 
+    # ── Revenue sheets — one per entity that has finance data ────────────────
+    # Same convention as the cost tabs: the ONE budget column is "BUDGET #1";
+    # every other money column is explicitly prefixed "ACTUAL" so budget and
+    # actuals can never be confused.
+    for blk in blocks:
+        fin = (finance or {}).get(blk["label"]) or {}
+        if not fin:
+            continue
+        rws = wb.create_sheet(sheet_name("Revenue " + blk["label"]))
+        rws.cell(1, 1, "%s — Revenue: Budget #1 vs Actuals" % blk["label"]).font = \
+            Font(name="Calibri", bold=True, size=14, color=ACCENT)
+        rws.cell(2, 1, "BUDGET #1 = pro-forma life-of-project. Every other money column is an ACTUAL from the Sage GL. "
+                       "Escalation & marketing actuals are shown per section for reference but roll up to the entity "
+                       "table below (that's where their budget lives), so they are NOT in the section Actual Total.")\
+            .font = F(False, "888888", 9)
+        rhdr = ["Section", "BUDGET #1", "ACTUAL — Lot Sales", "ACTUAL — Premium",
+                "ACTUAL — Fence", "ACTUAL — Total", "Budget #1 − Actual",
+                "ACTUAL — Escalation (ref)", "ACTUAL — Marketing (ref)"]
+        r = 4
+        for ci, h in enumerate(rhdr, 1):
+            c = rws.cell(r, ci, h); c.font = F(True, "1A1A1A", 9); c.fill = HDR; c.border = border
+            if ci >= 2:
+                c.alignment = rightal
+        r += 1
+        sstart = r
+        for s in fin.get("revenueBySection", []):
+            rws.cell(r, 1, s["section"]).border = border
+            for ci, key in ((2, "budget"), (3, "lotSales"), (4, "premium"),
+                            (5, "fence"), (6, "total")):
+                cc = rws.cell(r, ci); money(cc, int(s.get(key) or 0)); cc.border = border
+            dc = rws.cell(r, 7); dc.value = "=B%d-F%d" % (r, r); money(dc); dc.border = border
+            for ci, key in ((8, "escalation"), (9, "marketing")):
+                cc = rws.cell(r, ci); money(cc, int(s.get(key) or 0)); cc.border = border
+                cc.font = F(False, "888888"); cc.border = border
+            r += 1
+        for ci in range(1, len(rhdr) + 1):
+            rws.cell(r, ci).fill = SUB; rws.cell(r, ci).border = border
+        rws.cell(r, 1, "Sections — TOTAL").font = F(True)
+        for ci in (2, 3, 4, 5, 6, 8, 9):
+            L = get_column_letter(ci)
+            tc = rws.cell(r, ci); tc.value = "=SUM(%s%d:%s%d)" % (L, sstart, L, r - 1)
+            money(tc); tc.font = F(True)
+        rws.cell(r, 7).value = "=B%d-F%d" % (r, r); money(rws.cell(r, 7)); rws.cell(r, 7).font = F(True)
+        sec_total_row = r
+        # Entity-level revenue
+        r += 2
+        rws.cell(r, 1, "Entity-level revenue (not section-tagged)").font = F(True, ACCENT, 11)
+        r += 1
+        for ci, h in enumerate(["Source", "BUDGET #1", "ACTUAL", "Budget #1 − Actual"], 1):
+            c = rws.cell(r, ci, h); c.font = F(True, "1A1A1A", 9); c.fill = HDR; c.border = border
+            if ci >= 2:
+                c.alignment = rightal
+        r += 1
+        estart = r
+        for o in fin.get("revenueOther", []):
+            rws.cell(r, 1, o["label"]).border = border
+            bc = rws.cell(r, 2); money(bc, int(o.get("budget") or 0)); bc.border = border
+            ac = rws.cell(r, 3); money(ac, int(o.get("amount") or 0)); ac.border = border
+            dc = rws.cell(r, 4); dc.value = "=B%d-C%d" % (r, r); money(dc); dc.border = border
+            r += 1
+        for ci in range(1, 5):
+            rws.cell(r, ci).fill = SUB; rws.cell(r, ci).border = border
+        rws.cell(r, 1, "Entity-level — TOTAL").font = F(True)
+        for ci in (2, 3):
+            L = get_column_letter(ci)
+            tc = rws.cell(r, ci); tc.value = "=SUM(%s%d:%s%d)" % (L, estart, L, r - 1)
+            money(tc); tc.font = F(True)
+        rws.cell(r, 4).value = "=B%d-C%d" % (r, r); money(rws.cell(r, 4)); rws.cell(r, 4).font = F(True)
+        ent_total_row = r
+        # Grand total
+        r += 2
+        for ci in range(1, 5):
+            rws.cell(r, ci).fill = CAT; rws.cell(r, ci).border = border
+        rws.cell(r, 1, "ALL REVENUE").font = F(True, ACCENT)
+        rws.cell(r, 2).value = "=B%d+B%d" % (sec_total_row, ent_total_row)
+        rws.cell(r, 3).value = "=F%d+C%d" % (sec_total_row, ent_total_row)
+        rws.cell(r, 4).value = "=B%d-C%d" % (r, r)
+        for ci in (2, 3, 4):
+            money(rws.cell(r, ci)); rws.cell(r, ci).font = F(True, ACCENT)
+        # Bond proceeds collected (actuals) + MUD budget by year
+        if fin.get("bonds"):
+            r += 2
+            rws.cell(r, 1, "ACTUAL — Bond proceeds collected (Launch bonds excluded)").font = F(True, ACCENT, 11)
+            r += 1
+            for b in fin["bonds"]:
+                rws.cell(r, 1, "%s · %s" % (b["series"], b["source"])).border = border
+                cc = rws.cell(r, 3); money(cc, int(b["amount"])); cc.border = border
+                r += 1
+        if fin.get("mudBudgetYears"):
+            r += 1
+            rws.cell(r, 1, "BUDGET #1 — MUD + WCID bond revenue by year").font = F(True, ACCENT, 11)
+            r += 1
+            for y in fin["mudBudgetYears"]:
+                rws.cell(r, 1, y["year"]).border = border
+                cc = rws.cell(r, 2); money(cc, int(y["amount"])); cc.border = border
+                r += 1
+        rws.column_dimensions["A"].width = 34
+        for col in ("B", "C", "D", "E", "F", "G", "H", "I"):
+            rws.column_dimensions[col].width = 17
+
     bio = io.BytesIO(); wb.save(bio)
     return bio.getvalue()
 
@@ -3412,8 +3449,8 @@ def api_bva_template():
     blocks, has_gl, _has_com = _bva_build_blocks()
     if not has_gl:
         return jsonify({"error": "No GL report uploaded yet — upload the Sage GL report first."}), 400
-    xlsx = _gen_bva_template_xlsx(blocks)
-    fname = "BVA_Template_%s.xlsx" % datetime.datetime.now().strftime("%Y-%m-%d")
+    xlsx = _gen_bva_template_xlsx(blocks, _bva_load_finance())
+    fname = "BVA_%s.xlsx" % datetime.datetime.now().strftime("%Y-%m-%d")
     return send_file(io.BytesIO(xlsx),
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                      as_attachment=True, download_name=fname)
@@ -4064,16 +4101,22 @@ def api_bva_budget_upload():
     imported = 0
     cleared: set = set()
     for ws in wb.worksheets:
-        # Locate the header row (has both "project" and "budget").
+        # Locate the header row (has both "project" and a budget column). The
+        # export labels it "BUDGET #1" (so it can never be confused with the
+        # ACTUAL columns), while hand-made sheets just say "Budget" — accept any
+        # header that starts with "budget" but isn't a variance column.
+        def _is_bud(v):
+            return v.startswith("budget") and "−" not in v and "-" not in v
         hdr = None; cols = {}
         for r in range(1, min(ws.max_row, 15) + 1):
             vals = [str(ws.cell(r, c).value or "").strip().lower() for c in range(1, 12)]
-            if "project" in vals and "budget" in vals:
+            if "project" in vals and any(_is_bud(v) for v in vals):
                 hdr = r; cols = {v: i + 1 for i, v in enumerate(vals) if v}
                 break
         if not hdr:
             continue
-        pcol, scol, bcol = cols.get("project"), cols.get("subtask"), cols.get("budget")
+        bcol = next((i for v, i in cols.items() if _is_bud(v)), None)
+        pcol, scol = cols.get("project"), cols.get("subtask")
         ecol = cols.get("entity"); catcol = cols.get("category"); phcol = cols.get("phase")
         tcol = cols.get("task")
         if not (pcol and bcol):
