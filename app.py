@@ -91,6 +91,65 @@ def _purge_old_activity():
         print(f"[activity_purge] ERROR: {e}", flush=True)
 
 _scheduler.add_job(_purge_old_activity, CronTrigger(hour=3, minute=15), id="activity_retention_daily")
+
+def _latest_report(report_type):
+    """(data, uploaded_at) of the newest row for a report_type, or (None, None).
+    Mirrors how each page route loads its source blob."""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT data, uploaded_at FROM reports WHERE report_type = %s "
+                "ORDER BY uploaded_at DESC LIMIT 1", (report_type,))
+    row = cur.fetchone(); cur.close(); conn.close()
+    if not row:
+        return None, None
+    data = row["data"]
+    if isinstance(data, str):
+        data = json.loads(data)
+    return data, row["uploaded_at"]
+
+
+def _publish_all_views():
+    """Daily backstop for the published view payloads. Each view is normally
+    republished on every page render; this rebuilds them unattended so a view
+    can't go stale when nobody happens to open its page (e.g. a new budget
+    workbook is uploaded but /budget isn't visited).
+
+    Rebuilds from the same stored reports the page routes read, using the same
+    builders — none of which touch `session`/`request`, so no request context
+    is needed. Each view is isolated: one failure can't stop the others."""
+    def _step(name, fn):
+        try:
+            publish_view(name, fn())
+        except Exception as e:
+            print(f"[publish_views] {name} failed: {e}", flush=True)
+
+    def _budget():
+        data, _ = _latest_report("ember_budget")
+        if not data:
+            return None
+        ops, _ = _latest_report("operations")
+        return _apply_ops_revenue(data, ops)
+
+    def _returns():
+        data, _ = _latest_report("returns")
+        return _enrich_returns_payload(data) if data else None
+
+    def _operations():
+        data, up = _latest_report("operations")
+        return _build_operations_view_context(data, up) if data else None
+
+    def _loans():
+        data, up = _latest_report("loans")
+        return _build_loans_view_context(data, up) if data else None
+
+    _step("budget", _budget)
+    _step("capital", _build_capital_view_context)
+    _step("returns", _returns)
+    _step("operations", _operations)
+    _step("loans", _loans)
+    _step("verticals_lighthaven", _vd_lighthaven_snapshot)
+    print("[publish_views] daily refresh complete", flush=True)
+
+_scheduler.add_job(_publish_all_views, CronTrigger(hour=4, minute=0), id="publish_views_daily")
 _scheduler.start()
 
 # Auto-initialize DB on first request
