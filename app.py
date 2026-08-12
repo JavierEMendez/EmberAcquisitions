@@ -3296,6 +3296,12 @@ def _bva_revenue_rows(ent: str, f: dict, out_sec: list, other: list) -> list:
     rb = _BVA_REV_BUDGET.get(ent, {})
     rfence = _BVA_REV_BUDGET_FENCE.get(ent, {})
     rprem = _BVA_REV_BUDGET_PREMIUM.get(ent, {})
+    # Escalation/marketing roll up to their own entity categories only when the
+    # entity has a budget for them; otherwise keep them on the section so no
+    # revenue goes missing.
+    ent_budget_names = {n for n, _a in _BVA_REV_ENTITY_BUDGET.get(ent, ())}
+    esc_rolled = "Escalation Revenues" in ent_budget_names
+    mkt_rolled = "Marketing Fees" in ent_budget_names
     for s in out_sec:
         m = re.search(r"(\d+)", s.get("section", ""))
         n = int(m.group(1)) if m else 0
@@ -3303,15 +3309,25 @@ def _bva_revenue_rows(ent: str, f: dict, out_sec: list, other: list) -> list:
         add("Sections", p, "Lot Sales", rb.get(n) or s["lotSales"], s["lotSales"])
         add("Sections", p, "Lot Premium", rprem.get(n) or s["premium"], s["premium"])
         add("Sections", p, "Fence Fees", rfence.get(n) or s["fence"], s["fence"])
+        if not esc_rolled:
+            add("Sections", p, "Escalation", s["escalation"], s["escalation"])
+        if not mkt_rolled:
+            add("Sections", p, "Marketing", s["marketing"], s["marketing"])
     # ── Commercial sites: per-site budget, actual matched by Sage customer ──
-    cust_act = {(a.get("customer") or "").strip().lower(): round(a.get("amount") or 0)
+    cust_act = {(a.get("customer") or "").strip().lower():
+                ((a.get("customer") or "").strip(), round(a.get("amount") or 0))
                 for a in (f.get("acreageByCustomer") or [])}
     sites = _BVA_COMMERCIAL_SITES.get(ent, ())
     for nm, bud, cust in sites:
-        add("Commercial Sites", nm, "Site sale", bud, cust_act.pop(cust, 0) if cust else 0)
-    for cust, amt in cust_act.items():          # acreage sales with no site match
-        if amt:
-            add("Commercial Sites", "Unassigned parcel", cust.title(), 0, amt)
+        _lbl, amt = cust_act.pop(cust, ("", 0)) if cust else ("", 0)
+        add("Commercial Sites", nm, "Site sale", bud, amt)
+    for lbl, amt in cust_act.values():
+        if not amt:
+            continue
+        if sites:                    # a parcel sale the site table doesn't cover
+            add("Commercial Sites", "Unassigned parcel", lbl, 0, amt)
+        else:                        # no site table (Dennison): the buyer IS the
+            add("Commercial Sites", lbl, "Site sale", amt, amt)   # parcel; B = A
     # ── Everything else, from the entity-level lines ────────────────────────
     ent_cat = {
         "MUD + WCID Bond Revenues": "MUD + WCID Bonds",
@@ -3331,9 +3347,9 @@ def _bva_revenue_rows(ent: str, f: dict, out_sec: list, other: list) -> list:
             other.remove(o)
     for o in other:
         lbl = o["label"]
-        if lbl == "Commercial Site Sales":      # already broken out per site above
-            if not sites:
-                add("Commercial Sites", lbl, "Total", o["budget"], o["amount"])
+        # Commercial/acreage revenue is already broken out per site (or per buyer)
+        # above — emitting it again here would double count it.
+        if lbl == "Commercial Site Sales" or "acreage" in lbl.lower():
             continue
         cat = ent_cat.get(lbl, "Other Revenue")
         if lbl == "MUD + WCID Bond Revenues" and mud_years:
