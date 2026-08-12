@@ -2960,13 +2960,31 @@ _BVA_REV_ENTITY_MAP = (
     ("developer interest", "Other Revenues"),
     ("miscellaneous", "Other Revenues"),
 )
-# Budgeted MUD/WCID bond revenue by year (Consolidated CFs "MUD Bond Revenues").
+# Budgeted MUD/WCID bond revenue by year, split by district (MUD Revenues tab,
+# "Total MUD/WCID Bond Proceeds to Developer"). Only future years are shown on
+# the page — past years are already realised in the bond proceeds collected.
 _BVA_MUD_BUDGET_YEARS = {
-    "GPD": (("2024", 11364830), ("2025", 14622015), ("2026", 8434464),
-            ("2027", 4757285), ("2028", 13313286), ("2029", 25231495),
-            ("2030", 20053040), ("2031", 18904122), ("2032", 24326852),
-            ("2033", 13550135), ("2034", 6016721), ("2035", 1526300)),
-    "Dennison": (("2026", 732549), ("2027", 9007932), ("2028", 1782434)),
+    "GPD": (("2026", 6257056, 2177408), ("2027", 3529853, 1227432),
+            ("2028", 9875466, 3437821), ("2029", 18714681, 6516814),
+            ("2030", 14874047, 5178993), ("2031", 14021944, 4882177),
+            ("2032", 18043747, 6283105), ("2033", 10051126, 3499009),
+            ("2034", 4463922, 1552799), ("2035", 1133572, 392728)),
+    "Dennison": (("2026", 732549, 0), ("2027", 9007932, 0), ("2028", 1782434, 0)),
+}
+_BVA_MUD_FIRST_YEAR = 2026
+
+# Commercial site sales budget per site (Commercial Site Sales tab, net "Total
+# Revenue"), with the Sage customer whose acreage-sale actual belongs to it.
+_BVA_COMMERCIAL_SITES = {
+    "GPD": (("School Site 1", 2407945, "waller isd"),
+            ("ESD Site", 753286, "waller-harris esd200"),
+            ("Retail Next to ESD", 1207026, None),
+            ("Retail Next to School", 860698, None),
+            ("Retail SE Corner Baethe/Kermier", 1893535, None),
+            ("Town Center Sale 1", 7115101, None),
+            ("Town Center Sale 2", 7115101, None),
+            ("MU Site 1", 6529007, None),
+            ("MU Site 2", 3385411, None)),
 }
 _BVA_LOT_SEC_RE = re.compile(r"s(\d+)-b\d+-l\d+", re.I)
 _BVA_SEC_NUM_RE = re.compile(r"sec[a-z]*\.?\s*0*(\d+)", re.I)   # Sec 10 -> 10 (not 0)
@@ -3178,8 +3196,9 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
                                         if round(a)],
                     "revenueBudgetTotal": (sum(x["budget"] for x in bysec)
                                            + sum(x["budget"] for x in other)),
-                    "mudBudgetYears": [{"year": y, "amount": a}
-                                       for y, a in _BVA_MUD_BUDGET_YEARS.get(ent, ())],
+                    "mudBudgetYears": [{"year": y, "mud": mu, "wcid": wc}
+                                       for y, mu, wc in _BVA_MUD_BUDGET_YEARS.get(ent, ())
+                                       if int(y) >= _BVA_MUD_FIRST_YEAR],
                     "acreageByCustomer": acre, "marketingByCustomer": mktg,
                     "modelHomePurchases": round(d.get("modelHome", 0.0)),
                     "bemBySection": bem, "bemTotal": bemTotal,
@@ -3255,11 +3274,69 @@ def _bva_finance_apply_budget(ent: str, fin: dict) -> dict:
         e["delta"] = e["budget"] - e["amount"]
     other.sort(key=lambda x: -(x["amount"] or x["budget"]))
     f["revenueOther"] = other
-    f["mudBudgetYears"] = [{"year": y, "amount": a}
-                           for y, a in _BVA_MUD_BUDGET_YEARS.get(ent, ())]
+    f["mudBudgetYears"] = [{"year": y, "mud": mu, "wcid": wc}
+                           for y, mu, wc in _BVA_MUD_BUDGET_YEARS.get(ent, ())
+                           if int(y) >= _BVA_MUD_FIRST_YEAR]
     f["revenueTotal"] = sum(s["total"] for s in out_sec) + sum(o["amount"] for o in other)
     f["revenueBudgetTotal"] = sum(s["budget"] for s in out_sec) + sum(o["budget"] for o in other)
+    f["revenueRows"] = _bva_revenue_rows(ent, f, out_sec, other)
     return f
+
+
+def _bva_revenue_rows(ent: str, f: dict, out_sec: list, other: list) -> list:
+    """Flatten revenue into BVA-shaped rows — Category → Project → line, with a
+    Budget and an Actual on every row — so the Revenue view reads exactly like
+    Budget vs Actuals instead of a pile of separate tables."""
+    rows = []
+    def add(cat, proj, line, budget=0, actual=0, note=""):
+        if budget or actual:
+            rows.append({"category": cat, "project": proj, "line": line,
+                         "note": note, "budget": round(budget), "actual": round(actual)})
+    # ── Sections: lot sales / premium / fence per section ───────────────────
+    rb = _BVA_REV_BUDGET.get(ent, {})
+    rfence = _BVA_REV_BUDGET_FENCE.get(ent, {})
+    rprem = _BVA_REV_BUDGET_PREMIUM.get(ent, {})
+    for s in out_sec:
+        m = re.search(r"(\d+)", s.get("section", ""))
+        n = int(m.group(1)) if m else 0
+        p = s["section"]
+        add("Sections", p, "Lot Sales", rb.get(n) or s["lotSales"], s["lotSales"])
+        add("Sections", p, "Lot Premium", rprem.get(n) or s["premium"], s["premium"])
+        add("Sections", p, "Fence Fees", rfence.get(n) or s["fence"], s["fence"])
+    # ── Commercial sites: per-site budget, actual matched by Sage customer ──
+    cust_act = {(a.get("customer") or "").strip().lower(): round(a.get("amount") or 0)
+                for a in (f.get("acreageByCustomer") or [])}
+    sites = _BVA_COMMERCIAL_SITES.get(ent, ())
+    for nm, bud, cust in sites:
+        add("Commercial Sites", nm, "Site sale", bud, cust_act.pop(cust, 0) if cust else 0)
+    for cust, amt in cust_act.items():          # acreage sales with no site match
+        if amt:
+            add("Commercial Sites", "Unassigned parcel", cust.title(), 0, amt)
+    # ── Everything else, from the entity-level lines ────────────────────────
+    ent_cat = {
+        "MUD + WCID Bond Revenues": "MUD + WCID Bonds",
+        "DC + Resi Pod Sales": "Data Center + Resi Pods",
+        "Utility Income": "Utility Income",
+        "Marketing Fees": "Marketing Fees",
+        "Escalation Revenues": "Escalation",
+    }
+    mud_years = f.get("mudBudgetYears") or []
+    for o in other:
+        lbl = o["label"]
+        if lbl == "Commercial Site Sales":      # already broken out per site above
+            if not sites:
+                add("Commercial Sites", lbl, "Total", o["budget"], o["amount"])
+            continue
+        cat = ent_cat.get(lbl, "Other Revenue")
+        if lbl == "MUD + WCID Bond Revenues" and mud_years:
+            for y in mud_years:                 # budget by year, split by district
+                add(cat, "MUD", y["year"], y["mud"])
+                add(cat, "WCID", y["year"], y["wcid"])
+            for b in (f.get("bonds") or []):    # actuals = proceeds collected
+                add(cat, "Collected", "%s · %s" % (b["series"], b["source"]), 0, b["amount"])
+            continue
+        add(cat, lbl, "Total", o["budget"], o["amount"])
+    return rows
 
 
 def _bva_load_finance() -> dict:

@@ -262,84 +262,81 @@
     const b = BLOCKS[active];
     const host = $("#bva-body");
     const f = (FINANCE || {})[b ? b.label : ""] || null;
-    if (!f || (!f.revenueTotal && !f.bondTotal && !f.mudReceivable)) {
-      host.innerHTML = `<div class="empty">No revenue / MUD financing in the loaded ${b ? b.label : ""} GL yet. Re-upload the GL report to populate.</div>`;
+    const rows = (f && f.revenueRows) || [];
+    if (!rows.length) {
+      host.innerHTML = `<div class="empty">No revenue in the loaded ${b ? b.label : ""} GL yet. Re-upload the GL report to populate.</div>`;
       return;
     }
-    const sec = f.revenueBySection || [], other = f.revenueOther || [],
-          acre = f.acreageByCustomer || [], bonds = f.bonds || [];
-    // Revenue by section — budget vs actual like the cost BVA (delta = budget − actual)
-    const dCls = (v) => v < 0 ? "over" : (v > 0 ? "under" : "muted");
-    let secRows = sec.map(s =>
-      `<tr><td class="left">${s.section}</td><td><b>${fmt(s.budget)}</b></td>`
-      + `<td>${fmt(s.lotSales)}</td><td>${fmt(s.premium)}</td><td>${fmt(s.fence)}</td>`
-      + `<td><b>${fmt(s.total)}</b></td>`
-      + `<td class="${dCls(-(s.delta||0))}">${fmt(s.delta)}</td>`
-      + `<td class="muted">${fmt(s.escalation)}</td><td class="muted">${fmt(s.marketing)}</td></tr>`).join("");
-    const secTotal = sec.reduce((a, s) => a + s.total, 0);
-    const secBud = sec.reduce((a, s) => a + (s.budget || 0), 0);
-    const secDelta = secBud - secTotal;
-    // Entity-level revenue (budget vs actual like the sections)
-    const dCls2 = (v) => v < 0 ? "over" : (v > 0 ? "under" : "muted");
-    let otherRows = other.map(o =>
-      `<tr><td class="left" colspan="4">${o.label}</td><td><b>${fmt(o.budget)}</b></td>`
-      + `<td>${fmt(o.amount)}</td><td class="${dCls2(-(o.delta||0))}">${fmt(o.delta)}</td></tr>`).join("");
-    const otherTotal = other.reduce((a, o) => a + o.amount, 0);
-    const otherBud = other.reduce((a, o) => a + (o.budget || 0), 0);
-    const otherDelta = otherBud - otherTotal;
-    // Acreage / marketing by customer
-    const mktg = f.marketingByCustomer || [], bem = f.bemBySection || [];
-    let acreRows = acre.map(a => `<tr><td class="left" colspan="6">${a.customer}</td><td>${fmt(a.amount)}</td></tr>`).join("");
-    let mktgRows = mktg.map(a => `<tr><td class="left" colspan="6">${a.customer}</td><td>${fmt(a.amount)}</td></tr>`).join("");
-    let bemRows = bem.map(a => `<tr><td class="left" colspan="6">${a.section}</td><td>${fmt(a.amount)}</td></tr>`).join("");
-    // Bond proceeds by series
-    const bySeries = {};
-    bonds.forEach(x => { (bySeries[x.series] = bySeries[x.series] || []).push(x); });
-    let bondRows = "";
-    Object.keys(bySeries).sort().forEach(series => {
-      const items = bySeries[series], sub = items.reduce((s, x) => s + x.amount, 0);
-      bondRows += `<tr class="proj-head"><td class="left" colspan="6">${series}</td><td>${fmt(sub)}</td></tr>`;
-      items.forEach(x => bondRows += `<tr><td class="left muted" colspan="6" style="padding-left:22px">${x.source}</td><td>${fmt(x.amount)}</td></tr>`);
+    const q = query.trim().toLowerCase();
+    const vrows = q ? rows.filter(r => ((r.category||"")+" "+(r.project||"")+" "+(r.line||"")).toLowerCase().includes(q)) : rows;
+    if (!vrows.length) { host.innerHTML = `<div class="empty">No revenue matches “${query}”.</div>`; return; }
+    const expand = !!q;
+    const dCls = (v) => v > 0 ? "under" : (v < 0 ? "over" : "muted");
+    // Budget / Actual / Budget − Actual, exactly like the cost view's columns.
+    const vcells = (B, A) => `<td>${fmt(B)}</td><td>${fmt(A)}</td>`
+      + `<td class="${dCls(B - A)}">${fmt(B - A)}</td>`;
+
+    // Group: category → project → line rows (same shape as Budget vs Actuals)
+    const cats = {}; const catOrder = [];
+    vrows.forEach(r => {
+      const c = r.category || "Other";
+      if (!(c in cats)) { cats[c] = { projects: {}, order: [] }; catOrder.push(c); }
+      const cg = cats[c];
+      if (!(r.project in cg.projects)) { cg.projects[r.project] = []; cg.order.push(r.project); }
+      cg.projects[r.project].push(r);
     });
+    let tB = 0, tA = 0, rowsHtml = "";
+    catOrder.forEach((cat, ci) => {
+      const open = expand || openCats.has(cat);
+      const hid = open ? "" : "hidden";
+      const caret = open ? "▾" : "▸";
+      const cg = cats[cat];
+      let cB = 0, cA = 0, projHtml = "";
+      cg.order.forEach(proj => {
+        const pr = cg.projects[proj];
+        let pB = 0, pA = 0;
+        const inner = pr.map(r => {
+          pB += r.budget; pA += r.actual;
+          return `<tr class="det det-${ci}" ${hid}><td class="left muted">${r.line || ""}</td>`
+            + `<td class="left muted">${r.note || ""}</td><td></td>${vcells(r.budget, r.actual)}</tr>`;
+        }).join("");
+        cB += pB; cA += pA;
+        projHtml += `<tr class="proj-head det det-${ci}" ${hid}><td class="left" colspan="3">${proj}</td>${vcells(pB, pA)}</tr>${inner}`;
+      });
+      tB += cB; tA += cA;
+      rowsHtml += `<tr class="cat-head ${open ? "open" : ""}" data-cat="${ci}" data-catname="${encodeURIComponent(cat)}">`
+        + `<td class="left" colspan="3"><span class="caret">${caret}</span> ${cat}</td>${vcells(cB, cA)}</tr>${projHtml}`;
+    });
+
     host.innerHTML = `
       <div class="kpi-band">
-        <div class="kpi good"><div class="l">Total Revenue (ITD)</div><div class="v">${fmt(f.revenueTotal)}</div></div>
-        <div class="kpi"><div class="l">Revenue Budget (LOP)</div><div class="v">${fmt(f.revenueBudgetTotal)}</div></div>
-        <div class="kpi ${(f.revenueBudgetTotal-f.revenueTotal)>0?'good':''}"><div class="l">Budget − Actual<span class="col-formula" style="display:block">revenue still to come</span></div><div class="v">${fmt(f.revenueBudgetTotal - f.revenueTotal)}</div></div>
-        <div class="kpi"><div class="l">Bond Proceeds Collected</div><div class="v">${fmt(f.bondTotal)}</div></div>
+        <div class="kpi"><div class="l">Revenue Budget</div><div class="v">${fmt(tB)}</div></div>
+        <div class="kpi good"><div class="l">Revenue Actuals</div><div class="v">${fmt(tA)}</div></div>
+        <div class="kpi ${(tB-tA)>0?'good':''}"><div class="l">Budget − Actuals<span class="col-formula" style="display:block">revenue still to come</span></div><div class="v">${fmt(tB - tA)}</div></div>
       </div>
-      <h3 class="fin-h">Revenue by Section <span class="muted" style="font-weight:400;font-size:11px">(budget = pro-forma projection; sold-out sections use actuals)</span></h3>
+      <p class="muted" style="margin:8px 0 4px;font-size:11px;">Budget = pro-forma life-of-project. Actuals = Sage GL, inception-to-date. Click a category to expand. Sold-out sections use actuals as their budget; MUD + WCID shows ${'' + (((f.mudBudgetYears||[])[0]||{}).year || '')} forward (earlier years are already in proceeds collected).</p>
       <table class="bva-table">
-        <thead><tr><th class="left">Section</th><th>BUDGET #1</th><th>Actual — Lot Sales</th><th>Actual — Premium</th><th>Actual — Fence</th><th>ACTUAL TOTAL</th><th>Budget − Actual<span class="col-formula">revenue still to come</span></th><th>Actual — Escalation<span class="col-formula">ref · budget below</span></th><th>Actual — Marketing<span class="col-formula">ref · budget below</span></th></tr></thead>
-        <tbody>${secRows}<tr class="grand"><td class="left">Section revenue</td><td>${fmt(secBud)}</td><td></td><td></td><td></td><td>${fmt(secTotal)}</td><td class="${dCls(-secDelta)}">${fmt(secDelta)}</td><td class="muted">${fmt(sec.reduce((a,s)=>a+(s.escalation||0),0))}</td><td class="muted">${fmt(sec.reduce((a,s)=>a+(s.marketing||0),0))}</td></tr></tbody>
-      </table>
-      ${f.modelHomePurchases ? `<p class="muted" style="margin:6px 0;font-size:11px;">Model-home / buyback postings are excluded from revenue and booked as a <b>cost</b> in Budget vs Actuals (GPD Office Purchase).</p>` : ""}
-      <h3 class="fin-h">Entity-level Revenue (not section-tagged)</h3>
-      <table class="bva-table">
-        <thead><tr><th class="left">Source</th><th colspan="3"></th><th>BUDGET #1</th><th>ACTUAL</th><th>Budget − Actual<span class="col-formula">revenue still to come</span></th></tr></thead>
-        <tbody>${otherRows}<tr class="grand"><td class="left" colspan="4">Entity-level revenue</td><td>${fmt(otherBud)}</td><td>${fmt(otherTotal)}</td><td class="${dCls2(-otherDelta)}">${fmt(otherDelta)}</td></tr></tbody>
-      </table>
-      <p class="muted" style="margin:6px 0;font-size:11px;">Budgets are pro-forma LOP from the live model's Consolidated CFs; fee lines with no pro-forma line use budget = actual. MUD + WCID actuals = bond proceeds collected.</p>
-      ${mktg.length ? `<h3 class="fin-h">Marketing Fee Income — by Payer <span class="muted" style="font-weight:400;font-size:11px">(the un-sectioned portion)</span></h3>
-      <table class="bva-table"><thead><tr><th class="left">Payer</th><th colspan="5"></th><th>Amount</th></tr></thead>
-        <tbody>${mktgRows}</tbody></table>` : ""}
-      ${acre.length ? `<h3 class="fin-h">Acreage Sales — by Buyer</h3>
-      <table class="bva-table"><thead><tr><th class="left">Customer</th><th colspan="5"></th><th>Amount</th></tr></thead>
-        <tbody>${acreRows}</tbody></table>` : ""}
-      ${bem.length ? `<h3 class="fin-h">Builder Earnest Money — by Section <span class="muted" style="font-weight:400;font-size:11px">(deposits; net held ${fmt(f.bemTotal)})</span></h3>
-      <table class="bva-table"><thead><tr><th class="left">Section</th><th colspan="5"></th><th>Deposits</th></tr></thead>
-        <tbody>${bemRows}</tbody></table>` : ""}
-      <h3 class="fin-h">Bond Proceeds Collected — by Series &amp; MUD Source <span class="muted" style="font-weight:400;font-size:11px">(Launch bonds excluded)</span></h3>
-      <table class="bva-table">
-        <thead><tr><th class="left">Series / Source</th><th colspan="5"></th><th>Proceeds</th></tr></thead>
-        <tbody>${bondRows}<tr class="grand"><td class="left" colspan="6">Total collected</td><td>${fmt(f.bondTotal)}</td></tr></tbody>
-      </table>
-      ${(f.mudBudgetYears || []).length ? `<h3 class="fin-h">MUD + WCID Bond Revenue Budget — by Year <span class="muted" style="font-weight:400;font-size:11px">(pro-forma Consolidated CFs)</span></h3>
-      <table class="bva-table">
-        <thead><tr><th class="left">Year / Series</th><th colspan="5"></th><th>Expected Revenue</th></tr></thead>
-        <tbody>${f.mudBudgetYears.map(y => `<tr><td class="left" colspan="6">${y.year}</td><td>${fmt(y.amount)}</td></tr>`).join("")}
-        <tr class="grand"><td class="left" colspan="6">Total budgeted</td><td>${fmt(f.mudBudgetYears.reduce((a, y) => a + y.amount, 0))}</td></tr></tbody>
-      </table>` : ""}`;
+        <thead><tr>
+          <th class="left">Line</th><th class="left">Detail</th><th></th>
+          <th>Budget</th><th>Actuals</th>
+          <th>Budget − Actuals<span class="col-formula">revenue still to come</span></th>
+        </tr></thead>
+        <tbody>
+          ${rowsHtml}
+          <tr class="grand"><td class="left">ALL REVENUE</td><td></td><td></td>${vcells(tB, tA)}</tr>
+        </tbody>
+      </table>`;
+
+    host.querySelectorAll(".cat-head").forEach(h => {
+      h.addEventListener("click", () => {
+        const ci = h.dataset.cat;
+        const open = h.classList.toggle("open");
+        const cat = decodeURIComponent(h.dataset.catname || "");
+        open ? openCats.add(cat) : openCats.delete(cat);
+        h.querySelector(".caret").textContent = open ? "▾" : "▸";
+        host.querySelectorAll(".det-" + ci).forEach(d => { d.hidden = !open; });
+      });
+    });
   }
 
   function renderBody() {
