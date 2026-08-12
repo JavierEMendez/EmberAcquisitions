@@ -3254,7 +3254,8 @@ def _bva_finance_apply_budget(ent: str, fin: dict) -> dict:
         if m:
             bysec[int(m.group(1))] = dict(s)
     out_sec = []
-    for n in sorted(set(bysec) | set(rb) | set(rfence) | set(rprem)):
+    for n in sorted(set(bysec) | set(rb) | set(rfence) | set(rprem)
+                    | set(resc) | set(rmkt)):
         s = bysec.get(n) or {"section": "Section %d" % n}
         lot = round(s.get("lotSales") or 0); prem = round(s.get("premium") or 0)
         fen = round(s.get("fence") or 0)
@@ -3275,10 +3276,19 @@ def _bva_finance_apply_budget(ent: str, fin: dict) -> dict:
     # the folded list for records written before that field existed.
     raw = f.get("revenueOtherRaw")
     base = raw if raw is not None else (f.get("revenueOther") or [])
+    # Streams that used to be rolled up to an entity row but are now budgeted per
+    # section. A stored record can still carry the old rolled-up row; keeping it
+    # would double count the section actuals, so drop it once the sections have
+    # that stream's actuals (they're the same money).
+    _legacy_rolled = {"Escalation Revenues": "escalation",
+                      "Marketing Fees": "marketing"}
     prefolded = set()
     other = []
     for o in base:
         lbl = o.get("label", ""); amt = round(o.get("amount") or 0)
+        comp = _legacy_rolled.get(lbl)
+        if comp and lbl not in ebud and any(s.get(comp) for s in out_sec):
+            continue                     # already represented on the sections
         if lbl in ebud:                  # a category row from an older record
             ebud[lbl]["amount"] += amt
             prefolded.add(lbl)
