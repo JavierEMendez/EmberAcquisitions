@@ -278,9 +278,14 @@
     const secTotal = sec.reduce((a, s) => a + s.total, 0);
     const secBud = sec.reduce((a, s) => a + (s.budget || 0), 0);
     const secDelta = secBud - secTotal;
-    // Entity-level revenue
-    let otherRows = other.map(o => `<tr><td class="left" colspan="6">${o.label}</td><td>${fmt(o.amount)}</td></tr>`).join("");
+    // Entity-level revenue (budget vs actual like the sections)
+    const dCls2 = (v) => v < 0 ? "over" : (v > 0 ? "under" : "muted");
+    let otherRows = other.map(o =>
+      `<tr><td class="left" colspan="4">${o.label}</td><td>${fmt(o.amount)}</td>`
+      + `<td>${fmt(o.budget)}</td><td class="${dCls2(-(o.delta||0))}">${fmt(o.delta)}</td></tr>`).join("");
     const otherTotal = other.reduce((a, o) => a + o.amount, 0);
+    const otherBud = other.reduce((a, o) => a + (o.budget || 0), 0);
+    const otherDelta = otherBud - otherTotal;
     // Acreage / marketing by customer
     const mktg = f.marketingByCustomer || [], bem = f.bemBySection || [];
     let acreRows = acre.map(a => `<tr><td class="left" colspan="6">${a.customer}</td><td>${fmt(a.amount)}</td></tr>`).join("");
@@ -298,8 +303,8 @@
     host.innerHTML = `
       <div class="kpi-band">
         <div class="kpi good"><div class="l">Total Revenue (ITD)</div><div class="v">${fmt(f.revenueTotal)}</div></div>
-        <div class="kpi"><div class="l">Section Revenue Budget</div><div class="v">${fmt(secBud)}</div></div>
-        <div class="kpi ${secDelta>0?'good':''}"><div class="l">Budget − Actual (sections)</div><div class="v">${fmt(secDelta)}</div></div>
+        <div class="kpi"><div class="l">Revenue Budget (LOP)</div><div class="v">${fmt(f.revenueBudgetTotal)}</div></div>
+        <div class="kpi ${(f.revenueBudgetTotal-f.revenueTotal)>0?'good':''}"><div class="l">Budget − Actual<span class="col-formula" style="display:block">revenue still to come</span></div><div class="v">${fmt(f.revenueBudgetTotal - f.revenueTotal)}</div></div>
         <div class="kpi"><div class="l">Bond Proceeds Collected</div><div class="v">${fmt(f.bondTotal)}</div></div>
       </div>
       <h3 class="fin-h">Revenue by Section <span class="muted" style="font-weight:400;font-size:11px">(budget = pro-forma projection; sold-out sections use actuals)</span></h3>
@@ -310,9 +315,10 @@
       ${f.modelHomePurchases ? `<p class="muted" style="margin:6px 0;font-size:11px;">Model-home / buyback postings are excluded from revenue and booked as a <b>cost</b> in Budget vs Actuals (GPD Office Purchase).</p>` : ""}
       <h3 class="fin-h">Entity-level Revenue (not section-tagged)</h3>
       <table class="bva-table">
-        <thead><tr><th class="left">Source</th><th colspan="5"></th><th>Amount</th></tr></thead>
-        <tbody>${otherRows}<tr class="grand"><td class="left" colspan="6">Entity-level revenue</td><td>${fmt(otherTotal)}</td></tr></tbody>
+        <thead><tr><th class="left">Source</th><th colspan="3"></th><th>Actual</th><th>Budget</th><th>Budget − Actual<span class="col-formula">revenue still to come</span></th></tr></thead>
+        <tbody>${otherRows}<tr class="grand"><td class="left" colspan="4">Entity-level revenue</td><td>${fmt(otherTotal)}</td><td>${fmt(otherBud)}</td><td class="${dCls2(-otherDelta)}">${fmt(otherDelta)}</td></tr></tbody>
       </table>
+      <p class="muted" style="margin:6px 0;font-size:11px;">Budgets are pro-forma LOP from the live model's Consolidated CFs; fee lines with no pro-forma line use budget = actual. MUD + WCID actuals = bond proceeds collected.</p>
       ${mktg.length ? `<h3 class="fin-h">Marketing Fee Income — by Payer <span class="muted" style="font-weight:400;font-size:11px">(the un-sectioned portion)</span></h3>
       <table class="bva-table"><thead><tr><th class="left">Payer</th><th colspan="5"></th><th>Amount</th></tr></thead>
         <tbody>${mktgRows}</tbody></table>` : ""}
@@ -326,7 +332,13 @@
       <table class="bva-table">
         <thead><tr><th class="left">Series / Source</th><th colspan="5"></th><th>Proceeds</th></tr></thead>
         <tbody>${bondRows}<tr class="grand"><td class="left" colspan="6">Total collected</td><td>${fmt(f.bondTotal)}</td></tr></tbody>
-      </table>`;
+      </table>
+      ${(f.mudBudgetYears || []).length ? `<h3 class="fin-h">MUD + WCID Bond Revenue Budget — by Year <span class="muted" style="font-weight:400;font-size:11px">(pro-forma Consolidated CFs)</span></h3>
+      <table class="bva-table">
+        <thead><tr><th class="left">Year / Series</th><th colspan="5"></th><th>Expected Revenue</th></tr></thead>
+        <tbody>${f.mudBudgetYears.map(y => `<tr><td class="left" colspan="6">${y.year}</td><td>${fmt(y.amount)}</td></tr>`).join("")}
+        <tr class="grand"><td class="left" colspan="6">Total budgeted</td><td>${fmt(f.mudBudgetYears.reduce((a, y) => a + y.amount, 0))}</td></tr></tbody>
+      </table>` : ""}`;
   }
 
   function renderBody() {

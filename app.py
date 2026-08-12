@@ -2832,28 +2832,32 @@ _BVA_REV_SECTION_GROUPS = ("lotSales", "premium", "escalation", "marketing", "fe
 # tab col "Total Revenue"). Sold sections aren't in the go-forward model, so
 # they're absent here and fall back to actuals (budget = actual, delta 0).
 _BVA_REV_BUDGET = {
-    "GPD": {6: 6349131, 7: 8078984, 8: 5864392, 13: 8554219, 14: 6957431,
-            15: 7641769, 16: 2661312, 17: 8991434, 18: 6235075, 19: 1862919,
+    # Live Desktop model (updated 2026-08-05), Lot Sales tab "Total Revenue" —
+    # ties to Consolidated CFs "Residential Lot Sales Revenues" $214,193,426.
+    "GPD": {1: 1039500, 2: 9977757, 3: 7361971, 4: 6751298, 5: 6513947,
+            6: 7152819, 7: 7363125, 8: 5938625, 13: 8554219, 14: 6957431,
+            15: 7641769, 16: 2964500, 17: 10445652, 18: 5930925, 19: 1862919,
             20: 8174031, 21: 7315000, 22: 8630738, 23: 8174031, 24: 10131997,
-            25: 7252077, 26: 10217539, 27: 9295584, 28: 10312586, 29: 13506161,
-            30: 3260950, 31: 6366938},
+            25: 7252077, 26: 10217539, 27: 9295584, 28: 10312586, 29: 13021422,
+            30: 3260950, 31: 6366938, 32: 7812853, 33: 7771225},
 }
 # Fence-fee + lot-premium budgets per section (pro-forma "Fence Fees" /
 # "Lot Premiums" tabs, parameter-block LOP values). Sections absent here fall
 # back to their actuals (no model budget). These streams are NOT inside the
 # Lot Sales "Total Revenue" column, so they add to the section budget.
 _BVA_REV_BUDGET_FENCE = {
-    "GPD": {2: 238219, 3: 86782, 4: 121869, 5: 85986, 13: 73125, 14: 59670,
-            15: 87750, 16: 22750, 17: 92950, 18: 53300, 19: 43550, 20: 22750,
-            21: 52000, 22: 69615, 23: 22750, 24: 122850, 25: 89180, 26: 45500,
-            27: 80600, 28: 43680, 29: 57915, 30: 25025, 31: 51415},
+    "GPD": {1: 22750, 2: 238219, 3: 86782, 4: 121869, 5: 85986, 13: 73125,
+            14: 59670, 15: 87750, 16: 22750, 17: 92950, 18: 50700, 19: 43550,
+            20: 22750, 21: 52000, 22: 69615, 23: 22750, 24: 122850, 25: 89180,
+            26: 45500, 27: 80600, 28: 43680, 29: 57850, 30: 25025, 31: 51415,
+            32: 33280, 33: 31200},
 }
 _BVA_REV_BUDGET_PREMIUM = {
-    "GPD": {2: 252000, 3: 24000, 4: 448000, 5: 387500, 6: 9750, 8: 60125,
-            13: 117000, 14: 103090, 15: 105625, 16: 33800, 17: 118570,
-            18: 85280, 19: 24820, 20: 30000, 21: 67600, 22: 103090, 23: 30000,
+    "GPD": {2: 252000, 3: 24000, 4: 448000, 5: 387500, 6: 591180, 13: 117000,
+            14: 103090, 15: 105625, 16: 33800, 17: 137695, 18: 81120,
+            19: 24820, 20: 30000, 21: 566400, 22: 103090, 23: 30000,
             24: 141375, 25: 97255, 26: 37500, 27: 129675, 28: 138305,
-            29: 181180, 30: 37180, 31: 76050},
+            29: 181675, 30: 37180, 32: 104790, 33: 94705},
 }
 # Entity-level revenue budgets (pro-forma tabs, cross-checked to the model's
 # Board Report rollup). DC + Resi Pod Sales is $0 because the model's price
@@ -2861,9 +2865,10 @@ _BVA_REV_BUDGET_PREMIUM = {
 # formula chain computes zero — both are model gaps, so those actual lines
 # fall back to budget = actual on the dashboard.
 _BVA_REV_ENTITY_BUDGET = {
-    "GPD": (("Commercial Site Sales", 31697458),
+    "GPD": (("Commercial Site Sales", 31267109),
             ("Utility Income", 4577813),
-            ("DC + Resi Pod Sales", 0)),
+            ("DC + Resi Pod Sales", 31164146),
+            ("MUD + WCID Bond Revenues", 162100545)),
     # Dennison Consolidated CFs "MUD Bond Revenues": 2026 $732,549 + 2027
     # $9,007,932 + 2028 $1,782,434. Series (MUD Revenues tab, all fund 12/2026+):
     # HCWCID 164 Road Bond Issue 4 ($1,975,242 + $25,561 to WRRD) and HCMUD 576
@@ -2880,6 +2885,14 @@ _BVA_REV_ENTITY_MAP = (
     ("mud", "MUD + WCID Bond Revenues"),
     ("bond", "MUD + WCID Bond Revenues"),
 )
+# Budgeted MUD/WCID bond revenue by year (Consolidated CFs "MUD Bond Revenues").
+_BVA_MUD_BUDGET_YEARS = {
+    "GPD": (("2024", 11364830), ("2025", 14622015), ("2026", 8434464),
+            ("2027", 4757285), ("2028", 13313286), ("2029", 25231495),
+            ("2030", 20053040), ("2031", 18904122), ("2032", 24326852),
+            ("2033", 13550135), ("2034", 6016721), ("2035", 1526300)),
+    "Dennison": (("2026", 732549), ("2027", 9007932), ("2028", 1782434)),
+}
 _BVA_LOT_SEC_RE = re.compile(r"s(\d+)-b\d+-l\d+", re.I)
 _BVA_SEC_NUM_RE = re.compile(r"sec[a-z]*\.?\s*0*(\d+)", re.I)   # Sec 10 -> 10 (not 0)
 
@@ -3049,6 +3062,9 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
                 ebud[cat]["amount"] += round(a)
             else:
                 other.append({"label": k, "amount": round(a), "budget": round(a)})
+        # Bond proceeds collected ARE the MUD revenue actuals for that line.
+        if "MUD + WCID Bond Revenues" in ebud:
+            ebud["MUD + WCID Bond Revenues"]["amount"] += round(d["bondTotal"])
         for e in ebud.values():
             e.pop("_forced", None)
             other.append(e)
@@ -3074,6 +3090,8 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
         out[ent] = {"revenueBySection": bysec, "revenueOther": other,
                     "revenueBudgetTotal": (sum(x["budget"] for x in bysec)
                                            + sum(x["budget"] for x in other)),
+                    "mudBudgetYears": [{"year": y, "amount": a}
+                                       for y, a in _BVA_MUD_BUDGET_YEARS.get(ent, ())],
                     "acreageByCustomer": acre, "marketingByCustomer": mktg,
                     "modelHomePurchases": round(d.get("modelHome", 0.0)),
                     "bemBySection": bem, "bemTotal": bemTotal,
