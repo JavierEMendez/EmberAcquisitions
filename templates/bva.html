@@ -271,18 +271,19 @@
     // Revenue by section — budget vs actual like the cost BVA (delta = budget − actual)
     const dCls = (v) => v < 0 ? "over" : (v > 0 ? "under" : "muted");
     let secRows = sec.map(s =>
-      `<tr><td class="left">${s.section}</td><td>${fmt(s.lotSales)}</td><td>${fmt(s.premium)}</td>`
-      + `<td>${fmt(s.escalation)}</td><td>${fmt(s.marketing)}</td><td>${fmt(s.fence)}</td>`
-      + `<td><b>${fmt(s.total)}</b></td><td>${fmt(s.budget)}</td>`
-      + `<td class="${dCls(-(s.delta||0))}">${fmt(s.delta)}</td></tr>`).join("");
+      `<tr><td class="left">${s.section}</td><td><b>${fmt(s.budget)}</b></td>`
+      + `<td>${fmt(s.lotSales)}</td><td>${fmt(s.premium)}</td><td>${fmt(s.fence)}</td>`
+      + `<td><b>${fmt(s.total)}</b></td>`
+      + `<td class="${dCls(-(s.delta||0))}">${fmt(s.delta)}</td>`
+      + `<td class="muted">${fmt(s.escalation)}</td><td class="muted">${fmt(s.marketing)}</td></tr>`).join("");
     const secTotal = sec.reduce((a, s) => a + s.total, 0);
     const secBud = sec.reduce((a, s) => a + (s.budget || 0), 0);
     const secDelta = secBud - secTotal;
     // Entity-level revenue (budget vs actual like the sections)
     const dCls2 = (v) => v < 0 ? "over" : (v > 0 ? "under" : "muted");
     let otherRows = other.map(o =>
-      `<tr><td class="left" colspan="4">${o.label}</td><td>${fmt(o.amount)}</td>`
-      + `<td>${fmt(o.budget)}</td><td class="${dCls2(-(o.delta||0))}">${fmt(o.delta)}</td></tr>`).join("");
+      `<tr><td class="left" colspan="4">${o.label}</td><td><b>${fmt(o.budget)}</b></td>`
+      + `<td>${fmt(o.amount)}</td><td class="${dCls2(-(o.delta||0))}">${fmt(o.delta)}</td></tr>`).join("");
     const otherTotal = other.reduce((a, o) => a + o.amount, 0);
     const otherBud = other.reduce((a, o) => a + (o.budget || 0), 0);
     const otherDelta = otherBud - otherTotal;
@@ -309,14 +310,14 @@
       </div>
       <h3 class="fin-h">Revenue by Section <span class="muted" style="font-weight:400;font-size:11px">(budget = pro-forma projection; sold-out sections use actuals)</span></h3>
       <table class="bva-table">
-        <thead><tr><th class="left">Section</th><th>Lot Sales</th><th>Premium</th><th>Escalation</th><th>Marketing</th><th>Fence</th><th>Actual Total</th><th>Budget</th><th>Budget − Actual<span class="col-formula">revenue still to come</span></th></tr></thead>
-        <tbody>${secRows}<tr class="grand"><td class="left">Section revenue</td><td></td><td></td><td></td><td></td><td></td><td>${fmt(secTotal)}</td><td>${fmt(secBud)}</td><td class="${dCls(-secDelta)}">${fmt(secDelta)}</td></tr></tbody>
+        <thead><tr><th class="left">Section</th><th>BUDGET #1</th><th>Actual — Lot Sales</th><th>Actual — Premium</th><th>Actual — Fence</th><th>ACTUAL TOTAL</th><th>Budget − Actual<span class="col-formula">revenue still to come</span></th><th>Actual — Escalation<span class="col-formula">ref · budget below</span></th><th>Actual — Marketing<span class="col-formula">ref · budget below</span></th></tr></thead>
+        <tbody>${secRows}<tr class="grand"><td class="left">Section revenue</td><td>${fmt(secBud)}</td><td></td><td></td><td></td><td>${fmt(secTotal)}</td><td class="${dCls(-secDelta)}">${fmt(secDelta)}</td><td class="muted">${fmt(sec.reduce((a,s)=>a+(s.escalation||0),0))}</td><td class="muted">${fmt(sec.reduce((a,s)=>a+(s.marketing||0),0))}</td></tr></tbody>
       </table>
       ${f.modelHomePurchases ? `<p class="muted" style="margin:6px 0;font-size:11px;">Model-home / buyback postings are excluded from revenue and booked as a <b>cost</b> in Budget vs Actuals (GPD Office Purchase).</p>` : ""}
       <h3 class="fin-h">Entity-level Revenue (not section-tagged)</h3>
       <table class="bva-table">
-        <thead><tr><th class="left">Source</th><th colspan="3"></th><th>Actual</th><th>Budget</th><th>Budget − Actual<span class="col-formula">revenue still to come</span></th></tr></thead>
-        <tbody>${otherRows}<tr class="grand"><td class="left" colspan="4">Entity-level revenue</td><td>${fmt(otherTotal)}</td><td>${fmt(otherBud)}</td><td class="${dCls2(-otherDelta)}">${fmt(otherDelta)}</td></tr></tbody>
+        <thead><tr><th class="left">Source</th><th colspan="3"></th><th>BUDGET #1</th><th>ACTUAL</th><th>Budget − Actual<span class="col-formula">revenue still to come</span></th></tr></thead>
+        <tbody>${otherRows}<tr class="grand"><td class="left" colspan="4">Entity-level revenue</td><td>${fmt(otherBud)}</td><td>${fmt(otherTotal)}</td><td class="${dCls2(-otherDelta)}">${fmt(otherDelta)}</td></tr></tbody>
       </table>
       <p class="muted" style="margin:6px 0;font-size:11px;">Budgets are pro-forma LOP from the live model's Consolidated CFs; fee lines with no pro-forma line use budget = actual. MUD + WCID actuals = bond proceeds collected.</p>
       ${mktg.length ? `<h3 class="fin-h">Marketing Fee Income — by Payer <span class="muted" style="font-weight:400;font-size:11px">(the un-sectioned portion)</span></h3>

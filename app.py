@@ -3109,6 +3109,12 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
                  for (s, src), a in sorted(d["bonds"].items()) if round(a)]
         recv = round(d["mudReceivable"])
         out[ent] = {"revenueBySection": bysec, "revenueOther": other,
+                    # Unfolded per-account revenue actuals — the stable base the
+                    # read-time budget overlay re-folds from, so applying it any
+                    # number of times gives the same answer.
+                    "revenueOtherRaw": [{"label": k, "amount": round(a)}
+                                        for k, a in sorted(d["other"].items(), key=lambda x: -x[1])
+                                        if round(a)],
                     "revenueBudgetTotal": (sum(x["budget"] for x in bysec)
                                            + sum(x["budget"] for x in other)),
                     "mudBudgetYears": [{"year": y, "amount": a}
@@ -3120,6 +3126,79 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
                     "bonds": bonds, "bondTotal": round(d["bondTotal"]),
                     "mudReceivable": recv, "netReceivable": recv - round(d["bondTotal"])}
     return out
+
+
+def _bva_finance_apply_budget(ent: str, fin: dict) -> dict:
+    """Re-apply the pro-forma revenue budgets to a STORED finance record.
+
+    Budgets live in code constants but the record is written at GL-upload time,
+    so without this a budget change wouldn't appear until the next GL upload.
+    Runs at read time and is idempotent: it recomputes every budget/delta from
+    the record's actuals, and guarantees a row for each budgeted category (e.g.
+    Commercial Site Sales, DC + Resi Pod Sales) even with zero actuals."""
+    if not isinstance(fin, dict) or not fin:
+        return fin
+    f = dict(fin)
+    rb = _BVA_REV_BUDGET.get(ent, {})
+    rfence = _BVA_REV_BUDGET_FENCE.get(ent, {})
+    rprem = _BVA_REV_BUDGET_PREMIUM.get(ent, {})
+    # ── sections ────────────────────────────────────────────────────────────
+    bysec = {}
+    for s in (f.get("revenueBySection") or []):
+        m = re.search(r"(\d+)", s.get("section", ""))
+        if m:
+            bysec[int(m.group(1))] = dict(s)
+    out_sec = []
+    for n in sorted(set(bysec) | set(rb) | set(rfence) | set(rprem)):
+        s = bysec.get(n) or {"section": "Section %d" % n}
+        lot = round(s.get("lotSales") or 0); prem = round(s.get("premium") or 0)
+        fen = round(s.get("fence") or 0)
+        tot = lot + prem + fen
+        bud = (rb.get(n) or lot) + (rfence.get(n) or fen) + (rprem.get(n) or prem)
+        s.update({"section": "Section %d" % n, "lotSales": lot, "premium": prem,
+                  "fence": fen, "escalation": round(s.get("escalation") or 0),
+                  "marketing": round(s.get("marketing") or 0),
+                  "total": tot, "budget": bud, "delta": bud - tot})
+        out_sec.append(s)
+    f["revenueBySection"] = out_sec
+    # ── entity-level ────────────────────────────────────────────────────────
+    budgets = dict(_BVA_REV_ENTITY_BUDGET.get(ent, ()))
+    ebud = {name: {"label": name, "amount": 0, "budget": amt}
+            for name, amt in budgets.items()}
+    # Prefer the unfolded per-account base so this is idempotent; fall back to
+    # the folded list for records written before that field existed.
+    raw = f.get("revenueOtherRaw")
+    base = raw if raw is not None else (f.get("revenueOther") or [])
+    prefolded = set()
+    other = []
+    for o in base:
+        lbl = o.get("label", ""); amt = round(o.get("amount") or 0)
+        if lbl in ebud:                  # a category row from an older record
+            ebud[lbl]["amount"] += amt
+            prefolded.add(lbl)
+            continue
+        cat = next((c for kw, c in _BVA_REV_ENTITY_MAP if kw in lbl.lower()), None)
+        if cat and cat in ebud:
+            ebud[cat]["amount"] += amt
+        elif amt:
+            other.append({"label": lbl, "amount": amt, "budget": amt})
+    if "MUD + WCID Bond Revenues" in ebud and "MUD + WCID Bond Revenues" not in prefolded:
+        ebud["MUD + WCID Bond Revenues"]["amount"] += round(f.get("bondTotal") or 0)
+    # Section-tagged escalation/marketing actuals roll up to where their budgets
+    # live — skipped when an older record already folded them in.
+    for key, comp in (("Escalation Revenues", "escalation"), ("Marketing Fees", "marketing")):
+        if key in ebud and key not in prefolded:
+            ebud[key]["amount"] += sum(s.get(comp) or 0 for s in out_sec)
+    other.extend(ebud.values())
+    for e in other:
+        e["delta"] = e["budget"] - e["amount"]
+    other.sort(key=lambda x: -(x["amount"] or x["budget"]))
+    f["revenueOther"] = other
+    f["mudBudgetYears"] = [{"year": y, "amount": a}
+                           for y, a in _BVA_MUD_BUDGET_YEARS.get(ent, ())]
+    f["revenueTotal"] = sum(s["total"] for s in out_sec) + sum(o["amount"] for o in other)
+    f["revenueBudgetTotal"] = sum(s["budget"] for s in out_sec) + sum(o["budget"] for o in other)
+    return f
 
 
 def _bva_load_finance() -> dict:
@@ -3449,7 +3528,8 @@ def api_bva_template():
     blocks, has_gl, _has_com = _bva_build_blocks()
     if not has_gl:
         return jsonify({"error": "No GL report uploaded yet — upload the Sage GL report first."}), 400
-    xlsx = _gen_bva_template_xlsx(blocks, _bva_load_finance())
+    xlsx = _gen_bva_template_xlsx(blocks, {e: _bva_finance_apply_budget(e, fv)
+                                           for e, fv in _bva_load_finance().items()})
     fname = "BVA_%s.xlsx" % datetime.datetime.now().strftime("%Y-%m-%d")
     return send_file(io.BytesIO(xlsx),
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -4024,7 +4104,8 @@ def api_bva_data():
     return jsonify({"configured": True, "has_gl": has_gl,
                     "has_commitments": has_com, "blocks": blocks,
                     "flags": _bva_load_flags(), "status": _bva_load_status(),
-                    "finance": _bva_load_finance(),
+                    "finance": {e: _bva_finance_apply_budget(e, fv)
+                                for e, fv in _bva_load_finance().items()},
                     "is_admin": bool(session.get("is_admin"))})
 
 
