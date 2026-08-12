@@ -2838,6 +2838,48 @@ _BVA_REV_BUDGET = {
             25: 7252077, 26: 10217539, 27: 9295584, 28: 10312586, 29: 13506161,
             30: 3260950, 31: 6366938},
 }
+# Fence-fee + lot-premium budgets per section (pro-forma "Fence Fees" /
+# "Lot Premiums" tabs, parameter-block LOP values). Sections absent here fall
+# back to their actuals (no model budget). These streams are NOT inside the
+# Lot Sales "Total Revenue" column, so they add to the section budget.
+_BVA_REV_BUDGET_FENCE = {
+    "GPD": {2: 238219, 3: 86782, 4: 121869, 5: 85986, 13: 73125, 14: 59670,
+            15: 87750, 16: 22750, 17: 92950, 18: 53300, 19: 43550, 20: 22750,
+            21: 52000, 22: 69615, 23: 22750, 24: 122850, 25: 89180, 26: 45500,
+            27: 80600, 28: 43680, 29: 57915, 30: 25025, 31: 51415},
+}
+_BVA_REV_BUDGET_PREMIUM = {
+    "GPD": {2: 252000, 3: 24000, 4: 448000, 5: 387500, 6: 9750, 8: 60125,
+            13: 117000, 14: 103090, 15: 105625, 16: 33800, 17: 118570,
+            18: 85280, 19: 24820, 20: 30000, 21: 67600, 22: 103090, 23: 30000,
+            24: 141375, 25: 97255, 26: 37500, 27: 129675, 28: 138305,
+            29: 181180, 30: 37180, 31: 76050},
+}
+# Entity-level revenue budgets (pro-forma tabs, cross-checked to the model's
+# Board Report rollup). DC + Resi Pod Sales is $0 because the model's price
+# cells are EMPTY (unpriced), and MUD Revenues is $0 because that tab's
+# formula chain computes zero — both are model gaps, so those actual lines
+# fall back to budget = actual on the dashboard.
+_BVA_REV_ENTITY_BUDGET = {
+    "GPD": (("Commercial Site Sales", 31697458),
+            ("Utility Income", 4577813),
+            ("DC + Resi Pod Sales", 0)),
+    # Dennison Consolidated CFs "MUD Bond Revenues": 2026 $732,549 + 2027
+    # $9,007,932 + 2028 $1,782,434. Series (MUD Revenues tab, all fund 12/2026+):
+    # HCWCID 164 Road Bond Issue 4 ($1,975,242 + $25,561 to WRRD) and HCMUD 576
+    # WSD Bond Issue 3 ($7,488,504 + $706,988).
+    "Dennison": (("MUD + WCID Bond Revenues", 11522915),),
+}
+# Actual GL revenue lines -> the entity budget category they belong to.
+_BVA_REV_ENTITY_MAP = (
+    ("acreage", "Commercial Site Sales"),          # ISD/ESD parcel sales
+    ("participation", "Utility Income"),            # fiber/gas participation
+    ("utility", "Utility Income"),
+    ("data center", "DC + Resi Pod Sales"),
+    ("pod sale", "DC + Resi Pod Sales"),
+    ("mud", "MUD + WCID Bond Revenues"),
+    ("bond", "MUD + WCID Bond Revenues"),
+)
 _BVA_LOT_SEC_RE = re.compile(r"s(\d+)-b\d+-l\d+", re.I)
 _BVA_SEC_NUM_RE = re.compile(r"sec[a-z]*\.?\s*0*(\d+)", re.I)   # Sec 10 -> 10 (not 0)
 
@@ -2973,22 +3015,52 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
     out: dict = {}
     for ent, d in fin.items():
         rb = _BVA_REV_BUDGET.get(ent, {})
+        rfence = _BVA_REV_BUDGET_FENCE.get(ent, {})
+        rprem = _BVA_REV_BUDGET_PREMIUM.get(ent, {})
         bysec = []
-        for sec in sorted(set(d["sec"]) | set(rb)):
+        for sec in sorted(set(d["sec"]) | set(rb) | set(rfence) | set(rprem)):
             s = d["sec"].get(sec, {"lotSales": 0.0, "premium": 0.0, "escalation": 0.0,
                                    "marketing": 0.0, "fence": 0.0})
             tot = sum(s.values())
-            bud = rb.get(sec)                    # pro-forma projection…
-            if bud is None:
-                bud = round(tot)                 # …or actual for sold sections
+            # Componentwise budget: the Lot Sales "Total Revenue" col covers
+            # lot price + escalation + marketing (+fees); fence and premium are
+            # separate pro-forma tabs. Each component falls back to its actual
+            # when the model has no figure (sold-out sections, model gaps).
+            core_act = s["lotSales"] + s["escalation"] + s["marketing"]
+            bud = (rb.get(sec) or round(core_act)) \
+                + (rfence.get(sec) or round(s["fence"])) \
+                + (rprem.get(sec) or round(s["premium"]))
             bysec.append({"section": "Section %d" % sec,
                           "lotSales": round(s["lotSales"]), "premium": round(s["premium"]),
                           "escalation": round(s["escalation"]), "marketing": round(s["marketing"]),
                           "fence": round(s["fence"]), "total": round(tot),
                           "budget": round(bud), "delta": round(bud) - round(tot)})
-        other = [{"label": k, "amount": round(a)} for k, a in
-                 sorted(d["other"].items(), key=lambda x: -x[1]) if round(a)]
-        acre = [{"customer": k, "amount": round(a)} for k, a in
+        # Entity-level lines: fold actuals into their pro-forma budget category
+        # (acreage -> Commercial Site Sales, participation -> Utility Income);
+        # fee lines with no model budget fall back to budget = actual.
+        ebud = {name: {"label": name, "amount": 0, "budget": amt, "_forced": True}
+                for name, amt in _BVA_REV_ENTITY_BUDGET.get(ent, ())}
+        other = []
+        for k, a in sorted(d["other"].items(), key=lambda x: -x[1]):
+            if not round(a):
+                continue
+            cat = next((c for kw, c in _BVA_REV_ENTITY_MAP if kw in k.lower()), None)
+            if cat and cat in ebud:
+                ebud[cat]["amount"] += round(a)
+            else:
+                other.append({"label": k, "amount": round(a), "budget": round(a)})
+        for e in ebud.values():
+            e.pop("_forced", None)
+            other.append(e)
+        for e in other:
+            e["delta"] = e["budget"] - e["amount"]
+        other.sort(key=lambda x: -(x["amount"] or x["budget"]))
+        def _acre_label(k):
+            # Dennison's untagged acreage sale is the prime-spot parcel.
+            if k == "(no customer)" and ent == "Dennison":
+                return "Prime-spot"
+            return k
+        acre = [{"customer": _acre_label(k), "amount": round(a)} for k, a in
                 sorted(d["acreage"].items(), key=lambda x: -x[1]) if round(a)]
         mktg = [{"customer": k, "amount": round(a)} for k, a in
                 sorted(d["mktgCust"].items(), key=lambda x: -x[1]) if round(a)]
@@ -3000,7 +3072,8 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
                  for (s, src), a in sorted(d["bonds"].items()) if round(a)]
         recv = round(d["mudReceivable"])
         out[ent] = {"revenueBySection": bysec, "revenueOther": other,
-                    "revenueBudgetTotal": sum(x["budget"] for x in bysec),
+                    "revenueBudgetTotal": (sum(x["budget"] for x in bysec)
+                                           + sum(x["budget"] for x in other)),
                     "acreageByCustomer": acre, "marketingByCustomer": mktg,
                     "modelHomePurchases": round(d.get("modelHome", 0.0)),
                     "bemBySection": bem, "bemTotal": bemTotal,
@@ -3499,16 +3572,22 @@ def _bva_merge_lines(rows: list) -> list:
         # actual/committed row is the same line split by naming (soft costs:
         # budget tagged generically "Soft Costs" vs actuals "Accounting fees",
         # "Development fee", …) — combine, keeping the descriptive actual label.
-        if len(rowlist) == 2:
+        # All-zero rows are dropped later anyway, so ignore them when pairing.
+        nz = [r for r in rowlist
+              if (r.get("budget") or 0) or (r.get("committed") or 0) or (r.get("actual") or 0)]
+        if len(nz) == 2:
             def _pure_bud(r):
                 return (r.get("budget") or 0) and not (r.get("committed") or 0) and not (r.get("actual") or 0)
             def _pure_act(r):
                 return not (r.get("budget") or 0) and ((r.get("committed") or 0) or (r.get("actual") or 0))
-            a, b = rowlist
+            a, b = nz
+            fold = None
             if _pure_bud(a) and _pure_act(b):
-                _bva_accum(b, a); rowlist = [b]
+                _bva_accum(b, a); fold = a
             elif _pure_bud(b) and _pure_act(a):
-                _bva_accum(a, b); rowlist = [a]
+                _bva_accum(a, b); fold = b
+            if fold is not None:
+                rowlist = [r for r in rowlist if r is not fold]
         out.extend(rowlist)
     for r in out:
         r.pop("_lk", None)
