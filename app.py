@@ -91,6 +91,65 @@ def _purge_old_activity():
         print(f"[activity_purge] ERROR: {e}", flush=True)
 
 _scheduler.add_job(_purge_old_activity, CronTrigger(hour=3, minute=15), id="activity_retention_daily")
+
+def _latest_report(report_type):
+    """(data, uploaded_at) of the newest row for a report_type, or (None, None).
+    Mirrors how each page route loads its source blob."""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT data, uploaded_at FROM reports WHERE report_type = %s "
+                "ORDER BY uploaded_at DESC LIMIT 1", (report_type,))
+    row = cur.fetchone(); cur.close(); conn.close()
+    if not row:
+        return None, None
+    data = row["data"]
+    if isinstance(data, str):
+        data = json.loads(data)
+    return data, row["uploaded_at"]
+
+
+def _publish_all_views():
+    """Daily backstop for the published view payloads. Each view is normally
+    republished on every page render; this rebuilds them unattended so a view
+    can't go stale when nobody happens to open its page (e.g. a new budget
+    workbook is uploaded but /budget isn't visited).
+
+    Rebuilds from the same stored reports the page routes read, using the same
+    builders — none of which touch `session`/`request`, so no request context
+    is needed. Each view is isolated: one failure can't stop the others."""
+    def _step(name, fn):
+        try:
+            publish_view(name, fn())
+        except Exception as e:
+            print(f"[publish_views] {name} failed: {e}", flush=True)
+
+    def _budget():
+        data, _ = _latest_report("ember_budget")
+        if not data:
+            return None
+        ops, _ = _latest_report("operations")
+        return _apply_ops_revenue(data, ops)
+
+    def _returns():
+        data, _ = _latest_report("returns")
+        return _enrich_returns_payload(data) if data else None
+
+    def _operations():
+        data, up = _latest_report("operations")
+        return _build_operations_view_context(data, up) if data else None
+
+    def _loans():
+        data, up = _latest_report("loans")
+        return _build_loans_view_context(data, up) if data else None
+
+    _step("budget", _budget)
+    _step("capital", _build_capital_view_context)
+    _step("returns", _returns)
+    _step("operations", _operations)
+    _step("loans", _loans)
+    _step("verticals_lighthaven", _vd_lighthaven_snapshot)
+    print("[publish_views] daily refresh complete", flush=True)
+
+_scheduler.add_job(_publish_all_views, CronTrigger(hour=4, minute=0), id="publish_views_daily")
 _scheduler.start()
 
 # Auto-initialize DB on first request
@@ -2110,7 +2169,9 @@ def vd_snapshot():
         return jsonify({"error": "Unknown vertical"}), 400
     try:
         if v == "lighthaven":
-            return jsonify(_vd_lighthaven_snapshot())
+            snap = _vd_lighthaven_snapshot()
+            publish_view("verticals_lighthaven", snap)
+            return jsonify(snap)
         if v == "hawthorne":
             return jsonify(_vd_hawthorne_snapshot())
         if v == "tgp":
@@ -7990,6 +8051,7 @@ def portfolio_page():
     pa.setdefault("reports",   True)
 
     capital = _build_capital_view_context()
+    publish_view("capital", capital)
     # Capital reads from the same returns blob as /returns, so its
     # "Data From" / "Uploaded" should match. Pull both from the latest
     # reports[returns] row for the dashboard footer.
@@ -10229,6 +10291,7 @@ def returns_report():
     data_from   = _fmt_data_date(data.get("data_from") if data else None)
     uploaded_at = _fmt_data_date(row["uploaded_at"]) if row else None
     enriched = _enrich_returns_payload(data)
+    publish_view("returns", enriched)
     pa = session.get("page_access") or {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
     if session.get("is_admin"):
         pa = {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
@@ -10296,6 +10359,7 @@ def loans_report():
         return jsonify(diag)
 
     loans_ctx = _build_loans_view_context(raw_data, uploaded_at)
+    publish_view("loans", loans_ctx)
     # Data dates footer:
     #   "Data From"  — Loan Capacities & DS!U3 (loan capacities cutoff)
     #   "Debt From"  — Debt!D1 (debt-schedules detail cutoff; pulled
@@ -11263,6 +11327,10 @@ def budget_page():
         if isinstance(ops, str):
             ops = json.loads(ops)
         data = _apply_ops_revenue(data, ops)
+        # Publish the post-overlay budget (live Operating Revenues applied
+        # month by month, net income / cash flow re-derived) so sibling apps
+        # never re-implement _apply_ops_revenue.
+        publish_view("budget", data)
     return render_template(
         "budget.html",
         budget=data,
@@ -11320,6 +11388,7 @@ def operations_report():
     raw_data    = row["data"]        if row else None
     uploaded_at = row["uploaded_at"] if row else None
     ops_ctx = _build_operations_view_context(raw_data, uploaded_at)
+    publish_view("operations", ops_ctx)
     # Data dates footer: "Data From" from cell D1 on the Operations tab.
     data_from       = _fmt_data_date(raw_data.get("data_from") if raw_data else None)
     uploaded_at_fmt = _fmt_data_date(uploaded_at)
@@ -14714,6 +14783,31 @@ def upload_macro():
 
 
 # ─── COMMUNITY SALES TRACKER ──────────────────────────────────────────────────
+def publish_view(name, payload):
+    """Persist a finished view payload under report_type='view:<name>' so sibling
+    apps (the Maquina dashboard) render Ember's numbers instead of re-implementing
+    Ember's math. Best-effort: a failure here must never affect the page being
+    served.
+
+    Falsy payloads are skipped on purpose. A view context is None/empty when its
+    source report hasn't been uploaded yet, and writing that would leave a
+    present-but-empty row — which would defeat the consumer's "read view:<name>
+    if present, else fall back" contract."""
+    if not payload:
+        return
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM reports WHERE report_type = %s", (f"view:{name}",))
+        cur.execute("INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+                    (f"view:{name}", json.dumps(payload, default=str), None))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"[publish_view:{name}] failed: {e}", flush=True)
+
+
 def _persist_sales_snapshot(data):
     """Mirror the latest community-sales payload into the `reports` table
     (report_type='sales') so sibling apps (the Maquina dashboard) can read it
