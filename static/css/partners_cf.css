@@ -1,0 +1,233 @@
+/* ────────────────────────────────────────────────────────────
+   Partners Cash Flow dashboard — partner-level sources & uses
+   from the EMBER Partners CF workbook. Lives at /partners-cf.
+   Visual language mirrors /unit-economics and /bva.
+   ──────────────────────────────────────────────────────────── */
+
+.pcf-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--eax-accent);
+  margin-bottom: 8px;
+}
+.pcf-title {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--eax-ink);
+  letter-spacing: -0.02em;
+  margin: 0 0 8px;
+}
+.pcf-sub {
+  font-size: 13px;
+  color: var(--eax-muted);
+  line-height: 1.55;
+  max-width: 760px;
+  margin: 0 0 20px;
+}
+
+/* ── Controls ──────────────────────────────────────────────── */
+.pcf-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.pcf-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid var(--eax-line-2);
+  color: var(--eax-muted);
+  padding: 9px 16px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+}
+.pcf-btn:hover { border-color: var(--eax-accent); color: var(--eax-accent); }
+.pcf-btn.primary {
+  background: var(--eax-accent);
+  color: var(--eax-accent-fg);
+  border-color: var(--eax-accent);
+  box-shadow: 0 4px 12px rgba(242, 89, 41, 0.18);
+}
+.pcf-btn.primary:hover { filter: brightness(1.05); color: var(--eax-accent-fg); }
+.pcf-status {
+  margin: 6px 0 14px;
+  font-size: 12px;
+  color: var(--eax-muted);
+  min-height: 14px;
+}
+.pcf-status.err { color: var(--eax-bad); }
+.pcf-status.ok  { color: var(--eax-good); }
+.pcf-cutoff-chip {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--eax-accent);
+  background: var(--eax-accent-soft);
+  border-radius: 999px;
+  padding: 4px 12px;
+  white-space: nowrap;
+}
+
+/* ── KPI band ──────────────────────────────────────────────── */
+.pcf-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 18px 0;
+}
+.pcf-kpi {
+  background: var(--eax-surface);
+  border: 1px solid var(--eax-line);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.pcf-kpi-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--eax-subtle);
+  white-space: nowrap;
+}
+.pcf-kpi-value {
+  font-size: 20px;
+  font-weight: 700;
+  margin-top: 4px;
+  color: var(--eax-ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.pcf-kpi-value.good { color: var(--eax-good); }
+.pcf-kpi-value.bad  { color: var(--eax-bad); }
+.pcf-kpi-sub {
+  font-size: 11px;
+  color: var(--eax-muted);
+  margin-top: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Ledger table (BVA-style, year columns + month drill) ──── */
+.pcf-tablewrap {
+  background: var(--eax-bg-2);
+  border: 1px solid var(--eax-line);
+  border-radius: 12px;
+  padding: 18px 20px;
+  overflow-x: auto;
+}
+.pcf-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  background: var(--eax-surface);
+  border: 1px solid var(--eax-line);
+}
+.pcf-table td {
+  padding: 7px 11px;
+  text-align: right;
+  border-bottom: 1px solid var(--eax-line);
+  font-variant-numeric: tabular-nums;
+  color: var(--eax-ink);
+  white-space: nowrap;
+}
+.pcf-table td.left, .pcf-table th.left { text-align: left; }
+.pcf-table td.left { min-width: 240px; }
+.pcf-table th {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--eax-subtle);
+  font-weight: 700;
+  padding: 9px 11px;
+  text-align: right;
+  border-bottom: 1px solid var(--eax-line);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--eax-bg-2);
+}
+th.pcf-year { cursor: pointer; }
+th.pcf-year:hover { color: var(--eax-accent); }
+th.pcf-year.open { color: var(--eax-accent); }
+.pcf-table th .caret { color: var(--eax-accent); font-size: 9px; margin-right: 3px; }
+/* Projected columns: muted + faint wash so forecast reads apart from actuals */
+.pcf-table th.proj { color: var(--eax-subtle); font-style: italic; }
+.pcf-table td.proj { color: var(--eax-muted); background: color-mix(in srgb, var(--eax-bg-2) 55%, transparent); }
+.pcf-table tr.band td {
+  background: var(--eax-accent-soft);
+  font-weight: 800;
+  color: var(--eax-ink);
+  border-top: 2px solid var(--eax-line-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 11px;
+}
+.pcf-table tr.item td.left { padding-left: 28px; color: var(--eax-ink-2); }
+.pcf-table tr.total td { font-weight: 700; background: var(--eax-bg-2); }
+.pcf-table tr.grand td {
+  border-top: 2px solid var(--eax-line-2);
+  font-weight: 800;
+}
+.pcf-table tr.grand.cumm td { font-weight: 600; color: var(--eax-muted); }
+.pcf-table td.neg { color: #c0392b; }
+.pcf-table td.pos { color: var(--eax-good, #1F7A4D); }
+
+/* ── Empty state ───────────────────────────────────────────── */
+.pcf-empty {
+  background: var(--eax-bg-2);
+  border: 1px solid var(--eax-line);
+  border-radius: 12px;
+  text-align: center;
+  padding: 64px 32px;
+}
+.pcf-empty-title {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--eax-ink-2);
+  margin-bottom: 10px;
+}
+.pcf-empty-body {
+  font-size: 13px;
+  color: var(--eax-muted);
+  line-height: 1.55;
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+/* ── Data dates footer ─────────────────────────────────────── */
+.pcf-data-dates {
+  margin-top: 20px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--eax-line);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 11px;
+  color: var(--eax-subtle);
+  flex-wrap: wrap;
+}
+.pcf-data-dates .ddf-lbl {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--eax-muted);
+}
+.pcf-data-dates .ddf-val {
+  font-weight: 600;
+  color: var(--eax-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.pcf-data-dates .ddf-sep { color: var(--eax-line-2); }

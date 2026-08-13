@@ -28,6 +28,7 @@ from hpermits_parser import parse_hpermits
 from uw_parser import parse_uw
 from ember_budget_parser import parse_ember_budget
 from unit_economics_parser import parse_unit_economics, blend_blocks, sum_units
+from partners_cf_parser import parse_partners_cf, actuals_through_from_filename
 import sage_intacct
 from frp_mapping import roll_up_balance_sheet, summarize_bs
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -489,6 +490,12 @@ def init_db():
                 "WHERE page_access->>'unit_economics' IS NULL AND is_admin = true")
     cur.execute("UPDATE users SET page_access = page_access || '{\"unit_economics\": false}'::jsonb "
                 "WHERE page_access->>'unit_economics' IS NULL AND (is_admin = false OR is_admin IS NULL)")
+    # `partners_cf` gates the Partners Cash Flow dashboard (partner-level
+    # money data). Budget convention: admins start visible, others hidden.
+    cur.execute("UPDATE users SET page_access = page_access || '{\"partners_cf\": true}'::jsonb "
+                "WHERE page_access->>'partners_cf' IS NULL AND is_admin = true")
+    cur.execute("UPDATE users SET page_access = page_access || '{\"partners_cf\": false}'::jsonb "
+                "WHERE page_access->>'partners_cf' IS NULL AND (is_admin = false OR is_admin IS NULL)")
     # Owner account is a full admin (manage users, all dashboards, Sage tools).
     cur.execute("UPDATE users SET is_admin = TRUE WHERE username = %s", ("carlossaldierna",))
 
@@ -5446,6 +5453,137 @@ def unit_economics_page():
     if not session.get("is_admin") and not pa.get("unit_economics", False):
         return redirect(url_for("home"))
     return render_template("unit_economics.html",
+                           username=session.get("username"),
+                           is_admin=session.get("is_admin", False),
+                           page_access=pa)
+
+
+# ─── PARTNERS CASH FLOW ──────────────────────────────────────────────────────
+# Partner-level sources & uses ledger from the "EMBER Partners CF" workbook:
+# contributions/dividends per partner (Maquina / ARM / Verdeluz), opex,
+# pre-development, GP co-invest, and promotes — monthly across a 15-year
+# horizon. Upload-fed today; the long-term plan is to aggregate most of it
+# from the other dashboards with minimal manual inputs (pursuit obligations),
+# which is why the parser output stays a plain categories/items/months shape
+# other sources can feed later.
+
+def _pcf_can_view() -> bool:
+    """View gate: admins always; else page_access.partners_cf."""
+    if session.get("is_admin"):
+        return True
+    return bool(_refresh_page_access_from_db().get("partners_cf", False))
+
+
+def _pcf_build_context(data: dict, uploaded_at) -> dict:
+    """KPI band + table payload from the parsed ledger. Months up to
+    `actuals_through` (from the workbook filename, else the upload month)
+    count as actuals; later months are projections."""
+    cutoff = data.get("actuals_through") or ""
+
+    def _td(mdict):
+        return sum(v for m, v in (mdict or {}).items() if not cutoff or m <= cutoff)
+
+    def _life(mdict):
+        return sum((mdict or {}).values())
+
+    cats = {c["name"].strip().lower(): c for c in data.get("categories") or []}
+    partners = []
+    inv = cats.get("investments/dividends")
+    for it in (inv["items"] if inv else []):
+        months = it.get("months") or {}
+        cap_in = sum(v for m, v in months.items() if v > 0 and (not cutoff or m <= cutoff))
+        div_out = -sum(v for m, v in months.items() if v < 0 and (not cutoff or m <= cutoff))
+        partners.append({
+            "name": it["name"],
+            "capital_in": round(cap_in, 2),
+            "dividends": round(div_out, 2),
+            "net": round(cap_in - div_out, 2),
+            "life_net": round(_life(months), 2),
+        })
+    promotes = cats.get("promotes")
+    deployed_td = deployed_life = 0.0
+    for key in ("pre-development", "gp co-invest"):
+        c = cats.get(key)
+        if c:
+            deployed_td += -sum(v for m, v in (c.get("total") or {}).items()
+                                if v < 0 and (not cutoff or m <= cutoff))
+            deployed_life += -sum(v for v in (c.get("total") or {}).values() if v < 0)
+    return {
+        "months": data.get("months") or [],
+        "categories": data.get("categories") or [],
+        "grand_total": data.get("grand_total") or {},
+        "actuals_through": cutoff,
+        "uploaded_at": uploaded_at.isoformat() if hasattr(uploaded_at, "isoformat") else str(uploaded_at or ""),
+        "source_filename": data.get("source_filename") or "",
+        "kpis": {
+            "partners": partners,
+            "promotes_td": round(_td(promotes["total"]) if promotes else 0, 2),
+            "promotes_life": round(_life(promotes["total"]) if promotes else 0, 2),
+            "deployed_td": round(deployed_td, 2),
+            "deployed_life": round(deployed_life, 2),
+        },
+    }
+
+
+@app.route("/api/partners-cf/data", methods=["GET"])
+@login_required
+def api_pcf_data():
+    if not _pcf_can_view():
+        return jsonify({"error": "forbidden"}), 403
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT data, uploaded_at FROM reports WHERE report_type = 'partners_cf' "
+                "ORDER BY uploaded_at DESC LIMIT 1")
+    row = cur.fetchone(); cur.close(); conn.close()
+    if not row:
+        return jsonify({"has_data": False})
+    data = row["data"]
+    if isinstance(data, str):
+        data = json.loads(data)
+    ctx = _pcf_build_context(data, row["uploaded_at"])
+    publish_view("partners_cf", ctx)
+    return jsonify(dict(ctx, has_data=True))
+
+
+@app.route("/api/partners-cf/upload", methods=["POST"])
+@login_required
+@admin_required
+def api_pcf_upload():
+    """Admin-only — parse the EMBER Partners CF workbook and store it as the
+    'partners_cf' report (latest wins). The actuals cutoff comes from the
+    date in the filename ('... - 2026_08_12.xlsx' → 2026-08), falling back
+    to the upload month."""
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"error": "No file uploaded"}), 400
+    if not f.filename.lower().endswith((".xlsx", ".xlsm")):
+        return jsonify({"error": "Expected an .xlsx/.xlsm workbook"}), 400
+    try:
+        data = parse_partners_cf(f.read())
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": "Could not parse workbook: %s" % e}), 400
+    data["actuals_through"] = (actuals_through_from_filename(f.filename)
+                               or datetime.datetime.now().strftime("%Y-%m"))
+    data["source_filename"] = f.filename
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM reports WHERE report_type = 'partners_cf'")
+    cur.execute("INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+                ("partners_cf", json.dumps(data), session.get("user_id")))
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True,
+                    "months": len(data.get("months") or []),
+                    "categories": [c["name"] for c in data.get("categories") or []],
+                    "actuals_through": data["actuals_through"]})
+
+
+@app.route("/partners-cf", methods=["GET"])
+@login_required
+def partners_cf_page():
+    pa = _refresh_page_access_from_db() or {}
+    if not session.get("is_admin") and not pa.get("partners_cf", False):
+        return redirect(url_for("home"))
+    return render_template("partners_cf.html",
                            username=session.get("username"),
                            is_admin=session.get("is_admin", False),
                            page_access=pa)

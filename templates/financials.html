@@ -100,6 +100,12 @@
       Unit Economics
     </a>
     {% endif %}
+    {% if is_admin or page_access.get('partners_cf', false) %}
+    <a href="/partners-cf" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M7 10h10m0 0l-3-3m3 3l-3 3M17 17H7m0 0l3-3m-3 3l3 3" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Partners Cash Flow
+    </a>
+    {% endif %}
     {% if page_access.get('macro', true) %}
     <a href="/macro" class="sidebar-item">
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="1.5"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20" stroke-width="1.5" stroke-linecap="round"/></svg>
