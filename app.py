@@ -2921,11 +2921,11 @@ _BVA_REV_BUDGET_ESC = {
 # Per-section footnotes for anything the numbers alone don't explain.
 _BVA_SECTION_NOTE = {
     "GPD": {
-        # Sitterle sold 15 lots back to GPD (booked against lot sales, 02/2026)
-        # and Weekley bought the position (05/2025), so the actual here is net of
-        # the buyback and includes the re-sale.
-        5: "incl. Sitterle buyback of 15 lots (-$1,608,000) and the Weekley "
-           "re-sale (+$1,710,000) — actual is net of both",
+        # All 78 original lots closed at the model's $86,400; the whole variance
+        # is two buy-back-and-resell rounds, both booked through lot sales.
+        5: "78 original lots closed at plan; variance is 2 buyback/resale rounds — "
+           "Sitterle→Weekley 04-05/25 (+$117,010) and Sitterle→Westin 02/26 "
+           "(+$84,000)",
     },
 }
 # Total lots per section (Lot Sales "Total Lots") — used to label each section
