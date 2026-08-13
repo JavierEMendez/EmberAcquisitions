@@ -2914,6 +2914,8 @@ _BVA_REV_BUDGET = {
             20: 8492500, 21: 7600000, 22: 8967000, 23: 8492500, 24: 10526750,
             25: 7534625, 26: 10615625, 27: 9657750, 28: 10714375, 29: 13528750,
             30: 3388000, 31: 6615000, 32: 8117250, 33: 8074000},
+    # Dennison: Lot Sales tab, price x Total Lots (gross), same basis as GPD.
+    "Dennison": {9: 7209000, 10: 5472000, 11: 4176000, 12: 3564000},
 }
 # Escalation per section (Lot Sales "$ - Escalations") — sums to $5,626,967,
 # the model's Escalation Revenues line to the dollar.
@@ -2924,6 +2926,7 @@ _BVA_REV_BUDGET_ESC = {
             22: 234739, 23: 150759, 24: 275570, 25: 198326, 26: 186389,
             27: 254211, 28: 280482, 29: 354157, 30: 89504, 31: 173802,
             32: 212494, 33: 211749},
+    "Dennison": {10: 75240, 11: 252000, 12: 160380},
 }
 # Per-section footnotes for anything the numbers alone don't explain.
 _BVA_SECTION_NOTE = {
@@ -2942,6 +2945,7 @@ _BVA_REV_LOTS = {
             14: 61, 15: 77, 16: 20, 17: 123, 18: 78, 19: 22, 20: 120, 21: 40,
             22: 61, 23: 120, 24: 98, 25: 90, 26: 150, 27: 90, 28: 128, 29: 126,
             30: 22, 31: 45, 32: 97, 33: 57},
+    "Dennison": {9: 89, 10: 76, 11: 58, 12: 44},
 }
 # Marketing fee revenue per section (Lot Sales "MKT Revenue"), $8,814,450 of the
 # model's $16,460,700 — the rest isn't section-tagged and sits on the entity line.
@@ -2963,6 +2967,7 @@ _BVA_REV_BUDGET_FENCE = {
             20: 22750, 21: 52000, 22: 69615, 23: 22750, 24: 122850, 25: 89180,
             26: 45500, 27: 80600, 28: 43680, 29: 57850, 30: 25025, 31: 51415,
             32: 33280, 33: 31200},
+    "Dennison": {9: 65081, 10: 49400, 11: 37700, 12: 32175},
 }
 _BVA_REV_BUDGET_PREMIUM = {
     "GPD": {2: 252000, 3: 24000, 4: 448000, 5: 387500, 6: 591180, 13: 117000,
