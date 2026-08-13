@@ -258,6 +258,14 @@
       btn.addEventListener("click", () => { active = +btn.dataset.i; renderTabs(); renderBody(); }));
   }
 
+  // Derived section status tags, styled like the cost view's Complete /
+  // In Progress / Future badges.
+  const REV_STATUS = {
+    sold_out: { icon: "✅", label: "Sold out", cls: "complete" },
+    selling:  { icon: "🔨", label: "Selling", cls: "in_progress" },
+    future:   { icon: "🗓", label: "Future", cls: "future" },
+  };
+
   function renderFinance() {
     const b = BLOCKS[active];
     const host = $("#bva-body");
@@ -302,7 +310,12 @@
             + `<td class="left muted">${r.note || ""}</td><td></td>${vcells(r.budget, r.actual)}</tr>`;
         }).join("");
         cB += pB; cA += pA;
-        projHtml += `<tr class="proj-head det det-${ci}" ${hid}><td class="left" colspan="3">${proj}</td>${vcells(pB, pA)}</tr>${inner}`;
+        // Status tag on the project row — same badges as the cost view.
+        const st = (pr.find(r => r.status) || {}).status || "";
+        const meta = REV_STATUS[st];
+        const badge = meta ? `<span class="status-badge s-${meta.cls}">${meta.icon} ${meta.label}</span>` : "";
+        projHtml += `<tr class="proj-head det det-${ci} ${meta ? "s-" + meta.cls : ""}" ${hid}>`
+          + `<td class="left" colspan="3">${proj}${badge}</td>${vcells(pB, pA)}</tr>${inner}`;
       });
       tB += cB; tA += cA;
       rowsHtml += `<tr class="cat-head ${open ? "open" : ""}" data-cat="${ci}" data-catname="${encodeURIComponent(cat)}">`
