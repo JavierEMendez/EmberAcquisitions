@@ -3121,7 +3121,17 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
                 d["modelHome"] = d.get("modelHome", 0.0) + rev
                 continue
             grp = _BVA_REV_GROUP.get(cur, "other")
-            sec = sec_of(g(r, c_projn), memo)
+            _pn = g(r, c_projn)
+            # Two things Sage books to the wrong revenue account:
+            #  · parcel/acreage sales posted to "Lot sales - Other" — they belong
+            #    with the commercial site sales, keyed by buyer;
+            #  · inter-entity marketing income posted to "Lot premium" — that's
+            #    a marketing fee, not a lot premium.
+            if "acreage" in _pn.lower():
+                grp, cur_name = "acreage", "Acreage sales"
+            elif "marketing income" in memo:
+                grp, cur_name = "marketing", "Marketing fee income"
+            sec = sec_of(_pn, memo)
             if grp in _BVA_REV_SECTION_GROUPS and sec is not None:
                 s = d["sec"].setdefault(sec, {"lotSales": 0.0, "premium": 0.0,
                                               "escalation": 0.0, "marketing": 0.0, "fence": 0.0})
