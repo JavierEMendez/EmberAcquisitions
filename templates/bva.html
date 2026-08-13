@@ -224,6 +224,7 @@
   let STATUS = {}, statusFilter = "";   // "" = all; else complete/in_progress/future
   let FINANCE = {}, viewMode = "bva";   // bva | finance
   let REV_STATUS_OVERRIDE = {};        // {entity: {section: status}} — user set
+  let revStatusFilter = "";            // "" = all; else sold_out/selling/future
   const revStatusOf = (proj, derived) =>
     (REV_STATUS_OVERRIDE[activeLabel()] || {})[proj] || derived || "";
   async function setRevStatus(proj, st) {
@@ -289,9 +290,15 @@
       return;
     }
     const q = query.trim().toLowerCase();
-    const vrows = q ? rows.filter(r => ((r.category||"")+" "+(r.project||"")+" "+(r.line||"")).toLowerCase().includes(q)) : rows;
+    // Effective status = the admin override if set, else the derived one.
+    const effStatus = (r) => r.status ? revStatusOf(r.project, r.status) : "";
+    // Counts are distinct sections per status, for the chips.
+    const sCount = { sold_out: new Set(), selling: new Set(), future: new Set() };
+    rows.forEach(r => { const st = effStatus(r); if (sCount[st]) sCount[st].add(r.project); });
+    let vrows = q ? rows.filter(r => ((r.category||"")+" "+(r.project||"")+" "+(r.line||"")).toLowerCase().includes(q)) : rows;
+    if (revStatusFilter) vrows = vrows.filter(r => effStatus(r) === revStatusFilter);
     if (!vrows.length) { host.innerHTML = `<div class="empty">No revenue matches “${query}”.</div>`; return; }
-    const expand = !!q;
+    const expand = !!q || !!revStatusFilter;
     // Revenue reads the opposite way to cost: beating budget is GOOD, so the
     // variance is Actuals − Budget and a positive number is green.
     const dCls = (v) => v > 0 ? "under" : (v < 0 ? "over" : "muted");
@@ -352,6 +359,15 @@
         <div class="kpi good"><div class="l">Revenue Actuals</div><div class="v">${fmt(tA)}</div></div>
         <div class="kpi"><div class="l">Actuals − Budget<span class="col-formula" style="display:block">+ over / − under budget</span></div><div class="v" style="color:${(tA-tB)>=0?'var(--eax-good,#1F7A4D)':'#c0392b'}">${fmt(tA - tB)}</div></div>
       </div>
+      <div class="cb-toggle-row">
+        <span class="status-filter">
+          <span class="sf-label">Sections:</span>
+          <button class="cb-toggle sf ${revStatusFilter === "" ? "on" : ""}" data-rsf="">All</button>
+          <button class="cb-toggle sf ${revStatusFilter === "sold_out" ? "on" : ""}" data-rsf="sold_out">${REV_STATUS.sold_out.icon} Sold out${sCount.sold_out.size ? ` (${sCount.sold_out.size})` : ""}</button>
+          <button class="cb-toggle sf ${revStatusFilter === "selling" ? "on" : ""}" data-rsf="selling">${REV_STATUS.selling.icon} Selling${sCount.selling.size ? ` (${sCount.selling.size})` : ""}</button>
+          <button class="cb-toggle sf ${revStatusFilter === "future" ? "on" : ""}" data-rsf="future">${REV_STATUS.future.icon} Future${sCount.future.size ? ` (${sCount.future.size})` : ""}</button>
+        </span>
+      </div>
       <table class="bva-table">
         <thead><tr>
           <th class="left">Line</th><th class="left">Detail</th><th></th>
@@ -374,6 +390,8 @@
         host.querySelectorAll(".det-" + ci).forEach(d => { d.hidden = !open; });
       });
     });
+    host.querySelectorAll("[data-rsf]").forEach(b =>
+      b.addEventListener("click", () => { revStatusFilter = b.dataset.rsf; renderBody(); }));
     host.querySelectorAll("[data-revproj]").forEach(sel => {
       sel.addEventListener("click", (e) => e.stopPropagation());
       sel.addEventListener("change", (e) => {
