@@ -2889,6 +2889,9 @@ _BVA_REV_GROUP = {  # revenue account (5-digit) -> group
     "41001": "fence", "41019": "acreage",
 }
 _BVA_REV_SECTION_GROUPS = ("lotSales", "premium", "escalation", "marketing", "fence")
+_BVA_REV_LINE_LABEL = {"lotSales": "Lot Sales", "premium": "Lot Premium",
+                       "escalation": "Escalation", "marketing": "Marketing",
+                       "fence": "Fence Fees", "acreage": "Acreage / parcel"}
 # Pro-forma budgeted total revenue per section (GPD Data Center Model, Lot Sales
 # tab col "Total Revenue"). Sold sections aren't in the go-forward model, so
 # they're absent here and fall back to actuals (budget = actual, delta 0).
@@ -3086,7 +3089,15 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
     def E(ent):
         return fin.setdefault(ent, {"sec": {}, "other": {}, "acreage": {}, "mktgCust": {},
                                     "bem": {}, "bemOther": 0.0, "modelHome": 0.0,
-                                    "bonds": {}, "bondTotal": 0.0, "mudReceivable": 0.0})
+                                    "bonds": {}, "bondTotal": 0.0, "mudReceivable": 0.0,
+                                    "revm": {}})
+
+    def revm(d, cat, proj, line, mk, val):
+        """Revenue actual by month, for the 'actualize the pro-forma' export."""
+        if mk and val:
+            d["revm"].setdefault((cat, proj, line), {})
+            d["revm"][(cat, proj, line)][mk] = \
+                d["revm"][(cat, proj, line)].get(mk, 0.0) + val
     for r in rows:
         if not r:
             continue
@@ -3145,9 +3156,13 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
                     if lm:
                         d.setdefault("lots", {}).setdefault(sec, set()).add(
                             lm.group(0).upper())
+                revm(d, "Revenue · Sections", "Section %d" % sec,
+                     _BVA_REV_LINE_LABEL.get(grp, grp), _bva_month_key(g(r, c_date)), rev)
             else:
                 d["other"][cur_name] = d["other"].get(cur_name, 0.0) + rev
                 cust = g(r, c_cust) or "(no customer)"
+                revm(d, "Revenue · Other", cur_name, "Total",
+                     _bva_month_key(g(r, c_date)), rev)
                 if grp == "acreage":
                     d["acreage"][cust] = d["acreage"].get(cust, 0.0) + rev
                 if grp == "marketing":     # untagged marketing fee income — by payer
@@ -3169,6 +3184,8 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
             source = _bva_bond_source(g(r, c_doc) + " " + memo)
             d["bonds"][(series, source)] = d["bonds"].get((series, source), 0.0) + proceeds
             d["bondTotal"] += proceeds
+            revm(d, "Revenue · MUD Bonds", source, series,
+                 _bva_month_key(g(r, c_date)), proceeds)
     out: dict = {}
     for ent, d in fin.items():
         rb = _BVA_REV_BUDGET.get(ent, {})
@@ -3253,6 +3270,9 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
                     "acreageByCustomer": acre, "marketingByCustomer": mktg,
                     "modelHomePurchases": round(d.get("modelHome", 0.0)),
                     "mktgInterEntity": round(d.get("mktgInterEntity", 0.0)),
+                    "revenueMonths": [{"category": k[0], "project": k[1], "line": k[2],
+                                       "months": {mk: round(mv) for mk, mv in sorted(mm.items())}}
+                                      for k, mm in sorted(d.get("revm", {}).items())],
                     "bemBySection": bem, "bemTotal": bemTotal,
                     "revenueTotal": round(rev_total),
                     "bonds": bonds, "bondTotal": round(d["bondTotal"]),
@@ -4495,9 +4515,11 @@ def api_bva_budget_upload():
 
 
 def _gen_bva_actualize_xlsx(blocks: list) -> bytes:
-    """Actuals matrix for entering into the pro-forma: one sheet per project,
-    rows = (Project ID, Task), columns = months, cells = that month's actual
-    spend, plus a row Total."""
+    """Actuals matrix for entering into the pro-forma: one sheet per entity,
+    rows = category / project / task / subtask, columns = months, cells = that
+    month's actual, plus a row Total. Covers BOTH cost actuals and revenue
+    actuals (sections, other revenue, MUD bond proceeds) so the whole pro-forma
+    can be actualised from one export."""
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
     from openpyxl.utils import get_column_letter
@@ -4521,7 +4543,9 @@ def _gen_bva_actualize_xlsx(blocks: list) -> bytes:
         months = blk.get("months", [])
         ws = wb.create_sheet(sheet_name(blk["label"]))
         ws.cell(1, 1, "%s — Actuals by Category / Project / Subtask / Month" % blk["label"]).font = Font(name="Calibri", bold=True, size=14, color=ACCENT)
-        ws.cell(2, 1, "Sage entity: %s · signed GL actuals by month — paste into the pro-forma" % blk["entity"]).font = F(False, "888888", 9)
+        ws.cell(2, 1, "Sage entity: %s · signed GL actuals by month, COSTS and REVENUE "
+                      "(revenue rows are the 'Revenue · ...' categories: sections, other, "
+                      "MUD bond proceeds) — paste into the pro-forma" % blk["entity"]).font = F(False, "888888", 9)
         r = 4
         # Category | Project | Task | Subtask | <months…> | Total
         headers = ["Category", "Project", "Task", "Subtask"] + months + ["Total"]
@@ -4562,26 +4586,36 @@ def _gen_bva_actualize_xlsx(blocks: list) -> bytes:
 @app.route("/api/bva/actualize.xlsx", methods=["GET"])
 @login_required
 def api_bva_actualize():
-    """Pro-forma actuals: every line's actual spend by month, grouped by
-    category → project → subtask, one tab per entity — from the uploaded GL."""
+    """Pro-forma actuals: every line's actual by month — cost AND revenue —
+    grouped by category → project → subtask, one tab per entity, from the
+    uploaded GL."""
     if not _bva_can_view():
         return jsonify({"error": "forbidden"}), 403
     gl = _bva_load_gl()
     if not gl:
         return jsonify({"error": "No GL report uploaded yet — upload it first."}), 400
+    finance = _bva_load_finance()
     blocks = []
     for label, eid in _BVA_ENTITIES:
         recs = gl.get(label, []) or []
-        months = sorted({mk for rec in recs for mk in (rec.get("months") or {})})
+        # Revenue by month too, so the pro-forma can be actualised end to end —
+        # not just the cost side.
+        revrows = ((finance.get(label) or {}).get("revenueMonths") or [])
+        months = sorted({mk for rec in recs for mk in (rec.get("months") or {})}
+                        | {mk for rr in revrows for mk in (rr.get("months") or {})})
         rows = []
         for rec in recs:
             proj = rec.get("project", ""); task = rec.get("task", "")
             rows.append({"category": _bva_category(proj, task), "project": proj,
                          "task": task, "subtask": rec.get("subtask", ""),
                          "months": rec.get("months") or {}})
+        for rr in revrows:
+            rows.append({"category": rr.get("category", "Revenue"),
+                         "project": rr.get("project", ""), "task": rr.get("line", ""),
+                         "subtask": "", "months": rr.get("months") or {}})
         blocks.append({"label": label, "entity": eid, "rows": rows, "months": months})
     xlsx = _gen_bva_actualize_xlsx(blocks)
-    fname = "BVA_Actuals_by_Month_%s.xlsx" % datetime.datetime.now().strftime("%Y-%m-%d")
+    fname = "BVA_Actuals_Cost_and_Revenue_by_Month_%s.xlsx" % datetime.datetime.now().strftime("%Y-%m-%d")
     return send_file(io.BytesIO(xlsx),
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                      as_attachment=True, download_name=fname)
