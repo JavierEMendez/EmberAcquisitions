@@ -3131,6 +3131,8 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
                 grp, cur_name = "acreage", "Acreage sales"
             elif "marketing income" in memo:
                 grp, cur_name = "marketing", "Marketing fee income"
+                if "wrrd" in memo or "dennison" in memo:
+                    d["mktgInterEntity"] = d.get("mktgInterEntity", 0.0) + rev
             sec = sec_of(_pn, memo)
             if grp in _BVA_REV_SECTION_GROUPS and sec is not None:
                 s = d["sec"].setdefault(sec, {"lotSales": 0.0, "premium": 0.0,
@@ -3250,6 +3252,7 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
                                        for y, mu, wc in _BVA_MUD_BUDGET_YEARS.get(ent, ())],
                     "acreageByCustomer": acre, "marketingByCustomer": mktg,
                     "modelHomePurchases": round(d.get("modelHome", 0.0)),
+                    "mktgInterEntity": round(d.get("mktgInterEntity", 0.0)),
                     "bemBySection": bem, "bemTotal": bemTotal,
                     "revenueTotal": round(rev_total),
                     "bonds": bonds, "bondTotal": round(d["bondTotal"]),
@@ -3438,6 +3441,13 @@ def _bva_revenue_rows(ent: str, f: dict, out_sec: list, other: list) -> list:
                     act = ya.get(dist, 0)
                     bud = act if done else yb.get(key, 0)
                     add(cat, y, dist + (" · issued" if done else ""), bud, act)
+            continue
+        if lbl == "Marketing Fees" and f.get("mktgInterEntity"):
+            inter = round(f["mktgInterEntity"])
+            add(cat, lbl, "Marketing fee income", o["budget"], o["amount"] - inter)
+            add(cat, lbl, "From Dennison (WRRD)", 0, inter,
+                "inter-entity marketing income — posted to the lot-premium "
+                "account in Sage, not a lot premium")
             continue
         add(cat, lbl, "Total", o["budget"], o["amount"])
     return rows
