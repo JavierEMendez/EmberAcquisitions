@@ -3008,6 +3008,24 @@ _BVA_MUD_BUDGET_YEARS = {
 # actually collected, so those years read budget = actual (delta 0).
 _BVA_MUD_ACTUALIZED_YEARS = {"2024", "2025"}
 
+# The pro-forma's "Other Revenues Input" block (Soft Costs tab, rows 97-102) —
+# the named lines behind two lumps on the dashboard. They reconcile exactly:
+#   Highlands + Dennison marketing = $7,646,250 = the non-section Marketing Fees
+#   the impact / development-fee lines = $21,029,209 = the block's own subtotal,
+#   and Consolidated CFs "Other Revenues" $22,448,833 leaves a $1,419,624
+#   residual (developer participation & interest).
+# Each entry: (line, LOP budget, keywords that identify its actuals by customer).
+_BVA_MKTG_LINES = {
+    "GPD": (("Marketing Revenues (Highlands)", 6821500, ("friendswood",)),
+            ("Marketing Revenues (Dennison)", 824750, ("wrrd", "dennison", "emptor"))),
+}
+_BVA_OTHER_REV_LINES = {
+    "GPD": (("Dennison Impact Fee + Office Sale", 4945000, ("emptor", "wrrd")),
+            ("Impact Fee - Lennar | Amenities, Roads, Detention, etc.", 11994709, ()),
+            ("Development Fee Revenues - Lennar", 4089500, ("lennar",)),
+            ("Development Fee Revenues - Pulte", 0, ("pulte",)),
+            ("Developer participation & interest", 1419624, ())),
+}
 # Commercial site sales budget per site (Commercial Site Sales tab, net "Total
 # Revenue"), with the Sage customer whose acreage-sale actual belongs to it.
 _BVA_COMMERCIAL_SITES = {
@@ -3161,6 +3179,11 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
             else:
                 d["other"][cur_name] = d["other"].get(cur_name, 0.0) + rev
                 cust = g(r, c_cust) or "(no customer)"
+                if grp == "marketing" and ("wrrd" in memo or "dennison" in memo):
+                    cust = "Emptor WRRD (inter-entity)"
+                d.setdefault("otherCust", {})
+                _ck = (cur_name, cust)
+                d["otherCust"][_ck] = d["otherCust"].get(_ck, 0.0) + rev
                 revm(d, "Revenue · Other", cur_name, "Total",
                      _bva_month_key(g(r, c_date)), rev)
                 if grp == "acreage":
@@ -3270,6 +3293,9 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
                     "acreageByCustomer": acre, "marketingByCustomer": mktg,
                     "modelHomePurchases": round(d.get("modelHome", 0.0)),
                     "mktgInterEntity": round(d.get("mktgInterEntity", 0.0)),
+                    "revenueOtherByCust": [{"label": k[0], "customer": k[1], "amount": round(a)}
+                                           for k, a in sorted(d.get("otherCust", {}).items(),
+                                                              key=lambda x: -x[1]) if round(a)],
                     "revenueMonths": [{"category": k[0], "project": k[1], "line": k[2],
                                        "months": {mk: round(mv) for mk, mv in sorted(mm.items())}}
                                       for k, mm in sorted(d.get("revm", {}).items())],
@@ -3475,13 +3501,31 @@ def _bva_revenue_rows(ent: str, f: dict, out_sec: list, other: list) -> list:
                     bud = act if done else yb.get(key, 0)
                     add(cat, y, dist + (" · issued" if done else ""), bud, act)
             continue
-        if lbl == "Marketing Fees" and f.get("mktgInterEntity"):
-            inter = round(f["mktgInterEntity"])
-            add(cat, lbl, "Marketing fee income", o["budget"], o["amount"] - inter)
-            add(cat, lbl, "From Dennison (WRRD)", 0, inter,
-                "inter-entity marketing income — posted to the lot-premium "
-                "account in Sage, not a lot premium")
-            continue
+        # Split the two lumps into the pro-forma's own named lines, attributing
+        # actuals by the paying customer.
+        if lbl in ("Marketing Fees", "Other Revenues"):
+            spec = (_BVA_MKTG_LINES if lbl == "Marketing Fees"
+                    else _BVA_OTHER_REV_LINES).get(ent)
+            if spec:
+                def _cat_of(lab):
+                    return next((c for kw, c in _BVA_REV_ENTITY_MAP
+                                 if kw in lab.lower()), "Other Revenues")
+                pool = [x for x in (f.get("revenueOtherByCust") or [])
+                        if _cat_of(x["label"]) == lbl]
+                used = set()
+                for name, bud, keys in spec:
+                    got = 0
+                    for i, x in enumerate(pool):
+                        if i in used or not keys:
+                            continue
+                        hay = (x["customer"] + " " + x["label"]).lower()
+                        if any(k in hay for k in keys):
+                            got += x["amount"]; used.add(i)
+                    add(cat, name, "Budget vs actual", bud, got)
+                rest = sum(x["amount"] for i, x in enumerate(pool) if i not in used)
+                if rest:
+                    add(cat, "Unattributed", "review — no matching line", 0, rest)
+                continue
         add(cat, lbl, "Total", o["budget"], o["amount"])
     return rows
 
