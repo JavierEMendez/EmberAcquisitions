@@ -4636,6 +4636,8 @@ def _gen_bva_actualize_xlsx(blocks: list) -> bytes:
     from openpyxl.utils import get_column_letter
 
     ACCENT = "C56028"; HDR = PatternFill("solid", fgColor="F2EFE8")
+    SUB = PatternFill("solid", fgColor="FAF6EC")
+    CAT = PatternFill("solid", fgColor="F3E0D4")
     thin = Side(style="thin", color="DDDDDD")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
     rightal = Alignment(horizontal="right")
@@ -4650,45 +4652,99 @@ def _gen_bva_actualize_xlsx(blocks: list) -> bytes:
             s = base[:28] + "_%d" % i; i += 1
         used.add(s); return s
 
-    for blk in blocks:
-        months = blk.get("months", [])
-        ws = wb.create_sheet(sheet_name(blk["label"]))
-        ws.cell(1, 1, "%s — Actuals by Category / Project / Subtask / Month" % blk["label"]).font = Font(name="Calibri", bold=True, size=14, color=ACCENT)
-        ws.cell(2, 1, "Sage entity: %s · signed GL actuals by month, COSTS and REVENUE "
-                      "(revenue rows are the 'Revenue · ...' categories: sections, other, "
-                      "MUD bond proceeds) — paste into the pro-forma" % blk["entity"]).font = F(False, "888888", 9)
+    def write_sheet(title, note, months, rows):
+        """One matrix sheet: category -> project (with a project Total row) ->
+        line, columns = months, plus a Total column and a grand total."""
+        ws = wb.create_sheet(sheet_name(title))
+        ws.cell(1, 1, title).font = Font(name="Calibri", bold=True, size=14, color=ACCENT)
+        ws.cell(2, 1, note).font = F(False, "888888", 9)
         r = 4
-        # Category | Project | Task | Subtask | <months…> | Total
         headers = ["Category", "Project", "Task", "Subtask"] + months + ["Total"]
         for ci, h in enumerate(headers, 1):
             c = ws.cell(r, ci, h); c.font = F(True, "1A1A1A", 9); c.fill = HDR; c.border = border
             if ci > 4:
                 c.alignment = rightal
         r += 1
-        base = 5  # first month column
-        for row in sorted(blk.get("rows", []),
-                          key=lambda x: (x.get("category") or "", x.get("project") or "", x.get("subtask") or "")):
-            ws.cell(r, 1, row.get("category", "")).border = border
-            ws.cell(r, 2, row.get("project", "")).border = border
-            ws.cell(r, 3, row.get("task", "")).border = border
-            ws.cell(r, 4, row.get("subtask", "")).border = border
-            tot = 0.0
-            mvals = row.get("months", {})
-            for j, mk in enumerate(months):
-                v = mvals.get(mk, 0.0); tot += v
-                c = ws.cell(r, base + j)
-                if v:
-                    c.value = round(v)
-                c.number_format = "#,##0"; c.border = border
-            tc = ws.cell(r, base + len(months)); tc.value = round(tot)
-            tc.number_format = "#,##0"; tc.border = border; tc.font = F(True)
+        base = 5                      # first month column
+        tcol = base + len(months)     # Total column
+        L = get_column_letter
+        # group category -> project, preserving a stable sorted order
+        groups = {}
+        order = []
+        for row in sorted(rows, key=lambda x: (x.get("category") or "",
+                                               x.get("project") or "",
+                                               x.get("task") or "",
+                                               x.get("subtask") or "")):
+            k = (row.get("category") or "", row.get("project") or "")
+            if k not in groups:
+                groups[k] = []; order.append(k)
+            groups[k].append(row)
+        grand = []
+        for cat, proj in order:
+            first = r
+            for row in groups[(cat, proj)]:
+                ws.cell(r, 1, cat).border = border
+                ws.cell(r, 2, proj).border = border
+                ws.cell(r, 3, row.get("task", "")).border = border
+                ws.cell(r, 4, row.get("subtask", "")).border = border
+                mvals = row.get("months", {})
+                for j, mk in enumerate(months):
+                    v = mvals.get(mk, 0.0)
+                    c = ws.cell(r, base + j)
+                    if v:
+                        c.value = round(v)
+                    c.number_format = "#,##0"; c.border = border
+                tc = ws.cell(r, tcol)
+                tc.value = "=SUM(%s%d:%s%d)" % (L(base), r, L(base + len(months) - 1), r)
+                tc.number_format = "#,##0"; tc.border = border
+                r += 1
+            # per-project total row
+            for ci in range(1, len(headers) + 1):
+                ws.cell(r, ci).fill = SUB; ws.cell(r, ci).border = border
+            ws.cell(r, 2, proj + " — Total").font = F(True)
+            for j in range(len(months) + 1):
+                col = base + j
+                tc = ws.cell(r, col)
+                tc.value = "=SUM(%s%d:%s%d)" % (L(col), first, L(col), r - 1)
+                tc.number_format = "#,##0"; tc.font = F(True); tc.border = border
+            grand.append(r)
             r += 1
-        ws.column_dimensions["A"].width = 20
-        ws.column_dimensions["B"].width = 24
-        ws.column_dimensions["C"].width = 16
-        ws.column_dimensions["D"].width = 20
+        # grand total across the project totals
+        if grand:
+            for ci in range(1, len(headers) + 1):
+                ws.cell(r, ci).fill = CAT; ws.cell(r, ci).border = border
+            ws.cell(r, 1, "GRAND TOTAL").font = F(True, ACCENT)
+            for j in range(len(months) + 1):
+                col = base + j
+                tc = ws.cell(r, col)
+                tc.value = "=" + "+".join("%s%d" % (L(col), g) for g in grand)
+                tc.number_format = "#,##0"; tc.font = F(True, ACCENT); tc.border = border
+        ws.freeze_panes = "E5"
+        ws.column_dimensions["A"].width = 22
+        ws.column_dimensions["B"].width = 26
+        ws.column_dimensions["C"].width = 18
+        ws.column_dimensions["D"].width = 22
         for j in range(len(months) + 1):
-            ws.column_dimensions[get_column_letter(base + j)].width = 11
+            ws.column_dimensions[L(base + j)].width = 11
+
+    for blk in blocks:
+        months = blk.get("months", [])
+        allrows = blk.get("rows", [])
+        is_rev = lambda x: (x.get("category") or "").startswith("Revenue")
+        costs = [x for x in allrows if not is_rev(x)]
+        revs = [x for x in allrows if is_rev(x)]
+        if costs:
+            write_sheet("%s Costs" % blk["label"],
+                        "Sage entity: %s \u00b7 signed GL cost actuals by month. Each project "
+                        "carries a Total row; the Total column sums the months. Paste into the "
+                        "pro-forma, or use as a template and refresh the export each period."
+                        % blk["entity"], months, costs)
+        if revs:
+            write_sheet("%s Revenue" % blk["label"],
+                        "Sage entity: %s \u00b7 signed GL revenue actuals by month \u2014 sections "
+                        "(lot sales, premium, fence, escalation, marketing), other revenue, and "
+                        "MUD bond proceeds. Each project carries a Total row." % blk["entity"],
+                        months, revs)
 
     bio = io.BytesIO(); wb.save(bio)
     return bio.getvalue()
