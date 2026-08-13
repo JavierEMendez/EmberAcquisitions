@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="/static/theme.css?v=3"/>
-<link rel="stylesheet" href="/static/css/partners_cf.css?v=1"/>
+<link rel="stylesheet" href="/static/css/partners_cf.css?v=2"/>
 <script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 <style>
   /* App shell — canonical sidebar chrome (same as /financials). */
@@ -194,12 +194,13 @@
     return String(s ?? '').replace(/[&<>"']/g,
       c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
-  // Same money convention as Budget vs Actuals: whole dollars, em-dash for
-  // empty/zero, "-$" for negatives.
+  // Whole dollars, em-dash for empty/zero, accounting-style parentheses for
+  // negatives — this is a cash-flow ledger, so outflows read as ($1,234).
   function fmt(v) {
     if (v === null || v === undefined || isNaN(v) || Math.round(v) === 0) return '—';
     const n = Math.round(v);
-    return (n < 0 ? '-$' : '$') + Math.abs(n).toLocaleString('en-US');
+    const s = '$' + Math.abs(n).toLocaleString('en-US');
+    return n < 0 ? '(' + s + ')' : s;
   }
   function fmtCutoff(ym) {
     if (!ym) return '';
@@ -258,6 +259,12 @@
       }
     }
     cols.push({key: 'life', label: 'Life', proj: false});
+    // Mark each year's last column so a hairline can separate the years —
+    // the year boundary is otherwise invisible once a year expands to months.
+    cols.forEach((c, i) => {
+      const next = cols[i + 1];
+      c.yend = !!(c.year && next && next.year !== c.year);
+    });
     return cols;
   }
 
@@ -272,45 +279,23 @@
 
   function render() {
     const ctx = state.ctx;
-    const k = ctx.kpis || {};
-    const signCls = (v) => v > 0 ? ' good' : (v < 0 ? ' bad' : '');
-    const partnerTiles = (k.partners || []).map(p => `
-      <div class="pcf-kpi">
-        <div class="pcf-kpi-label">${escapeHtml(p.name)} · Net Position</div>
-        <div class="pcf-kpi-value${signCls(p.net)}">${fmt(p.net)}</div>
-        <div class="pcf-kpi-sub">in ${fmt(p.capital_in)} · back ${fmt(p.dividends)}</div>
-      </div>`).join('');
-    const kpis = `
-      <div class="pcf-kpis">
-        ${partnerTiles}
-        <div class="pcf-kpi">
-          <div class="pcf-kpi-label">Promotes To Date</div>
-          <div class="pcf-kpi-value${signCls(k.promotes_td)}">${fmt(k.promotes_td)}</div>
-          <div class="pcf-kpi-sub">life of plan ${fmt(k.promotes_life)}</div>
-        </div>
-        <div class="pcf-kpi">
-          <div class="pcf-kpi-label">Deployed To Date</div>
-          <div class="pcf-kpi-value">${fmt(k.deployed_td)}</div>
-          <div class="pcf-kpi-sub">pre-dev + co-invest · life ${fmt(k.deployed_life)}</div>
-        </div>
-      </div>`;
-
     const cols = columns();
     const head = `<thead><tr><th class="left">Line Item</th>` + cols.map(c => {
+      const yend = c.yend ? ' yend' : '';
       if (c.key === 'life') return `<th>Life</th>`;
       if (c.month) {
         // Month headers of the expanded year collapse it when clicked.
         const first = c.month.endsWith('-01') || c === cols.find(x => x.year === c.year);
-        return `<th class="pcf-year open ${c.proj ? 'proj' : ''}" data-year="${c.year}"
+        return `<th class="pcf-year open ${c.proj ? 'proj' : ''}${yend}" data-year="${c.year}"
                     title="Collapse to yearly">${first ? '<span class="caret">▾</span>' : ''}${c.label}</th>`;
       }
-      return `<th class="pcf-year ${c.proj ? 'proj' : ''}" data-year="${c.year}"
+      return `<th class="pcf-year ${c.proj ? 'proj' : ''}${yend}" data-year="${c.year}"
                   title="Expand to months">
                 <span class="caret">▸</span>${c.label}</th>`;
     }).join('') + `</tr></thead>`;
 
     const cells = (months, cls) => cols.map(c =>
-      `<td class="${c.proj ? 'proj' : ''}${cls ? ' ' + cls(cellValue(months, c)) : ''}">${fmt(cellValue(months, c))}</td>`).join('');
+      `<td class="${c.proj ? 'proj' : ''}${c.yend ? ' yend' : ''}${cls ? ' ' + cls(cellValue(months, c)) : ''}">${fmt(cellValue(months, c))}</td>`).join('');
 
     let body = '';
     const netMonths = {};
@@ -332,7 +317,7 @@
       else end = c.year + '-12';
       let s = 0;
       for (const [m, v] of Object.entries(netMonths)) if (m <= end) s += v;
-      return `<td class="${c.proj ? 'proj' : ''} ${flowCls(s)}">${fmt(s)}</td>`;
+      return `<td class="${c.proj ? 'proj' : ''}${c.yend ? ' yend' : ''} ${flowCls(s)}">${fmt(s)}</td>`;
     }).join('');
     body += `<tr class="grand cumm"><td class="left">Cumulative</td>${cumCells}</tr>`;
 
@@ -345,7 +330,7 @@
         <span><span class="ddf-lbl">Source</span> <span class="ddf-val">${escapeHtml(ctx.source_filename || '—')}</span></span>
       </div>`;
 
-    $('pcf-content').innerHTML = kpis +
+    $('pcf-content').innerHTML =
       `<div class="pcf-tablewrap"><table class="pcf-table">${head}<tbody>${body}</tbody></table></div>` + foot;
 
     document.querySelectorAll('th.pcf-year').forEach(th =>

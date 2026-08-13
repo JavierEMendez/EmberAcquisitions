@@ -79,44 +79,6 @@
   white-space: nowrap;
 }
 
-/* ── KPI band ──────────────────────────────────────────────── */
-.pcf-kpis {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
-  margin: 18px 0;
-}
-.pcf-kpi {
-  background: var(--eax-surface);
-  border: 1px solid var(--eax-line);
-  border-radius: 10px;
-  padding: 12px 14px;
-}
-.pcf-kpi-label {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--eax-subtle);
-  white-space: nowrap;
-}
-.pcf-kpi-value {
-  font-size: 20px;
-  font-weight: 700;
-  margin-top: 4px;
-  color: var(--eax-ink);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.pcf-kpi-value.good { color: var(--eax-good); }
-.pcf-kpi-value.bad  { color: var(--eax-bad); }
-.pcf-kpi-sub {
-  font-size: 11px;
-  color: var(--eax-muted);
-  margin-top: 3px;
-  font-variant-numeric: tabular-nums;
-}
-
 /* ── Ledger table (BVA-style, year columns + month drill) ──── */
 .pcf-tablewrap {
   background: var(--eax-bg-2);
@@ -182,6 +144,9 @@ th.pcf-year.open { color: var(--eax-accent); }
 .pcf-table tr.grand.cumm td { font-weight: 600; color: var(--eax-muted); }
 .pcf-table td.neg { color: #c0392b; }
 .pcf-table td.pos { color: var(--eax-good, #1F7A4D); }
+/* Faint hairline on each year's last column, so the year boundary stays
+   readable when a year is expanded into twelve month columns. */
+.pcf-table th.yend, .pcf-table td.yend { border-right: 1px solid var(--eax-line-2); }
 
 /* ── Empty state ───────────────────────────────────────────── */
 .pcf-empty {
