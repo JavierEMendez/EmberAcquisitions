@@ -3015,16 +3015,25 @@ _BVA_MUD_ACTUALIZED_YEARS = {"2024", "2025"}
 #   and Consolidated CFs "Other Revenues" $22,448,833 leaves a $1,419,624
 #   residual (developer participation & interest).
 # Each entry: (line, LOP budget, keywords that identify its actuals by customer).
+# Friendswood Development is Lennar's subsidiary, so its payments belong to the
+# Lennar lines; Emptor WRRD is Dennison.
 _BVA_MKTG_LINES = {
-    "GPD": (("Marketing Revenues (Highlands)", 6821500, ("friendswood",)),
-            ("Marketing Revenues (Dennison)", 824750, ("wrrd", "dennison", "emptor"))),
+    "GPD": (("Marketing Revenues (Dennison)", 824750, ("wrrd", "dennison", "emptor")),
+            ("Marketing Revenues (Highlands)", 6821500,
+             ("friendswood", "fdc", "lennar"))),
 }
 _BVA_OTHER_REV_LINES = {
-    "GPD": (("Dennison Impact Fee + Office Sale", 4945000, ("emptor", "wrrd")),
+    # "Dennison Impact Fee + Office Sale" $4,945,000 split on the impact fee the
+    # deal actually carries — $4,240,000, which equals both Dennison's own
+    # impact-fee cost and the recorded GPD actual — leaving $705,000 of office sale.
+    "GPD": (("Dennison Impact Fee", 4240000, ("emptor", "wrrd", "dennison")),
+            ("Office Sale", 705000, ("office",)),
             ("Impact Fee - Lennar | Amenities, Roads, Detention, etc.", 11994709, ()),
-            ("Development Fee Revenues - Lennar", 4089500, ("lennar",)),
+            ("Development Fee Revenues - Lennar", 4089500,
+             ("lennar", "friendswood", "fdc")),
             ("Development Fee Revenues - Pulte", 0, ("pulte",)),
-            ("Developer participation & interest", 1419624, ())),
+            ("Developer participation & interest", 1419624,
+             ("participation", "interest"))),
 }
 # Commercial site sales budget per site (Commercial Site Sales tab, net "Total
 # Revenue"), with the Sage customer whose acreage-sale actual belongs to it.
