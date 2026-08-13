@@ -1,0 +1,386 @@
+{# ============================================================
+   Ember · Partners Cash Flow
+   Partner-level sources & uses from the EMBER Partners CF
+   workbook: contributions/dividends per partner, opex,
+   pre-development, GP co-invest, and promotes — monthly across
+   a 15-year horizon. Annual columns with per-year month
+   drill-down; months after the actuals cutoff render as
+   projections.
+   ============================================================ #}
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Partners Cash Flow · Ember Acquisitions</title>
+<link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="/static/theme.css?v=3"/>
+<link rel="stylesheet" href="/static/css/partners_cf.css?v=1"/>
+<script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
+<style>
+  /* App shell — canonical sidebar chrome (same as /financials). */
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;}
+  body{background:var(--eax-bg);color:var(--eax-ink);font-family:'DM Sans','Plus Jakarta Sans',system-ui,sans-serif;overflow:hidden;}
+  #app{display:flex;height:100vh;overflow:hidden;}
+  #sidebar{width:240px;background:var(--eax-bg-2);border-right:1px solid var(--eax-line);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;}
+  .sidebar-logo{padding:16px 18px 14px;border-bottom:1px solid var(--eax-line)}
+  .logo-img{width:100%;max-width:160px;height:auto;display:block;margin:0 auto}
+  img.logo-light{display:none;}
+  [data-theme="light"] img.logo-dark{display:none;}
+  [data-theme="light"] img.logo-light{display:block;margin:0 auto;}
+  .logo-sub{font-size:10px;color:var(--eax-subtle);letter-spacing:0.2em;text-transform:uppercase;margin-top:8px;text-align:center;font-weight:700}
+  .sidebar-section{padding:8px 16px 4px;font-size:9px;line-height:1.2;color:var(--eax-subtle);letter-spacing:0.22em;text-transform:uppercase;margin-top:8px;font-weight:700}
+  .sidebar-item{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;border-radius:8px;margin:1px 8px;transition:all .15s;color:var(--eax-muted);font-size:13px;line-height:1.2;text-decoration:none;font-weight:500}
+  .sidebar-item:hover{background:var(--eax-accent-soft);color:var(--eax-ink);text-decoration:none}
+  .sidebar-item.active{background:var(--eax-surface);color:var(--eax-ink);font-weight:600;border:1px solid var(--eax-line);position:relative}
+  .sidebar-item.active::before{content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:2px;background:var(--eax-accent);border-radius:2px}
+  .sidebar-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0}
+  .sidebar-item.active .icon{opacity:1;color:var(--eax-accent)}
+  #main-content{flex:1;overflow:hidden;min-width:0;display:flex;}
+  .pcf-page{flex:1;min-width:0;overflow:auto;padding:28px 36px 80px;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  {# ── SIDEBAR ────────────────────────────────────────────────── #}
+  <nav id="sidebar">
+    <div class="sidebar-logo">
+      <img src="/static/img/ember_logo.png"        alt="Ember" class="logo-img logo-dark">
+      <img src="/static/img/ember_logo_light.png"  alt="Ember" class="logo-img logo-light">
+      <div class="logo-sub">Partners CF</div>
+    </div>
+    <div class="sidebar-section">Apps &amp; Dashboards</div>
+    {% if page_access.get('mpc_underwriting', true) %}
+    <a href="/" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+      MPC Underwriting
+    </a>
+    {% endif %}
+    {% if page_access.get('returns', true) %}
+    <a href="/returns" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Project Returns
+    </a>
+    {% endif %}
+    {% if page_access.get('loans', true) %}
+    <a href="/loans" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Loans &amp; Debt
+    </a>
+    {% endif %}
+    {% if is_admin or page_access.get('budget', false) %}
+    <a href="/budget" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 13l3 3 3-5 4 4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Operating Budget
+    </a>
+    {% endif %}
+    {% if page_access.get('operations', true) %}
+    <a href="/operations" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Operating Revenues
+    </a>
+    {% endif %}
+    {% if page_access.get('invoice_dashboard', true) %}
+    <a href="/invoice-dashboard" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 2h6a2 2 0 012 2v16l-3-2-2 2-2-2-2 2-3-2V4a2 2 0 012-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 7h6M9 11h6M9 15h4" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Invoice Dashboard
+    </a>
+    {% endif %}
+    {% if page_access.get('financials', true) %}
+    <a href="/financials" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M9 17V9m4 8V5m4 12v-7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Financial Statements
+    </a>
+    {% endif %}
+    {% if is_admin or page_access.get('unit_economics', false) %}
+    <a href="/unit-economics" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 2l9 5-9 5-9-5 9-5z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 12l9 5 9-5M3 17l9 5 9-5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Unit Economics
+    </a>
+    {% endif %}
+    {% if is_admin or page_access.get('partners_cf', false) %}
+    <a href="/partners-cf" class="sidebar-item active">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M7 10h10m0 0l-3-3m3 3l-3 3M17 17H7m0 0l3-3m-3 3l3 3" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Partners Cash Flow
+    </a>
+    {% endif %}
+    {% if page_access.get('macro', true) %}
+    <a href="/macro" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="1.5"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Macro Dashboard
+    </a>
+    {% endif %}
+    {% if page_access.get('portfolio', true) %}
+    <a href="/ember-capital" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 3.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Ember Capital
+    </a>
+    {% endif %}
+    {% if page_access.get('sales', true) %}
+    <a href="/sales" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l3-3 4 4 5-6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Community Sales
+    </a>
+    {% endif %}
+    {% if page_access.get('verticals', true) %}
+    <a href="/verticals" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      Vertical Dashboard
+    </a>
+    {% endif %}
+    {% if is_admin or page_access.get('bva', false) %}
+    <a href="/bva" class="sidebar-item"><svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="7" y="10" width="3" height="7" rx="0.5"/><rect x="12" y="6" width="3" height="11" rx="0.5"/><rect x="17" y="13" width="3" height="4" rx="0.5"/></svg>Budget vs Actuals</a>
+    {% endif %}
+    <div style="flex:1"></div>
+    {% include "_partials/_sidebar_foot.html" %}
+  </nav>
+
+  <div id="main-content">
+    <div class="pcf-page">
+      {# ── Header ──────────────────────────────────────────── #}
+      <div class="pcf-eyebrow">FINANCE &middot; PARTNER LEDGER</div>
+      <h1 class="pcf-title">Partners Cash Flow</h1>
+      <p class="pcf-sub">
+        Partner-level sources &amp; uses from the <b>EMBER Partners CF</b> workbook —
+        contributions and dividends per partner, opex, pre-development, GP co-invest,
+        and promotes. Click a year header to expand its months; columns after the
+        actuals cutoff render as projections.
+      </p>
+
+      {# ── Controls ────────────────────────────────────────── #}
+      <div class="pcf-controls">
+        <span class="pcf-cutoff-chip" id="pcf-cutoff" style="display:none;"></span>
+        <span style="flex:1"></span>
+        {% if is_admin %}
+        <button id="pcf-upload-btn" class="pcf-btn primary">
+          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3M12 4v12m0-12l-4 4m4-4l4 4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Upload Workbook
+        </button>
+        <input type="file" id="pcf-file" accept=".xlsx,.xlsm" style="display:none;">
+        {% endif %}
+      </div>
+      <div id="pcf-status" class="pcf-status"></div>
+
+      {# ── Content ─────────────────────────────────────────── #}
+      <div id="pcf-content">
+        <div class="pcf-empty">
+          <span class="ember-loader ember-loader--lg">
+            <svg class="loader-wave" viewBox="0 0 56 28"><rect x="1" y="10" width="4" height="8" rx="1"/><rect x="7" y="8" width="4" height="12" rx="1"/><rect x="13" y="5" width="4" height="18" rx="1"/><rect x="19" y="2" width="4" height="24" rx="1"/><rect x="25" y="5" width="4" height="18" rx="1"/><rect x="31" y="8" width="4" height="12" rx="1"/><rect x="37" y="10" width="4" height="8" rx="1"/><rect x="43" y="12" width="4" height="4" rx="1"/><rect x="49" y="13" width="4" height="2" rx="1"/></svg>
+            <span class="ember-loader__label">LOADING</span>
+          </span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% include "_partials/_account_modal.html" %}
+
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const IS_ADMIN = {{ 'true' if is_admin else 'false' }};
+
+  const state = { ctx: null, expandedYear: null };
+
+  const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g,
+      c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  // Same money convention as Budget vs Actuals: whole dollars, em-dash for
+  // empty/zero, "-$" for negatives.
+  function fmt(v) {
+    if (v === null || v === undefined || isNaN(v) || Math.round(v) === 0) return '—';
+    const n = Math.round(v);
+    return (n < 0 ? '-$' : '$') + Math.abs(n).toLocaleString('en-US');
+  }
+  function fmtCutoff(ym) {
+    if (!ym) return '';
+    const [y, m] = ym.split('-').map(Number);
+    return MONTH_SHORT[m - 1] + ' ' + y;
+  }
+  function setStatus(msg, cls) {
+    const el = $('pcf-status');
+    el.textContent = msg || '';
+    el.className = 'pcf-status' + (cls ? ' ' + cls : '');
+  }
+
+  async function loadData() {
+    const res = await fetch('/api/partners-cf/data');
+    if (!res.ok) {
+      $('pcf-content').innerHTML =
+        '<div class="pcf-empty"><div class="pcf-empty-title">Could not load data</div></div>';
+      return;
+    }
+    const d = await res.json();
+    if (!d.has_data) {
+      $('pcf-content').innerHTML =
+        `<div class="pcf-empty">
+           <div class="pcf-empty-title">No Partners CF workbook uploaded yet</div>
+           <div class="pcf-empty-body">${IS_ADMIN
+             ? 'Upload the <b>EMBER Partners CF</b> .xlsx with the button above. The actuals cutoff is read from the date in the filename.'
+             : 'An admin needs to upload the EMBER Partners CF workbook.'}</div>
+         </div>`;
+      return;
+    }
+    state.ctx = d;
+    if (d.actuals_through) {
+      $('pcf-cutoff').textContent = 'Actuals through ' + fmtCutoff(d.actuals_through);
+      $('pcf-cutoff').style.display = '';
+    }
+    render();
+  }
+
+  // ── column model: years, one of which may be expanded to months ──
+  function columns() {
+    const ctx = state.ctx;
+    const years = [...new Set(ctx.months.map(m => m.slice(0, 4)))].sort();
+    const cols = [];
+    for (const y of years) {
+      if (state.expandedYear === y) {
+        for (let i = 1; i <= 12; i++) {
+          const ym = `${y}-${String(i).padStart(2, '0')}`;
+          if (ctx.months.includes(ym)) {
+            cols.push({key: ym, label: MONTH_SHORT[i - 1] + " '" + y.slice(2),
+                       year: y, month: ym, proj: ctx.actuals_through && ym > ctx.actuals_through});
+          }
+        }
+      } else {
+        cols.push({key: y, label: y, year: y,
+                   proj: ctx.actuals_through && y > ctx.actuals_through.slice(0, 4)});
+      }
+    }
+    cols.push({key: 'life', label: 'Life', proj: false});
+    return cols;
+  }
+
+  function cellValue(months, col) {
+    if (!months) return 0;
+    if (col.key === 'life') return Object.values(months).reduce((a, b) => a + b, 0);
+    if (col.month) return months[col.month] || 0;
+    let s = 0;
+    for (const [m, v] of Object.entries(months)) if (m.slice(0, 4) === col.year) s += v;
+    return s;
+  }
+
+  function render() {
+    const ctx = state.ctx;
+    const k = ctx.kpis || {};
+    const signCls = (v) => v > 0 ? ' good' : (v < 0 ? ' bad' : '');
+    const partnerTiles = (k.partners || []).map(p => `
+      <div class="pcf-kpi">
+        <div class="pcf-kpi-label">${escapeHtml(p.name)} · Net Position</div>
+        <div class="pcf-kpi-value${signCls(p.net)}">${fmt(p.net)}</div>
+        <div class="pcf-kpi-sub">in ${fmt(p.capital_in)} · back ${fmt(p.dividends)}</div>
+      </div>`).join('');
+    const kpis = `
+      <div class="pcf-kpis">
+        ${partnerTiles}
+        <div class="pcf-kpi">
+          <div class="pcf-kpi-label">Promotes To Date</div>
+          <div class="pcf-kpi-value${signCls(k.promotes_td)}">${fmt(k.promotes_td)}</div>
+          <div class="pcf-kpi-sub">life of plan ${fmt(k.promotes_life)}</div>
+        </div>
+        <div class="pcf-kpi">
+          <div class="pcf-kpi-label">Deployed To Date</div>
+          <div class="pcf-kpi-value">${fmt(k.deployed_td)}</div>
+          <div class="pcf-kpi-sub">pre-dev + co-invest · life ${fmt(k.deployed_life)}</div>
+        </div>
+      </div>`;
+
+    const cols = columns();
+    const head = `<thead><tr><th class="left">Line Item</th>` + cols.map(c => {
+      if (c.key === 'life') return `<th>Life</th>`;
+      if (c.month) {
+        // Month headers of the expanded year collapse it when clicked.
+        const first = c.month.endsWith('-01') || c === cols.find(x => x.year === c.year);
+        return `<th class="pcf-year open ${c.proj ? 'proj' : ''}" data-year="${c.year}"
+                    title="Collapse to yearly">${first ? '<span class="caret">▾</span>' : ''}${c.label}</th>`;
+      }
+      return `<th class="pcf-year ${c.proj ? 'proj' : ''}" data-year="${c.year}"
+                  title="Expand to months">
+                <span class="caret">▸</span>${c.label}</th>`;
+    }).join('') + `</tr></thead>`;
+
+    const cells = (months, cls) => cols.map(c =>
+      `<td class="${c.proj ? 'proj' : ''}${cls ? ' ' + cls(cellValue(months, c)) : ''}">${fmt(cellValue(months, c))}</td>`).join('');
+
+    let body = '';
+    const netMonths = {};
+    for (const cat of ctx.categories) {
+      body += `<tr class="band"><td class="left">${escapeHtml(cat.name)}</td>${cells(cat.total)}</tr>`;
+      for (const it of cat.items) {
+        body += `<tr class="item"><td class="left">${escapeHtml(it.name)}</td>${cells(it.months)}</tr>`;
+      }
+      for (const [m, v] of Object.entries(cat.total || {})) netMonths[m] = (netMonths[m] || 0) + v;
+    }
+    const flowCls = (v) => Math.round(v) > 0 ? 'pos' : (Math.round(v) < 0 ? 'neg' : '');
+    body += `<tr class="grand"><td class="left">Net Cash Flow</td>${cells(netMonths, flowCls)}</tr>`;
+    // Cumulative through the END of each displayed column.
+    const sortedMonths = [...state.ctx.months];
+    const cumCells = cols.map(c => {
+      let end;
+      if (c.key === 'life') end = sortedMonths[sortedMonths.length - 1];
+      else if (c.month) end = c.month;
+      else end = c.year + '-12';
+      let s = 0;
+      for (const [m, v] of Object.entries(netMonths)) if (m <= end) s += v;
+      return `<td class="${c.proj ? 'proj' : ''} ${flowCls(s)}">${fmt(s)}</td>`;
+    }).join('');
+    body += `<tr class="grand cumm"><td class="left">Cumulative</td>${cumCells}</tr>`;
+
+    const foot = `
+      <div class="pcf-data-dates">
+        <span><span class="ddf-lbl">Actuals Through</span> <span class="ddf-val">${fmtCutoff(ctx.actuals_through) || '—'}</span></span>
+        <span class="ddf-sep">|</span>
+        <span><span class="ddf-lbl">Uploaded</span> <span class="ddf-val">${(ctx.uploaded_at || '').slice(0, 10) || '—'}</span></span>
+        <span class="ddf-sep">|</span>
+        <span><span class="ddf-lbl">Source</span> <span class="ddf-val">${escapeHtml(ctx.source_filename || '—')}</span></span>
+      </div>`;
+
+    $('pcf-content').innerHTML = kpis +
+      `<div class="pcf-tablewrap"><table class="pcf-table">${head}<tbody>${body}</tbody></table></div>` + foot;
+
+    document.querySelectorAll('th.pcf-year').forEach(th =>
+      th.addEventListener('click', () => {
+        state.expandedYear = state.expandedYear === th.dataset.year ? null : th.dataset.year;
+        render();
+      }));
+  }
+
+  // ── upload (admin) ─────────────────────────────────────────
+  const upBtn = $('pcf-upload-btn');
+  if (upBtn) {
+    upBtn.addEventListener('click', () => $('pcf-file').click());
+    $('pcf-file').addEventListener('change', async (e) => {
+      const f = e.target.files[0];
+      e.target.value = '';
+      if (!f) return;
+      setStatus('Uploading & parsing ' + f.name + '…');
+      const fd = new FormData();
+      fd.append('file', f);
+      try {
+        const res = await fetch('/api/partners-cf/upload', {method: 'POST', body: fd});
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error || 'Upload failed');
+        setStatus(`Saved: ${d.categories.length} categories · ${d.months} months · ` +
+                  `actuals through ${fmtCutoff(d.actuals_through)}`, 'ok');
+        await loadData();
+      } catch (err) {
+        setStatus(err.message || 'Upload failed', 'err');
+      }
+    });
+  }
+
+  loadData();
+})();
+</script>
+</body>
+</html>
