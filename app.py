@@ -2915,6 +2915,14 @@ _BVA_REV_BUDGET_ESC = {
             27: 254211, 28: 280482, 29: 354157, 30: 89504, 31: 173802,
             32: 212494, 33: 211749},
 }
+# Total lots per section (Lot Sales "Total Lots") — used to label each section
+# sold out / selling / future and to show closed-vs-total lots.
+_BVA_REV_LOTS = {
+    "GPD": {1: 15, 2: 159, 3: 132, 4: 97, 5: 78, 6: 41, 7: 85, 8: 47, 13: 90,
+            14: 61, 15: 77, 16: 20, 17: 123, 18: 78, 19: 22, 20: 120, 21: 40,
+            22: 61, 23: 120, 24: 98, 25: 90, 26: 150, 27: 90, 28: 128, 29: 126,
+            30: 22, 31: 45, 32: 97, 33: 57},
+}
 # Marketing fee revenue per section (Lot Sales "MKT Revenue"), $8,814,450 of the
 # model's $16,460,700 — the rest isn't section-tagged and sits on the entity line.
 _BVA_REV_BUDGET_MKT = {
@@ -3118,6 +3126,13 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
                 s = d["sec"].setdefault(sec, {"lotSales": 0.0, "premium": 0.0,
                                               "escalation": 0.0, "marketing": 0.0, "fence": 0.0})
                 s[grp] += rev
+                # Count closed lots by their lot ID so a section can be labelled
+                # sold out / still selling (bulk entries carry no lot ID).
+                if grp == "lotSales":
+                    lm = _BVA_LOT_SEC_RE.search(g(r, c_projn))
+                    if lm:
+                        d.setdefault("lots", {}).setdefault(sec, set()).add(
+                            lm.group(0).upper())
             else:
                 d["other"][cur_name] = d["other"].get(cur_name, 0.0) + rev
                 cust = g(r, c_cust) or "(no customer)"
@@ -3163,7 +3178,8 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
                           "lotSales": round(s["lotSales"]), "premium": round(s["premium"]),
                           "escalation": round(s["escalation"]), "marketing": round(s["marketing"]),
                           "fence": round(s["fence"]), "total": round(tot),
-                          "budget": round(bud), "delta": round(bud) - round(tot)})
+                          "lotsClosed": len(d.get("lots", {}).get(sec, ())),
+                          "budget": round(bud), "delta": round(tot) - round(bud)})
         # Entity-level lines: fold actuals into their pro-forma budget category
         # (acreage -> Commercial Site Sales, participation -> Utility Income);
         # fee lines with no model budget fall back to budget = actual.
@@ -3265,6 +3281,7 @@ def _bva_finance_apply_budget(ent: str, fin: dict) -> dict:
                + (resc.get(n) or esc) + (rmkt.get(n) or mkt))
         s.update({"section": "Section %d" % n, "lotSales": lot, "premium": prem,
                   "fence": fen, "escalation": esc, "marketing": mkt,
+                  "lotsClosed": s.get("lotsClosed") or 0,
                   "total": tot, "budget": bud, "delta": tot - bud})
         out_sec.append(s)
     f["revenueBySection"] = out_sec
@@ -3328,15 +3345,29 @@ def _bva_revenue_rows(ent: str, f: dict, out_sec: list, other: list) -> list:
     rprem = _BVA_REV_BUDGET_PREMIUM.get(ent, {})
     resc = _BVA_REV_BUDGET_ESC.get(ent, {})
     rmkt = _BVA_REV_BUDGET_MKT.get(ent, {})
+    rlots = _BVA_REV_LOTS.get(ent, {})
     for s in out_sec:
         m = re.search(r"(\d+)", s.get("section", ""))
         n = int(m.group(1)) if m else 0
+        lot_bud = rb.get(n) or s["lotSales"]
+        total_lots = rlots.get(n, 0)
+        closed = s.get("lotsClosed") or 0
+        # Sold out / still selling / future, from lot revenue against its budget
+        # (dollars, not the lot-ID count — bulk closings carry no lot ID).
+        if not s["lotSales"]:
+            cat, note = "Sections · Future", ("%d lots" % total_lots if total_lots else "")
+        elif lot_bud and s["lotSales"] >= lot_bud - 1:
+            cat, note = "Sections · Sold out", ("%d lots" % total_lots if total_lots else "")
+        else:
+            cat = "Sections · Selling"
+            note = ("%d of %d lots closed" % (closed, total_lots) if total_lots
+                    else "%d lots closed" % closed)
         p = s["section"]
-        add("Sections", p, "Lot Sales", rb.get(n) or s["lotSales"], s["lotSales"])
-        add("Sections", p, "Lot Premium", rprem.get(n) or s["premium"], s["premium"])
-        add("Sections", p, "Fence Fees", rfence.get(n) or s["fence"], s["fence"])
-        add("Sections", p, "Escalation", resc.get(n) or s["escalation"], s["escalation"])
-        add("Sections", p, "Marketing", rmkt.get(n) or s["marketing"], s["marketing"])
+        add(cat, p, "Lot Sales", lot_bud, s["lotSales"], note)
+        add(cat, p, "Lot Premium", rprem.get(n) or s["premium"], s["premium"])
+        add(cat, p, "Fence Fees", rfence.get(n) or s["fence"], s["fence"])
+        add(cat, p, "Escalation", resc.get(n) or s["escalation"], s["escalation"])
+        add(cat, p, "Marketing", rmkt.get(n) or s["marketing"], s["marketing"])
     # ── Commercial sites: per-site budget, actual matched by Sage customer ──
     cust_act = {(a.get("customer") or "").strip().lower():
                 ((a.get("customer") or "").strip(), round(a.get("amount") or 0))
@@ -3367,7 +3398,7 @@ def _bva_revenue_rows(ent: str, f: dict, out_sec: list, other: list) -> list:
     _UNALLOC = ("lot premium", "fence credit", "lot sales")
     for o in list(other):
         if any(k in o["label"].lower() for k in _UNALLOC):
-            add("Sections", "Unallocated (no section tag)", o["label"], 0, o["amount"])
+            add("Sections · Unallocated", "No section tag", o["label"], 0, o["amount"])
             other.remove(o)
     for o in other:
         lbl = o["label"]
