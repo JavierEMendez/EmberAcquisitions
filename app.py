@@ -3386,17 +3386,28 @@ def _bva_revenue_rows(ent: str, f: dict, out_sec: list, other: list) -> list:
         lot_bud = rb.get(n) or s["lotSales"]
         total_lots = rlots.get(n, 0)
         closed = s.get("lotsClosed") or 0
+        # Lots closed: the exact distinct lot-ID count when the GL parse captured
+        # it, otherwise implied from dollars (actual ÷ average lot price) so the
+        # count still shows on records saved before lot IDs were tracked. Bulk
+        # closings carry no lot ID, so the exact count can understate too — take
+        # whichever is larger and mark an estimate with ~.
+        implied = 0
+        if lot_bud and total_lots:
+            implied = int(round(s["lotSales"] / (lot_bud / float(total_lots))))
+        shown, approx = closed, False
+        if implied > closed:
+            shown, approx = implied, True
         # Status TAG per section (like the cost side's Complete / In Progress /
         # Future), derived from lot revenue vs its budget — dollars, not the
-        # lot-ID count, since bulk closings carry no lot ID.
+        # lot count, since bulk closings carry no lot ID.
         if not s["lotSales"]:
             st, note = "future", ("%d lots" % total_lots if total_lots else "")
         elif lot_bud and s["lotSales"] >= lot_bud - 1:
             st, note = "sold_out", ("%d lots" % total_lots if total_lots else "")
         else:
             st = "selling"
-            note = ("%d of %d lots closed" % (closed, total_lots) if total_lots
-                    else "%d lots closed" % closed)
+            note = ("%s%d of %d lots closed" % ("~" if approx else "", shown, total_lots)
+                    if total_lots else "%d lots closed" % shown)
         p = s["section"]
         add("Sections", p, "Lot Sales", lot_bud, s["lotSales"], note, st)
         add("Sections", p, "Lot Premium", rprem.get(n) or s["premium"], s["premium"], "", st)
@@ -4368,6 +4379,52 @@ def _bva_save_status(status: dict) -> None:
     conn.commit(); cur.close(); conn.close()
 
 
+# Revenue-side section tags. Derived automatically from lot revenue, but the user
+# can override any section — the override wins and persists.
+_BVA_REV_STATUSES = ("sold_out", "selling", "future")
+
+
+def _bva_load_rev_status() -> dict:
+    """{entity_label: {section_name: status}} overrides for the revenue view."""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT data FROM reports WHERE report_type = 'bva_rev_status' "
+                "ORDER BY uploaded_at DESC LIMIT 1")
+    row = cur.fetchone(); cur.close(); conn.close()
+    return ((row["data"] if row else {}) or {}).get("status", {}) or {}
+
+
+def _bva_save_rev_status(status: dict) -> None:
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM reports WHERE report_type = 'bva_rev_status'")
+    cur.execute("INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+                ("bva_rev_status", json.dumps({"status": status}), session.get("user_id")))
+    conn.commit(); cur.close(); conn.close()
+
+
+@app.route("/api/bva/rev-status", methods=["POST"])
+@login_required
+def api_bva_rev_status():
+    """Override a revenue section's tag (sold_out / selling / future), or clear
+    it with an empty status to fall back to the derived value."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "forbidden"}), 403
+    data = request.get_json(force=True, silent=True) or {}
+    ent = data.get("entity"); proj = (data.get("project") or "").strip()
+    st = (data.get("status") or "").strip().lower()
+    valid = {lbl for lbl, _e in _BVA_ENTITIES}
+    if ent not in valid or not proj or (st and st not in _BVA_REV_STATUSES):
+        return jsonify({"error": "bad request"}), 400
+    status = _bva_load_rev_status()
+    ent_map = dict(status.get(ent, {}) or {})
+    if st:
+        ent_map[proj] = st
+    else:
+        ent_map.pop(proj, None)
+    status[ent] = ent_map
+    _bva_save_rev_status(status)
+    return jsonify({"ok": True, "project": proj, "status": st})
+
+
 @app.route("/api/bva/data", methods=["GET"])
 @login_required
 def api_bva_data():
@@ -4378,6 +4435,7 @@ def api_bva_data():
     return jsonify({"configured": True, "has_gl": has_gl,
                     "has_commitments": has_com, "blocks": blocks,
                     "flags": _bva_load_flags(), "status": _bva_load_status(),
+                    "rev_status": _bva_load_rev_status(),
                     "finance": {e: _bva_finance_apply_budget(e, fv)
                                 for e, fv in _bva_load_finance().items()},
                     "is_admin": bool(session.get("is_admin"))})

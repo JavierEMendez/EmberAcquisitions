@@ -223,6 +223,19 @@
   let FLAGS = {}, IS_ADMIN = false, flaggedOnly = false, openCats = new Set();
   let STATUS = {}, statusFilter = "";   // "" = all; else complete/in_progress/future
   let FINANCE = {}, viewMode = "bva";   // bva | finance
+  let REV_STATUS_OVERRIDE = {};        // {entity: {section: status}} — user set
+  const revStatusOf = (proj, derived) =>
+    (REV_STATUS_OVERRIDE[activeLabel()] || {})[proj] || derived || "";
+  async function setRevStatus(proj, st) {
+    const ent = activeLabel();
+    const mp = { ...(REV_STATUS_OVERRIDE[ent] || {}) };
+    if (st) mp[proj] = st; else delete mp[proj];
+    REV_STATUS_OVERRIDE[ent] = mp;
+    renderBody();
+    try { await fetch("/api/bva/rev-status", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entity: ent, project: proj, status: st }) }); } catch (e) {}
+  }
   const STATUS_META = {
     complete:    { icon: "✅", label: "Complete" },
     in_progress: { icon: "🔨", label: "In Progress" },
@@ -310,12 +323,23 @@
             + `<td class="left muted">${r.note || ""}</td><td></td>${vcells(r.budget, r.actual)}</tr>`;
         }).join("");
         cB += pB; cA += pA;
-        // Status tag on the project row — same badges as the cost view.
-        const st = (pr.find(r => r.status) || {}).status || "";
+        // Status tag on the project row — derived, but an admin can override it
+        // (their choice wins and persists; "auto" clears back to derived).
+        const derived = (pr.find(r => r.status) || {}).status || "";
+        const st = derived ? revStatusOf(proj, derived) : "";
         const meta = REV_STATUS[st];
-        const badge = meta ? `<span class="status-badge s-${meta.cls}">${meta.icon} ${meta.label}</span>` : "";
+        let tag = "";
+        if (derived && IS_ADMIN) {
+          tag = `<select class="status-sel s-${meta ? meta.cls : ""}" data-revproj="${encodeURIComponent(proj)}">`
+            + `<option value="">- auto -</option>`
+            + Object.keys(REV_STATUS).map(k =>
+                `<option value="${k}" ${st === k ? "selected" : ""}>${REV_STATUS[k].icon} ${REV_STATUS[k].label}</option>`).join("")
+            + `</select>`;
+        } else if (meta) {
+          tag = `<span class="status-badge s-${meta.cls}">${meta.icon} ${meta.label}</span>`;
+        }
         projHtml += `<tr class="proj-head det det-${ci} ${meta ? "s-" + meta.cls : ""}" ${hid}>`
-          + `<td class="left" colspan="3">${proj}${badge}</td>${vcells(pB, pA)}</tr>${inner}`;
+          + `<td class="left" colspan="3">${proj}${tag}</td>${vcells(pB, pA)}</tr>${inner}`;
       });
       tB += cB; tA += cA;
       rowsHtml += `<tr class="cat-head ${open ? "open" : ""}" data-cat="${ci}" data-catname="${encodeURIComponent(cat)}">`
@@ -348,6 +372,13 @@
         open ? openCats.add(cat) : openCats.delete(cat);
         h.querySelector(".caret").textContent = open ? "▾" : "▸";
         host.querySelectorAll(".det-" + ci).forEach(d => { d.hidden = !open; });
+      });
+    });
+    host.querySelectorAll("[data-revproj]").forEach(sel => {
+      sel.addEventListener("click", (e) => e.stopPropagation());
+      sel.addEventListener("change", (e) => {
+        e.stopPropagation();
+        setRevStatus(decodeURIComponent(sel.dataset.revproj), sel.value);
       });
     });
   }
@@ -521,6 +552,7 @@
       if (!d.has_gl) { $("#bva-body").innerHTML = `<div class="empty">No GL report loaded yet. Click <b>Upload GL Report</b> to load actuals &amp; commitments from Sage.</div>`; $("#proj-tabs").innerHTML = ""; return; }
       BLOCKS = d.blocks || [];
       FLAGS = d.flags || {}; STATUS = d.status || {}; FINANCE = d.finance || {}; IS_ADMIN = !!d.is_admin;
+      REV_STATUS_OVERRIDE = d.rev_status || {};
       renderTabs(); renderBody();
     } catch (e) {
       $("#bva-body").innerHTML = `<div class="empty">Failed to load: ${e}</div>`;
@@ -532,7 +564,6 @@
     btn.addEventListener("click", () => {
       viewMode = btn.dataset.view;
       document.querySelectorAll("#view-tabs .seg-btn").forEach(b => b.classList.toggle("active", b === btn));
-      const sb = $("#bva-search"); if (sb) sb.style.display = (viewMode === "finance") ? "none" : "";
       renderBody();
     }));
 
