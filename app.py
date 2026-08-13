@@ -2918,6 +2918,16 @@ _BVA_REV_BUDGET_ESC = {
             27: 254211, 28: 280482, 29: 354157, 30: 89504, 31: 173802,
             32: 212494, 33: 211749},
 }
+# Per-section footnotes for anything the numbers alone don't explain.
+_BVA_SECTION_NOTE = {
+    "GPD": {
+        # Sitterle sold 15 lots back to GPD (booked against lot sales, 02/2026)
+        # and Weekley bought the position (05/2025), so the actual here is net of
+        # the buyback and includes the re-sale.
+        5: "incl. Sitterle buyback of 15 lots (-$1,608,000) and the Weekley "
+           "re-sale (+$1,710,000) — actual is net of both",
+    },
+}
 # Total lots per section (Lot Sales "Total Lots") — used to label each section
 # sold out / selling / future and to show closed-vs-total lots.
 _BVA_REV_LOTS = {
@@ -3444,6 +3454,9 @@ def _bva_revenue_rows(ent: str, f: dict, out_sec: list, other: list) -> list:
             note = ("%s%d of %d lots closed" % ("~" if approx else "", shown, total_lots)
                     if total_lots else "%d lots closed" % shown)
         p = s["section"]
+        extra = _BVA_SECTION_NOTE.get(ent, {}).get(n, "")
+        if extra:
+            note = (note + " · " + extra) if note else extra
         add("Sections", p, "Lot Sales", lot_bud, s["lotSales"], note, st)
         add("Sections", p, "Lot Premium", rprem.get(n) or s["premium"], s["premium"], "", st)
         add("Sections", p, "Fence Fees", rfence.get(n) or s["fence"], s["fence"], "", st)
