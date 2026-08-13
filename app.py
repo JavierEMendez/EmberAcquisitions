@@ -3034,23 +3034,27 @@ _BVA_MUD_ACTUALIZED_YEARS = {"2024", "2025"}
 # Each entry: (line, LOP budget, keywords that identify its actuals by customer).
 # Friendswood Development is Lennar's subsidiary, so its payments belong to the
 # Lennar lines; Emptor WRRD is Dennison.
+# Marketing lines live in the same bucket as the rest of Other Revenue, listed
+# first so the WRRD/Friendswood marketing payments match here before the
+# development-fee lines claim them.
 _BVA_MKTG_LINES = {
-    "GPD": (("Marketing Revenues (Dennison)", 824750, ("wrrd", "dennison", "emptor")),
+    "GPD": (("Marketing Revenues (Dennison)", 824750,
+             ("wrrd", "dennison", "emptor"), ("marketing",)),
             ("Marketing Revenues (Highlands)", 6821500,
-             ("friendswood", "fdc", "lennar"))),
+             ("friendswood", "fdc", "lennar"), ("marketing",))),
 }
 _BVA_OTHER_REV_LINES = {
     # "Dennison Impact Fee + Office Sale" $4,945,000 split on the impact fee the
     # deal actually carries — $4,240,000, which equals both Dennison's own
     # impact-fee cost and the recorded GPD actual — leaving $705,000 of office sale.
-    "GPD": (("Dennison Impact Fee", 4240000, ("emptor", "wrrd", "dennison")),
-            ("Office Sale", 705000, ("office",)),
-            ("Impact Fee - Lennar | Amenities, Roads, Detention, etc.", 11994709, ()),
+    "GPD": (("Dennison Impact Fee", 4240000,
+             ("emptor", "wrrd", "dennison"), ("developer fee",)),
+            ("Office Sale", 705000, ("office",), ()),
+            ("Impact Fee - Lennar | Amenities, Roads, Detention, etc.", 11994709, (), ()),
             ("Development Fee Revenues - Lennar", 4089500,
-             ("lennar", "friendswood", "fdc")),
-            ("Development Fee Revenues - Pulte", 0, ("pulte",)),
-            ("Developer participation & interest", 1419624,
-             ("participation", "interest"))),
+             ("lennar", "friendswood", "fdc"), ("development management",)),
+            ("Development Fee Revenues - Pulte", 0, ("pulte",), ()),
+            ("Developer interest & unbudgeted other", 1419624, (), ())),
 }
 # Commercial site sales budget per site (Commercial Site Sales tab, net "Total
 # Revenue"), with the Sage customer whose acreage-sale actual belongs to it.
@@ -3489,10 +3493,11 @@ def _bva_revenue_rows(ent: str, f: dict, out_sec: list, other: list) -> list:
         "MUD + WCID Bond Revenues": "MUD + WCID Bonds",
         "DC + Resi Pod Sales": "Data Center + Resi Pods",
         "Utility Income": "Utility Income",
-        "Marketing Fees": "Marketing Fees",
+        "Marketing Fees": "Other Revenue",
         "Escalation Revenues": "Escalation",
     }
     mud_years = f.get("mudBudgetYears") or []
+    done_other = False        # marketing + other revenue are emitted together
     # Lot premium / fence / lot-sale actuals with no section tag. Their budget
     # already sits per-section, so show them as unallocated section revenue with
     # no budget of their own instead of a bogus budget = actual line.
@@ -3530,30 +3535,41 @@ def _bva_revenue_rows(ent: str, f: dict, out_sec: list, other: list) -> list:
                     bud = act if done else yb.get(key, 0)
                     add(cat, y, dist + (" · issued" if done else ""), bud, act)
             continue
-        # Split the two lumps into the pro-forma's own named lines, attributing
-        # actuals by the paying customer.
+        # Marketing fees and Other Revenues are one bucket, broken into the
+        # pro-forma's own named lines with actuals attributed by paying customer.
+        # Handled together on whichever label comes first; the other is skipped.
         if lbl in ("Marketing Fees", "Other Revenues"):
-            spec = (_BVA_MKTG_LINES if lbl == "Marketing Fees"
-                    else _BVA_OTHER_REV_LINES).get(ent)
+            if done_other:
+                continue
+            spec = (tuple(_BVA_MKTG_LINES.get(ent) or ())
+                    + tuple(_BVA_OTHER_REV_LINES.get(ent) or ()))
             if spec:
-                def _cat_of(lab):
-                    return next((c for kw, c in _BVA_REV_ENTITY_MAP
-                                 if kw in lab.lower()), "Other Revenues")
+                done_other = True
                 pool = [x for x in (f.get("revenueOtherByCust") or [])
-                        if _cat_of(x["label"]) == lbl]
+                        if next((c for kw, c in _BVA_REV_ENTITY_MAP
+                                 if kw in x["label"].lower()), "Other Revenues")
+                        in ("Marketing Fees", "Other Revenues")]
                 used = set()
-                for name, bud, keys in spec:
+                rowspec = []
+                for name, bud, ckeys, lkeys in spec:
                     got = 0
                     for i, x in enumerate(pool):
-                        if i in used or not keys:
+                        if i in used or not (ckeys or lkeys):
                             continue
-                        hay = (x["customer"] + " " + x["label"]).lower()
-                        if any(k in hay for k in keys):
-                            got += x["amount"]; used.add(i)
-                    add(cat, name, "Budget vs actual", bud, got)
+                        cust = x["customer"].lower(); lab = x["label"].lower()
+                        if ckeys and not any(k in cust or k in lab for k in ckeys):
+                            continue
+                        if lkeys and not any(k in lab for k in lkeys):
+                            continue
+                        got += x["amount"]; used.add(i)
+                    rowspec.append([name, bud, got])
+                # whatever matched no line joins the residual line, so every
+                # dollar sits under a budgeted heading
                 rest = sum(x["amount"] for i, x in enumerate(pool) if i not in used)
-                if rest:
-                    add(cat, "Unattributed", "review — no matching line", 0, rest)
+                if rest and rowspec:
+                    rowspec[-1][2] += rest
+                for name, bud, got in rowspec:
+                    add("Other Revenue", name, "Budget vs actual", bud, got)
                 continue
         add(cat, lbl, "Total", o["budget"], o["amount"])
     return rows
