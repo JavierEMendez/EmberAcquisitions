@@ -3336,6 +3336,12 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
     return out
 
 
+def _sold_out(n, lot_actual, lot_budget_map):
+    """A section is sold out once its lot revenue has reached its lot budget."""
+    b = lot_budget_map.get(n)
+    return bool(b) and lot_actual >= b - 1
+
+
 def _bva_finance_apply_budget(ent: str, fin: dict) -> dict:
     """Re-apply the pro-forma revenue budgets to a STORED finance record.
 
@@ -3366,7 +3372,13 @@ def _bva_finance_apply_budget(ent: str, fin: dict) -> dict:
         fen = round(s.get("fence") or 0)
         esc = round(s.get("escalation") or 0); mkt = round(s.get("marketing") or 0)
         tot = lot + prem + fen + esc + mkt
-        bud = ((rb.get(n) or lot) + (rfence.get(n) or fen) + (rprem.get(n) or prem)
+        # Premium on a sold-out section uses ACTUALS as its budget. The model's
+        # premium split between sections is stale (it parked $177,500 on Section 2
+        # that was actually earned on Section 5's premium lots), and once a
+        # section is closed the collected premium IS the number — reconciled
+        # across Sections 1-5 the two agree to $1,500, so only the split was off.
+        bud = ((rb.get(n) or lot) + (rfence.get(n) or fen)
+               + (prem if _sold_out(n, lot, rb) else (rprem.get(n) or prem))
                + (resc.get(n) or esc) + (rmkt.get(n) or mkt))
         s.update({"section": "Section %d" % n, "lotSales": lot, "premium": prem,
                   "fence": fen, "escalation": esc, "marketing": mkt,
@@ -3469,7 +3481,8 @@ def _bva_revenue_rows(ent: str, f: dict, out_sec: list, other: list) -> list:
         if extra:
             note = (note + " · " + extra) if note else extra
         add("Sections", p, "Lot Sales", lot_bud, s["lotSales"], note, st)
-        add("Sections", p, "Lot Premium", rprem.get(n) or s["premium"], s["premium"], "", st)
+        prem_bud = (s["premium"] if st == "sold_out" else (rprem.get(n) or s["premium"]))
+        add("Sections", p, "Lot Premium", prem_bud, s["premium"], "", st)
         add("Sections", p, "Fence Fees", rfence.get(n) or s["fence"], s["fence"], "", st)
         add("Sections", p, "Escalation", resc.get(n) or s["escalation"], s["escalation"], "", st)
         add("Sections", p, "Marketing", rmkt.get(n) or s["marketing"], s["marketing"], "", st)
