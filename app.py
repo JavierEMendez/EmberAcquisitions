@@ -2449,6 +2449,11 @@ _BVA_SAGE_RENAME = {
     "gp liftstation2 + fm": "Lift Station 2",
     "gp wwtp 1 ph02": "WWTP 1-2",
     "gp wwtp 1 ph03": "WWTP 1-3",
+    # Sage books this detention as "Beeson"; the pro-forma calls it Dennison
+    # Detention and carries the budget there. Same work, so land the commitments
+    # and actuals on the pro-forma name (per the dev team, Dennison is the name
+    # to keep).
+    "gp beeson detention": "Dennison Detention",
     # Dennison (EW): merge Sage names onto the pro-forma budget names.
     "ew dennisonlandscpng": "Dennison Landscaping",
     "ew dennisondetention": "Dennison Detention",
@@ -2479,6 +2484,49 @@ _BVA_ACTUALS_PROJECTS = {
     "water plant 1-2",
     "detention ph01",
 }
+# Budget the pro-forma computes wrong, replaced with a figure the dev team gave.
+# Keyed entity -> project (display name, lower) -> task (lower) -> amount.
+# Applied at read time, so it survives a budget re-upload.
+_BVA_BUDGET_OVERRIDE = {
+    "GPD": {
+        # The model sizes Baethe Rd Ph 1 North off a road length of 1,882 LF,
+        # which is wrong — it produced a budget identical to Baethe Rd's
+        # ($1,832,145 on both). Per the dev team, use the model's Commitments
+        # column instead: $458,653 total. Only the Collector Roads lines are
+        # overridden; this project's landscaping and streetlight budgets are
+        # separate and unaffected.
+        "baethe rd ph 1 north": {
+            "construction ws&d": 117855,
+            "ws&d engineering": 10325,
+            "ws&d swpp": 8123,
+            "ws&d materials testing": 2300,
+            "construction paving": 263161,
+            "paving engineering": 49439,
+            "paving materials testing": 7450,
+        },
+    },
+}
+
+
+def _bva_apply_budget_override(label, ebud):
+    """Return ebud with _BVA_BUDGET_OVERRIDE amounts substituted. Absolute
+    assignment, so re-running it is a no-op."""
+    over = _BVA_BUDGET_OVERRIDE.get(label)
+    if not over:
+        return ebud
+    out = {}
+    for k, val in ebud.items():
+        proj, _, rest = k.partition(_BVA_KEYSEP)
+        task = rest.partition(_BVA_KEYSEP)[0]
+        amt = (over.get((proj or "").strip().lower(), {})
+                   .get((task or "").strip().lower()))
+        if amt is None:
+            out[k] = val
+        else:
+            v = dict(val) if isinstance(val, dict) else {"amt": val}
+            v["amt"] = amt
+            out[k] = v
+    return out
 _BVA_SEC_RE = re.compile(r"^(?:gp|ew)\s+sec\.?\s*0*(\d+)\s*$", re.I)
 _BVA_SEC_LAND_RE = re.compile(r"^(?:gp|ew)\s+section\s*0*(\d+)\s+landscape", re.I)
 _BVA_LOTTAX_SEC_RE = re.compile(r"^lot taxes\b.*?sec\w*\s*0*(\d+)\s*$", re.I)
@@ -4155,7 +4203,7 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
     blocks = []
     for label, eid in _BVA_ENTITIES:
         recs = [r for r in (gl.get(label, []) or []) if r.get("projectId", "") not in dnu_ids]
-        ebud = budgets.get(label, {}) or {}
+        ebud = _bva_apply_budget_override(label, budgets.get(label, {}) or {})
         ecom = commits.get(label, {}) or {}
         # Phase-1 work is complete, so its actuals ARE the budget — use actuals
         # instead of a pro-forma estimate. A project is Phase 1 if its uploaded
