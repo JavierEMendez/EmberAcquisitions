@@ -3138,6 +3138,9 @@ _BVA_REV_BUDGET = {
             30: 3388000, 31: 6615000, 32: 8117250, 33: 8074000},
     # Dennison: Lot Sales tab, price x Total Lots (gross), same basis as GPD.
     "Dennison": {9: 7209000, 10: 5472000, 11: 4176000, 12: 3564000},
+    # WRG: Lot Sales "Total Revenue" per section (avg sale revenue x total lots).
+    "WRG": {1: 6689182, 2: 3120666, 3: 6340950, 4: 4692188, 5: 4425094,
+            6: 5067562, 7: 4172438, 8: 2598750},
 }
 # Escalation per section (Lot Sales "$ - Escalations") — sums to $5,626,967,
 # the model's Escalation Revenues line to the dollar.
@@ -3149,6 +3152,8 @@ _BVA_REV_BUDGET_ESC = {
             27: 254211, 28: 280482, 29: 354157, 30: 89504, 31: 173802,
             32: 212494, 33: 211749},
     "Dennison": {10: 75240, 11: 252000, 12: 160380},
+    "WRG": {1: 327071, 2: 65488, 3: 227430, 4: 119250, 5: 28462,
+            6: 66825, 7: 65925, 8: 47250},
 }
 # Per-section footnotes for anything the numbers alone don't explain.
 _BVA_SECTION_NOTE = {
@@ -3168,6 +3173,7 @@ _BVA_REV_LOTS = {
             22: 61, 23: 120, 24: 98, 25: 90, 26: 150, 27: 90, 28: 128, 29: 126,
             30: 22, 31: 45, 32: 97, 33: 57},
     "Dennison": {9: 89, 10: 76, 11: 58, 12: 44},
+    "WRG": {1: 148, 2: 70, 3: 122, 4: 65, 5: 67, 6: 78, 7: 62, 8: 36},
 }
 # Marketing fee revenue per section (Lot Sales "MKT Revenue"), $8,814,450 of the
 # model's $16,460,700 — the rest isn't section-tagged and sits on the entity line.
@@ -3178,6 +3184,9 @@ _BVA_REV_BUDGET_MKT = {
             21: 300000, 22: 414800, 23: 244000, 24: 470250, 25: 314000,
             26: 140000, 27: 431250, 28: 446500, 29: 604250, 30: 149600,
             31: 306000, 32: 338250, 33: 346000},
+    # WRG: Lot Sales "MKT Revenue" column, $1,000 per lot.
+    "WRG": {1: 148000, 2: 70000, 3: 122000, 4: 65000, 5: 67000,
+            6: 78000, 7: 62000, 8: 36000},
 }
 # Fence-fee + lot-premium budgets per section (pro-forma "Fence Fees" /
 # "Lot Premiums" tabs, parameter-block LOP values). Sections absent here fall
@@ -3190,6 +3199,9 @@ _BVA_REV_BUDGET_FENCE = {
             26: 45500, 27: 80600, 28: 43680, 29: 57850, 30: 25025, 31: 51415,
             32: 33280, 33: 31200},
     "Dennison": {9: 65081, 10: 49400, 11: 37700, 12: 32175},
+    # Section 8 carries no fence budget in the model.
+    "WRG": {1: 114075, 2: 53219, 3: 79300, 4: 52812, 5: 49806,
+            6: 57038, 7: 46962},
 }
 _BVA_REV_BUDGET_PREMIUM = {
     "GPD": {2: 252000, 3: 24000, 4: 448000, 5: 387500, 6: 591180, 13: 117000,
@@ -3220,6 +3232,14 @@ _BVA_REV_ENTITY_BUDGET = {
     # HCWCID 164 Road Bond Issue 4 ($1,975,242 + $25,561 to WRRD) and HCMUD 576
     # WSD Bond Issue 3 ($7,488,504 + $706,988).
     "Dennison": (("MUD + WCID Bond Revenues", 11522915),),
+    # WRG (MUD Revenues tab): "Override - Total MUD Bond Proceeds to Developer"
+    # $18,242,482 is the developer's share of the $24,619,944 total issue — the
+    # part that reaches this entity, so it is the budget. Utility income is
+    # EMBER fiber $81,000 + Centric $633,487.
+    # The label must stay exactly "MUD + WCID Bond Revenues" — that string is what
+    # the collected bond proceeds attach to, so renaming it strands the actuals.
+    "WRG": (("MUD + WCID Bond Revenues", 18242482),
+            ("Utility Income", 714487)),
 }
 # Actual GL revenue lines -> the entity budget category they belong to.
 _BVA_REV_ENTITY_MAP = (
