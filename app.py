@@ -2338,8 +2338,8 @@ _BVA_CATEGORIES = [
     ("Detention & Drainage", ["detention", "outfall", "dtn", "drainage", "fdc", "pond", "channel"]),
     ("Amenities",           ["rec center", "lake", "overlook", "sundancer", "monument",
                              "mallard", "amenit", "landscap", "hill",
-                             # Sage abbreviates: Ph1LndscpImprvmt
-                             "lndscp", "tree mitigation"]),
+                             # Sage abbreviates: Ph1LndscpImprvmt, DennisonLandscpng
+                             "lndscp", "landscpng", "tree mitigation"]),
     ("Marketing",           ["m_", "welcome center", "realtor", "marketing",
                              "spring event", "stratgy", "strategy"]),
     # C&G = clearing & grubbing (WRG: "Phase 1 C&G", "Freedom Park C&G").
@@ -2351,7 +2351,9 @@ _BVA_CATEGORIES = [
     ("MUD / HOA",           ["mud advance", "hoa advance", " mud", " hoa"]),
     ("Soft Costs",          ["g&a", "g-a", "operations", "development fee", "fees",
                              "personnel", "accounting", "legal", "insurance",
-                             "contingency", "entries"]),
+                             "contingency", "entries",
+                             # Sage abbreviates: EW_Proj Pers Alloc
+                             "pers alloc"]),
 ]
 _BVA_LOT_RE = re.compile(r"s\d+-b\d+-l\d+")   # individual lot id
 
@@ -2418,7 +2420,8 @@ _BVA_CAT_ALIAS = {
     "Fencing":              "Amenities",
     "Mailboxes":            "Sections & Pods",
     "Contingency":          "Contingency Group",
-    "Residential Pods":     "Sections & Pods",
+    # NOT "Residential Pods" — GPD renames that category to "Data Center Pod"
+    # after sorting, and folding it in here erased that $75,000 group.
 }
 
 
@@ -4438,7 +4441,13 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
                     co = bac_cat_order.get(cat, 900); po = 900000
             else:
                 proj_com = None; proj_ini = proj_cco = 0; co = po = 0
-                cat = _bva_category(projid, grp[0].get("task", ""))
+                # Alias here too. The commitments branch above gets an
+                # already-aliased category, so without this an entity with no
+                # commitments loaded put its actuals in the raw names ("Sections",
+                # "Detention & Drainage", "Land Acquisition") while its budget sat
+                # under the canonical ones — Dennison showed $7.19M of Sections &
+                # Pods budget against $7.41M of actuals in a separate "Sections".
+                cat = _bva_cat_alias(_bva_category(projid, grp[0].get("task", "")))
             # Manual category override (template column A).
             ov = _BVA_PROJECT_CAT_OVERRIDE.get(nm) or _BVA_PROJECT_CAT_OVERRIDE.get(_bva_norm_name(projid))
             if ov:
