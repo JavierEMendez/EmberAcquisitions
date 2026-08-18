@@ -2332,13 +2332,19 @@ _BVA_CATEGORIES = [
     ("Dry Utilities",       ["dry util", "street light", "streetlight"]),
     ("Plant & Utilities",   ["wwtp", "water plant", "lift station", "liftstation",
                              "wtp", "utilit", "pump", "irrg", "irrig"]),
-    ("Collector Roads",     ["baethe", "kermier", " rd ", " rd", "road", "crossing"]),
+    ("Collector Roads",     ["baethe", "kermier", " rd ", " rd", "road", "crossing",
+                             # WRG names its roads by FM number / turn lane
+                             "turn lane", "signal", "henderson", "fm 523"]),
     ("Detention & Drainage", ["detention", "outfall", "dtn", "drainage", "fdc", "pond", "channel"]),
     ("Amenities",           ["rec center", "lake", "overlook", "sundancer", "monument",
-                             "mallard", "amenit", "landscap", "hill"]),
+                             "mallard", "amenit", "landscap", "hill",
+                             # Sage abbreviates: Ph1LndscpImprvmt
+                             "lndscp", "tree mitigation"]),
     ("Marketing",           ["m_", "welcome center", "realtor", "marketing",
                              "spring event", "stratgy", "strategy"]),
-    ("Site Work",           ["site work", "sitework", "grading", "field expense"]),
+    # C&G = clearing & grubbing (WRG: "Phase 1 C&G", "Freedom Park C&G").
+    ("Site Work",           ["site work", "sitework", "grading", "field expense",
+                             "c&g", "c-g"]),
     ("Sections",            ["sec.", "sec ", "section", "sec0", "sec1", "lotsales"]),
     ("Professional Services", ["professional", "land planning"]),
     ("Taxes",               ["tax", "property tax", "wip property", "wip - property"]),
@@ -2403,6 +2409,13 @@ _BVA_CAT_ALIAS = {
     "Marketing":            "Marketing and Advertising",
     "MUD / HOA":            "Operations",
     "Lot Taxes":            "Taxes",
+    # Pro-forma tab names that arrive on a budget upload (WRG's extract is tabbed
+    # straight off the model's tabs).
+    "Land Purchases":       "Land",
+    "Landscaping":          "Amenities",
+    "Mailboxes":            "Sections & Pods",
+    "Contingency":          "Contingency Group",
+    "Residential Pods":     "Sections & Pods",
 }
 
 
@@ -2459,6 +2472,37 @@ _BVA_SAGE_RENAME = {
     "ew dennisondetention": "Dennison Detention",
     "ew baethe rd ph01_n": "Baethe Rd",
     "ew lift station2 +fm": "Lift Station 2 + FM",
+    # WRG (EA / Emptor Angleton): Sage name -> Windrose Green pro-forma name.
+    "freedomparkdtntn": "Freedom Park Detention",
+    "detention ph01": "Detention Ph1",
+    "ph1lndscpimprvmt": "Phase 1 Landscaping",
+    "ph2lndscpimprvmt": "Ph2 Landscape Improvements",
+    "liftstation1+fm": "Lift Station 1 FM",
+    "phase 1 c&g": "Ph1 C-G",
+    "phase 2 c&g": "Ph2 C-G",
+    "freedom park c&g": "Freedom Park C-G",
+    "emptor angleton - site work": "EA_Site Work",
+    "fm 523 ltl + signal": "FM 523 Turn Lanes + Traffic Signal",
+    "henderson road left turn lane ltl": "Henderson Rd Turn Lane",
+    "acquisitions": "First Land Purchase",
+    "project personnel allocation": "Project Personnel",
+    "development fees": "Dev. Management",
+    "accounting": "Bookkeeping",
+    "ea legal": "Legal",
+    "receivables and bond": "Receivables & Bond",
+    # Sage splits MUD and HOA advances; the pro-forma carries one combined line.
+    "mud advances": "MUD & HOA Advances",
+    "ea_hoa advances": "MUD & HOA Advances",
+    "land planning": "Landplanning",
+    "engineering planning": "Misc. Engineering + Surveying",
+    "wrg tree mitigation": "WRG Tree Mitigation",
+    "gp g&a": "G&A",
+    "g&a": "G&A",
+    # Marketing is one pro-forma line; Sage tracks it per campaign.
+    "m_stratgyexecutn": "Marketing",
+    "m_spring event": "Marketing",
+    "m_fall event": "Marketing",
+    "m_contingency": "Marketing",
 }
 # Projects to hide entirely (old / irrelevant — e.g. commitments-only leftovers).
 _BVA_DROP_NAMES = ("hill + pond", "section 7 & kermier rd landscaping",
@@ -2527,8 +2571,10 @@ def _bva_apply_budget_override(label, ebud):
             v["amt"] = amt
             out[k] = v
     return out
-_BVA_SEC_RE = re.compile(r"^(?:gp|ew)\s+sec\.?\s*0*(\d+)\s*$", re.I)
-_BVA_SEC_LAND_RE = re.compile(r"^(?:gp|ew)\s+section\s*0*(\d+)\s+landscape", re.I)
+# WRG's Sage project names carry no entity prefix ("Sec. 01", not "EA Sec. 01"),
+# so the prefix is optional here.
+_BVA_SEC_RE = re.compile(r"^(?:(?:gp|ew|ea)\s+)?sec\.?\s*0*(\d+)\s*$", re.I)
+_BVA_SEC_LAND_RE = re.compile(r"^(?:(?:gp|ew|ea)\s+)?section\s*0*(\d+)\s+landscape", re.I)
 _BVA_LOTTAX_SEC_RE = re.compile(r"^lot taxes\b.*?sec\w*\s*0*(\d+)\s*$", re.I)
 
 
@@ -2887,6 +2933,111 @@ def _bva_parse_bac(file_bytes: bytes, force_entity: str = None) -> dict:
             cur["subs"].append({"name": lab, "committed": com, "initial": ini,
                                 "changeOrders": cco, "budget": bud})
     return out
+
+
+def _bva_is_bvcva(file_bytes: bytes) -> bool:
+    """True for the flat 'Budget vs Committed vs Actuals by Subtask' export.
+    Told apart from the BAC by its 'Total contract' column (the BAC's is
+    'Total Commitments'). Detection must be positive: _bva_parse_bac() does not
+    raise on this layout, it just reads the wrong column."""
+    import openpyxl
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+        ws = wb[wb.sheetnames[0]]
+        for r in range(1, min(ws.max_row, 30) + 1):
+            vals = {str(ws.cell(r, c).value or "").strip().lower()
+                    for c in range(1, ws.max_column + 1)}
+            if "total contract" in vals and "budget" in vals:
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _bva_parse_bvcva(file_bytes: bytes, force_entity: str = None) -> dict:
+    """Parse a Sage 'Budget vs Committed vs Actuals — All Projects by Subtask'
+    .xlsx into the same shape as _bva_parse_bac().
+
+    This report is NOT the BAC: it carries no indentation at all, so hierarchy
+    comes from row structure instead — a header row has a name and blank numbers,
+    a 'Total <name>' row closes it, and the rows in between are WIP- subtasks.
+    Nesting is Rollup -> category -> sub-category -> project -> subtasks, so the
+    category is stack level 1 and the project is the innermost header.
+
+    Committed = 'Total contract' (Initial Contract + Change orders).
+    """
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    ws = wb[wb.sheetnames[0]]
+    hdr = None
+    for r in range(1, min(ws.max_row, 30) + 1):
+        vals = [str(ws.cell(r, c).value or "").strip().lower()
+                for c in range(1, ws.max_column + 1)]
+        if "budget" in vals and "total contract" in vals:
+            hdr = r
+            ix = {v: i + 1 for i, v in enumerate(vals) if v}
+            break
+    if hdr is None:
+        raise ValueError("not a Budget vs Committed vs Actuals report "
+                         "(no 'Total contract' column)")
+    c_bud, c_com = ix["budget"], ix["total contract"]
+    c_ini, c_cco = ix.get("initial contract"), ix.get("change orders")
+
+    def num(v):
+        try:
+            return float(v or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    ent = force_entity or "WRG"
+    out = {ent: {}}
+    stack = []
+    order = 0
+    for r in range(hdr + 1, ws.max_row + 1):
+        lab = str(ws.cell(r, 1).value or "").strip()
+        if not lab:
+            continue
+        nums = [num(ws.cell(r, c).value) for c in range(2, ws.max_column + 1)]
+        blank = not any(abs(x) > 0.004 for x in nums)
+        if lab.lower().startswith("total "):
+            tgt = lab[6:].strip().lower()
+            while stack and stack[-1].lower() != tgt:
+                stack.pop()
+            if stack:
+                stack.pop()
+            continue
+        if blank:
+            stack.append(lab)
+            continue
+        if len(stack) < 2:
+            continue                      # a stray total/rollup line
+        proj = stack[-1]
+        key = _bva_norm_name(proj)
+        e = out[ent].get(key)
+        if e is None:
+            order += 1
+            # This report's own groups ("Sections & Pods", "Major Infrastructure",
+            # "Other Sectional Costs") don't map 1:1 onto pro-forma categories —
+            # Major Infrastructure alone spans Drainage and Plant Facilities. Using
+            # them would strand committed in a different category from its budget,
+            # so classify from the project name with the same rules GL-only
+            # projects use, which keeps both sides in one group.
+            e = out[ent][key] = {"committed": 0.0, "initial": 0.0,
+                                 "changeOrders": 0.0, "budget": 0.0,
+                                 "name": proj,
+                                 "category": _bva_cat_alias(_bva_category(proj)),
+                                 "catOrder": 900, "projOrder": order, "subs": []}
+        com = num(ws.cell(r, c_com).value)
+        bud = num(ws.cell(r, c_bud).value)
+        ini = num(ws.cell(r, c_ini).value) if c_ini else 0.0
+        cco = num(ws.cell(r, c_cco).value) if c_cco else 0.0
+        e["committed"] += com
+        e["budget"] += bud
+        e["initial"] += ini
+        e["changeOrders"] += cco
+        e["subs"].append({"name": lab, "committed": com, "initial": ini,
+                          "changeOrders": cco, "budget": bud})
+    return {k: val for k, val in out.items() if val}
 
 
 def _bva_load_commitments() -> dict:
@@ -3717,8 +3868,17 @@ def api_bva_commitments_upload():
     is_bac = raw[:2] == b"PK"      # .xlsx (zip) = BAC report; else HTML = PO export
     force = ent if ent in valid else None   # per-entity upload → force that entity
     try:
-        parsed = _bva_parse_bac(raw, force_entity=force) if is_bac \
-                 else _parse_bva_commitments(raw, force_entity=force)
+        if is_bac:
+            # Two .xlsx shapes. Detect POSITIVELY on the header — the BAC parser
+            # does not fail on a BvCvA file, it silently reads the wrong column
+            # and returns negative committed, so a try/except fallback would ship
+            # bad numbers.
+            if _bva_is_bvcva(raw):
+                parsed = _bva_parse_bvcva(raw, force_entity=force)
+            else:
+                parsed = _bva_parse_bac(raw, force_entity=force)
+        else:
+            parsed = _parse_bva_commitments(raw, force_entity=force)
     except Exception as e:
         return jsonify({"error": "Could not parse commitments file: %s" % e}), 400
     if not parsed:
@@ -4219,6 +4379,11 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
                 return True                 # called-out completed projects
             if (proj_phase.get(name, "") or "").strip().lower() == "phase 1":
                 return True
+            # "Sections 1-5 are Phase 1" is a GPD fact, not a general one. At WRG
+            # every section is still in flight, and applying it there set Section
+            # 1's budget to its actuals — which for lot taxes is negative.
+            if label != "GPD":
+                return False
             return bool(re.match(r"^section\s+[1-5]\b", str(name or ""), re.I))
         # BAC mode: committed stored per project name as {committed, name,
         # category}. PO mode (legacy): committed per projId+subId as a number.
@@ -4418,7 +4583,11 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
             task = _bud_task(v) or task
             if _is_phase1(proj):
                 continue                    # Phase 1 uses actuals, not the pro-forma budget
-            _bcat = _bud_cat(v) or _bva_cat_alias(_bva_category(proj))
+            # Alias the uploaded category too, not just the fallback — an upload
+            # tabbed with pro-forma names ("Sections", "Lot Taxes", "Land
+            # Purchases") would otherwise sit in its own group instead of joining
+            # the committed/actuals under the canonical name.
+            _bcat = _bva_cat_alias(_bud_cat(v)) or _bva_cat_alias(_bva_category(proj))
             if _bcat == "Amenities" and proj.strip().lower().startswith("ltl @"):
                 continue                    # LTL landscape is a few $k — not a true cost
             _co2, _po2 = proj_sort.get((_bcat, proj), (bac_cat_order.get(_bcat, 950), 950000))
