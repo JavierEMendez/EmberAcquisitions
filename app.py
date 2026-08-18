@@ -2413,6 +2413,9 @@ _BVA_CAT_ALIAS = {
     # straight off the model's tabs).
     "Land Purchases":       "Land",
     "Landscaping":          "Amenities",
+    # Fencing already gets moved under Amenities on the actuals side, so the
+    # budget has to follow or the two sit in separate categories.
+    "Fencing":              "Amenities",
     "Mailboxes":            "Sections & Pods",
     "Contingency":          "Contingency Group",
     "Residential Pods":     "Sections & Pods",
@@ -2496,6 +2499,10 @@ _BVA_SAGE_RENAME = {
     "land planning": "Landplanning",
     "engineering planning": "Misc. Engineering + Surveying",
     "wrg tree mitigation": "WRG Tree Mitigation",
+    # Sage books developer fencing by phase; the extract rolls the model's
+    # per-section fencing up to match.
+    "ph1dvlprfencng": "Ph1 Developer Fencing",
+    "ph2dvlprfencng": "Ph2 Developer Fencing",
     "gp g&a": "G&A",
     "g&a": "G&A",
     # Marketing is one pro-forma line; Sage tracks it per campaign.
@@ -4377,13 +4384,16 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
         def _is_phase1(name):
             if (name or "").strip().lower() in _BVA_ACTUALS_PROJECTS:
                 return True                 # called-out completed projects
-            if (proj_phase.get(name, "") or "").strip().lower() == "phase 1":
-                return True
-            # "Sections 1-5 are Phase 1" is a GPD fact, not a general one. At WRG
-            # every section is still in flight, and applying it there set Section
-            # 1's budget to its actuals — which for lot taxes is negative.
+            # "Phase 1 is complete, so its actuals ARE the budget" is a GPD fact,
+            # not a general one — both the phase tag and the Sections 1-5 shortcut.
+            # WRG's Phase 1 is still in flight, and its budget upload tags Section
+            # 1 "Phase 1", which replaced that section's $60,133 of lot-tax budget
+            # with its actuals of -$5,748,517 (lot taxes net negative once
+            # reimbursed). Dennison has no Phase 1 rows, so it is unaffected.
             if label != "GPD":
                 return False
+            if (proj_phase.get(name, "") or "").strip().lower() == "phase 1":
+                return True
             return bool(re.match(r"^section\s+[1-5]\b", str(name or ""), re.I))
         # BAC mode: committed stored per project name as {committed, name,
         # category}. PO mode (legacy): committed per projId+subId as a number.
@@ -4451,8 +4461,11 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
                 if first and not proj_has_tmpl and bac_bud:
                     bud = bac_bud
                 act = round(sum((rec.get("months") or {}).values()))
-                if _is_phase1(disp):
-                    bud = act                          # Phase 1 complete: budget = actuals
+                if _is_phase1(disp) and act >= 0:
+                    # Phase 1 complete: budget = actuals. Never for negative
+                    # actuals — a net-credit line (lot taxes after reimbursement)
+                    # would otherwise book a negative budget.
+                    bud = act
                 # Fencing always lives under Amenities (consistent across sections);
                 # property-tax subtasks always move down to Taxes (wherever the
                 # project itself sits, e.g. lot-sales carrying costs).
