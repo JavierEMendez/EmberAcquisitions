@@ -3138,9 +3138,11 @@ _BVA_REV_BUDGET = {
             30: 3388000, 31: 6615000, 32: 8117250, 33: 8074000},
     # Dennison: Lot Sales tab, price x Total Lots (gross), same basis as GPD.
     "Dennison": {9: 7209000, 10: 5472000, 11: 4176000, 12: 3564000},
-    # WRG: Lot Sales "Total Revenue" per section (avg sale revenue x total lots).
-    "WRG": {1: 6689182, 2: 3120666, 3: 6340950, 4: 4692188, 5: 4425094,
-            6: 5067562, 7: 4172438, 8: 2598750},
+    # WRG: GROSS — "Lot Sale Price" x "Total Lots". The tab's own "Total Revenue"
+    # column is NET (it uses Avg. Sale Revenue, after BEM and EB fees), which
+    # understated every section by ~4% and made sold-out sections read over budget.
+    "WRG": {1: 6949800, 2: 3242250, 3: 6588000, 4: 4875000, 5: 4597500,
+            6: 5265000, 7: 4335000, 8: 2700000},
 }
 # Escalation per section (Lot Sales "$ - Escalations") — sums to $5,626,967,
 # the model's Escalation Revenues line to the dollar.
@@ -3451,6 +3453,10 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
                     if lm:
                         d.setdefault("lots", {}).setdefault(sec, set()).add(
                             lm.group(0).upper())
+                    else:
+                        # Revenue with no lot ID — a bulk takedown. Tracked so the
+                        # display knows whether the exact lot-ID count is complete.
+                        s["bulkSales"] = s.get("bulkSales", 0.0) + rev
                 revm(d, "Revenue · Sections", "Section %d" % sec,
                      _BVA_REV_LINE_LABEL.get(grp, grp), _bva_month_key(g(r, c_date)), rev)
             else:
@@ -3508,6 +3514,7 @@ def _bva_parse_finance(file_bytes: bytes, force_entity: str = None) -> dict:
                           "escalation": round(s["escalation"]), "marketing": round(s["marketing"]),
                           "fence": round(s["fence"]), "total": round(tot),
                           "lotsClosed": len(d.get("lots", {}).get(sec, ())),
+                          "bulkSales": round(s.get("bulkSales", 0.0)),
                           "budget": round(bud), "delta": round(tot) - round(bud)})
         # Entity-level lines: fold actuals into their pro-forma budget category
         # (acreage -> Commercial Site Sales, participation -> Utility Income);
@@ -3630,6 +3637,7 @@ def _bva_finance_apply_budget(ent: str, fin: dict) -> dict:
         s.update({"section": "Section %d" % n, "lotSales": lot, "premium": prem,
                   "fence": fen, "escalation": esc, "marketing": mkt,
                   "lotsClosed": s.get("lotsClosed") or 0,
+                  "bulkSales": s.get("bulkSales") or 0,
                   "total": tot, "budget": bud, "delta": tot - bud})
         out_sec.append(s)
     f["revenueBySection"] = out_sec
@@ -3710,7 +3718,12 @@ def _bva_revenue_rows(ent: str, f: dict, out_sec: list, other: list) -> list:
         if lot_bud and total_lots:
             implied = int(round(s["lotSales"] / (lot_bud / float(total_lots))))
         shown, approx = closed, False
-        if implied > closed:
+        # Only fall back to the dollar estimate when some revenue has NO lot ID
+        # (a bulk takedown). If every dollar carries one, the exact count is
+        # authoritative — dividing by a blended plan price otherwise invents lots
+        # whenever the realised mix skews to the pricier sizes. WRG Section 1 read
+        # "~147 of 148" that way when the GL holds exactly 140 lot IDs.
+        if implied > closed and s.get("bulkSales"):
             shown, approx = implied, True
         # Status TAG per section (like the cost side's Complete / In Progress /
         # Future), derived from lot revenue vs its budget — dollars, not the
