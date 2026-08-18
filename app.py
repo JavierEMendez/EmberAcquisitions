@@ -2621,6 +2621,19 @@ _BVA_PROJECT_CAT_OVERRIDE = {
     "gp lotsales sec08":       "Taxes",
     "gp receivables and bond": "Soft Costs",
     "gpd office purchase":     "Amenities",   # model-home purchase (matches budget)
+    # WRG. Receivables & Bond is an OPERATIONS cost, not a financing one (per the
+    # dev team) — its GL task says Financing, which sent it to the wrong group.
+    "receivables and bond":    "Operations",
+    "mud advances":            "Operations",
+    "ea hoa advances":         "Operations",
+    # Sage's "Contingency" hit the "contingency" keyword in Soft Costs; it belongs
+    # in its own group, where the pro-forma puts it.
+    "contingency":             "Contingency Group",
+    # Clearing & grubbing for Freedom Park is amenity work (the model budgets it on
+    # the Amenities tab); the generic "c&g" rule would send it to Site Work, which
+    # is right for Ph1/Ph2 C&G but not this one.
+    "freedom park c g":        "Amenities",
+    "freedom park c&g":        "Amenities",
 }
 
 # Individual-lot project id (e.g. GP_S01-B01-L01) — aggregated into one line
