@@ -2538,6 +2538,18 @@ _BVA_ACTUALS_PROJECTS = {
     "water plant 1-2",
     "detention ph01",
 }
+# Same idea, but scoped to an entity — "Section 1" exists at GPD, Dennison AND
+# WRG, so the unscoped set above cannot be used for section names.
+_BVA_ACTUALS_BY_ENTITY = {
+    # WRG Sections 1-3 are built out; per the dev team their actual spend IS the
+    # budget. The pro-forma's per-lot estimate for them never lined up, and for a
+    # finished section the money spent is the better number.
+    "WRG": {"section 1", "section 2", "section 3",
+            # Built-out projects the dev team called out — their actual spend IS
+            # the budget; the pro-forma estimate for them never lined up.
+            "phase 1 landscaping", "ph2 landscape improvements",
+            "detention ph1", "lift station 1 fm"},
+}
 # Budget the pro-forma computes wrong, replaced with a figure the dev team gave.
 # Keyed entity -> project (display name, lower) -> task (lower) -> amount.
 # Applied at read time, so it survives a budget re-upload.
@@ -2623,7 +2635,8 @@ _BVA_PROJECT_CAT_OVERRIDE = {
     "gpd office purchase":     "Amenities",   # model-home purchase (matches budget)
     # WRG. Receivables & Bond is an OPERATIONS cost, not a financing one (per the
     # dev team) — its GL task says Financing, which sent it to the wrong group.
-    "receivables and bond":    "Operations",
+    # Reported under Soft Costs (per the dev team), though it is an ops cost.
+    "receivables and bond":    "Soft Costs",
     "mud advances":            "Operations",
     "ea hoa advances":         "Operations",
     # Sage's "Contingency" hit the "contingency" keyword in Soft Costs; it belongs
@@ -4430,9 +4443,15 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
             if _ph and _p not in proj_phase:
                 proj_phase[_p] = _ph
 
-        def _is_phase1(name):
-            if (name or "").strip().lower() in _BVA_ACTUALS_PROJECTS:
+        def _is_phase1(name, include_entity=True):
+            _n = (name or "").strip().lower()
+            if _n in _BVA_ACTUALS_PROJECTS:
                 return True                 # called-out completed projects
+            # include_entity=False for the lot-tax roll-up: "WRG Section 1" is a
+            # completed SECTION (development cost), but its lot taxes are a
+            # separate stream that keeps its own pro-forma budget.
+            if include_entity and _n in _BVA_ACTUALS_BY_ENTITY.get(label, ()):
+                return True                 # completed, and named per entity
             # "Phase 1 is complete, so its actuals ARE the budget" is a GPD fact,
             # not a general one — both the phase tag and the Sections 1-5 shortcut.
             # WRG's Phase 1 is still in flight, and its budget upload tags Section
@@ -4567,8 +4586,12 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
         for sec, a in sorted(lot_sections.items()):
             label_ = _bva_canon_name("Lot Taxes — Sec %s" % sec)
             rows.append({"category": "Taxes", "project": label_, "projectName": label_,
-                         "task": "", "subtask": "", "phase": ("Phase 1" if _is_phase1(label_) else ""),
-                         "budget": (a if _is_phase1(label_) else 0), "committed": 0, "actual": a,
+                         "task": "", "subtask": "",
+                         "phase": ("Phase 1" if _is_phase1(label_, False) else ""),
+                         # Never let negative actuals become a budget — lot taxes
+                         # net negative once reimbursed.
+                         "budget": (a if (_is_phase1(label_, False) and a >= 0) else 0),
+                         "committed": 0, "actual": a,
                          "_co": _tax_co, "_po": 800000 + (int(sec) if sec.isdigit() else 0)})
         # Subtask-level committed (BAC 'by Subtask' export): emit one committed
         # row per subtask so the merge lands it on the matching budget/actual
@@ -4649,13 +4672,16 @@ def _bva_build_blocks(gl=None, budgets=None, commits=None):
             else:                            # legacy 2-part key
                 task, sub = "", (parts[1] if len(parts) > 1 else "")
             task = _bud_task(v) or task
-            if _is_phase1(proj):
-                continue                    # Phase 1 uses actuals, not the pro-forma budget
             # Alias the uploaded category too, not just the fallback — an upload
             # tabbed with pro-forma names ("Sections", "Lot Taxes", "Land
             # Purchases") would otherwise sit in its own group instead of joining
             # the committed/actuals under the canonical name.
             _bcat = _bva_cat_alias(_bud_cat(v)) or _bva_cat_alias(_bva_category(proj))
+            # Phase 1 uses actuals, not the pro-forma budget. A completed SECTION
+            # only means its development cost is actualised, though — "Section 1"
+            # also owns a Lot Taxes line, and that keeps its own pro-forma budget.
+            if _is_phase1(proj, include_entity=(_bcat != "Taxes")):
+                continue
             if _bcat == "Amenities" and proj.strip().lower().startswith("ltl @"):
                 continue                    # LTL landscape is a few $k — not a true cost
             _co2, _po2 = proj_sort.get((_bcat, proj), (bac_cat_order.get(_bcat, 950), 950000))
