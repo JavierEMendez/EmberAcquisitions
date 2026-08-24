@@ -1744,27 +1744,44 @@ def _vd_lighthaven_snapshot():
         k = u.get("status") or "AVAILABLE"
         counts[k] = counts.get(k, 0) + 1
     total = len(units)
-    occupied = counts.get("Tenant Occupied", 0) + counts.get("Renewal", 0)
-    leased   = occupied + counts.get("Leased", 0) + counts.get("Model", 0)
+    # Count on `lease_executed_date`, NOT the status column. In the LightHaven
+    # master the Status column lags the date columns badly: 72 of 117 rows carry
+    # an executed lease while Status accounts for only ~53 occupied-or-leased
+    # units. 72 is the figure the workbook's own KPI band (Current Occupancy)
+    # and its SUMMARY BY FLOORPLAN both report, and it is what the dashboard now
+    # displays — so this snapshot has to use the same basis or the Executive
+    # Report contradicts the page it was generated from.
+    def _has_lease(u):
+        return bool(u.get("lease_executed_date"))
+
+    leased = sum(1 for u in units if _has_lease(u))
+    # Occupied = leased and actually moved in, not moved back out.
+    occupied = sum(1 for u in units
+                   if _has_lease(u) and u.get("move_in_date") and not u.get("move_out_date"))
     occupancy = {
         "total": total, "counts": counts,
+        "occupied": occupied, "leased": leased,
         "occupiedPct":  _vd_pct(occupied, total),
         "leasedPct":    _vd_pct(leased, total),
-        "availablePct": _vd_pct(counts.get("AVAILABLE", 0), total),
+        "availablePct": _vd_pct(total - leased, total),
     }
 
-    LEASED_STATUSES = {"Tenant Occupied", "Leased", "Renewal", "Model"}
     fp_map = {}
     for u in units:
         key = u.get("fp") or "Unknown"
-        row = fp_map.setdefault(key, {"byPhase": {}, "total": 0, "leased": 0})
+        row = fp_map.setdefault(key, {"byPhase": {}, "byPhaseLeased": {}, "total": 0, "leased": 0})
         ph = u.get("phase") or 0
         row["byPhase"][ph] = row["byPhase"].get(ph, 0) + 1
         row["total"] += 1
-        if u.get("status") in LEASED_STATUSES:
+        if _has_lease(u):
+            row["byPhaseLeased"][ph] = row["byPhaseLeased"].get(ph, 0) + 1
             row["leased"] += 1
+    # byPhaseLeased carries the leased count per phase so a consumer can render
+    # the same "leased / total" cells the dashboard's Leasing-by-Phase grid
+    # shows, instead of only a per-floorplan roll-up.
     phase_rollup = sorted([
-        {"fp": fp, "byPhase": r["byPhase"], "total": r["total"], "leased": r["leased"],
+        {"fp": fp, "byPhase": r["byPhase"], "byPhaseLeased": r["byPhaseLeased"],
+         "total": r["total"], "leased": r["leased"],
          "pct": _vd_pct(r["leased"], r["total"])}
         for fp, r in fp_map.items()
     ], key=lambda x: x["fp"])

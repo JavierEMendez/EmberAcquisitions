@@ -772,6 +772,8 @@
   }
   .ie-status.ok { color:#276749; background:#f0fff4; border-color:#9ae6b4; border-style:solid; }
   .ie-status.err { color:#c53030; background:#fff5f5; border-color:#fc8181; border-style:solid; }
+  /* Partial import — some sections landed, others produced no data. */
+  .ie-status.warn { color:#975a16; background:#fffaf0; border-color:#f6ad55; border-style:solid; }
 
   .dsm-map {
     background: linear-gradient(135deg, #f4f7fb 0%, #e8eef6 100%);
@@ -1600,7 +1602,7 @@
     <div class="kpi"><div class="label">Total Units</div><div class="value" id="lh-kpi-total">117</div></div>
     <div class="kpi ember"><div class="label">Executed Leases To Date</div><div class="value" id="lh-kpi-leases">56</div><div class="sub" id="lh-kpi-leases-pct">47.9%</div></div>
     <div class="kpi green"><div class="label">Current Occupancy</div><div class="value" id="lh-kpi-occ">55</div><div class="sub" id="lh-kpi-occ-pct">47.0%</div></div>
-    <div class="kpi accent"><div class="label">YTD Leases 2026</div><div class="value" id="lh-kpi-ytd-leases">0</div><div class="sub" id="lh-kpi-ytd-leases-sub">Jan 1 – today</div></div>
+    <div class="kpi accent"><div class="label" id="lh-kpi-ytd-label">YTD Leases 2026</div><div class="value" id="lh-kpi-ytd-leases">0</div><div class="sub" id="lh-kpi-ytd-leases-sub">Jan 1 – today</div></div>
     <div class="kpi cyan"><div class="label" id="lh-kpi-month-label">Ending Occupancy — Mar</div><div class="value" id="lh-kpi-month-val">53/52</div><div class="sub" id="lh-kpi-month-sub">Actual / Budget</div></div>
     <div class="kpi accent"><div class="label" id="lh-kpi-absorp-label">Net Absorption (Mar '26)</div><div class="value" id="lh-kpi-absorp-val">6</div><div class="sub" id="lh-kpi-absorp-pct">5.1%</div></div>
   </div>
@@ -3285,6 +3287,12 @@ const statusStyle = {
   'Leased':          {bg:'#E55500', fg:'#fff', sym:'◆'},
   'Model':           {bg:'#003552', fg:'#fff', sym:'★'},
   'Renewal':         {bg:'#d69e2e', fg:'#fff', sym:'○'},
+  // Notice = tenant still in place but has given notice to vacate.
+  // Applicant = application submitted, lease not yet executed.
+  // Both appear in the master tracker and previously had no entry here, so
+  // five units fell through to the unknown branch and rendered grey.
+  'Notice':          {bg:'#c05621', fg:'#fff', sym:'▲'},
+  'Applicant':       {bg:'#5a67d8', fg:'#fff', sym:'◇'},
   'Turned':          {bg:'#edf2f7', fg:'#4a5568', sym:'·'}
 };
 
@@ -3827,8 +3835,10 @@ renderUnits('all');
       var d = new Date(v);
       return isNaN(d.getTime()) ? null : d;
     }
-    var leasedCount = 0, occCount = 0, datesSeen = 0, ytd2026Leases = 0;
-    var YTD_YEAR = 2026;
+    var leasedCount = 0, occCount = 0, datesSeen = 0, ytdLeasesThisYear = 0;
+    // Was hardcoded to 2026, which would have silently reported zero from
+    // 1 Jan 2027 onward.
+    var YTD_YEAR = new Date().getFullYear();
     units.forEach(function (u) {
       var lex = parseDate(u.lease_executed_date);
       var mi  = parseDate(u.move_in_date);
@@ -3843,15 +3853,18 @@ renderUnits('all');
       if (mi && mi <= today && (!mo || mo > today)) occCount++;
       // YTD 2026 — NEW leases executed in 2026 calendar year up to today.
       // Renewals don't count.
-      if (lex && !isRenewal && lex.getUTCFullYear() === YTD_YEAR && lex <= today) ytd2026Leases++;
+      if (lex && !isRenewal && lex.getFullYear() === YTD_YEAR && lex <= today) ytdLeasesThisYear++;
     });
 
     // Status-based fallback (when no dates are populated). Renewals are
     // excluded from the LEASED bucket per the same logic above — a
     // renewal is the continuation of an existing lease, not a new lease
     // event. They still count toward Current Occupancy.
-    var STATUS_LEASED = { 'Tenant Occupied':1, 'Leased':1, 'Model':1 };
-    var STATUS_OCC    = { 'Tenant Occupied':1, 'Renewal':1, 'Model':1 };
+    // 'Notice' is an executed lease with a tenant still in place, so it
+    // counts as both leased and occupied. 'Applicant' is pipeline only and
+    // deliberately counts as neither.
+    var STATUS_LEASED = { 'Tenant Occupied':1, 'Leased':1, 'Model':1, 'Notice':1 };
+    var STATUS_OCC    = { 'Tenant Occupied':1, 'Renewal':1, 'Model':1, 'Notice':1 };
     if (!datesSeen) {
       leasedCount = 0; occCount = 0;
       units.forEach(function (u) {
@@ -3890,7 +3903,11 @@ renderUnits('all');
     set('lh-kpi-leases-pct', pct(leased));
     set('lh-kpi-occ',        occ);
     set('lh-kpi-occ-pct',    pct(occ));
-    set('lh-kpi-ytd-leases', ytd2026Leases);
+    // Yield to the imported figure when we have one. applyLeaseUpKPISummary
+    // calls this function *after* writing the tiles, so without this guard the
+    // recompute would clobber the value that came off the spreadsheet.
+    var xlsxYtd = (window.LH_xlsxKPISummary || {}).ytdVal;
+    set('lh-kpi-ytd-leases', (typeof xlsxYtd === 'number') ? xlsxYtd : ytdLeasesThisYear);
 
     // Floor-plan tab strip — use the same date-aware "Currently Occupied"
     // value as the lease-up strip so both tabs agree
@@ -3931,8 +3948,8 @@ renderUnits('all');
 
     var today = new Date(); today.setHours(23,59,59,999);
     function pdate(v) { if (!v) return null; var d = new Date(v); return isNaN(d.getTime()) ? null : d; }
-    var STATUS_LEASED = { 'Tenant Occupied':1, 'Leased':1, 'Renewal':1, 'Model':1 };
-    var STATUS_OCC    = { 'Tenant Occupied':1, 'Renewal':1, 'Model':1 };
+    var STATUS_LEASED = { 'Tenant Occupied':1, 'Leased':1, 'Renewal':1, 'Model':1, 'Notice':1 };
+    var STATUS_OCC    = { 'Tenant Occupied':1, 'Renewal':1, 'Model':1, 'Notice':1 };
 
     function tally(filterFn) {
       var f = units.filter(filterFn);
@@ -4035,7 +4052,7 @@ renderUnits('all');
 
     var FPS = ['Canary','Sparrow','Mallard','Raven','Falcon','Phoenix'];
     var PHASES = [1,2,3,4,5,6];
-    var LEASED_STATUSES = { 'Tenant Occupied':1, 'Leased':1, 'Renewal':1, 'Model':1 };
+    var LEASED_STATUSES = { 'Tenant Occupied':1, 'Leased':1, 'Renewal':1, 'Model':1, 'Notice':1 };
 
     // Decide leased per unit: lease_executed_date when present, else status
     var anyDates = units.some(function (u) {
@@ -4185,7 +4202,10 @@ renderUnits('all');
     const el = document.querySelector(`[data-ie-status="${key}"]`);
     if (!el) return;
     el.textContent = msg;
-    el.classList.remove('ok','err');
+    // Multi-line status text (the partial-import report) needs the newlines
+    // preserved, and 'warn' is a third state alongside ok/err.
+    el.style.whiteSpace = 'pre-line';
+    el.classList.remove('ok','err','warn');
     if (kind) el.classList.add(kind);
   }
   function restoreStatuses() {
@@ -4224,9 +4244,22 @@ renderUnits('all');
     });
   }
   function findSheet(wb, candidates) {
-    const want = candidates.map(c => c.toLowerCase().trim());
+    // CANDIDATE ORDER IS PRIORITY. We walk the candidate list on the outside
+    // and return the first workbook tab that matches it. The previous version
+    // looped wb.SheetNames on the outside, which made physical TAB ORDER the
+    // tie-breaker and silently ignored the candidate ranking every call site
+    // relies on. The LightHaven master carries both 'I. LeaseUp Template'
+    // (current) and a stale 'LeaseUp Template'; under the old behaviour the
+    // right one only won because it happened to sit at tab 0, so dragging a
+    // tab would quietly repoint every LeaseUp importer at weeks-old numbers.
+    const byLower = new Map();
     for (const name of wb.SheetNames) {
-      if (want.includes(name.toLowerCase().trim())) return wb.Sheets[name];
+      const k = name.toLowerCase().trim();
+      if (!byLower.has(k)) byLower.set(k, wb.Sheets[name]);
+    }
+    for (const c of candidates) {
+      const hit = byLower.get(String(c).toLowerCase().trim());
+      if (hit) return hit;
     }
     return null;
   }
@@ -4325,6 +4358,12 @@ renderUnits('all');
       if (/^(tenant\s+occupied|occupied|in\s+place|tenant\s+in\s+place)$/.test(lower)) return 'Tenant Occupied';
       if (/^(renewal|renewing|renewed)$/.test(lower))    return 'Renewal';
       if (/^(model|model\s+unit|leasing\s+office)$/.test(lower)) return 'Model';
+      // Occupied-but-leaving. Kept distinct from Tenant Occupied so the site
+      // map shows the upcoming vacancy, but still counts as occupied/leased.
+      if (/^(notice|on\s+notice|notice\s+to\s+vacate|ntv|skip|pending\s+move[\s-]?out)$/.test(lower)) return 'Notice';
+      // Application in flight — deliberately NOT counted as leased or
+      // occupied; it is pipeline, not an executed lease.
+      if (/^(applicant|application|app\s+pending|pending\s+application|approved\s+applicant)$/.test(lower)) return 'Applicant';
       if (/^(turned|available|vacant|ready|move[\s-]?out)$/.test(lower)) return 'Turned';
       // Unknown — return as-is so the user can spot the typo in their
       // sheet (it'll render as gray) instead of being silently re-mapped.
@@ -4353,6 +4392,21 @@ renderUnits('all');
       const row = aoa[r];
       const addr = String(row[iAddr] || '').trim();
       if (!addr) continue;
+
+      // STOP at a repeated header. The Data Table sheet keeps a scratch
+      // working area below the roster (its own "Address" header plus notes
+      // like "REMOVE dot if present (47)" and columns of bare street names).
+      // Those rows were being ingested as units, inflating a 117-unit roster
+      // to 136 phantom units and skewing every roster-derived count — the
+      // occupancy denominators, available-unit tallies, the phase grid and
+      // the floorplan summary.
+      if (/^address$/i.test(addr)) {
+        console.log('[LH import] Data Table: stopping at the repeated ' +
+          '"Address" header on row ' + r + ' (scratch area below the roster).');
+        break;
+      }
+      // A real unit row always carries a status; scratch rows never do.
+      if (iSt >= 0 && !String(row[iSt] || '').trim()) continue;
 
       // Tenant cell can be the literal "0" placeholder for vacant rows —
       // treat 0 / empty as null so the popover shows "—" rather than "0".
@@ -4424,7 +4478,8 @@ renderUnits('all');
     // I can extend normalizeUnitStatus() to alias it.
     var statusFreq = {};
     var unknownStatuses = {};
-    var KNOWN = { 'Tenant Occupied': 1, 'Leased': 1, 'Renewal': 1, 'Model': 1, 'Turned': 1 };
+    var KNOWN = { 'Tenant Occupied': 1, 'Leased': 1, 'Renewal': 1, 'Model': 1,
+                  'Notice': 1, 'Applicant': 1, 'Turned': 1 };
     for (let r = hdrRow + 1; r < aoa.length; r++) {
       var raw = aoa[r] && iSt >= 0 ? String(aoa[r][iSt] || '').trim() : '';
       if (!raw) continue;
@@ -4433,6 +4488,46 @@ renderUnits('all');
       if (!KNOWN[norm]) unknownStatuses[raw] = (unknownStatuses[raw] || 0) + 1;
     }
     console.log('[LH import] status frequencies (normalized):', statusFreq);
+
+    // Roster-level counts published for the KPI tiles. "Executed Leases To
+    // Date" has no cell of its own in the current KPI band, so it is taken
+    // from the Lease Executed Date column here — 72 rows on this file, the
+    // same figure the band's Current Occupancy tile and Summary by Floorplan
+    // both report. Counting Status instead lands on ~53, because Status lags
+    // the date columns.
+    var execLeaseCount = 0, rosterRowCount = 0, ytdLeaseCount = 0;
+    var nowD = new Date();
+    var todayIso = nowD.getFullYear() + '-' +
+      String(nowD.getMonth() + 1).padStart(2, '0') + '-' +
+      String(nowD.getDate()).padStart(2, '0');
+    var thisYear = String(nowD.getFullYear());
+    for (let r = hdrRow + 1; r < aoa.length; r++) {
+      var arow = aoa[r] || [];
+      var aaddr = String(arow[iAddr] || '').trim();
+      if (!aaddr) continue;
+      if (/^address$/i.test(aaddr)) break;
+      if (iSt >= 0 && !String(arow[iSt] || '').trim()) continue;
+      rosterRowCount++;
+      var lexv = iLeaseEx >= 0 ? arow[iLeaseEx] : '';
+      if (lexv === '' || lexv == null) continue;
+      execLeaseCount++;
+      // YTD = leases executed this calendar year, on or before today. Compared
+      // as ISO strings so a timezone shift cannot move a lease across a year
+      // boundary; leases dated later this month are correctly excluded.
+      var lexIso = toIsoDate(lexv);
+      if (lexIso && lexIso.slice(0, 4) === thisYear && lexIso <= todayIso) ytdLeaseCount++;
+    }
+    // Count rows off the sheet rather than unitData.length — the in-memory
+    // roster is replaced further down this function, so it is still empty here.
+    // Published so every KPI tile reads one consistent, lease-date-derived set
+    // of numbers instead of each recomputing its own.
+    window.LH_rosterStats = {
+      total: rosterRowCount,
+      leaseExecuted: execLeaseCount,
+      ytdLeases: ytdLeaseCount,
+    };
+    console.log('[LH import] roster stats:', window.LH_rosterStats);
+
     if (Object.keys(unknownStatuses).length) {
       console.warn('[LH import] unknown status values (will render as gray):', unknownStatuses);
     }
@@ -4765,40 +4860,95 @@ renderUnits('all');
     const aoa = sheetToAoa(ws);
     if (!aoa.length) return { count: 0, sheets: 0 };
 
-    // Find the label row by looking for "Executed Leases" anywhere in
-    // the first ~15 rows. The value row sits 2 rows above it; the
-    // percentage row sits 1 row below it.
-    let lblRow = -1, lblCol = -1;
-    for (let r = 0; r < Math.min(aoa.length, 15) && lblRow < 0; r++) {
+    // Locate the KPI tile band. This used to anchor solely on the literal
+    // text "executed leases" within the first 15 rows — that tile has since
+    // been dropped from the sheet, so the anchor never matched, this importer
+    // returned empty, and all five headline tiles silently fell back to
+    // JavaScript recomputation. Anchor on ANY of the band's labels instead,
+    // and search a wider window.
+    const BAND_LABELS = ['current occupancy', 'ending occupancy', 'net absorption',
+                         'executed leases', 'total units'];
+    const normCell = (v) => String(v == null ? '' : v).toLowerCase().replace(/\s+/g, ' ').trim();
+    let lblRow = -1;
+    for (let r = 0; r < Math.min(aoa.length, 30) && lblRow < 0; r++) {
       const row = aoa[r] || [];
+      // Require at least two band labels on the row so a stray mention
+      // elsewhere on the sheet cannot masquerade as the tile band.
+      let hits = 0;
       for (let c = 0; c < row.length; c++) {
-        const t = String(row[c] || '').toLowerCase().replace(/\s+/g, ' ').trim();
-        if (t.indexOf('executed leases') >= 0) { lblRow = r; lblCol = c; break; }
+        const t = normCell(row[c]);
+        if (t && BAND_LABELS.some(l => t.indexOf(l) >= 0)) hits++;
       }
+      if (hits >= 2) lblRow = r;
     }
-    if (lblRow < 0) return { count: 0, sheets: 0 };
+    if (lblRow < 0) {
+      console.warn('[LH import] LeaseUp KPI band not found — expected a row ' +
+        'carrying at least two of: ' + BAND_LABELS.join(' / '));
+      // Fall through with no tile values; the two table parsers below still run.
+    }
 
-    const valRow = lblRow - 2;
-    const pctRow = lblRow + 1;
-    if (valRow < 0 || valRow >= aoa.length) return { count: 0, sheets: 0 };
+    // Column for each tile, resolved by its own label text. There are now
+    // THREE "Ending Occupancy" tiles (Budget / MidYear Reforecast / Actual)
+    // where the old code assumed two and blindly took the first as Budget and
+    // the second as Actual — which is how the MidYear Reforecast ended up
+    // displayed under an "Actual" heading. Classify each by its wording.
+    function bandCols() {
+      const row = lblRow >= 0 ? (aoa[lblRow] || []) : [];
+      const out = { exec: -1, occ: -1, bud: -1, act: -1, ref: -1, abs: -1, endings: [] };
+      for (let c = 0; c < row.length; c++) {
+        const t = normCell(row[c]);
+        if (!t) continue;
+        if (out.exec < 0 && t.indexOf('executed leases') >= 0) { out.exec = c; continue; }
+        if (out.abs  < 0 && t.indexOf('net absorption')  >= 0) { out.abs  = c; continue; }
+        if (t.indexOf('ending occupancy') >= 0) {
+          out.endings.push({ c, t });
+          // "MidYear Reforecast" must be tested before the bare /actual/
+          // check: on this sheet the reforecast column's closed months are
+          // themselves labelled Actual elsewhere, and 'reforecast' contains
+          // no 'actual' — but keeping the order explicit documents intent.
+          if (out.ref < 0 && /(reforecast|forecast|midyear|mid year|mid-year)/.test(t)) { out.ref = c; continue; }
+          if (out.act < 0 && /actual/.test(t)) { out.act = c; continue; }
+          if (out.bud < 0 && /budget/.test(t)) { out.bud = c; continue; }
+          continue;
+        }
+        // Plain "Current Occupancy" — checked last so the three
+        // "Ending Occupancy ..." tiles above can't be swallowed by it.
+        if (out.occ < 0 && t.indexOf('current occupancy') >= 0) out.occ = c;
+      }
+      // Legacy two-column layout with no Budget/Actual wording: first is
+      // Budget, second is Actual, matching the historic assumption.
+      if (out.bud < 0 && out.act < 0 && out.endings.length >= 2) {
+        out.bud = out.endings[0].c;
+        out.act = out.endings[1].c;
+      } else if (out.bud < 0 && out.endings.length === 1 && out.act < 0) {
+        out.bud = out.endings[0].c;
+      }
+      return out;
+    }
+    const cols = bandCols();
+    const cExec = cols.exec, cOcc = cols.occ, cBud = cols.bud,
+          cAct = cols.act,  cRef = cols.ref, cAbs = cols.abs;
 
-    // Walk the label row to find each tile's column. The five tiles
-    // sit at evenly-spaced columns. Match by their label text so we
-    // don't break if the column spacing changes.
-    function findLabelCol(needle, startCol) {
-      const row = aoa[lblRow] || [];
-      const want = needle.toLowerCase();
-      for (let c = Math.max(0, startCol); c < row.length; c++) {
-        const t = String(row[c] || '').toLowerCase().replace(/\s+/g, ' ').trim();
-        if (t.indexOf(want) >= 0) return c;
+    // The unit-count row sits above the labels and the percentage row below.
+    // Historically that was exactly lblRow-2 and lblRow+1; probe outward
+    // instead of hardcoding, so an inserted spacer row can't break the read.
+    function probeRow(from, to, wantFraction) {
+      const anchorCol = cOcc >= 0 ? cOcc : (cBud >= 0 ? cBud : cExec);
+      if (anchorCol < 0) return -1;
+      const step = to > from ? 1 : -1;
+      for (let r = from; step > 0 ? r <= to : r >= to; r += step) {
+        if (r < 0 || r >= aoa.length) continue;
+        const v = (aoa[r] || [])[anchorCol];
+        if (typeof v !== 'number' || isNaN(v)) continue;
+        const isFraction = v > 0 && v <= 1.5;
+        if (wantFraction === isFraction) return r;
       }
       return -1;
     }
-    const cExec  = lblCol;
-    const cOcc   = findLabelCol('current occupancy', cExec + 1);
-    const cBud   = findLabelCol('ending occupancy', cOcc  + 1); // first one = Budget
-    const cAct   = cBud >= 0 ? findLabelCol('ending occupancy', cBud + 1) : -1;
-    const cAbs   = findLabelCol('net absorption', cAct + 1);
+    let valRow = lblRow < 0 ? -1 : probeRow(lblRow - 1, lblRow - 4, false);
+    let pctRow = lblRow < 0 ? -1 : probeRow(lblRow + 1, lblRow + 4, true);
+    if (valRow < 0 && lblRow >= 2) valRow = lblRow - 2;
+    if (pctRow < 0 && lblRow >= 0) pctRow = lblRow + 1;
 
     // Helper: pull a number out of a cell that might be already-numeric
     // or a "59" string or a "50.4%" string.
@@ -4831,29 +4981,80 @@ renderUnits('all');
       return m ? m[1] : null;
     }
 
-    const execVal = readNum(valRow, cExec);
+    // The band has no "Executed Leases To Date" tile on the current template,
+    // so fall back to the roster's Lease Executed Date count (72) published by
+    // importLeasing. Keeps the tile spreadsheet-sourced instead of leaving it
+    // on a date-based recompute that lands on 69.
+    const bandExec = readNum(valRow, cExec);
+    const rosterStats = window.LH_rosterStats || null;
+    const execVal = (bandExec != null) ? bandExec
+      : (rosterStats && typeof rosterStats.leaseExecuted === 'number' ? rosterStats.leaseExecuted : null);
     const occVal  = readNum(valRow, cOcc);
     const budVal  = readNum(valRow, cBud);
     const actVal  = readNum(valRow, cAct);
+    const refVal  = readNum(valRow, cRef);
     const absVal  = readNum(valRow, cAbs);
-    const execPct = readPct(pctRow, cExec);
+    // Total Units — read the band's own cell. The label sits in one column with
+    // the number beside it (not above, like the other tiles), so scan the first
+    // rows for "Total Units" and take the next numeric cell on that row.
+    let totalUnits = null;
+    for (let r = 0; r < Math.min(aoa.length, 30) && totalUnits == null; r++) {
+      const row = aoa[r] || [];
+      for (let c = 0; c < row.length; c++) {
+        if (!/^total\s+units$/i.test(normCell(row[c]))) continue;
+        for (let c2 = c + 1; c2 < Math.min(row.length, c + 5); c2++) {
+          const v = row[c2];
+          if (typeof v === 'number' && v > 0) { totalUnits = v; break; }
+        }
+        if (totalUnits != null) break;
+      }
+    }
+
+    const bandExecPct = readPct(pctRow, cExec);
+    const execPct = (bandExecPct != null) ? bandExecPct
+      : ((execVal != null && rosterStats && rosterStats.total)
+          ? (100 * execVal / rosterStats.total) : null);
     const occPct  = readPct(pctRow, cOcc);
     const budPct  = readPct(pctRow, cBud);
     const actPct  = readPct(pctRow, cAct);
+    const refPct  = readPct(pctRow, cRef);
     const absPct  = readPct(pctRow, cAbs);
-    const monthLbl = monthFromLabel(lblRow, cBud) || monthFromLabel(lblRow, cAct);
+    // Prefer the Actual tile's own month wording, then Budget, then the
+    // reforecast. Normalise to the 3-letter form the rest of the dashboard
+    // uses so the tile reads "Ending Occupancy — Jul", not "— July".
+    const rawMonth = monthFromLabel(lblRow, cAct) || monthFromLabel(lblRow, cBud) ||
+                     monthFromLabel(lblRow, cRef);
+    const monthLbl = rawMonth
+      ? rawMonth.charAt(0).toUpperCase() + rawMonth.slice(1, 3).toLowerCase()
+      : null;
 
     // Store on a global so the dashboard's recompute path can yield
     // to these whenever it's about to overwrite a tile, AND stage to
     // localStorage so a page refresh rehydrates the same values.
+    // refVal/refPct carry the MidYear Reforecast so it is available to the
+    // tile without being mistaken for the Actual.
+    // YTD Leases also comes off the Lease Executed Date column, via the roster
+    // stats importLeasing published. Staged with the rest so it reaches the
+    // server and every viewer sees the same figure rather than each browser
+    // recomputing it from whatever roster it happens to hold.
+    const ytdVal = (rosterStats && typeof rosterStats.ytdLeases === 'number')
+      ? rosterStats.ytdLeases : null;
     const summary = {
       execVal, execPct, occVal, occPct, budVal, budPct,
-      actVal, actPct, absVal, absPct, monthLbl,
+      actVal, actPct, refVal, refPct, absVal, absPct, monthLbl, totalUnits, ytdVal,
     };
-    window.LH_xlsxKPISummary = summary;
-    try { stage('kpiSummary', summary); } catch (_) {}
-
-    applyLeaseUpKPISummary(summary);
+    const gotAnyTile = [execVal, occVal, budVal, actVal, absVal, totalUnits, ytdVal]
+      .some(v => typeof v === 'number');
+    if (gotAnyTile) {
+      window.LH_xlsxKPISummary = summary;
+      try { stage('kpiSummary', summary); } catch (_) {}
+      applyLeaseUpKPISummary(summary);
+      console.log('[LH import] LeaseUp KPI band read from rows ' +
+        '{labels:' + lblRow + ', values:' + valRow + ', pcts:' + pctRow + '}:', summary);
+    } else {
+      console.warn('[LH import] LeaseUp KPI band matched no tile values — ' +
+        'leaving the tiles on their recomputed figures.');
+    }
 
     // ── Parse the two big tables on the same sheet ──────────────────
     // LEASING BY PHASE  (Floorplan × Phase grid, "X / Y" cells)
@@ -4861,12 +5062,44 @@ renderUnits('all');
     // These are the authoritative source for the Leasing-by-Phase
     // grid and the Summary-by-Floorplan table. Recompute functions
     // yield to whatever we stash here.
-    const phaseGrid = parseLeasingByPhase(aoa);
-    if (phaseGrid) {
-      window.LH_xlsxPhaseTable = phaseGrid;
-      try { stage('phaseGrid', phaseGrid); } catch (_) {}
-      applyPhaseTable(phaseGrid);
-      console.log('[LH import] LEASING BY PHASE parsed:', phaseGrid);
+    // LEASING BY PHASE does NOT live on the same sheet as the KPI band. On
+    // this master the block sits on 'LeaseUp Template' while the KPI band and
+    // SUMMARY BY FLOORPLAN are on 'I. LeaseUp Template' — so parsing only the
+    // KPI sheet's rows found nothing and the grid looked sourceless. Search
+    // every LeaseUp-ish tab for it.
+    let phaseGrid = parseLeasingByPhase(aoa);
+    let phaseSrc = 'KPI sheet';
+    if (!phaseGrid) {
+      const PHASE_SHEETS = ['I. LeaseUp Template', 'LeaseUp Template', 'Lease-Up Template',
+                            'Leasing Pace', 'Lease Tracker', 'IV. Lease Tracker'];
+      for (let i = 0; i < PHASE_SHEETS.length; i++) {
+        const alt = findSheet(wb, [PHASE_SHEETS[i]]);
+        if (!alt || alt === ws) continue;
+        const g = parseLeasingByPhase(sheetToAoa(alt));
+        if (g) { phaseGrid = g; phaseSrc = PHASE_SHEETS[i]; break; }
+      }
+    }
+    // The roster-derived grid wins (see phaseGridFromRoster for why), with the
+    // workbook block kept as a cross-check so a stale cell there gets flagged
+    // rather than silently shipped.
+    const rosterGrid = phaseGridFromRoster();
+    if (phaseGrid) crossCheckPhaseGrid(phaseGrid, rosterGrid, phaseSrc);
+    const finalGrid = rosterGrid || phaseGrid;
+    if (finalGrid) {
+      window.LH_xlsxPhaseTable = finalGrid;
+      try { stage('phaseGrid', finalGrid); } catch (_) {}
+      applyPhaseTable(finalGrid);
+      console.log('[LH import] LEASING BY PHASE applied from ' +
+        (rosterGrid ? 'the unit roster' : '"' + phaseSrc + '"'), finalGrid);
+    } else {
+      // Nothing to build from at all. Clear any stale grid from a prior upload
+      // rather than leaving last month's on screen.
+      window.LH_xlsxPhaseTable = null;
+      if (typeof recomputePhaseTable === 'function') {
+        try { recomputePhaseTable(); } catch (_) {}
+      }
+      console.warn('[LH import] LEASING BY PHASE could not be built — ' +
+        'no workbook block and no unit roster.');
     }
     const fpSummary = parseFloorplanSummary(aoa);
     if (fpSummary) {
@@ -4876,8 +5109,12 @@ renderUnits('all');
       console.log('[LH import] SUMMARY BY FLOORPLAN parsed:', fpSummary);
     }
 
-    console.log('[LH import] LeaseUp KPI summary (xlsx wins over recompute):', summary);
-    return { count: 5, sheets: 1 };
+    // sheets:1 whenever we got EITHER tile values or one of the two tables —
+    // this function used to bail before the table parsers ran, which is why
+    // Summary by Floorplan never updated even though its parser works.
+    const got = gotAnyTile || !!phaseGrid || !!fpSummary;
+    return { count: (gotAnyTile ? 5 : 0) + (phaseGrid ? 1 : 0) + (fpSummary ? 1 : 0),
+             sheets: got ? 1 : 0 };
   }
 
   // ── LEASING BY PHASE parser ──────────────────────────────────────
@@ -4915,15 +5152,41 @@ renderUnits('all');
     }
     if (canaryRow < 0) return null;
 
+    // Per-floorplan, per-phase unit totals taken from the imported roster.
+    // Needed because Excel evaluates most of this block's "leased / total"
+    // entries down to a bare ratio (5/6 arrives as 0.8333…), which carries no
+    // denominator. The roster supplies it, so a ratio cell can be turned back
+    // into real counts instead of being dropped.
+    const rosterTotals = (function () {
+      const map = {};
+      try {
+        const units = (window.LH_units && window.LH_units.getUnits())
+          ? window.LH_units.getUnits()
+          : (typeof unitData !== 'undefined' ? unitData : []);
+        units.forEach(function (u) {
+          const fp = String(u.fp || '').trim();
+          const ph = parseInt(u.phase, 10);
+          if (!fp || !ph) return;
+          if (!map[fp]) map[fp] = {};
+          map[fp][ph] = (map[fp][ph] || 0) + 1;
+        });
+      } catch (_) {}
+      return map;
+    })();
+
     function splitFraction(v) {
       if (v == null || v === '') return null;
       const s = String(v).trim();
       const m = s.match(/^(-?\d+)\s*\/\s*(-?\d+)$/);
       if (m) return { leased: +m[1], total: +m[2] };
+      // A bare 0..1 number is a ratio whose denominator Excel discarded.
+      // Flag it so readFpRow can restore the counts from the roster.
+      if (typeof v === 'number' && isFinite(v) && v >= 0 && v <= 1) return { ratio: v };
       return null;
     }
-    function readFpRow(row, anchorCol) {
+    function readFpRow(row, anchorCol, fpName) {
       if (!row) return null;
+      const byPhase = (fpName && rosterTotals[fpName]) || null;
       const cells = [];
       // Phase cells: next 6 non-blank fractions starting after anchorCol.
       let c = anchorCol + 1;
@@ -4931,7 +5194,15 @@ renderUnits('all');
         const v = row[c];
         if (v == null || v === '') { cells.push(null); c++; continue; }
         const frac = splitFraction(v);
-        if (frac) cells.push(frac);
+        if (frac && frac.ratio != null) {
+          // Phase number is the cell's position in this block (1-indexed).
+          const phase = cells.length + 1;
+          const total = byPhase ? byPhase[phase] : null;
+          cells.push(total
+            ? { leased: Math.round(frac.ratio * total), total: total }
+            : null);
+        }
+        else if (frac) cells.push(frac);
         else cells.push(null);
         c++;
       }
@@ -4954,15 +5225,59 @@ renderUnits('all');
       return { cells, total: totalCell, pct: pctVal };
     }
 
+    // Leased/total per phase for one floorplan, straight from the roster.
+    function fromRoster(fpName) {
+      // Same basis as phaseGridFromRoster: a Lease Executed Date, not Status.
+      const isLeased = function (u) {
+        const v = u.lease_executed_date;
+        return v != null && v !== '';
+      };
+      const out = [null,null,null,null,null,null];
+      const byPhase = rosterTotals[fpName];
+      if (!byPhase) return out;
+      let units = [];
+      try {
+        units = (window.LH_units && window.LH_units.getUnits())
+          ? window.LH_units.getUnits()
+          : (typeof unitData !== 'undefined' ? unitData : []);
+      } catch (_) {}
+      for (let ph = 1; ph <= 6; ph++) {
+        const total = byPhase[ph];
+        if (!total) continue;
+        let leased = 0;
+        units.forEach(function (u) {
+          if (String(u.fp || '').trim() !== fpName) return;
+          if (parseInt(u.phase, 10) !== ph) return;
+          if (isLeased(u)) leased++;
+        });
+        out[ph - 1] = { leased: leased, total: total };
+      }
+      return out;
+    }
+
     const rows = [];
     let r = canaryRow;
     for (let fi = 0; fi < FP_NAMES.length; fi++, r++) {
       const fpName = FP_NAMES[fi];
       const row = aoa[r] || [];
       const c = isFpRow(row, fpName);
-      if (c < 0) { rows.push({ fp: fpName, cells: [null,null,null,null,null,null], total: null, pct: null }); continue; }
-      const parsed = readFpRow(row, c);
-      rows.push({ fp: fpName, ...parsed });
+      if (c < 0) {
+        // Several floorplan rows are blank in the workbook block. Derive them
+        // from the roster so the grid is complete rather than half-empty.
+        rows.push({ fp: fpName, cells: fromRoster(fpName), total: null, pct: null, derived: true });
+        continue;
+      }
+      const parsed = readFpRow(row, c, fpName);
+      // Fill any cell the sheet left blank from the roster. Most floorplan
+      // rows in this block are only partly populated (Sparrow, Raven, Falcon
+      // and Phoenix are entirely empty), so without this the grid renders
+      // mostly dashes even though the roster knows every unit's phase.
+      const backfill = fromRoster(fpName);
+      let filled = 0;
+      for (let ci = 0; ci < 6; ci++) {
+        if (!parsed.cells[ci] && backfill[ci]) { parsed.cells[ci] = backfill[ci]; filled++; }
+      }
+      rows.push({ fp: fpName, ...parsed, derivedCells: filled });
     }
     // Total Units / Phase row (right below Phoenix)
     let totalRow = null;
@@ -4970,14 +5285,121 @@ renderUnits('all');
       const row = aoa[i] || [];
       for (let c = 0; c < row.length; c++) {
         if (String(row[c] || '').toLowerCase().indexOf('total units') >= 0) {
-          totalRow = readFpRow(row, c);
+          totalRow = readFpRow(row, c, null);
           totalRow.label = 'Total Units / Phase';
           break;
         }
       }
       if (totalRow) break;
     }
+    // The "Total Units / Phase" row is only partly populated in the sheet too.
+    // Recompute it as the column sums of the (now complete) grid so the footer
+    // agrees with the cells above it.
+    const colTotals = [];
+    for (let ph = 0; ph < 6; ph++) {
+      let leased = 0, total = 0, any = false;
+      rows.forEach(function (rw) {
+        const cell = rw.cells && rw.cells[ph];
+        if (!cell) return;
+        leased += cell.leased || 0;
+        total  += cell.total  || 0;
+        any = true;
+      });
+      colTotals.push(any ? { leased: leased, total: total } : null);
+    }
+    if (!totalRow) totalRow = { cells: colTotals, total: null, pct: null };
+    else for (let ph = 0; ph < 6; ph++) {
+      if (!totalRow.cells[ph] && colTotals[ph]) totalRow.cells[ph] = colTotals[ph];
+    }
+    totalRow.label = 'Total Units / Phase';
     return { rows, totalRow };
+  }
+
+  // ── LEASING BY PHASE from the unit roster ───────────────────────
+  // The workbook's own LEASING BY PHASE block (on 'LeaseUp Template') is only
+  // ~30% populated and carries at least one stale denominator — it claims
+  // Mallard Phase 1 is 8 units where the roster has 6 — so blending it with
+  // roster values produced column totals that didn't reconcile (Mallard came
+  // out as 27 units against a true 25).
+  //
+  // The Data Table roster is the better source for this grid and is just as
+  // much "from the spreadsheet": all 117 units carry a Floorplan and a Phase
+  // 1-6, it is current, and it reconciles exactly. So the grid is built here
+  // and the sheet block is used only as a cross-check.
+  function phaseGridFromRoster() {
+    const FP_NAMES = ['Canary','Sparrow','Mallard','Raven','Falcon','Phoenix'];
+    // "Leased" = the unit has a Lease Executed Date. NOT the Status column:
+    // Status is maintained more loosely and currently accounts for only ~53
+    // units, while 72 rows carry an executed lease — and 72 is the figure the
+    // sheet's own KPI band and Summary by Floorplan both report. Counting on
+    // the date column makes this grid total 72/117 and reconcile with them.
+    const isLeased = function (u) {
+      const v = u.lease_executed_date;
+      return v != null && v !== '';
+    };
+    let units = [];
+    try {
+      units = (window.LH_units && window.LH_units.getUnits())
+        ? window.LH_units.getUnits()
+        : (typeof unitData !== 'undefined' ? unitData : []);
+    } catch (_) {}
+    if (!units.length) return null;
+
+    const rows = FP_NAMES.map(function (fp) {
+      const cells = [];
+      for (let ph = 1; ph <= 6; ph++) {
+        let total = 0, leased = 0;
+        units.forEach(function (u) {
+          if (String(u.fp || '').trim() !== fp) return;
+          if (parseInt(u.phase, 10) !== ph) return;
+          total++;
+          if (isLeased(u)) leased++;
+        });
+        cells.push(total ? { leased: leased, total: total } : null);
+      }
+      const tl = cells.reduce(function (s, c) { return s + (c ? c.leased : 0); }, 0);
+      const tt = cells.reduce(function (s, c) { return s + (c ? c.total  : 0); }, 0);
+      return { fp: fp, cells: cells, total: tt ? { leased: tl, total: tt } : null,
+               pct: tt ? (100 * tl / tt) : null };
+    });
+
+    const totalCells = [];
+    for (let ph = 0; ph < 6; ph++) {
+      let leased = 0, total = 0, any = false;
+      rows.forEach(function (rw) {
+        const c = rw.cells[ph];
+        if (!c) return;
+        leased += c.leased; total += c.total; any = true;
+      });
+      totalCells.push(any ? { leased: leased, total: total } : null);
+    }
+    return { rows: rows, totalRow: { cells: totalCells, label: 'Total Units / Phase',
+             total: null, pct: null }, source: 'roster' };
+  }
+
+  // Compare the workbook's block against the roster-derived grid and log any
+  // cell where they disagree — a cheap standing check on that stale sheet.
+  function crossCheckPhaseGrid(sheetGrid, rosterGrid, srcName) {
+    if (!sheetGrid || !rosterGrid) return;
+    const diffs = [];
+    rosterGrid.rows.forEach(function (rr, i) {
+      const sr = (sheetGrid.rows || [])[i];
+      if (!sr || sr.fp !== rr.fp) return;
+      for (let ph = 0; ph < 6; ph++) {
+        const a = sr.cells && sr.cells[ph], b = rr.cells[ph];
+        if (!a || !b) continue;
+        if (a.total !== b.total || a.leased !== b.leased) {
+          diffs.push(rr.fp + ' P' + (ph + 1) + ': sheet ' + a.leased + '/' + a.total +
+                     ' vs roster ' + b.leased + '/' + b.total);
+        }
+      }
+    });
+    if (diffs.length) {
+      console.warn('[LH import] LEASING BY PHASE — "' + srcName + '" disagrees with the ' +
+        'unit roster on ' + diffs.length + ' cell(s); the roster is used. ' + diffs.join(' | '));
+    } else {
+      console.log('[LH import] LEASING BY PHASE — "' + srcName + '" agrees with the roster.');
+    }
   }
 
   // ── SUMMARY BY FLOORPLAN parser ─────────────────────────────────
@@ -5185,13 +5607,26 @@ renderUnits('all');
       if (el && v != null && v !== '') el.textContent = v;
     }
     function fmtPct(n) { return n == null ? '' : n.toFixed(1) + '%'; }
+    if (typeof s.totalUnits === 'number') set('lh-kpi-total', String(s.totalUnits));
+    if (typeof s.ytdVal === 'number') {
+      set('lh-kpi-ytd-leases', String(s.ytdVal));
+      // The label carried a hardcoded 2026 in the markup; keep it in step.
+      var ytdLabelEl = document.getElementById('lh-kpi-ytd-label');
+      if (ytdLabelEl) ytdLabelEl.textContent = 'YTD Leases ' + new Date().getFullYear();
+    }
     if (typeof s.execVal === 'number') set('lh-kpi-leases',     String(s.execVal));
     if (typeof s.execPct === 'number') set('lh-kpi-leases-pct', fmtPct(s.execPct));
     if (typeof s.occVal  === 'number') set('lh-kpi-occ',        String(s.occVal));
     if (typeof s.occPct  === 'number') set('lh-kpi-occ-pct',    fmtPct(s.occPct));
     if (typeof s.budVal === 'number' && typeof s.actVal === 'number') {
+      // Actual vs Budget, matching this tile's own "Actual / Budget" label.
+      // s.actVal is the sheet's Ending Occupancy *Actual* column; the MidYear
+      // Reforecast rides along in s.refVal and is appended rather than being
+      // mistaken for the actual (which is what the tile used to display).
       set('lh-kpi-month-val', s.actVal + '/' + s.budVal);
-      set('lh-kpi-month-sub', 'Actual / Budget · ' + fmtPct(s.actPct) + ' / ' + fmtPct(s.budPct));
+      var monthSub = 'Actual / Budget · ' + fmtPct(s.actPct) + ' / ' + fmtPct(s.budPct);
+      if (typeof s.refVal === 'number') monthSub += ' · reforecast ' + s.refVal;
+      set('lh-kpi-month-sub', monthSub);
     }
     if (s.monthLbl) {
       set('lh-kpi-month-label',  'Ending Occupancy — ' + s.monthLbl);
@@ -5686,10 +6121,16 @@ renderUnits('all');
         }).catch(err => console.warn('[LH import] ' + key + ' PUT network err:', err));
       } catch (_) {}
     }
-    if (concessionsHtml)  persist('concessionsByFloorplan', concessionsHtml);
-    if (renewalsHtml)     persist('renewals',               renewalsHtml);
-    if (additionalHtml)   persist('additionalIncentives',   additionalHtml);
-    if (concCommentsHtml) persist('concessionComments',     concCommentsHtml);
+    // Persist UNCONDITIONALLY. These were previously guarded by `if (html)`,
+    // so a block that parsed to zero rows sent no PUT at all and the server
+    // kept the previous upload's text published indefinitely with no hint it
+    // was stale — which is exactly what happened to Renewals and Concession
+    // Comments. Writing the empty string clears the block instead, making a
+    // section that genuinely emptied out visibly empty.
+    persist('concessionsByFloorplan', concessionsHtml);
+    persist('renewals',              renewalsHtml);
+    persist('additionalIncentives',  additionalHtml);
+    persist('concessionComments',    concCommentsHtml);
     try { localStorage.setItem(COMMENTS_KEY, JSON.stringify(cache)); } catch (_) {}
 
     console.log('[LH import] Leasing Incentives parsed:', {
@@ -5938,8 +6379,20 @@ renderUnits('all');
       // Section detection — only when the label is JUST a section header
       // ("2026 BUDGET" / "2026 FORECAST"), not when a line item also
       // happens to include those words.
-      if (/^\s*\d{4}\s*budget\s*$/i.test(label) || label === 'budget') { section = 'budget'; continue; }
-      if (/^\s*\d{4}\s*forecast\s*$/i.test(label) || label === 'forecast') { section = 'forecast'; continue; }
+      // Section headers must be number-free rows. Without that guard the
+      // 'FORECASTED NOI / CASH FLOW' *data* row (which contains the word
+      // "forecast") would reset the section mid-block and orphan everything
+      // after it.
+      const hdrRowHasNums = (aoa[r] || []).some(v => typeof v === 'number' && !isNaN(v));
+      if (!hdrRowHasNums) {
+        if (/^\s*(\d{4}\s*)?budget\s*$/i.test(label)) { section = 'budget'; continue; }
+        // This master writes the header as "2026 ACTUAL - FORECAST"; older
+        // templates said plain "2026 FORECAST". Accepting only the latter is
+        // why every forecast line item was dropped, which in turn blanked the
+        // Forecast table, the Budget-vs-Actual actual/variance columns, two
+        // NOI KPIs and the chart's second series.
+        if (/^\s*(\d{4}\s*)?(actuals?\s*[-–—]?\s*)?forecast(ed)?\s*$/i.test(label)) { section = 'forecast'; continue; }
+      }
       const target = section === 'budget' ? budget : section === 'forecast' ? forecast : null;
       if (!target) continue;
       // Find matching line item
@@ -6393,6 +6846,15 @@ renderUnits('all');
       const row = aoa[r];
       const fp = String(row[iFp] || '').trim();
       if (!fp || /^total$/i.test(fp)) continue;
+      // Skip footnotes and prose sitting in the floorplan column beneath the
+      // table — e.g. "* Per April 2025 Monthly Report", which was being
+      // ingested as a 7th floorplan with every field null.
+      if (/^[*†‡(]/.test(fp)) continue;
+      if (/^(note|notes|comments?|source|per\s)/i.test(fp)) continue;
+      if (fp.split(/\s+/).length > 4) continue;
+      // A real floorplan row always carries at least one number (sf, unit
+      // count or rent); a footnote never does.
+      if (!row.some(v => typeof v === 'number' && !isNaN(v))) continue;
       const sf       = iSf       >= 0 ? num(row[iSf])       : null;
       const proforma = iOrigRent >= 0 ? num(row[iOrigRent]) : null;
       const proPsf   = iOrigPSF  >= 0 ? num(row[iOrigPSF])  : (proforma && sf ? proforma / sf : null);
@@ -6747,7 +7209,11 @@ renderUnits('all');
       // IMPORTANT: must NOT match "Ending OCC %" / "OCC %" — those
       // are decimal ratios (0.376…) and would poison the table.
       // Also exclude any label that contains '%' or 'pct' / 'percent'.
-      const isEnding   = /(^|\s)ending(\s+occ|\s+occupancy|\s+units|\s*$)/i.test(label);
+      // Accept the abbreviated "End'g OCC" spelling too — that is how the
+      // authoritative "2026 Actual Absorption Projections" block labels its
+      // occupancy row, and requiring the full word "ending" made that row
+      // invisible to this parser.
+      const isEnding   = /(^|\s)(ending|end['’]?g)(\s+occ|\s+occupancy|\s+units|\s*$)/i.test(label);
       const isPercent  = /%|percent|\bpct\b/i.test(label);
       if (isEnding && !isPercent && section) {
         // Use positional reading so we don't accidentally pick up a
@@ -6766,6 +7232,35 @@ renderUnits('all');
       if (!moveOuts.length       && /^move\s*-?\s*outs?\s*$/i.test(label))  moveOuts       = rowAtMonths(row);
       if (!leasesSigned.length   && /units\s+leased,\s*actual/i.test(label)) leasesSigned   = rowAtMonths(row);
       if (!cumulativeLeases.length && /cumulative\s+leases/i.test(label))    cumulativeLeases = rowAtMonths(row);
+    }
+
+    // ── The Actual series must come from the ACTUAL block ───────────
+    // The loop above takes the first section whose header says "Actual",
+    // which on this master lands on "2026 MidYear Forecast" — a block whose
+    // month columns are literally labelled Actual for closed months and
+    // Forecast for the rest, so its July value is a projection (64), not an
+    // actual. The authoritative actuals sit under "2026 Actual Absorption
+    // Projections", where the row reads "End'g OCC" (July = 67, matching the
+    // sheet's own "Ending Occupancy July Actual" tile). When that block
+    // exists it wins outright.
+    for (let i = 0; i < aoa.length; i++) {
+      if (!/actual\s+absorption/i.test(rowAnyText(aoa[i] || []))) continue;
+      for (let j = i + 1; j < Math.min(i + 12, aoa.length); j++) {
+        const lbl = rowLabel(aoa[j] || []);
+        if (!lbl) continue;
+        const endHit = /(^|\s)(ending|end['’]?g)(\s+occ|\s+occupancy|\s+units|\s*$)/i.test(lbl);
+        if (!endHit) continue;
+        if (/%|percent|\bpct\b/i.test(lbl)) continue;
+        const nums = rowAtMonths(aoa[j]);
+        if (nums.filter(v => v !== 0).length >= 3) {
+          actual = nums;
+          actualRowIdx = j;
+          console.log('[LH import] LeaseUp: Actual series taken from the ' +
+            '"Actual Absorption" block, row ' + j + ' ("' + lbl + '")');
+        }
+        break;
+      }
+      break;
     }
 
     // Diagnostic log so the user can verify what got picked up.
@@ -6790,6 +7285,384 @@ renderUnits('all');
   }
 
   // ─────────────────────────────────────────────────────────────
+  // Shared comment writer. Mirrors the private persist() inside
+  // importLeasingIncentives so the narrative importers below can write a
+  // block to the DOM, the localStorage cache and the server in one call.
+  // Writes unconditionally — passing '' clears a block that genuinely
+  // emptied out, rather than leaving the last upload's text published.
+  // ─────────────────────────────────────────────────────────────
+  function persistComment(key, html) {
+    const COMMENTS_KEY = 'lh_comments_v1';
+    const el = document.querySelector('[data-editable="' + key + '"]');
+    if (el) el.innerHTML = html;
+    let cache = {};
+    try { cache = JSON.parse(localStorage.getItem(COMMENTS_KEY) || '{}'); } catch (_) {}
+    cache[key] = html;
+    try { localStorage.setItem(COMMENTS_KEY, JSON.stringify(cache)); } catch (_) {}
+    const apiKey = sessionStorage.getItem('lh_api_key');
+    try {
+      fetch('/api/verticals/comments/' + key + '?vertical=lighthaven', {
+        method: 'PUT',
+        headers: Object.assign({ 'Content-Type': 'application/json' },
+          apiKey ? { 'X-API-Key': apiKey } : {}),
+        body: JSON.stringify({ body: html, updatedBy: 'xlsx_import' }),
+      }).then(r => {
+        if (!r.ok) console.warn('[LH import] ' + key + ' PUT failed:', r.status);
+      }).catch(err => console.warn('[LH import] ' + key + ' PUT network err:', err));
+    } catch (_) {}
+  }
+  function escHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  // Text cells in this workbook carry hard line breaks inside a single cell;
+  // render each as its own paragraph rather than one run-on blob.
+  function paraHtml(text) {
+    return String(text || '').split(/\r?\n+/).map(s => s.trim()).filter(Boolean)
+      .map(s => '<p style="margin:0 0 8px;">' + escHtml(s) + '</p>').join('');
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // BUDGET TO ACTUAL — the "BUDGET TO ACTUAL & CASH FLOW" block on
+  // II. Operational Template. This is the authoritative source for the
+  // Budget-vs-Actual card: it carries Actual / Budget / Variance AND a
+  // per-line Comments column, plus the month the block covers.
+  //
+  // The card used to be derived from the parsed NOI *forecast* series at
+  // today's month index, which meant it rendered as all em-dashes whenever
+  // the forecast block failed to parse, and mislabelled the month even when
+  // it didn't. Reading this block directly removes both failure modes and
+  // fills the eight bvA.* comment cells that had no parser at all.
+  // ─────────────────────────────────────────────────────────────
+  const BVA_LINE_MAP = [
+    { key: 'netRentalIncome', comment: 'bvA.netRental', pattern: /net\s*rental\s*income/i },
+    { key: 'utilityIncome',   comment: 'bvA.utility',   pattern: /utility\s*income/i },
+    { key: 'otherIncome',     comment: 'bvA.other',     pattern: /other\s*income/i },
+    { key: 'operatingExp',    comment: 'bvA.opex',      pattern: /operating\s*expense/i },
+    { key: 'fixedExp',        comment: 'bvA.fixed',     pattern: /fixed\s*expense/i },
+    { key: 'capImprovements', comment: 'bvA.capex',     pattern: /capital\s*(impvmts|improv)|capex/i },
+    { key: 'noiCashFlow',     comment: 'bvA.netCash',   pattern: /net\s*cash\s*flow|noi\s*\/?\s*cash\s*flow/i },
+    { key: 'noi',             comment: 'bvA.noi',       matches: (l) => /^noi$/.test(l) },
+  ];
+
+  function importBudgetToActual(wb) {
+    const ws = findSheet(wb, [
+      'II. Operational Template', 'II Operational Template', 'Operational Template',
+      'Operational Table', 'Operational Report', 'Operations Table',
+      'Operational', 'Operations',
+    ]);
+    if (!ws) return { count: 0, sheets: 0 };
+    const aoa = sheetToAoa(ws);
+    if (!aoa.length) return { count: 0, sheets: 0 };
+
+    const flat = (row) => (row || []).map(v => String(v == null ? '' : v)).join(' ').toLowerCase();
+
+    // Locate the section header, then the Actual/Budget/Variance/Comments
+    // sub-header immediately beneath it.
+    let secRow = -1;
+    for (let r = 0; r < aoa.length; r++) {
+      if (/budget\s*to\s*actual/i.test(flat(aoa[r]))) { secRow = r; break; }
+    }
+    if (secRow < 0) {
+      console.warn('[LH import] No "BUDGET TO ACTUAL" section found on the Operational sheet.');
+      return { count: 0, sheets: 0 };
+    }
+    let hdrRow = -1, iAct = -1, iBud = -1, iVar = -1, iCom = -1;
+    for (let r = secRow + 1; r < Math.min(secRow + 6, aoa.length); r++) {
+      const row = aoa[r] || [];
+      const find = (re) => {
+        for (let c = 0; c < row.length; c++) {
+          if (re.test(String(row[c] == null ? '' : row[c]).trim())) return c;
+        }
+        return -1;
+      };
+      const a = find(/^actual$/i), b = find(/^budget$/i);
+      if (a >= 0 && b >= 0) {
+        hdrRow = r; iAct = a; iBud = b;
+        iVar = find(/^variance$/i);
+        iCom = find(/^comments?$/i);
+        break;
+      }
+    }
+    if (hdrRow < 0) {
+      console.warn('[LH import] "BUDGET TO ACTUAL" found but its Actual/Budget header row was not.');
+      return { count: 0, sheets: 0 };
+    }
+
+    // Month the block covers — a real date in the header rows beats guessing
+    // from today's clock (the old card labelled a May block as July).
+    let monthLabel = null;
+    const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    for (let r = secRow; r <= hdrRow; r++) {
+      for (const v of (aoa[r] || [])) {
+        if (v instanceof Date && !isNaN(v.getTime())) {
+          monthLabel = MON[v.getMonth()] + ' ' + v.getFullYear();
+          break;
+        }
+      }
+      if (monthLabel) break;
+    }
+
+    const rows = {};
+    let matched = 0, comments = 0;
+    for (let r = hdrRow + 1; r < Math.min(hdrRow + 24, aoa.length); r++) {
+      const row = aoa[r] || [];
+      const label = String(row[0] || row[1] || '').replace(/\s+/g, ' ').trim();
+      if (!label) continue;
+      // A new ALL-CAPS section header with no numbers ends the block.
+      const hasNums = row.some(v => typeof v === 'number' && !isNaN(v));
+      if (!hasNums && /^[A-Z0-9 &'.\/-]{6,}$/.test(label) && !/income|expense|noi|cash|capital/i.test(label)) break;
+      const lower = label.toLowerCase();
+      for (const li of BVA_LINE_MAP) {
+        if (rows[li.key]) continue;
+        const hit = li.pattern ? li.pattern.test(lower) : li.matches(lower);
+        if (!hit) continue;
+        rows[li.key] = {
+          actual:   iAct >= 0 ? num(row[iAct]) : null,
+          budget:   iBud >= 0 ? num(row[iBud]) : null,
+          variance: iVar >= 0 ? num(row[iVar]) : null,
+          comment:  iCom >= 0 ? String(row[iCom] || '').trim() : '',
+          commentKey: li.comment,
+        };
+        matched++;
+        if (rows[li.key].comment) comments++;
+        break;
+      }
+    }
+    if (!matched) return { count: 0, sheets: 0 };
+
+    const payload = { monthLabel, rows };
+    stage('bva', payload);
+    try { applyBudgetToActual(payload); } catch (e) { console.warn('[LH] applyBudgetToActual failed:', e); }
+
+    // Push the per-line commentary into the eight bvA.* cells. Written for
+    // every mapped line, so a line whose comment was cleared in the sheet
+    // clears on the dashboard too.
+    for (const li of BVA_LINE_MAP) {
+      const row = rows[li.key];
+      persistComment(li.comment, row && row.comment ? escHtml(row.comment) : '');
+    }
+    console.log('[LH import] BUDGET TO ACTUAL parsed:',
+      { month: monthLabel, lines: matched, withComments: comments });
+    return { count: matched, sheets: 1 };
+  }
+
+  // Render the Budget-vs-Actual card from the parsed block.
+  function applyBudgetToActual(data) {
+    if (!data || !data.rows) return;
+    const money = (n) => {
+      if (n == null || isNaN(n)) return '—';
+      const a = Math.abs(Math.round(n)).toLocaleString('en-US');
+      return n < 0 ? '(' + '$' + a + ')' : '$' + a;
+    };
+    const title = document.getElementById('lh-bva-title');
+    if (title && data.monthLabel) {
+      title.textContent = 'Budget vs Actual — ' + data.monthLabel + ' (Month in Review)';
+    }
+    document.querySelectorAll('[data-noi-bva-row]').forEach(function (tr) {
+      const rec = data.rows[tr.getAttribute('data-noi-bva-row')];
+      if (!rec) return;
+      const variance = rec.variance != null ? rec.variance
+        : (rec.actual != null && rec.budget != null ? rec.actual - rec.budget : null);
+      const put = (sel, val, signed) => {
+        const el = tr.querySelector('[data-noi-bva="' + sel + '"]');
+        if (!el) return;
+        const text = money(val);
+        const strong = el.querySelector('strong');
+        if (strong) strong.textContent = text; else el.textContent = text;
+        el.classList.toggle('neg', signed && val != null && val < 0);
+        el.classList.toggle('pos', signed && val != null && val > 0);
+      };
+      put('actual', rec.actual, false);
+      put('budget', rec.budget, false);
+      put('variance', variance, true);
+    });
+  }
+  window.LH_applyBudgetToActual = applyBudgetToActual;
+
+  // ─────────────────────────────────────────────────────────────
+  // DISCUSSION ITEMS — the table at the foot of II. Operational Template.
+  // Item names and descriptions wrap across several rows in the sheet, so
+  // a row carrying a name but no description/status is treated as a
+  // continuation of the row above rather than a new item.
+  // ─────────────────────────────────────────────────────────────
+  function importDiscussionItems(wb) {
+    const ws = findSheet(wb, [
+      'II. Operational Template', 'II Operational Template', 'Operational Template',
+      'Operational Table', 'Operational Report', 'Operations Table',
+    ]);
+    if (!ws) return { count: 0, sheets: 0 };
+    const aoa = sheetToAoa(ws);
+    if (!aoa.length) return { count: 0, sheets: 0 };
+
+    let secRow = -1;
+    for (let r = 0; r < aoa.length; r++) {
+      const joined = (aoa[r] || []).map(v => String(v == null ? '' : v)).join(' ');
+      if (/discussion\s+items/i.test(joined)) { secRow = r; break; }
+    }
+    if (secRow < 0) return { count: 0, sheets: 0 };
+
+    // Sub-header gives us the Item / Description / Status columns.
+    let iItem = -1, iDesc = -1, iStat = -1, hdrRow = -1;
+    for (let r = secRow + 1; r < Math.min(secRow + 5, aoa.length); r++) {
+      const row = aoa[r] || [];
+      for (let c = 0; c < row.length; c++) {
+        const t = String(row[c] || '').trim().toLowerCase();
+        if (t === 'item')                       { iItem = c; hdrRow = r; }
+        else if (t === 'description')           { iDesc = c; }
+        else if (t === 'status' || t === 'update') { iStat = c; }
+      }
+      if (hdrRow >= 0) break;
+    }
+    if (hdrRow < 0 || iItem < 0) return { count: 0, sheets: 0 };
+    if (iDesc < 0) iDesc = iItem + 1;
+
+    const items = [];
+    let blanks = 0;
+    for (let r = hdrRow + 1; r < aoa.length; r++) {
+      const row = aoa[r] || [];
+      const name = String(row[iItem] || '').replace(/\s+/g, ' ').trim();
+      const desc = String(row[iDesc] || '').replace(/\s+/g, ' ').trim();
+      const stat = iStat >= 0 ? String(row[iStat] || '').replace(/\s+/g, ' ').trim() : '';
+      if (!name && !desc && !stat) {
+        // Items in this table are separated by one or two spacer rows, so a
+        // small tolerance truncated the list after the first item. Only a
+        // long run of blanks means the table has actually ended.
+        if (++blanks >= 8 && items.length) break;
+        continue;
+      }
+      blanks = 0;
+      // A row with its own description is its own item — items are kept
+      // separate rather than folded together. Only a bare title row (name but
+      // no description and no status) continues the item above it, which is
+      // how "Capital Builder's" + "Settlement" becomes one title.
+      const isNew = name && (!!desc || !!stat);
+      if (isNew) {
+        items.push({ name, desc, status: stat });
+      } else if (items.length) {
+        const last = items[items.length - 1];
+        if (name) last.name  = (last.name + ' ' + name).trim();
+        if (desc) last.desc  = (last.desc + ' ' + desc).trim();
+        if (stat) last.status = (last.status + ' ' + stat).trim();
+      }
+    }
+    if (!items.length) return { count: 0, sheets: 0 };
+
+    const html = items.map(it =>
+      '<tr>' +
+        '<td style="font-weight:600; white-space:normal;">' + escHtml(it.name) + '</td>' +
+        '<td style="white-space:normal;">' + escHtml(it.desc) + '</td>' +
+        '<td style="white-space:normal;">' + escHtml(it.status) + '</td>' +
+      '</tr>'
+    ).join('');
+    persistComment('discussionItems', html);
+    console.log('[LH import] DISCUSSION ITEMS parsed:', items.map(i => i.name));
+    return { count: items.length, sheets: 1 };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // RENT NOTES — the "Comments" block under the RENTS section of
+  // II. Operational Template, plus the loss-leader footnote above it.
+  // ─────────────────────────────────────────────────────────────
+  function importRentNotes(wb) {
+    const ws = findSheet(wb, [
+      'II. Operational Template', 'II Operational Template', 'Operational Template',
+      'Operational Table', 'Operational Report', 'Operations Table',
+    ]);
+    if (!ws) return { count: 0, sheets: 0 };
+    const aoa = sheetToAoa(ws);
+    if (!aoa.length) return { count: 0, sheets: 0 };
+
+    // Find the RENTS section, then the 'Comments' label beneath it. Scoping
+    // to RENTS keeps us off the Comments block on other sections.
+    let rentsRow = -1;
+    for (let r = 0; r < aoa.length; r++) {
+      const first = String((aoa[r] || [])[0] || (aoa[r] || [])[1] || '').trim();
+      if (/^rents?$/i.test(first)) { rentsRow = r; break; }
+    }
+    if (rentsRow < 0) return { count: 0, sheets: 0 };
+
+    let comRow = -1;
+    for (let r = rentsRow + 1; r < Math.min(rentsRow + 40, aoa.length); r++) {
+      const first = String((aoa[r] || [])[0] || (aoa[r] || [])[1] || '').trim();
+      if (/^comments?$/i.test(first)) { comRow = r; break; }
+    }
+
+    const notes = [];
+    // Footnotes between the rent table and the Comments label (e.g. the
+    // loss-leader caveat) belong with these notes.
+    const stopAt = comRow >= 0 ? comRow : Math.min(rentsRow + 40, aoa.length);
+    for (let r = rentsRow + 1; r < stopAt; r++) {
+      const t = String((aoa[r] || [])[1] || (aoa[r] || [])[0] || '').replace(/\s+/g, ' ').trim();
+      if (/^[*†‡]/.test(t) && t.length > 12) notes.push(t);
+    }
+    if (comRow >= 0) {
+      for (let r = comRow + 1; r < Math.min(comRow + 12, aoa.length); r++) {
+        const t = String((aoa[r] || [])[1] || (aoa[r] || [])[0] || '').replace(/\s+/g, ' ').trim();
+        if (!t) continue;
+        // A new ALL-CAPS section header ends the block.
+        if (/^[A-Z0-9 &'.\/-]{6,}$/.test(t) && t === t.toUpperCase()) break;
+        if (t.length < 8) continue;
+        notes.push(t);
+      }
+    }
+    if (!notes.length) return { count: 0, sheets: 0 };
+
+    persistComment('rentNotes', notes.map(n =>
+      '<p style="margin:0 0 8px;">' + escHtml(n) + '</p>').join(''));
+    console.log('[LH import] RENT NOTES parsed:', notes.length, 'note(s)');
+    return { count: notes.length, sheets: 1 };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // LEASING STRATEGY — the leasing-update narrative in the Comments block
+  // of I. LeaseUp Template (the paragraph before the marketing-campaign
+  // write-up, which importTrafficComments already handles).
+  // ─────────────────────────────────────────────────────────────
+  function importLeasingStrategy(wb) {
+    const ws = findSheet(wb, ['I. LeaseUp Template', 'LeaseUp Template', 'Lease-Up Template']);
+    if (!ws) return { count: 0, sheets: 0 };
+    const aoa = sheetToAoa(ws);
+    if (!aoa.length) return { count: 0, sheets: 0 };
+
+    let comRow = -1;
+    for (let r = 0; r < aoa.length; r++) {
+      const first = String((aoa[r] || [])[0] || (aoa[r] || [])[1] || '').trim();
+      if (/^comments?$/i.test(first)) { comRow = r; break; }
+    }
+    if (comRow < 0) return { count: 0, sheets: 0 };
+
+    // Take paragraphs from the Comments label up to the marketing-campaign
+    // heading; that second half is the marketing card's content, not this.
+    const parts = [];
+    for (let r = comRow + 1; r < Math.min(comRow + 10, aoa.length); r++) {
+      const t = String((aoa[r] || [])[0] || (aoa[r] || [])[1] || '').trim();
+      if (!t) continue;
+      if (/marketing\s+campaign/i.test(t)) break;
+      if (/^(traffic|top\s+lead\s+sources|current\s+leasing\s+incentives)$/i.test(t)) break;
+      if (t.length < 30) continue;
+      parts.push(t);
+    }
+    if (!parts.length) return { count: 0, sheets: 0 };
+
+    persistComment('leasingStrategy', parts.map(paraHtml).join(''));
+    console.log('[LH import] LEASING STRATEGY parsed:', parts.length, 'paragraph(s)');
+    return { count: parts.length, sheets: 1 };
+  }
+
+  // Every section a complete master upload is expected to fill. Used to tell
+  // "this section produced no data" apart from "this section succeeded", which
+  // the importer previously could not distinguish.
+  const MASTER_SECTIONS = [
+    'Data Table', 'Operational Table', 'Weekly Traffic',
+    'Traffic Summary & Conversions', 'Top Lead Sources (LeaseUp Template)',
+    'Traffic Comments (LeaseUp Template)', 'Current Leasing Incentives',
+    'Rents', 'Rent Roll - RPM', 'Lease-Up Table', 'Budget vs Actual',
+    'Discussion Items', 'Rent Notes', 'Leasing Strategy', 'LeaseUp KPI Summary',
+  ];
+
+  // ─────────────────────────────────────────────────────────────
   // ALL-IN-ONE — every tab from the master xlsx in a single pass.
   // ─────────────────────────────────────────────────────────────
   function importAll(wb) {
@@ -6799,7 +7672,7 @@ renderUnits('all');
     // '[LH import] workbook tabs:' — paste that list to me and I can
     // wire any missing tab names into the matchers.
     console.log('[LH import] workbook tabs:', wb.SheetNames);
-    const totals = { count: 0, sheets: 0, errors: [], hits: [] };
+    const totals = { count: 0, sheets: 0, errors: [], hits: [], missed: [] };
     const safe = (fn, label) => {
       try {
         const r = fn(wb);
@@ -6824,12 +7697,29 @@ renderUnits('all');
     safe(importRentsMaster,         'Rents');
     safe(importRentRollRPM,         'Rent Roll - RPM');
     safe(importLeasingPaceMaster,   'Lease-Up Table');
+    // Budget-vs-Actual card + its eight per-line comment cells, straight from
+    // the "BUDGET TO ACTUAL & CASH FLOW" block. Runs after importNOIMaster so
+    // it overwrites that function's forecast-derived version of the card.
+    safe(importBudgetToActual,      'Budget vs Actual');
+    safe(importDiscussionItems,     'Discussion Items');
+    safe(importRentNotes,           'Rent Notes');
+    safe(importLeasingStrategy,     'Leasing Strategy');
     // KPI summary cells from the top of I. LeaseUp Template — runs LAST so
     // the xlsx-authored values win over any earlier date-based recompute.
     safe(importLeaseUpKPISummary,   'LeaseUp KPI Summary');
 
     if (totals.sheets === 0) {
       throw new Error(totals.errors.join(' · ') || 'No recognized sheets found in workbook');
+    }
+    // Anything that didn't land is reported to the caller so the status line
+    // can show it. Previously totals.errors was collected and then silently
+    // dropped, and a section that produced nothing was indistinguishable from
+    // one that succeeded — so a partial import rendered a green tick.
+    totals.missed = MASTER_SECTIONS.filter(s => totals.hits.indexOf(s) < 0);
+    if (totals.errors.length || totals.missed.length) {
+      console.warn('[LH import] incomplete import — threw: ' +
+        (totals.errors.join(' · ') || 'none') +
+        ' | no data: ' + (totals.missed.join(', ') || 'none'));
     }
     return totals;
   }
@@ -6907,9 +7797,23 @@ renderUnits('all');
         const when = new Date().toLocaleString();
         const sheetWord = result.sheets === 1 ? 'sheet' : 'sheets';
         const hitList = (result.hits && result.hits.length) ? ` [${result.hits.join(', ')}]` : '';
-        const msg = `✓ ${f.name} — ${result.count} row${result.count===1?'':'s'} across ${result.sheets} ${sheetWord}${hitList} (${when})`;
-        setStatus(key, msg, 'ok');
-        saveStatus(key, { msg, kind:'ok' });
+        // Report partial imports as partial. The old message was always a
+        // green tick listing only what succeeded, so a section that silently
+        // produced nothing looked identical to one that worked — which is how
+        // a broken KPI band went unnoticed through repeated re-uploads.
+        const threw  = result.errors || [];
+        const missed = result.missed || [];
+        let msg  = `✓ ${f.name} — ${result.count} row${result.count===1?'':'s'} across ${result.sheets} ${sheetWord}${hitList} (${when})`;
+        let kind = 'ok';
+        if (threw.length || missed.length) {
+          kind = 'warn';
+          msg = `⚠ ${f.name} — imported ${result.hits.length}/${result.hits.length + missed.length} sections (${when})`
+              + `\n   ✓ ${result.hits.join(', ') || 'none'}`
+              + (missed.length ? `\n   ✗ no data: ${missed.join(', ')}` : '')
+              + (threw.length  ? `\n   ! failed: ${threw.join(' · ')}`  : '');
+        }
+        setStatus(key, msg, kind);
+        saveStatus(key, { msg, kind });
         // Persist imported unit roster so a page refresh rehydrates it
         try {
           if (typeof unitData !== 'undefined' && Array.isArray(unitData) && unitData.length) {
@@ -7051,6 +7955,13 @@ renderUnits('all');
         if (noi && noi.hasData && noi.data && typeof window.LH_applyNOI === 'function') {
           window.LH_applyNOI(noi.data);
           console.log('[LH] NOI hydrated from server');
+          // The Budget-vs-Actual block rides along inside the noi blob; apply
+          // it AFTER applyNOI so it wins over that function's forecast-derived
+          // version of the same card.
+          if (noi.data.bva && typeof window.LH_applyBudgetToActual === 'function') {
+            window.LH_applyBudgetToActual(noi.data.bva);
+            console.log('[LH] Budget vs Actual hydrated from server');
+          }
         }
       } catch (e) { console.warn('[LH] applyNOI from server failed:', e); }
       try {
@@ -7551,6 +8462,8 @@ renderUnits('all');
     var stagedBoot = loadStaged();
     if (stagedBoot && stagedBoot.leasingPace) applyLeasingPace(stagedBoot.leasingPace);
     if (stagedBoot && stagedBoot.noi && typeof applyNOI === 'function') applyNOI(stagedBoot.noi);
+    // Same ordering rule as the server path: BvA after NOI.
+    if (stagedBoot && stagedBoot.bva && typeof applyBudgetToActual === 'function') applyBudgetToActual(stagedBoot.bva);
     if (stagedBoot && (stagedBoot.leadSources || stagedBoot.funnel) && typeof applyTraffic === 'function') {
       applyTraffic({
         leadSources: stagedBoot.leadSources || null,
@@ -7592,12 +8505,17 @@ renderUnits('all');
     if (staged.kpiSummary) leasingPace.kpiSummary = staged.kpiSummary;
     if (staged.phaseGrid)  leasingPace.phaseGrid  = staged.phaseGrid;
     if (staged.fpSummary)  leasingPace.fpSummary  = staged.fpSummary;
+    // Fold the Budget-vs-Actual block into the noi blob (same pattern as
+    // rents/rentRoll) so it round-trips through /api/verticals/noi and other
+    // machines see the card populated instead of a grid of em-dashes.
+    const noi = staged.noi ? Object.assign({}, staged.noi) : (staged.bva ? {} : null);
+    if (noi && staged.bva) noi.bva = staged.bva;
     const payload = {
       vertical: 'lighthaven',
       sourceFile: 'web_upload',
       importedBy: 'dashboard_ui',
       units,
-      noi:         staged.noi          || null,
+      noi:         noi                 || null,
       traffic:     Object.keys(traffic).length ? traffic : null,
       leadSources: staged.leadSources  || null,   // kept for back-compat
       rents:       Object.keys(rents).length   ? rents   : null,
