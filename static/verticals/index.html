@@ -692,11 +692,15 @@
 
   /* PHASE TABLE COLOR CODING */
   .phase-cell { text-align:center; font-weight:700; font-size:.82rem; }
-  .phase-green { background:#c6f6d5; color:#276749; }
-  .phase-yellow { background:#fefcbf; color:#975a16; }
-  .phase-orange { background:#feebc8; color:#c05621; }
-  .phase-red { background:#fed7d7; color:#c53030; }
-  .phase-gray { background:#e2e8f0; color:#718096; }
+  /* Lease-up intensity ramp: one hue at four strengths. A dense 6x6 grid of
+     red/orange/yellow/green read as noise; a single-hue ramp reads as a
+     heatmap and lets the eye find the weak phases. */
+  .phase-green  { background:#1f7a5c; color:#ffffff; }
+  .phase-yellow { background:#7fc4ad; color:#0d3b2e; }
+  .phase-orange { background:#c2e3d8; color:#14503e; }
+  .phase-red    { background:#eef5f2; color:#5d7c72; }
+  /* No units of this plan in this phase - an absence, not a zero. */
+  .phase-gray   { background:transparent; color:#c2ccd6; font-weight:400; }
   .phase-total-row td { background:#003552 !important; color:#fff !important; font-weight:700; }
   .phase-total-row td:hover { background:#004a73 !important; }
 
@@ -5369,8 +5373,26 @@ renderUnits('all');
       const v = u.lease_executed_date;
       return v != null && v !== '';
     };
+    // Occupied is a DIFFERENT measure from leased, not a copy of it: the unit
+    // has moved in on or before today and its lease has not ended. Note that
+    // move_out_date in this master is the lease END date (2027 values), not an
+    // actual move-out, so it can only be compared against today — testing it
+    // for emptiness marks every unit vacant. On the current file this yields
+    // 71 against 72 leased, matching the sheet's own two columns exactly.
+    const today = new Date(); today.setHours(23, 59, 59, 999);
+    const asDate = function (v) {
+      if (v == null || v === '') return null;
+      const d = (v instanceof Date) ? v : new Date(String(v));
+      return isNaN(d.getTime()) ? null : d;
+    };
+    const isOccupied = function (u) {
+      const mi = asDate(u.move_in_date);
+      if (!mi || mi > today) return false;
+      const mo = asDate(u.move_out_date);
+      return !mo || mo > today;
+    };
     const changed = [];
-    let totLeased = 0, totCount = 0;
+    let totLeased = 0, totCount = 0, totOcc = 0;
 
     fpSummary.rows.forEach(function (row) {
       const fp = String(row.fp || '').trim();
@@ -5379,17 +5401,18 @@ renderUnits('all');
       if (!mine.length) return;
       const count  = (typeof row.count === 'number' && row.count) ? row.count : mine.length;
       const leased = mine.filter(hasLease).length;
-      if (row.leased !== leased) {
-        changed.push(fp + ': leased ' + row.leased + ' -> ' + leased);
-      }
+      const occ    = mine.filter(isOccupied).length;
+      if (row.leased !== leased) changed.push(fp + ': leased ' + row.leased + '->' + leased);
+      if (row.occ    !== occ)    changed.push(fp + ': occupied ' + row.occ + '->' + occ);
       row.leased    = leased;
       row.leasedPct = count ? (100 * leased / count) : null;
-      // Occupancy on this basis is the same population — the sheet's own KPI
-      // band reports Current Occupancy as 72, matching the lease-date count.
-      row.occ    = leased;
-      row.occPct = row.leasedPct;
+      row.occ       = occ;
+      row.occPct    = count ? (100 * occ / count) : null;
+      // Available counts against leased — a leased-but-not-yet-moved-in unit
+      // is not available to lease again.
       row.avail  = Math.max(0, count - leased);
       totLeased += leased;
+      totOcc    += occ;
       totCount  += count;
     });
 
@@ -5398,17 +5421,17 @@ renderUnits('all');
     if (totalRow) {
       totalRow.leased    = totLeased;
       totalRow.leasedPct = totCount ? (100 * totLeased / totCount) : null;
-      totalRow.occ       = totLeased;
-      totalRow.occPct    = totalRow.leasedPct;
+      totalRow.occ       = totOcc;
+      totalRow.occPct    = totCount ? (100 * totOcc / totCount) : null;
       totalRow.avail     = Math.max(0, totCount - totLeased);
     }
     if (fpSummary.total) {
       fpSummary.total.leased = totLeased;
-      fpSummary.total.occ    = totLeased;
+      fpSummary.total.occ    = totOcc;
       fpSummary.total.avail  = Math.max(0, totCount - totLeased);
     }
-    console.log('[LH import] SUMMARY BY FLOORPLAN reconciled to lease-executed dates: ' +
-      totLeased + '/' + totCount +
+    console.log('[LH import] SUMMARY BY FLOORPLAN reconciled from unit dates: leased ' +
+      totLeased + '/' + totCount + ', occupied ' + totOcc + '/' + totCount +
       (changed.length ? ' — adjusted ' + changed.join(', ') : ' — sheet already agreed'));
   }
 
@@ -5470,8 +5493,20 @@ renderUnits('all');
       });
       totalCells.push(any ? { leased: leased, total: total } : null);
     }
-    return { rows: rows, totalRow: { cells: totalCells, label: 'Total Units / Phase',
-             total: null, pct: null }, source: 'roster' };
+    // The footer needs its own Total and % values or applyPhaseTable emits
+    // nothing for those two columns and the row stops short of the table edge.
+    const gLeased = totalCells.reduce(function (s, c) { return s + (c ? c.leased : 0); }, 0);
+    const gTotal  = totalCells.reduce(function (s, c) { return s + (c ? c.total  : 0); }, 0);
+    return {
+      rows: rows,
+      totalRow: {
+        cells: totalCells,
+        label: 'Total Units / Phase',
+        total: gTotal ? { leased: gLeased, total: gTotal } : null,
+        pct:   gTotal ? (100 * gLeased / gTotal) : null,
+      },
+      source: 'roster',
+    };
   }
 
   // Compare the workbook's block against the roster-derived grid and log any
@@ -5603,7 +5638,9 @@ renderUnits('all');
     const tbody = document.getElementById('phase-body');
     if (!tbody || !grid || !grid.rows) return;
     function cell(frac, cls) {
-      if (!frac) return '<td class="num phase-cell phase-gray"></td>';
+      // En-dash rather than an empty grey block: this plan has no units in
+      // this phase, which is different from having units and none leased.
+      if (!frac) return '<td class="num phase-cell phase-gray">' + '–' + '</td>';
       let p = frac.total ? (100 * frac.leased / frac.total) : 0;
       let bucket = 'phase-red';
       if (p >= 70) bucket = 'phase-green';
@@ -5631,11 +5668,22 @@ renderUnits('all');
       grid.totalRow.cells.forEach(c => {
         line += '<td class="num">' + (c ? c.leased + ' / ' + c.total : '') + '</td>';
       });
-      if (grid.totalRow.total) {
-        line += '<td class="num">' + grid.totalRow.total.leased + ' / ' + grid.totalRow.total.total + '</td>';
-        const pct = grid.totalRow.pct != null ? grid.totalRow.pct :
-                    (grid.totalRow.total.total ? 100 * grid.totalRow.total.leased / grid.totalRow.total.total : 0);
+      // ALWAYS emit the trailing Total and % cells. Guarding these on
+      // totalRow.total left the footer two cells short of the header, so the
+      // dark total band stopped mid-table.
+      let gTot = grid.totalRow.total;
+      if (!gTot) {
+        const l = grid.totalRow.cells.reduce(function (s, c) { return s + (c ? c.leased : 0); }, 0);
+        const t = grid.totalRow.cells.reduce(function (s, c) { return s + (c ? c.total  : 0); }, 0);
+        gTot = t ? { leased: l, total: t } : null;
+      }
+      if (gTot) {
+        const pct = grid.totalRow.pct != null ? grid.totalRow.pct
+          : (gTot.total ? 100 * gTot.leased / gTot.total : 0);
+        line += '<td class="num">' + gTot.leased + ' / ' + gTot.total + '</td>';
         line += '<td class="num">' + pct.toFixed(1) + '%</td>';
+      } else {
+        line += '<td class="num"></td><td class="num"></td>';
       }
       html += '<tr class="phase-total-row">' + line + '</tr>';
     }
