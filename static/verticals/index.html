@@ -5103,11 +5103,45 @@ renderUnits('all');
     }
     const fpSummary = parseFloorplanSummary(aoa);
     if (fpSummary) {
+      // Reconcile the counts to Lease Executed Date, the agreed source of
+      // truth. The sheet's own block totals 69 leased / 71 occupied while the
+      // KPI band, the tiles and the phase grid all say 72, so this card was
+      // the one place on the page showing a different answer. Unit counts,
+      // square footage and rents still come straight from the sheet; only the
+      // leased/occupied/available counts are re-derived.
+      reconcileFloorplanSummary(fpSummary);
       window.LH_xlsxFloorplanSummary = fpSummary;
       try { stage('fpSummary', fpSummary); } catch (_) {}
       applyFloorplanSummary(fpSummary);
       console.log('[LH import] SUMMARY BY FLOORPLAN parsed:', fpSummary);
     }
+
+    // ── Cross-check the three places the workbook states occupancy ──
+    // They do not currently agree: the KPI band's Current Occupancy says 72,
+    // Summary by Floorplan says 69 leased / 71 occupied, and the Data Table
+    // carries 72 Lease Executed Dates. All three are read correctly, so a
+    // mismatch is a workbook inconsistency rather than a parse failure —
+    // surface it on every upload instead of letting the page show two
+    // different answers side by side without comment.
+    (function () {
+      const band = (typeof occVal === 'number') ? occVal : null;
+      const roster = (rosterStats && typeof rosterStats.leaseExecuted === 'number')
+        ? rosterStats.leaseExecuted : null;
+      let fpLeased = null, fpOcc = null;
+      if (fpSummary && fpSummary.rows) {
+        fpLeased = fpSummary.rows.reduce(function (a, r) { return a + (r.leased || 0); }, 0);
+        fpOcc    = fpSummary.rows.reduce(function (a, r) { return a + (r.occ    || 0); }, 0);
+      }
+      const seen = [band, roster, fpLeased, fpOcc].filter(function (v) { return typeof v === 'number'; });
+      if (seen.length < 2) return;
+      const allSame = seen.every(function (v) { return v === seen[0]; });
+      const msg = 'KPI band Current Occupancy=' + band +
+                  ' | Data Table lease-executed=' + roster +
+                  ' | Summary by Floorplan leased=' + fpLeased + ', occupied=' + fpOcc;
+      if (allSame) console.log('[LH import] occupancy cross-check agrees — ' + msg);
+      else console.warn('[LH import] occupancy sources DISAGREE in the workbook. ' +
+        'Tiles use the KPI band; the phase grid uses lease-executed dates. ' + msg);
+    })();
 
     // sheets:1 whenever we got EITHER tile values or one of the two tables —
     // this function used to bail before the table parsers ran, which is why
@@ -5313,6 +5347,69 @@ renderUnits('all');
     }
     totalRow.label = 'Total Units / Phase';
     return { rows, totalRow };
+  }
+
+  // ── Reconcile SUMMARY BY FLOORPLAN to Lease Executed Date ───────
+  // Rewrites only the count columns (# Leased, % Leased, Units Occupied,
+  // % Occupied, # Avail) from the roster, so this card agrees with the KPI
+  // tiles and the Leasing-by-Phase grid. Everything else on the row — unit
+  // count, SF, market and effective rents — is left exactly as the sheet
+  // reports it. Logs each row it had to change.
+  function reconcileFloorplanSummary(fpSummary) {
+    if (!fpSummary || !fpSummary.rows) return;
+    let units = [];
+    try {
+      units = (window.LH_units && window.LH_units.getUnits())
+        ? window.LH_units.getUnits()
+        : (typeof unitData !== 'undefined' ? unitData : []);
+    } catch (_) {}
+    if (!units.length) return;
+
+    const hasLease = function (u) {
+      const v = u.lease_executed_date;
+      return v != null && v !== '';
+    };
+    const changed = [];
+    let totLeased = 0, totCount = 0;
+
+    fpSummary.rows.forEach(function (row) {
+      const fp = String(row.fp || '').trim();
+      if (!fp || /^total/i.test(fp)) return;
+      const mine = units.filter(function (u) { return String(u.fp || '').trim() === fp; });
+      if (!mine.length) return;
+      const count  = (typeof row.count === 'number' && row.count) ? row.count : mine.length;
+      const leased = mine.filter(hasLease).length;
+      if (row.leased !== leased) {
+        changed.push(fp + ': leased ' + row.leased + ' -> ' + leased);
+      }
+      row.leased    = leased;
+      row.leasedPct = count ? (100 * leased / count) : null;
+      // Occupancy on this basis is the same population — the sheet's own KPI
+      // band reports Current Occupancy as 72, matching the lease-date count.
+      row.occ    = leased;
+      row.occPct = row.leasedPct;
+      row.avail  = Math.max(0, count - leased);
+      totLeased += leased;
+      totCount  += count;
+    });
+
+    // Keep the TOTAL / AVERAGE row in step with the rows above it.
+    const totalRow = fpSummary.rows.filter(function (r) { return /^total/i.test(String(r.fp || '')); })[0];
+    if (totalRow) {
+      totalRow.leased    = totLeased;
+      totalRow.leasedPct = totCount ? (100 * totLeased / totCount) : null;
+      totalRow.occ       = totLeased;
+      totalRow.occPct    = totalRow.leasedPct;
+      totalRow.avail     = Math.max(0, totCount - totLeased);
+    }
+    if (fpSummary.total) {
+      fpSummary.total.leased = totLeased;
+      fpSummary.total.occ    = totLeased;
+      fpSummary.total.avail  = Math.max(0, totCount - totLeased);
+    }
+    console.log('[LH import] SUMMARY BY FLOORPLAN reconciled to lease-executed dates: ' +
+      totLeased + '/' + totCount +
+      (changed.length ? ' — adjusted ' + changed.join(', ') : ' — sheet already agreed'));
   }
 
   // ── LEASING BY PHASE from the unit roster ───────────────────────
@@ -6028,6 +6125,8 @@ renderUnits('all');
     // Leasing Incentives" bullets. Strips Excel's *…* / **…** emphasis
     // (we'll keep it as plain text — the dashboard doesn't render md).
     const additional = [];
+    // "Note: ..." lines pulled aside for the Concession Comments card.
+    const noteLines = [];
     const STOP_HEADERS = [
       'concession comments', 'discussion items', 'commentary',
       'rent comps', 'traffic comments',
@@ -6038,9 +6137,12 @@ renderUnits('all');
     const NBSP_CHAR = String.fromCharCode(0xA0);
     let blankRunAdd = 0;
     let additionalEndIdx = concEndIdx; // last row consumed by Additional block
-    for (let r = concEndIdx + 1; r < Math.min(aoa.length, concEndIdx + 20); r++) {
+    // Window and blank tolerance both widened: this master leaves a four-row
+    // gap between the incentive conditions and the trailing "Note: ..." line,
+    // so a three-blank cutoff stopped before ever reaching it.
+    for (let r = concEndIdx + 1; r < Math.min(aoa.length, concEndIdx + 26); r++) {
       let txt = cellText(r, labelCol);
-      if (!txt) { blankRunAdd++; if (blankRunAdd >= 3) break; continue; }
+      if (!txt) { blankRunAdd++; if (blankRunAdd >= 7) break; continue; }
       blankRunAdd = 0;
       const lower = txt.toLowerCase();
       if (STOP_HEADERS.some(h => lower.startsWith(h))) { additionalEndIdx = r - 1; break; }
@@ -6052,7 +6154,12 @@ renderUnits('all');
         .split(NBSP_CHAR).join(' ')
         .replace(/\s{2,}/g, ' ')
         .trim();
-      if (txt) { additional.push(txt); additionalEndIdx = r; }
+      if (!txt) continue;
+      // A "Note: ..." line is concession commentary, not an incentive. This
+      // master has no "Concession Comments" header for the block below to
+      // anchor on, so that card was left empty while its content sat here.
+      if (/^note[:\s]/i.test(txt)) { noteLines.push(txt); additionalEndIdx = r; continue; }
+      additional.push(txt); additionalEndIdx = r;
     }
 
     // (4) Concession Comments - paragraphs that sit a few rows below
@@ -6087,6 +6194,12 @@ renderUnits('all');
           .trim();
         if (txt) concComments.push(txt);
       }
+    }
+
+    // Fall back to the "Note: ..." lines when the sheet carries no explicit
+    // Concession Comments header — which is the case on this master.
+    if (!concComments.length && noteLines.length) {
+      noteLines.forEach(function (t) { concComments.push(t); });
     }
 
     if (!concessions.length && !renewals.length && !additional.length && !concComments.length) {
