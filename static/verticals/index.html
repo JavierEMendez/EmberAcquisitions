@@ -6000,12 +6000,25 @@ renderUnits('all');
           if (ln) bodyLines.push(ln);
         });
       }
+      // Split month from status on a colon OR a spaced dash. The master writes
+      // these as "July (7 expirations) - 4 NTV; 2 Renewal; 1 MTM", and requiring
+      // a colon silently discarded every line, so the whole Renewals block came
+      // through empty. The dash pattern demands whitespace on both sides so it
+      // cannot split inside "Non-Renew" or "move-out", and is non-greedy so it
+      // takes the first separator on the line.
       bodyLines.forEach(line => {
+        let month = '', status = '';
         const cIdx = line.indexOf(':');
-        if (cIdx < 0) return;
-        const month  = line.slice(0, cIdx).trim();
-        const status = line.slice(cIdx + 1).trim();
-        if (month && status) renewals.push({ month, status });
+        if (cIdx >= 0) {
+          month  = line.slice(0, cIdx).trim();
+          status = line.slice(cIdx + 1).trim();
+        } else {
+          const m = line.match(/^(.*?)\s+[-–—]\s+(.*)$/);
+          if (m) { month = m[1].trim(); status = m[2].trim(); }
+        }
+        // No recognisable separator — keep the line rather than dropping it.
+        if (!month && !status) { renewals.push({ month: line, status: '' }); return; }
+        if (month) renewals.push({ month, status });
       });
     }
 
