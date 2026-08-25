@@ -5449,6 +5449,122 @@ renderUnits('all');
       (changed.length ? ' — adjusted ' + changed.join(', ') : ' — sheet already agreed'));
   }
 
+  // ── RENTS block on the live operational sheet ───────────────────
+  // The Rents card's columns — D2 Proforma / Current Market / Occupied &
+  // Effective / Mkt-Eff delta — are a one-for-one match for the RENTS block on
+  // 'II. Ops Forecast' (labelled "Current Market Rents - July 2026"). Those
+  // column names do not exist on the standalone 'Rents ' sheet, which carries
+  // Original / Updated / August-'25 columns instead — so feeding the card from
+  // that sheet left it showing figures it was never laid out for.
+  // Columns are resolved by header label, never by position.
+  function importRentsBlock(wb) {
+    const ws = findSheet(wb, [
+      'II. Ops Forecast', 'Ops Forecast', 'II Ops Forecast',
+      'II. Operational Template', 'II Operational Template', 'Operational Template',
+    ]);
+    if (!ws) return { count: 0, sheets: 0 };
+    const aoa = sheetToAoa(ws);
+    if (!aoa.length) return { count: 0, sheets: 0 };
+
+    // Find the RENTS section, then its header row (the one naming Floorplan).
+    let sec = -1;
+    for (let r = 0; r < aoa.length; r++) {
+      const t = String((aoa[r] || [])[0] || (aoa[r] || [])[1] || '').trim();
+      if (/^rents?$/i.test(t)) { sec = r; break; }
+    }
+    if (sec < 0) return { count: 0, sheets: 0 };
+    let hdr = -1;
+    for (let r = sec + 1; r < Math.min(sec + 6, aoa.length); r++) {
+      if ((aoa[r] || []).some(v => /^floorplan$/i.test(String(v || '').trim()))) { hdr = r; break; }
+    }
+    if (hdr < 0) return { count: 0, sheets: 0 };
+
+    const H = aoa[hdr] || [];
+    const col = function () {
+      const kw = Array.prototype.slice.call(arguments);
+      for (let c = 0; c < H.length; c++) {
+        const t = String(H[c] == null ? '' : H[c]).toLowerCase().replace(/\s+/g, ' ').trim();
+        if (t && kw.every(function (k) { return t.indexOf(k) >= 0; })) return c;
+      }
+      return -1;
+    };
+    const cFp = col('floorplan'), cSf = col('sf'), cUnits = col('#', 'units'),
+          cLeased = col('#', 'leased'),
+          cD2 = col('rents'), cD2Psf = col('rents psf'),
+          cMkt = col('market rents'), cMktPsf = col('market rents psf'),
+          cEff = col('avg effective rent'), cEffPsf = col('avg eff rent psf'),
+          cDelta = col('loss/gain');
+    if (cFp < 0) return { count: 0, sheets: 0 };
+
+    const byFp = {};
+    let n = 0;
+    for (let r = hdr + 1; r < Math.min(hdr + 12, aoa.length); r++) {
+      const row = aoa[r] || [];
+      const raw = String(row[cFp] || '').trim();
+      if (!raw) continue;
+      if (/^total/i.test(raw)) break;
+      if (/^[*]/.test(raw)) break;
+      // Names read "Canary (THA)" here; the card keys rows on the plain name.
+      const fp = raw.split(/\s*\(/)[0].trim();
+      if (!fp) continue;
+      const pick = function (c) { return c >= 0 ? num(row[c]) : null; };
+      byFp[fp] = {
+        sf: pick(cSf), units: pick(cUnits), leased: pick(cLeased),
+        proforma: pick(cD2), proformaPsf: pick(cD2Psf),
+        market: pick(cMkt), marketPsf: pick(cMktPsf),
+        effective: pick(cEff), effectivePsf: pick(cEffPsf),
+        mktEffDelta: pick(cDelta),
+      };
+      n++;
+    }
+    if (!n) return { count: 0, sheets: 0 };
+
+    const payload = { byFloorplan: byFp, source: 'ops-rents-block' };
+    stage('rentsBlock', payload);
+    try { applyRentsBlock(payload); } catch (e) { console.warn('[LH] applyRentsBlock failed:', e); }
+    console.log('[LH import] RENTS block parsed from the operational sheet: ' +
+      Object.keys(byFp).join(', '));
+    return { count: n, sheets: 1 };
+  }
+
+  // Write the Rents card from that block. Finds the card by its "D2 Proforma"
+  // header, the same way applyRents does.
+  function applyRentsBlock(data) {
+    if (!data || !data.byFloorplan) return;
+    const by = data.byFloorplan;
+    const f0 = function (n) { return n == null ? null : '$' + Math.round(n).toLocaleString('en-US'); };
+    const f2 = function (n) { return n == null ? null : '$' + Number(n).toFixed(2); };
+    const n0 = function (n) { return n == null ? null : Math.round(n).toLocaleString('en-US'); };
+    document.querySelectorAll('table').forEach(function (table) {
+      let isRents = false;
+      table.querySelectorAll('th').forEach(function (th) {
+        if (/d2 proforma/i.test(th.textContent || '')) isRents = true;
+      });
+      if (!isRents) return;
+      table.querySelectorAll('tbody tr').forEach(function (tr) {
+        const first = tr.querySelector('td');
+        if (!first) return;
+        const label = (first.textContent || '').trim();
+        if (/^total/i.test(label)) return;
+        const fp = by[label.split(/\s*\(/)[0].trim()];
+        if (!fp) return;
+        const tds = tr.querySelectorAll('td');
+        const put = function (i, v) { if (tds[i] && v != null) tds[i].textContent = v; };
+        put(1, n0(fp.sf));
+        put(2, n0(fp.units));
+        put(3, n0(fp.leased));
+        put(4, f0(fp.proforma));
+        put(5, f2(fp.proformaPsf));
+        put(6, f0(fp.market));
+        put(7, f2(fp.marketPsf));
+        put(8, f0(fp.effective));
+        put(9, f2(fp.effectivePsf));
+        put(10, f0(fp.mktEffDelta));
+      });
+    });
+  }
+  window.LH_applyRentsBlock = applyRentsBlock;
+
   // ── LEASING BY PHASE from the unit roster ───────────────────────
   // The workbook's own LEASING BY PHASE block (on 'LeaseUp Template') is only
   // ~30% populated and carries at least one stale denominator — it claims
@@ -7961,7 +8077,7 @@ renderUnits('all');
     'Data Table', 'Operational Table', 'Weekly Traffic',
     'Traffic Summary & Conversions', 'Top Lead Sources (LeaseUp Template)',
     'Traffic Comments (LeaseUp Template)', 'Current Leasing Incentives',
-    'Rents', 'Rent Roll - RPM', 'Lease-Up Table', 'Budget vs Actual',
+    'Rents', 'Rents (Ops block)', 'Rent Roll - RPM', 'Lease-Up Table', 'Budget vs Actual',
     'Discussion Items', 'Rent Notes', 'Leasing Strategy', 'LeaseUp KPI Summary',
   ];
 
@@ -7998,6 +8114,8 @@ renderUnits('all');
     safe(importTrafficComments,     'Traffic Comments (LeaseUp Template)');
     safe(importLeasingIncentives,   'Current Leasing Incentives');
     safe(importRentsMaster,         'Rents');
+    // Runs after importRentsMaster so the live RENTS block wins the card.
+    safe(importRentsBlock,          'Rents (Ops block)');
     safe(importRentRollRPM,         'Rent Roll - RPM');
     safe(importLeasingPaceMaster,   'Lease-Up Table');
     // Budget-vs-Actual card + its eight per-line comment cells, straight from
@@ -8799,6 +8917,7 @@ renderUnits('all');
     // into the rents blob so /api/verticals/rents GET picks them up too.
     const rents = staged.rents || {};
     if (staged.rentRoll) rents.rentRoll = staged.rentRoll;
+    if (staged.rentsBlock) rents.rentsBlock = staged.rentsBlock;
     // Same pattern again for leasingPace: fold the I. LeaseUp Template
     // KPI summary cells (Executed Leases / Current Occupancy / Ending
     // OCC Budget+Actual / Net Absorption) into the leasingPace blob so
