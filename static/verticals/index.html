@@ -6598,7 +6598,12 @@ renderUnits('all');
 
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const payload = { months, budget, forecast };
-    console.log('[LH import] NOI parse from II. Operational Template:', {
+    // Report the sheet we actually resolved to, not a hardcoded name — this
+    // log claimed "II. Operational Template" even after the importer was
+    // repointed, which is exactly the sort of thing that hides a stale read.
+    let noiSheetName = '(unknown)';
+    for (const n of wb.SheetNames) { if (wb.Sheets[n] === ws) { noiSheetName = n; break; } }
+    console.log('[LH import] NOI parse from "' + noiSheetName + '":', {
       budget_keys: Object.keys(budget),
       forecast_keys: Object.keys(forecast),
       noi_apr_budget: (budget.noi || [])[3],
