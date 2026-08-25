@@ -1875,28 +1875,32 @@
             <th class="num" rowspan="2">SF</th>
             <th class="num" rowspan="2"># Units</th>
             <th class="num" rowspan="2"># Leased</th>
-            <th class="num" colspan="2" style="border-bottom:1px solid rgba(255,255,255,.3);">D2 Proforma</th>
-            <th class="num" colspan="2" style="border-bottom:1px solid rgba(255,255,255,.3);">Current Market</th>
-            <th class="num" colspan="2" style="border-bottom:1px solid rgba(255,255,255,.3);">Occupied / Effective</th>
-            <th class="num" rowspan="2">Mkt − Eff Δ</th>
+            <th class="num" colspan="3" style="border-bottom:1px solid rgba(255,255,255,.3);">D2 Proforma Rents</th>
+            <th class="num" colspan="3" style="border-bottom:1px solid rgba(255,255,255,.3);" data-rents-group="market">Current Market Rents</th>
+            <th class="num" colspan="3" style="border-bottom:1px solid rgba(255,255,255,.3);" data-rents-group="effective">Avg Effective Rents</th>
+            <th class="num" rowspan="2">Mkt − Eff Rents</th>
           </tr>
           <tr>
-            <th class="num">Rent</th>
-            <th class="num">$/SF</th>
-            <th class="num">Rent</th>
-            <th class="num">$/SF</th>
-            <th class="num">Occ Rent</th>
-            <th class="num">Eff Rent</th>
+            <th class="num">Rents</th>
+            <th class="num">Rents PSF</th>
+            <th class="num">Occupied Rents</th>
+            <th class="num">Market Rents*</th>
+            <th class="num">Market Rents PSF</th>
+            <th class="num">Occupied Market Rent</th>
+            <th class="num">Avg Effective Rent</th>
+            <th class="num">Avg Eff Rent PSF</th>
+            <th class="num">Occupied Effective Rents</th>
+            <th class="num">Loss/Gain to Lease*</th>
           </tr>
         </thead>
         <tbody>
-          <tr><td>Canary (THA)</td><td class="num">1,425</td><td class="num">31</td><td class="num">16</td><td class="num">$2,468</td><td class="num">$1.73</td><td class="num">$2,450</td><td class="num">$1.72</td><td class="num">$2,450</td><td class="num">$2,240</td><td class="num">$0</td></tr>
-          <tr><td>Sparrow (THE)</td><td class="num">1,635</td><td class="num">18</td><td class="num">7</td><td class="num">$2,678</td><td class="num">$1.64</td><td class="num">$2,650</td><td class="num">$1.62</td><td class="num">$2,650</td><td class="num">$2,451</td><td class="num">$0</td></tr>
-          <tr><td>Mallard (THB)</td><td class="num">1,685</td><td class="num">25</td><td class="num">21</td><td class="num">$2,788</td><td class="num">$1.65</td><td class="num">$2,733</td><td class="num">$1.62</td><td class="num">$2,748</td><td class="num">$2,463</td><td class="num neg">-$400</td></tr>
-          <tr><td>Raven (THF)</td><td class="num">1,852</td><td class="num">21</td><td class="num">7</td><td class="num">$2,971</td><td class="num">$1.60</td><td class="num">$2,928</td><td class="num">$1.58</td><td class="num">$2,859</td><td class="num">$2,556</td><td class="num">$0</td></tr>
-          <tr><td>Falcon (THC)</td><td class="num">1,909</td><td class="num">16</td><td class="num">3</td><td class="num">$3,150</td><td class="num">$1.65</td><td class="num">$3,150</td><td class="num">$1.65</td><td class="num">$3,150</td><td class="num">$2,788</td><td class="num">$0</td></tr>
-          <tr><td>Phoenix (THD)</td><td class="num">2,431</td><td class="num">6</td><td class="num">2</td><td class="num">$3,600</td><td class="num">$1.48</td><td class="num">$3,600</td><td class="num">$1.48</td><td class="num">$3,600</td><td class="num">$3,217</td><td class="num">$0</td></tr>
-          <tr class="highlight-row"><td><strong>TOTAL / AVG</strong></td><td class="num"><strong>1,707</strong></td><td class="num"><strong>117</strong></td><td class="num"><strong>56</strong></td><td class="num"><strong>$2,810</strong></td><td class="num"><strong>$1.65</strong></td><td class="num"><strong>$2,782</strong></td><td class="num"><strong>$1.64</strong></td><td class="num"><strong>$2,773</strong></td><td class="num"><strong>$2,454</strong></td><td class="num neg"><strong>-$400</strong></td></tr>
+          <tr data-rents-row="Canary"><td>Canary (THA)</td><td class="num">1,425</td><td class="num">31</td><td class="num">17</td><td class="num">$2,468</td><td class="num">$1.73</td><td class="num">$41,956</td><td class="num">$2,300</td><td class="num">$1.61</td><td class="num">$39,100</td><td class="num">$2,276</td><td class="num">$1.60</td><td class="num">$38,692</td><td class="num neg">($408)</td></tr>
+          <tr data-rents-row="Sparrow"><td>Sparrow (THE)</td><td class="num">1,635</td><td class="num">18</td><td class="num">12</td><td class="num">$2,678</td><td class="num">$1.64</td><td class="num">$32,136</td><td class="num">$2,450</td><td class="num">$1.50</td><td class="num">$29,400</td><td class="num">$2,375</td><td class="num">$1.45</td><td class="num">$28,500</td><td class="num neg">($900)</td></tr>
+          <tr data-rents-row="Mallard"><td>Mallard (THB)</td><td class="num">1,685</td><td class="num">25</td><td class="num">22</td><td class="num">$2,788</td><td class="num">$1.65</td><td class="num">$61,336</td><td class="num">$2,595</td><td class="num">$1.54</td><td class="num">$57,090</td><td class="num">$2,474</td><td class="num">$1.47</td><td class="num">$54,428</td><td class="num neg">($2,662)</td></tr>
+          <tr data-rents-row="Raven"><td>Raven (THF)</td><td class="num">1,852</td><td class="num">21</td><td class="num">14</td><td class="num">$2,971</td><td class="num">$1.60</td><td class="num">$41,594</td><td class="num">$2,650</td><td class="num">$1.43</td><td class="num">$37,100</td><td class="num">$2,497</td><td class="num">$1.35</td><td class="num">$34,958</td><td class="num neg">($2,142)</td></tr>
+          <tr data-rents-row="Falcon"><td>Falcon (THC)</td><td class="num">1,909</td><td class="num">16</td><td class="num">5</td><td class="num">$3,150</td><td class="num">$1.65</td><td class="num">$15,750</td><td class="num">$2,695</td><td class="num">$1.41</td><td class="num">$13,475</td><td class="num">$2,714</td><td class="num">$1.42</td><td class="num">$13,570</td><td class="num pos">$95</td></tr>
+          <tr data-rents-row="Phoenix"><td>Phoenix (THD)</td><td class="num">2,431</td><td class="num">6</td><td class="num">3</td><td class="num">$3,600</td><td class="num">$1.48</td><td class="num">$10,800</td><td class="num">$3,300</td><td class="num">$1.36</td><td class="num">$9,900</td><td class="num">$3,344</td><td class="num">$1.38</td><td class="num">$10,032</td><td class="num pos">$132</td></tr>
+          <tr class="highlight-row" data-rents-row="TOTAL"><td><strong>TOTAL</strong></td><td class="num"><strong>1,707</strong></td><td class="num"><strong>117</strong></td><td class="num"><strong>73</strong></td><td class="num"><strong>$2,810</strong></td><td class="num"><strong>$1.65</strong></td><td class="num"><strong>$203,572</strong></td><td class="num"><strong>$2,554</strong></td><td class="num"><strong>$1.51</strong></td><td class="num"><strong>$186,065</strong></td><td class="num"><strong>$2,488</strong></td><td class="num"><strong>$1.47</strong></td><td class="num"><strong>$180,180</strong></td><td class="num neg"><strong>($5,885)</strong></td></tr>
         </tbody>
       </table>
     </div>
@@ -5488,13 +5492,35 @@ renderUnits('all');
       }
       return -1;
     };
+    // Resolve by exact header text where possible. 'rents' alone would match
+    // half these columns, so the D2 trio is taken positionally from the
+    // Floorplan/SF/#Units/#Leased prefix and the rest by their distinct names.
     const cFp = col('floorplan'), cSf = col('sf'), cUnits = col('#', 'units'),
           cLeased = col('#', 'leased'),
-          cD2 = col('rents'), cD2Psf = col('rents psf'),
-          cMkt = col('market rents'), cMktPsf = col('market rents psf'),
+          cMkt = col('market rents*') >= 0 ? col('market rents*') : col('market rents'),
+          cMktPsf = col('market rents psf'),
+          cOccMkt = col('occupied market rent'),
           cEff = col('avg effective rent'), cEffPsf = col('avg eff rent psf'),
+          cOccEff = col('occupied effective'),
           cDelta = col('loss/gain');
+    // D2 Proforma trio sits immediately after # Leased: Rents, Rents PSF,
+    // Occupied Rents.
+    const cD2 = cLeased >= 0 ? cLeased + 1 : -1;
+    const cD2Psf = cD2 >= 0 ? cD2 + 1 : -1;
+    const cOccD2 = cD2 >= 0 ? cD2 + 2 : -1;
     if (cFp < 0) return { count: 0, sheets: 0 };
+
+    // The group header row above carries the reporting month, e.g. "Current
+    // Market Rents - July 2026". Pass it through so the card's own group
+    // headings track the sheet instead of being frozen in the markup.
+    let groupMarket = null, groupEffective = null;
+    for (let r = Math.max(0, hdr - 3); r < hdr; r++) {
+      (aoa[r] || []).forEach(function (v) {
+        const t = String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+        if (/current market rents/i.test(t)) groupMarket = t;
+        else if (/effective rents/i.test(t)) groupEffective = t;
+      });
+    }
 
     const byFp = {};
     let n = 0;
@@ -5510,16 +5536,34 @@ renderUnits('all');
       const pick = function (c) { return c >= 0 ? num(row[c]) : null; };
       byFp[fp] = {
         sf: pick(cSf), units: pick(cUnits), leased: pick(cLeased),
-        proforma: pick(cD2), proformaPsf: pick(cD2Psf),
-        market: pick(cMkt), marketPsf: pick(cMktPsf),
-        effective: pick(cEff), effectivePsf: pick(cEffPsf),
+        proforma: pick(cD2), proformaPsf: pick(cD2Psf), occProforma: pick(cOccD2),
+        market: pick(cMkt), marketPsf: pick(cMktPsf), occMarket: pick(cOccMkt),
+        effective: pick(cEff), effectivePsf: pick(cEffPsf), occEffective: pick(cOccEff),
         mktEffDelta: pick(cDelta),
       };
       n++;
     }
     if (!n) return { count: 0, sheets: 0 };
 
-    const payload = { byFloorplan: byFp, source: 'ops-rents-block' };
+    // TOTAL row — the sheet's own weighted averages and dollar sums; don't
+    // recompute them.
+    let total = null;
+    for (let r = hdr + 1; r < Math.min(hdr + 14, aoa.length); r++) {
+      const row = aoa[r] || [];
+      if (!/^total/i.test(String(row[cFp] || '').trim())) continue;
+      const pk = c => (c >= 0 ? num(row[c]) : null);
+      total = {
+        sf: pk(cSf), units: pk(cUnits), leased: pk(cLeased),
+        proforma: pk(cD2), proformaPsf: pk(cD2Psf), occProforma: pk(cOccD2),
+        market: pk(cMkt), marketPsf: pk(cMktPsf), occMarket: pk(cOccMkt),
+        effective: pk(cEff), effectivePsf: pk(cEffPsf), occEffective: pk(cOccEff),
+        mktEffDelta: pk(cDelta),
+      };
+      break;
+    }
+
+    const payload = { byFloorplan: byFp, total, groupMarket, groupEffective,
+                      source: 'ops-rents-block' };
     stage('rentsBlock', payload);
     try { applyRentsBlock(payload); } catch (e) { console.warn('[LH] applyRentsBlock failed:', e); }
     console.log('[LH import] RENTS block parsed from the operational sheet: ' +
@@ -5535,33 +5579,44 @@ renderUnits('all');
     const f0 = function (n) { return n == null ? null : '$' + Math.round(n).toLocaleString('en-US'); };
     const f2 = function (n) { return n == null ? null : '$' + Number(n).toFixed(2); };
     const n0 = function (n) { return n == null ? null : Math.round(n).toLocaleString('en-US'); };
-    document.querySelectorAll('table').forEach(function (table) {
-      let isRents = false;
-      table.querySelectorAll('th').forEach(function (th) {
-        if (/d2 proforma/i.test(th.textContent || '')) isRents = true;
-      });
-      if (!isRents) return;
-      table.querySelectorAll('tbody tr').forEach(function (tr) {
-        const first = tr.querySelector('td');
-        if (!first) return;
-        const label = (first.textContent || '').trim();
-        if (/^total/i.test(label)) return;
-        const fp = by[label.split(/\s*\(/)[0].trim()];
-        if (!fp) return;
-        const tds = tr.querySelectorAll('td');
-        const put = function (i, v) { if (tds[i] && v != null) tds[i].textContent = v; };
-        put(1, n0(fp.sf));
-        put(2, n0(fp.units));
-        put(3, n0(fp.leased));
-        put(4, f0(fp.proforma));
-        put(5, f2(fp.proformaPsf));
-        put(6, f0(fp.market));
-        put(7, f2(fp.marketPsf));
-        put(8, f0(fp.effective));
-        put(9, f2(fp.effectivePsf));
-        put(10, f0(fp.mktEffDelta));
-      });
+    // Rows are keyed by data-rents-row, so the write no longer depends on
+    // parsing the "Canary (THA)" label out of the first cell.
+    const writeRow = function (tr, r) {
+      if (!tr || !r) return;
+      const tds = tr.querySelectorAll('td');
+      const put = function (i, v) {
+        if (!tds[i] || v == null) return;
+        const strong = tds[i].querySelector('strong');
+        if (strong) strong.textContent = v; else tds[i].textContent = v;
+        // Loss/Gain to Lease is the only signed column on the card.
+        if (i === 13) {
+          tds[i].classList.toggle('neg', (r.mktEffDelta || 0) < 0);
+          tds[i].classList.toggle('pos', (r.mktEffDelta || 0) > 0);
+        }
+      };
+      put(1,  n0(r.sf));
+      put(2,  n0(r.units));
+      put(3,  n0(r.leased));
+      put(4,  f0(r.proforma));
+      put(5,  f2(r.proformaPsf));
+      put(6,  f0(r.occProforma));
+      put(7,  f0(r.market));
+      put(8,  f2(r.marketPsf));
+      put(9,  f0(r.occMarket));
+      put(10, f0(r.effective));
+      put(11, f2(r.effectivePsf));
+      put(12, f0(r.occEffective));
+      put(13, f0(r.mktEffDelta));
+    };
+    Object.keys(by).forEach(function (fp) {
+      writeRow(document.querySelector('[data-rents-row="' + fp + '"]'), by[fp]);
     });
+    if (data.total) writeRow(document.querySelector('[data-rents-row="TOTAL"]'), data.total);
+    // Group headings carry the month on the sheet; keep the card in step.
+    const gm = document.querySelector('[data-rents-group="market"]');
+    if (gm && data.groupMarket) gm.textContent = data.groupMarket;
+    const ge = document.querySelector('[data-rents-group="effective"]');
+    if (ge && data.groupEffective) ge.textContent = data.groupEffective;
   }
   window.LH_applyRentsBlock = applyRentsBlock;
 
@@ -8077,14 +8132,14 @@ renderUnits('all');
       const d = new Date(y, parseInt(m[1], 10) - 1, parseInt(m[2], 10));
       if (!isNaN(d.getTime())) { asOf = d; break; }
     }
+    // The "*Market rent adjustements as of ..." footnote dates the rent
+    // ADJUSTMENTS, not the commentary, so it is surfaced as context rather
+    // than used to suppress the notes. Blanking them lost real content.
     const reportStart = window.LH_reportMonthStart || null;
     if (asOf && reportStart && asOf < reportStart) {
-      persistComment('rentNotes', '');
-      console.warn('[LH import] RENT NOTES cleared: the block is dated ' +
-        (asOf.getMonth() + 1) + '/' + asOf.getDate() + '/' + String(asOf.getFullYear()).slice(-2) +
-        ', older than the reporting month. Update those cells on the ' +
-        'operational sheet and they will publish again.');
-      return { count: 0, sheets: 1 };
+      console.log('[LH import] RENT NOTES: rent adjustments are dated ' +
+        (asOf.getMonth() + 1) + '/' + (asOf.getDate()) + '/' +
+        String(asOf.getFullYear()).slice(-2) + ', before the reporting month.');
     }
 
     persistComment('rentNotes', notes.map(n =>
