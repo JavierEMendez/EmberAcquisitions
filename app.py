@@ -2208,6 +2208,19 @@ def vd_snapshot():
 # ── PAGE ROUTE ──────────────────────────────────────────────────────
 # Renders the wrapped dashboard. Sub-section navigation lives inside
 # the page (left pane = verticals), mirroring the project-returns flow.
+def _vd_spa_version():
+    """Cache-buster for the Vertical Dashboard SPA iframe, derived from the
+    file itself. The template used to hardcode `?v=4`, which nobody remembered
+    to bump -- so with Flask's default 12-hour max-age on /static, browsers
+    kept serving a stale index.html and every deploy was invisible until the
+    cache aged out. Keying on mtime+size means a new build always busts it."""
+    path = os.path.join(os.path.dirname(__file__), "static", "verticals", "index.html")
+    try:
+        st = os.stat(path)
+        return "%x-%x" % (int(st.st_mtime), st.st_size)
+    except OSError:
+        return "0"
+
 @app.route("/verticals")
 @login_required
 def vd_page():
@@ -2222,6 +2235,7 @@ def vd_page():
         display_name=session.get("display_name", session.get("username")),
         is_admin=session.get("is_admin"),
         page_access=pa,
+        spa_version=_vd_spa_version(),
     )
 
 # ─── FINANCIAL STATEMENTS DASHBOARD ──────────────────────────────────────────
