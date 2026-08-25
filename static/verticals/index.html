@@ -1855,6 +1855,7 @@
           <tr data-noi-row="forecast.operatingExp"><td>Operating Expenses</td><td class="num neg">($60,896)</td><td class="num neg">($66,491)</td><td class="num neg">($47,980)</td><td class="num neg">($65,666)</td><td class="num neg">($57,912)</td><td class="num neg">($71,094)</td><td class="num neg">($72,040)</td><td class="num neg">($59,844)</td><td class="num neg">($59,452)</td><td class="num neg">($60,779)</td><td class="num neg">($48,389)</td><td class="num neg">($51,827)</td><td class="num neg">($722,370)</td></tr>
           <tr data-noi-row="forecast.fixedExp"><td>Fixed Expenses</td><td class="num neg">($7,500)</td><td class="num neg">($7,500)</td><td class="num neg">($7,500)</td><td class="num neg">($7,500)</td><td class="num neg">($7,500)</td><td class="num neg">($7,500)</td><td class="num neg">($83,930)</td><td class="num neg">($83,930)</td><td class="num neg">($83,930)</td><td class="num neg">($83,930)</td><td class="num neg">($83,930)</td><td class="num neg">($83,930)</td><td class="num neg">($548,580)</td></tr>
           <tr class="highlight-row" data-noi-row="forecast.noi"><td><strong>NOI</strong></td><td class="num">$24,318</td><td class="num">$7,072</td><td class="num">$69,313</td><td class="num">$79,291</td><td class="num">$107,094</td><td class="num">$121,383</td><td class="num">$68,710</td><td class="num">$99,047</td><td class="num">$111,118</td><td class="num">$132,991</td><td class="num">$165,147</td><td class="num">$170,621</td><td class="num">$1,156,105</td></tr>
+          <tr data-noi-row="forecast.pyExpense"><td>PY Expense</td><td class="num">$0</td><td class="num">$0</td><td class="num">$0</td><td class="num">$0</td><td class="num">$0</td><td class="num">$0</td><td class="num">$0</td><td class="num">$0</td><td class="num">$0</td><td class="num">$0</td><td class="num">$0</td><td class="num">$0</td><td class="num">$0</td></tr>
           <tr data-noi-row="forecast.capImprovements"><td>Capital Improvements</td><td class="num neg">($2,245)</td><td class="num neg">($2,372)</td><td class="num neg">($14,381)</td><td class="num">$0</td><td class="num">$0</td><td class="num neg">($7,700)</td><td class="num">$0</td><td class="num">$0</td><td class="num neg">($1,200)</td><td class="num">$0</td><td class="num">$0</td><td class="num neg">($1,200)</td><td class="num neg">($29,098)</td></tr>
           <tr class="highlight-row" data-noi-row="forecast.noiCashFlow"><td><strong>Forecasted NOI / Cash Flow</strong></td><td class="num">$22,073</td><td class="num">$4,700</td><td class="num">$54,932</td><td class="num">$79,291</td><td class="num">$107,094</td><td class="num">$113,683</td><td class="num">$68,710</td><td class="num">$99,047</td><td class="num">$109,918</td><td class="num">$132,991</td><td class="num">$165,147</td><td class="num">$169,421</td><td class="num">$1,127,007</td></tr>
           <tr data-noi-row="forecast.variance"><td>Variance Forecast to Budget</td><td class="num neg">($10,428)</td><td class="num neg">($50,907)</td><td class="num neg">($11,316)</td><td class="num">$0</td><td class="num">$0</td><td class="num">$0</td><td class="num">$0</td><td class="num">$0</td><td class="num">$0</td><td class="num">$0</td><td class="num">$0</td><td class="num">$0</td><td class="num neg">($72,651)</td></tr>
@@ -6539,6 +6540,9 @@ renderUnits('all');
       { key: 'operatingExp',    pattern: /operating\s*expense/i },
       { key: 'fixedExp',        pattern: /fixed\s*expense/i },
       { key: 'noiCashFlow',     pattern: /noi\s*\/?\s*cash\s*flow|forecasted\s*noi/i },
+      // PY EXPENSE must be tested BEFORE capImprovements: the capex row is
+      // labelled 'CAPITAL IMPVMTS/PY EXP' and would otherwise swallow it.
+      { key: 'pyExpense',       pattern: /^\s*py\s*expense\s*$/i },
       { key: 'capImprovements', pattern: /capital\s*(impvmts|improv)|capex/i },
       { key: 'variance',        pattern: /variance.*to\s*budget/i },
       { key: 'noi',             matches: (l) => /^\s*noi\s*$/.test(l) },
@@ -6660,6 +6664,36 @@ renderUnits('all');
         break;
       }
     }
+
+    // Derive NOI / Cash Flow from its components so the row sums to its own
+    // total. The sheet does not: its monthly FORECASTED NOI / CASH FLOW cells
+    // are NOI + capex only, while its Total cell also nets PY Expense --
+    // 772,075 - 13,432 - 9,063 = 749,580 against monthly cells summing to
+    // 758,643. Cash flow is NOI less capital improvements less PY expense, so
+    // we compute it and log any month where the sheet's own row disagrees.
+    [['budget', budget], ['forecast', forecast]].forEach(function (pair) {
+      const name = pair[0], set = pair[1];
+      if (!set.noi) return;
+      const derived = [];
+      for (let i = 0; i < 12; i++) {
+        derived.push((set.noi[i] || 0) +
+                     ((set.capImprovements && set.capImprovements[i]) || 0) +
+                     ((set.pyExpense && set.pyExpense[i]) || 0));
+      }
+      const sheetCf = set.noiCashFlow;
+      if (sheetCf) {
+        const off = [];
+        for (let i = 0; i < 12; i++) {
+          if (Math.abs((sheetCf[i] || 0) - derived[i]) > 1.5) off.push(months[i]);
+        }
+        if (off.length) {
+          console.warn('[LH import] ' + name + ' NOI/Cash Flow: the sheet row ' +
+            'disagrees with NOI + capex + PY expense in ' + off.join(', ') +
+            ' — using the computed figure so the row ties to its total.');
+        }
+      }
+      set.noiCashFlow = derived;
+    });
 
     const payload = { months, budget, forecast, actualMonths };
     // Report the sheet we actually resolved to, not a hardcoded name — this
