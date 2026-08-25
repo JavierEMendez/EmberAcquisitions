@@ -692,14 +692,19 @@
 
   /* PHASE TABLE COLOR CODING */
   .phase-cell { text-align:center; font-weight:700; font-size:.82rem; }
-  /* Lease-up intensity ramp: one hue at four strengths. A dense 6x6 grid of
-     red/orange/yellow/green read as noise; a single-hue ramp reads as a
-     heatmap and lets the eye find the weak phases. */
-  .phase-green  { background:#1f7a5c; color:#ffffff; }
-  .phase-yellow { background:#7fc4ad; color:#0d3b2e; }
-  .phase-orange { background:#c2e3d8; color:#14503e; }
-  .phase-red    { background:#eef5f2; color:#5d7c72; }
-  /* No units of this plan in this phase - an absence, not a zero. */
+  /* Lease-up conditional formatting, mirroring the workbook: >=65% leased is
+     green, 40-65% yellow, <40% red. This carries the signal -- it is how you
+     spot a phase that is not leasing -- so the three bands stay visually
+     distinct rather than being flattened into one hue. The cell always prints
+     its counts and the row prints its %, so the reading never depends on
+     colour alone. */
+  .phase-green  { background:#c6f6d5; color:#22543d; }
+  .phase-yellow { background:#fefcbf; color:#7b5104; }
+  .phase-red    { background:#fed7d7; color:#9b2c2c; }
+  /* Kept as an alias of red: any sub-40% cell reads the same. */
+  .phase-orange { background:#fed7d7; color:#9b2c2c; }
+  /* No units of this plan in this phase - an absence, not a zero, so it must
+     NOT read as a red 0%. Neutral and unfilled. */
   .phase-gray   { background:transparent; color:#c2ccd6; font-weight:400; }
   .phase-total-row td { background:#003552 !important; color:#fff !important; font-weight:700; }
   .phase-total-row td:hover { background:#004a73 !important; }
@@ -4092,16 +4097,18 @@ renderUnits('all');
       if (isLeased(u)) grid[u.fp][p].leased++;
     });
 
+    // Thresholds match the workbook's conditional formatting: >=65% green,
+    // 40-65% yellow, <40% red. A phase with no units of this plan is 'gray',
+    // which is an absence rather than a 0% failure.
     function colorClass(leased, total) {
       if (!total) return 'gray';
       var p = 100 * leased / total;
-      if (p >= 70) return 'green';
+      if (p >= 65) return 'green';
       if (p >= 40) return 'yellow';
-      if (p >  0)  return 'orange';
       return 'red';
     }
     function summaryColorClass(p) {
-      if (p >= 70) return 'phase-green';
+      if (p >= 65) return 'phase-green';
       if (p >= 40) return 'phase-yellow';
       return 'phase-red';
     }
@@ -5642,10 +5649,10 @@ renderUnits('all');
       // this phase, which is different from having units and none leased.
       if (!frac) return '<td class="num phase-cell phase-gray">' + '–' + '</td>';
       let p = frac.total ? (100 * frac.leased / frac.total) : 0;
+      // Same three bands as the workbook: >=65 green, 40-65 yellow, <40 red.
       let bucket = 'phase-red';
-      if (p >= 70) bucket = 'phase-green';
+      if (p >= 65) bucket = 'phase-green';
       else if (p >= 40) bucket = 'phase-yellow';
-      else if (p > 0)   bucket = 'phase-orange';
       return '<td class="num phase-cell ' + bucket + '">' + frac.leased + ' / ' + frac.total + '</td>';
     }
     let html = '';
@@ -5656,7 +5663,7 @@ renderUnits('all');
         line += '<td class="num" style="font-weight:700">' + row.total.leased + ' / ' + row.total.total + '</td>';
         const pct = row.pct != null ? row.pct : (row.total.total ? 100 * row.total.leased / row.total.total : 0);
         let cls = 'phase-red';
-        if (pct >= 70) cls = 'phase-green'; else if (pct >= 40) cls = 'phase-yellow';
+        if (pct >= 65) cls = 'phase-green'; else if (pct >= 40) cls = 'phase-yellow';
         line += '<td class="num phase-cell ' + cls + '">' + pct.toFixed(1) + '%</td>';
       } else {
         line += '<td class="num"></td><td class="num"></td>';
