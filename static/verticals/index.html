@@ -2201,7 +2201,8 @@
         <div><b>Weekly Traffic</b> — weekly prospects/leases + cumulative source breakdown (drives traffic + lead sources)</div>
         <div><b>Rents</b> — floorplan rent averages</div>
         <div><b>Leasing Pace</b> — budget vs actual leasing curve</div>
-        <div style="margin-top:6px;"><b>Status values:</b> Tenant Occupied · Leased · Model · Renewal · Turned</div>
+        <div style="margin-top:6px;"><b>Status values:</b> Tenant Occupied · Leased · Notice · Applicant · Model · Turned<br>
+                <span style="opacity:.75;">Renewal is accepted and counts as Tenant Occupied; an upcoming renewal is flagged by the pennant, not by status.</span></div>
       </div>
       <div class="ie-actions">
         <button class="dsm-btn ghost" data-ie-export="all">⬇ Download Master Tracker</button>
@@ -3295,7 +3296,10 @@ const statusStyle = {
   'Tenant Occupied': {bg:'#38a169', fg:'#fff', sym:'●'},
   'Leased':          {bg:'#E55500', fg:'#fff', sym:'◆'},
   'Model':           {bg:'#003552', fg:'#fff', sym:'★'},
-  'Renewal':         {bg:'#d69e2e', fg:'#fff', sym:'○'},
+  // 'Renewal' deliberately has no swatch: a renewing unit is simply occupied,
+  // and an APPROACHING renewal is signalled by the pennant (lease ends <= 60
+  // days) rather than by recolouring the tile. normalizeUnitStatus folds
+  // Renewal into 'Tenant Occupied' so it can never reach this map.
   // Notice = tenant still in place but has given notice to vacate.
   // Applicant = application submitted, lease not yet executed.
   // Both appear in the master tracker and previously had no entry here, so
@@ -4367,7 +4371,9 @@ renderUnits('all');
       if (/^(leased\s+not\s+occupied|lno|pre[\s-]?leased|reserved)$/.test(lower)) return 'Leased';
       if (/^leased$/.test(lower)) return 'Leased';
       if (/^(tenant\s+occupied|occupied|in\s+place|tenant\s+in\s+place)$/.test(lower)) return 'Tenant Occupied';
-      if (/^(renewal|renewing|renewed)$/.test(lower))    return 'Renewal';
+      // Renewal folds into Tenant Occupied -- the unit is occupied either way.
+      // The upcoming-renewal pennant carries the signal instead.
+      if (/^(renewal|renewing|renewed)$/.test(lower))    return 'Tenant Occupied';
       if (/^(model|model\s+unit|leasing\s+office)$/.test(lower)) return 'Model';
       // Occupied-but-leaving. Kept distinct from Tenant Occupied so the site
       // map shows the upcoming vacancy, but still counts as occupied/leased.
@@ -6510,10 +6516,10 @@ renderUnits('all');
   // ─────────────────────────────────────────────────────────────
   function importNOIMaster(wb) {
     const ws = findSheet(wb, [
+      'II. Ops Forecast', 'Ops Forecast', 'II Ops Forecast',
+      'II. Operational Template', 'II Operational Template', 'Operational Template',
       'Operational Table', 'Operational Report', 'Operations Table',
-      'II. Operational Template', 'II Operational Template',
-      'Operational Template', 'Operational', 'Operations',
-      'NOI', 'NOI Forecast',
+      'Operational', 'Operations', 'NOI', 'NOI Forecast',
     ]);
     if (!ws) {
       console.warn('[LH import] Operational/NOI sheet not found. Available tabs:', wb.SheetNames);
@@ -6560,12 +6566,15 @@ renderUnits('all');
       // Section detection — only when the label is JUST a section header
       // ("2026 BUDGET" / "2026 FORECAST"), not when a line item also
       // happens to include those words.
-      // Section headers must be number-free rows. Without that guard the
-      // 'FORECASTED NOI / CASH FLOW' *data* row (which contains the word
-      // "forecast") would reset the section mid-block and orphan everything
-      // after it.
-      const hdrRowHasNums = (aoa[r] || []).some(v => typeof v === 'number' && !isNaN(v));
-      if (!hdrRowHasNums) {
+      // A section header carries at most a stray number or two; a data row
+      // carries a 12-month series. Requiring the header row to be entirely
+      // number-free was too strict -- 'II. Ops Forecast' puts two values on
+      // its "2026 BUDGET" banner row, so the whole budget block was skipped
+      // and only the forecast parsed. Discriminate on the count instead,
+      // which still stops the 'FORECASTED NOI / CASH FLOW' data row (15
+      // numbers) from resetting the section mid-block.
+      const hdrNumCount = (aoa[r] || []).filter(v => typeof v === 'number' && !isNaN(v)).length;
+      if (hdrNumCount < 6) {
         if (/^\s*(\d{4}\s*)?budget\s*$/i.test(label)) { section = 'budget'; continue; }
         // This master writes the header as "2026 ACTUAL - FORECAST"; older
         // templates said plain "2026 FORECAST". Accepting only the latter is
@@ -7529,6 +7538,7 @@ renderUnits('all');
 
   function importBudgetToActual(wb) {
     const ws = findSheet(wb, [
+      'II. Ops Forecast', 'Ops Forecast', 'II Ops Forecast',
       'II. Operational Template', 'II Operational Template', 'Operational Template',
       'Operational Table', 'Operational Report', 'Operations Table',
       'Operational', 'Operations',
@@ -7670,8 +7680,9 @@ renderUnits('all');
   // ─────────────────────────────────────────────────────────────
   function importDiscussionItems(wb) {
     const ws = findSheet(wb, [
+      'II. Ops Forecast', 'Ops Forecast', 'II Ops Forecast',
       'II. Operational Template', 'II Operational Template', 'Operational Template',
-      'Operational Table', 'Operational Report', 'Operations Table',
+      'Operational Table', 'Operational Report', 'Operations Table'
     ]);
     if (!ws) return { count: 0, sheets: 0 };
     const aoa = sheetToAoa(ws);
@@ -7748,8 +7759,9 @@ renderUnits('all');
   // ─────────────────────────────────────────────────────────────
   function importRentNotes(wb) {
     const ws = findSheet(wb, [
+      'II. Ops Forecast', 'Ops Forecast', 'II Ops Forecast',
       'II. Operational Template', 'II Operational Template', 'Operational Template',
-      'Operational Table', 'Operational Report', 'Operations Table',
+      'Operational Table', 'Operational Report', 'Operations Table'
     ]);
     if (!ws) return { count: 0, sheets: 0 };
     const aoa = sheetToAoa(ws);
