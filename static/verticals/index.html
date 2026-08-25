@@ -559,6 +559,13 @@
   /* TABLES — finance numerals are tabular-nums; row hover uses the
      warm-paper sunk surface so it harmonizes with the brand background. */
   .tbl-wrap { overflow-x:auto; }
+  /* The Rents card mirrors a 14-column sheet table. Tightened type and padding
+     so it fits the card width instead of forcing a horizontal scroll. */
+  table.rents-wide { font-size:.66rem; }
+  table.rents-wide th, table.rents-wide td { padding:5px 3px; white-space:nowrap; }
+  table.rents-wide th { font-size:.56rem; letter-spacing:0; }
+  table.rents-wide td { font-variant-numeric:tabular-nums; }
+  table.rents-wide td:first-child, table.rents-wide th:first-child { text-align:left; }
   table { width:100%; border-collapse:separate; border-spacing:0; font-size:.84rem; }
   th {
     background: var(--eax-bg-2); color: var(--eax-subtle);
@@ -1868,7 +1875,7 @@
   <div class="card pdf-skip">
     <h3>Rents</h3>
     <div class="tbl-wrap">
-      <table>
+      <table class="rents-wide">
         <thead>
           <tr>
             <th rowspan="2">Floorplan</th>
@@ -1878,7 +1885,7 @@
             <th class="num" colspan="3" style="border-bottom:1px solid rgba(255,255,255,.3);">D2 Proforma Rents</th>
             <th class="num" colspan="3" style="border-bottom:1px solid rgba(255,255,255,.3);" data-rents-group="market">Current Market Rents</th>
             <th class="num" colspan="3" style="border-bottom:1px solid rgba(255,255,255,.3);" data-rents-group="effective">Avg Effective Rents</th>
-            <th class="num" rowspan="2">Mkt − Eff Rents</th>
+            <th class="num" style="border-bottom:1px solid rgba(255,255,255,.3);">Mkt − Eff Rents</th>
           </tr>
           <tr>
             <th class="num">Rents</th>
@@ -5576,8 +5583,18 @@ renderUnits('all');
   function applyRentsBlock(data) {
     if (!data || !data.byFloorplan) return;
     const by = data.byFloorplan;
-    const f0 = function (n) { return n == null ? null : '$' + Math.round(n).toLocaleString('en-US'); };
-    const f2 = function (n) { return n == null ? null : '$' + Number(n).toFixed(2); };
+    // Negatives in parentheses, per the accounting convention used elsewhere
+    // on the dashboard -- '$-408' was rendering instead of '($408)'.
+    const f0 = function (n) {
+      if (n == null) return null;
+      const a = '$' + Math.abs(Math.round(n)).toLocaleString('en-US');
+      return n < 0 ? '(' + a + ')' : a;
+    };
+    const f2 = function (n) {
+      if (n == null) return null;
+      const a = '$' + Math.abs(Number(n)).toFixed(2);
+      return n < 0 ? '(' + a + ')' : a;
+    };
     const n0 = function (n) { return n == null ? null : Math.round(n).toLocaleString('en-US'); };
     // Rows are keyed by data-rents-row, so the write no longer depends on
     // parsing the "Canary (THA)" label out of the first cell.
@@ -7213,6 +7230,10 @@ renderUnits('all');
     // ── Rents table (Operational tab) ─────────────────────────
     const tables = document.querySelectorAll('.section[data-vertical="lighthaven"] table');
     tables.forEach(function (table) {
+      // The rebuilt Rents card is owned by applyRentsBlock, which mirrors the
+      // sheet's 14 columns. These legacy writers address cells positionally on
+      // the old 11-column layout and would shift every value if they ran here.
+      if (table.querySelector('[data-rents-row]')) return;
       const ths = table.querySelectorAll('th');
       let isRents = false;
       ths.forEach(th => { if (/d2 proforma/i.test(th.textContent || '')) isRents = true; });
@@ -7397,6 +7418,10 @@ renderUnits('all');
     // ── Rents table (Operational Performance section) ─────────────
     const tables = document.querySelectorAll('.section[data-vertical="lighthaven"] table');
     tables.forEach(function (table) {
+      // The rebuilt Rents card is owned by applyRentsBlock, which mirrors the
+      // sheet's 14 columns. These legacy writers address cells positionally on
+      // the old 11-column layout and would shift every value if they ran here.
+      if (table.querySelector('[data-rents-row]')) return;
       const ths = table.querySelectorAll('th');
       let isRents = false;
       ths.forEach(th => { if (/d2 proforma/i.test(th.textContent || '')) isRents = true; });
@@ -8097,7 +8122,7 @@ renderUnits('all');
       if (/^comments?$/i.test(first)) { comRow = r; break; }
     }
 
-    const notes = [];
+    let notes = [];
     const scanned = [];   // every footnote seen, for the as-of date probe
     // Footnotes between the rent table and the Comments label (e.g. the
     // loss-leader caveat) belong with these notes.
@@ -8132,15 +8157,31 @@ renderUnits('all');
       const d = new Date(y, parseInt(m[1], 10) - 1, parseInt(m[2], 10));
       if (!isNaN(d.getTime())) { asOf = d; break; }
     }
-    // The "*Market rent adjustements as of ..." footnote dates the rent
-    // ADJUSTMENTS, not the commentary, so it is surfaced as context rather
-    // than used to suppress the notes. Blanking them lost real content.
+    // The "*Market rent adjustements as of MM/DD/YY" footnote dates the rent
+    // adjustments, and the prose beneath it is commentary ON those adjustments.
+    // When that date predates the reporting month the prose is last cycle's, so
+    // it is dropped while the footnote itself is kept -- the footnote is still
+    // true and states which cycle the numbers came from. Blanking the whole
+    // block instead lost that context; keeping all of it published stale text
+    // under current numbers.
     const reportStart = window.LH_reportMonthStart || null;
+    let kept = notes;
     if (asOf && reportStart && asOf < reportStart) {
-      console.log('[LH import] RENT NOTES: rent adjustments are dated ' +
-        (asOf.getMonth() + 1) + '/' + (asOf.getDate()) + '/' +
-        String(asOf.getFullYear()).slice(-2) + ', before the reporting month.');
+      kept = notes.filter(function (t) { return /^[*†‡]/.test(String(t).trim()); });
+      const dropped = notes.length - kept.length;
+      if (dropped) {
+        console.warn('[LH import] RENT NOTES: dropped ' + dropped + ' commentary ' +
+          'paragraph(s) — the block is dated ' + (asOf.getMonth() + 1) + '/' +
+          asOf.getDate() + '/' + String(asOf.getFullYear()).slice(-2) +
+          ', before the reporting month. Refresh those cells on the operational ' +
+          'sheet and they publish again.');
+      }
     }
+    if (!kept.length) {
+      persistComment('rentNotes', '');
+      return { count: 0, sheets: 1 };
+    }
+    notes = kept;
 
     persistComment('rentNotes', notes.map(n =>
       '<p style="margin:0 0 8px;">' + escHtml(n) + '</p>').join(''));
