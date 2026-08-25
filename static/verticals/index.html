@@ -6547,7 +6547,37 @@ renderUnits('all');
     function getLabel(row) {
       return String((row && (row[0] || row[1])) || '').toLowerCase().trim();
     }
+    // Read the 12 monthly values POSITIONALLY, at the columns the section's
+    // date header occupies. Taking "the first 12 numbers in the row" breaks on
+    // any row with a blank month: CAPITAL IMPVMTS has January empty, so the
+    // naive read started at February, shifted every month one column left and
+    // pulled the annual Total in as December. That made NOI + capex disagree
+    // with Forecasted NOI / Cash Flow and threw the variance row off.
+    let monthCols = [];
+    function captureMonthCols(row) {
+      const cols = [];
+      for (let c = 0; c < row.length; c++) {
+        const v = row[c];
+        if (v instanceof Date && !isNaN(v.getTime())) cols[v.getMonth()] = c;
+      }
+      // Only accept a row that really is a 12-month header.
+      let seen = 0;
+      for (let i = 0; i < 12; i++) if (cols[i] != null) seen++;
+      if (seen >= 10) { monthCols = cols; return true; }
+      return false;
+    }
     function rowNumbers(row, n) {
+      // Positional read once we know where the months sit.
+      if (monthCols.length) {
+        const out = [];
+        for (let i = 0; i < 12; i++) {
+          const c = monthCols[i];
+          const v = (c != null) ? row[c] : null;
+          out.push(typeof v === 'number' && !isNaN(v) ? v : 0);
+        }
+        return out;
+      }
+      // Fallback for templates with no date header row.
       const out = [];
       for (let c = 0; c < row.length && out.length < n; c++) {
         const v = row[c];
@@ -6561,6 +6591,9 @@ renderUnits('all');
     const forecast = {};
 
     for (let r = 0; r < aoa.length; r++) {
+      // Each section carries its own 12-month date header; capture it as we
+      // pass so the rows beneath are read at the right columns.
+      if (captureMonthCols(aoa[r] || [])) continue;
       const label = getLabel(aoa[r]);
       if (!label) continue;
       // Section detection — only when the label is JUST a section header
@@ -6591,13 +6624,44 @@ renderUnits('all');
         const hit = li.pattern ? li.pattern.test(label) : li.matches(label);
         if (!hit) continue;
         const nums = rowNumbers(aoa[r], 12);
-        if (nums.length >= 6) target[li.key] = nums;
+        // Positional reads always return 12 slots; a sparse row (capex is zero
+        // for most of the year) is still valid, so require any non-zero value
+        // rather than a minimum count of populated cells.
+        const ok = monthCols.length
+          ? nums.some(v => typeof v === 'number' && v !== 0)
+          : nums.length >= 6;
+        if (ok) target[li.key] = nums;
         break;
       }
     }
 
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const payload = { months, budget, forecast };
+
+    // How many months are ACTUAL rather than forecast. The sheet states this
+    // outright: under the "2026 ACTUAL - FORECAST" banner sits a row of
+    // per-column labels reading Actual x7 then Forecast x5. Read it.
+    // Inferring it downstream by comparing budget against forecast values
+    // concluded 12, because forecast differs from budget in every month --
+    // which is why the card claimed actuals through December.
+    let actualMonths = null;
+    for (let r = 0; r < aoa.length; r++) {
+      const row = aoa[r] || [];
+      let nAct = 0, nFc = 0, firstFc = -1;
+      for (let c = 0; c < row.length; c++) {
+        const t = String(row[c] == null ? '' : row[c]).toLowerCase().trim();
+        if (t === 'actual' || t === 'actuals') { nAct++; }
+        else if (t === 'forecast' || t === 'projected') { nFc++; if (firstFc < 0) firstFc = nAct; }
+      }
+      // A genuine label row carries a run of both across the month columns.
+      if (nAct >= 1 && nFc >= 1 && (nAct + nFc) >= 8) {
+        actualMonths = (firstFc >= 0) ? firstFc : nAct;
+        console.log('[LH import] NOI actual/forecast split read from row ' + r +
+          ': ' + actualMonths + ' actual month(s), ' + nFc + ' forecast');
+        break;
+      }
+    }
+
+    const payload = { months, budget, forecast, actualMonths };
     // Report the sheet we actually resolved to, not a hardcoded name — this
     // log claimed "II. Operational Template" even after the importer was
     // repointed, which is exactly the sort of thing that hides a stale read.
@@ -6675,11 +6739,18 @@ renderUnits('all');
       }
     }
     const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    // The sheet's own Actual/Forecast label row wins over the value-comparison
+    // guess above, which counts any month where forecast differs from budget
+    // as "actual" and therefore always reaches December.
+    if (typeof data.actualMonths === 'number' && data.actualMonths >= 0 && data.actualMonths <= 12) {
+      actualMonths = data.actualMonths;
+    }
     const lastActualLabel = actualMonths > 0 ? MONTHS[actualMonths - 1] : '—';
     const firstBudgetLabel = actualMonths < 12 ? MONTHS[actualMonths] : '—';
     const forecastTitle = document.getElementById('lh-noi-forecast-title');
     if (forecastTitle) {
-      forecastTitle.textContent = 'Forecast — Actuals (Jan–' + lastActualLabel + ') + Budget (' + firstBudgetLabel + '–Dec)';
+      forecastTitle.textContent = 'Forecast — Actuals (Jan–' + lastActualLabel +
+        ') + Forecast (' + firstBudgetLabel + '–Dec)';
     }
     // Tag header cells of forecast table for visual ACT/BUD labels.
     const forecastTable = document.getElementById('lh-noi-forecast-table');
@@ -6689,7 +6760,7 @@ renderUnits('all');
         if (ths[i]) {
           const tag = i <= actualMonths
             ? ' <span style="color:var(--accent2);font-size:10px">ACT</span>'
-            : '';
+            : ' <span style="opacity:.55;font-size:10px">FCST</span>';
           ths[i].innerHTML = MONTHS[i - 1] + tag;
         }
       }
