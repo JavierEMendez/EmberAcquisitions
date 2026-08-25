@@ -6811,6 +6811,33 @@ renderUnits('all');
       set.noiCashFlow = derived;
     });
 
+    // Variance = forecast cash flow less budget cash flow, both AFTER capital
+    // improvements and PY expense. The sheet's own variance row is computed
+    // pre-adjustment, so it differed from the post-adjustment figure by exactly
+    // the PY expense in each month it occurs (Jan 2,245 / Feb 400 / Mar 3,721 /
+    // Apr 1,817 / May 880) and summed to (435,437) against its own Total cell
+    // of (444,500). Deriving it ties the row to both the cash-flow rows above
+    // it and to that total.
+    if (budget.noiCashFlow && forecast.noiCashFlow) {
+      const derivedVar = [];
+      for (let i = 0; i < 12; i++) {
+        derivedVar.push((forecast.noiCashFlow[i] || 0) - (budget.noiCashFlow[i] || 0));
+      }
+      const prior = forecast.variance;
+      if (prior) {
+        const off = [];
+        for (let i = 0; i < 12; i++) {
+          if (Math.abs((prior[i] || 0) - derivedVar[i]) > 1.5) off.push(months[i]);
+        }
+        if (off.length) {
+          console.warn('[LH import] variance: the sheet row is pre-adjustment in ' +
+            off.join(', ') + ' — using forecast CF less budget CF so it ties to ' +
+            'the cash-flow rows.');
+        }
+      }
+      forecast.variance = derivedVar;
+    }
+
     const payload = { months, budget, forecast, actualMonths };
     // Report the sheet we actually resolved to, not a hardcoded name — this
     // log claimed "II. Operational Template" even after the importer was
@@ -7849,6 +7876,13 @@ renderUnits('all');
     }
     if (!matched) return { count: 0, sheets: 0 };
 
+    // Publish the reporting month so other blocks can judge their own staleness.
+    if (monthLabel) {
+      const mi = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
+        .indexOf(monthLabel.slice(0, 3).toLowerCase());
+      const yr = parseInt(monthLabel.replace(/[^0-9]/g, ''), 10);
+      if (mi >= 0 && yr) window.LH_reportMonthStart = new Date(yr, mi, 1);
+    }
     const payload = { monthLabel, rows };
     stage('bva', payload);
     try { applyBudgetToActual(payload); } catch (e) { console.warn('[LH] applyBudgetToActual failed:', e); }
@@ -8009,11 +8043,13 @@ renderUnits('all');
     }
 
     const notes = [];
+    const scanned = [];   // every footnote seen, for the as-of date probe
     // Footnotes between the rent table and the Comments label (e.g. the
     // loss-leader caveat) belong with these notes.
     const stopAt = comRow >= 0 ? comRow : Math.min(rentsRow + 40, aoa.length);
     for (let r = rentsRow + 1; r < stopAt; r++) {
       const t = String((aoa[r] || [])[1] || (aoa[r] || [])[0] || '').replace(/\s+/g, ' ').trim();
+      if (/^[*†‡]/.test(t)) scanned.push(t);
       if (/^[*†‡]/.test(t) && t.length > 12) notes.push(t);
     }
     if (comRow >= 0) {
@@ -8027,6 +8063,29 @@ renderUnits('all');
       }
     }
     if (!notes.length) return { count: 0, sheets: 0 };
+
+    // The RENTS block dates its own commentary, e.g. "*Market rent adjustements
+    // as of 05/21/26". When that predates the reporting month the notes are
+    // last cycle's and get cleared rather than republished -- otherwise stale
+    // commentary sits under current numbers with nothing marking it as old.
+    let asOf = null;
+    for (const t of notes.concat(scanned)) {
+      const m = String(t).match(/as of\s+(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/i);
+      if (!m) continue;
+      let y = parseInt(m[3], 10);
+      if (y < 100) y += 2000;
+      const d = new Date(y, parseInt(m[1], 10) - 1, parseInt(m[2], 10));
+      if (!isNaN(d.getTime())) { asOf = d; break; }
+    }
+    const reportStart = window.LH_reportMonthStart || null;
+    if (asOf && reportStart && asOf < reportStart) {
+      persistComment('rentNotes', '');
+      console.warn('[LH import] RENT NOTES cleared: the block is dated ' +
+        (asOf.getMonth() + 1) + '/' + asOf.getDate() + '/' + String(asOf.getFullYear()).slice(-2) +
+        ', older than the reporting month. Update those cells on the ' +
+        'operational sheet and they will publish again.');
+      return { count: 0, sheets: 1 };
+    }
 
     persistComment('rentNotes', notes.map(n =>
       '<p style="margin:0 0 8px;">' + escHtml(n) + '</p>').join(''));
