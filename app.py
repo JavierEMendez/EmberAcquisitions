@@ -12014,9 +12014,11 @@ def _build_operations_view_context(raw_data, uploaded_at):
     kpis = _ops_kpis(monthly, projects, anchor, history=data.get("history"),
                      cats=cats, n_months=n, now_idx=now_idx)
 
-    # Default window unchanged: past 3 + next 15, clamped to the axis.
+    # Default window on page load: the 3 months before now, the current month,
+    # and the following 12 — clamped to the axis. The Window dropdowns still
+    # reach the whole file.
     default_from = max(0, now_idx - 3)
-    default_to   = min(n - 1, now_idx + 14)
+    default_to   = min(n - 1, now_idx + 12)
     window_months = month_dates[default_from : default_to + 1]
     window_now    = now_idx - default_from
     window_grand  = grand[default_from : default_to + 1]
@@ -12116,11 +12118,14 @@ def _build_operations_report_context(view_ctx, run_date=None):
     _color   = lambda c: _OPS_CAT_COLORS.get(c, "#8D9AA7")
 
     # The live page's month axis spans the whole uploaded file; the PDF keeps
-    # its fixed past-3 + next-15 window, so slice down to that before laying
-    # out the pivot (a 15-year axis would run off the page).
+    # its own fixed past-3 + next-15 window, so slice down to that before
+    # laying out the pivot (a 15-year axis would run off the page). Pinned
+    # here rather than following the page's default window, so changing what
+    # the page opens on doesn't reshape the emailed report.
     full_months = view_ctx["_month_dates"]
-    lo = view_ctx.get("default_from_idx", 0)
-    hi = view_ctx.get("default_to_idx", len(full_months) - 1)
+    _now = view_ctx["now_idx"]
+    lo = max(0, _now - 3)
+    hi = min(len(full_months) - 1, _now + 14)
     months  = full_months[lo:hi + 1]
     by_cat  = {c: view_ctx["_by_cat"][c][lo:hi + 1] for c in cats}
     now_idx = max(0, view_ctx["now_idx"] - lo)
