@@ -33,6 +33,11 @@
     if (n === 0) return "0";
     return Math.round(n).toLocaleString();
   }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
   function classes(arr) { return arr.filter(Boolean).join(" "); }
 
   // Sparkline SVG (matches design ref) — 88×22
@@ -84,7 +89,21 @@
     from: parseInt(bar.getAttribute("data-default-from"), 10) || 0,
     to:   parseInt(bar.getAttribute("data-default-to"), 10) || (DATA.month_dates.length - 1),
     nowIdx: parseInt(bar.getAttribute("data-now-idx"), 10) || 3,
+    // Projects expanded into their revenue sources. Any number can be open
+    // at once, so several projects' detail can be compared side by side.
+    expanded: {},
   };
+
+  // Categories a project actually has data for, over the WHOLE file rather
+  // than the current window — so a row doesn't appear and vanish as the
+  // window moves.
+  function catsWithData(project) {
+    var pcm = (DATA.project_cat_monthly || {})[project] || {};
+    return (DATA.cats || []).filter(function (c) {
+      var arr = pcm[c];
+      return arr && arr.some(function (v) { return v !== 0; });
+    });
+  }
 
   // ── Render ─────────────────────────────────────────────────
   function render() {
@@ -94,7 +113,9 @@
     var rows = isProj ? DATA.projects : DATA.cats;
 
     titleEl.textContent = isProj ? "Project × Month" : "Category × Month";
-    meta.textContent = "Showing " + months.length + " months · default = past 3 + next 15";
+    var span = meta.getAttribute("data-axis-span");
+    meta.textContent = "Showing " + months.length + " months"
+                     + (span ? " · file covers " + span : "");
 
     var headHtml = '<tr><th class="l">' + (isProj ? "Project" : "Category") + '</th>' +
                    '<th class="trend">Trend</th><th class="tot">Total</th>';
@@ -106,24 +127,53 @@
     headHtml += "</tr>";
 
     var bodyHtml = "";
-    rows.forEach(function (key) {
-      var src = isProj ? DATA.project_monthly_totals[key] : DATA.monthly_totals_by_cat[key];
+    var nowInWin = state.nowIdx - state.from;
+
+    // One data row: label cell is caller-supplied so parents can carry a
+    // caret and children can be indented.
+    function dataRow(labelHtml, src, color, rowCls, bold) {
       var series = src.slice(state.from, state.to + 1);
       var total = series.reduce(function (s, v) { return s + v; }, 0);
-      var color = isProj ? "var(--accent)" : (DATA.cat_colors[key] || "var(--ink)");
-      var nowInWin = state.nowIdx - state.from;
-
-      bodyHtml += "<tr>";
-      var swatch = isProj ? "" : '<span class="swatch" style="background:' + color + '"></span>';
-      bodyHtml += '<td class="l">' + swatch + key + "</td>";
-      bodyHtml += '<td class="trend">' + sparkline(series, color, false, nowInWin) + "</td>";
-      bodyHtml += '<td class="tot">' + fmtIntComma(total / 1000) + "</td>";
+      var html = '<tr' + (rowCls ? ' class="' + rowCls + '"' : "") + ">";
+      html += '<td class="l">' + labelHtml + "</td>";
+      html += '<td class="trend">' + sparkline(series, color, !!bold, nowInWin) + "</td>";
+      html += '<td class="tot">' + fmtIntComma(total / 1000) + "</td>";
       series.forEach(function (v, i) {
-        var globalIdx = state.from + i;
-        var cls = (globalIdx === state.nowIdx) ? "now" : "";
-        bodyHtml += '<td class="' + cls + '">' + fmtIntComma(v / 1000) + "</td>";
+        var cls = (state.from + i === state.nowIdx) ? "now" : "";
+        html += '<td class="' + cls + '">' + fmtIntComma(v / 1000) + "</td>";
       });
-      bodyHtml += "</tr>";
+      return html + "</tr>";
+    }
+
+    rows.forEach(function (key) {
+      if (!isProj) {
+        var color = DATA.cat_colors[key] || "var(--ink)";
+        bodyHtml += dataRow(
+          '<span class="swatch" style="background:' + color + '"></span>' + esc(key),
+          DATA.monthly_totals_by_cat[key], color, null, false);
+        return;
+      }
+      // Project row — clickable, expands into its revenue sources.
+      var open = !!state.expanded[key];
+      var subCats = catsWithData(key);
+      var caret = subCats.length
+        ? '<span class="ops-caret">' + (open ? "▾" : "▸") + "</span>"
+        : '<span class="ops-caret ops-caret-empty"></span>';
+      var label = '<button type="button" class="ops-rowtoggle" data-project="'
+                + encodeURIComponent(key) + '"'
+                + (subCats.length ? "" : " disabled")
+                + ' aria-expanded="' + (open ? "true" : "false") + '">'
+                + caret + esc(key) + "</button>";
+      bodyHtml += dataRow(label, DATA.project_monthly_totals[key], "var(--accent)",
+                          "ops-prow" + (open ? " is-open" : ""), false);
+      if (!open) return;
+      subCats.forEach(function (c) {
+        var ccolor = DATA.cat_colors[c] || "var(--ink)";
+        bodyHtml += dataRow(
+          '<span class="ops-sub-label"><span class="swatch" style="background:'
+            + ccolor + '"></span>' + esc(c) + "</span>",
+          DATA.project_cat_monthly[key][c], ccolor, "ops-subrow", false);
+      });
     });
 
     // Total row
@@ -144,6 +194,18 @@
   }
 
   // ── Events ─────────────────────────────────────────────────
+  // Expand/collapse a project into its revenue sources. Delegated because the
+  // table is re-rendered wholesale on every change.
+  mount.addEventListener("click", function (e) {
+    var btn = e.target.closest(".ops-rowtoggle");
+    if (!btn || btn.disabled) return;
+    var key = decodeURIComponent(btn.getAttribute("data-project"));
+    if (state.expanded[key]) delete state.expanded[key];
+    else state.expanded[key] = true;
+    render();
+    syncHash();
+  });
+
   pivotGroup.addEventListener("click", function (e) {
     var btn = e.target.closest("[data-pivot]");
     if (!btn) return;
@@ -160,18 +222,32 @@
 
   // ── Hash deep-linking (#pivot=category&from=3&to=14) ──────
   function syncHash() {
-    var h = "pivot=" + state.pivot + "&from=" + state.from + "&to=" + state.to;
+    var open = Object.keys(state.expanded);
+    var h = "pivot=" + state.pivot + "&from=" + state.from + "&to=" + state.to
+          + (open.length ? "&open=" + open.map(encodeURIComponent).join("|") : "");
     history.replaceState(null, "", "#" + h);
   }
   function readHash() {
     var h = (location.hash || "").replace(/^#/, "");
     if (!h) return;
+    var last = DATA.month_dates.length - 1;
     h.split("&").forEach(function (kv) {
-      var p = kv.split("=");
+      var i = kv.indexOf("=");
+      var p = [kv.slice(0, i), kv.slice(i + 1)];
       if (p[0] === "pivot" && (p[1] === "project" || p[1] === "category")) state.pivot = p[1];
       if (p[0] === "from") state.from = parseInt(p[1], 10);
       if (p[0] === "to")   state.to   = parseInt(p[1], 10);
+      if (p[0] === "open" && p[1]) {
+        p[1].split("|").forEach(function (k) {
+          var name = decodeURIComponent(k);
+          if (DATA.projects.indexOf(name) !== -1) state.expanded[name] = true;
+        });
+      }
     });
+    // Clamp: the month axis length can change between uploads, so a stale
+    // bookmark must not index past the end.
+    if (!(state.from >= 0 && state.from <= last)) state.from = 0;
+    if (!(state.to   >= 0 && state.to   <= last)) state.to   = last;
     if (state.pivot === "category") {
       pivotGroup.querySelectorAll("[data-pivot]").forEach(function (b) {
         b.classList.toggle("is-active", b.getAttribute("data-pivot") === "category");

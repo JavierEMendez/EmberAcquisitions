@@ -11596,33 +11596,77 @@ _OPS_CAT_COLORS = {
 _OPS_MONTHS_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
 
 
-def _ops_normalize(raw, anchor):
-    """Canonical shape: {anchor, projects, monthly{project: {category: [18 floats]}}}"""
-    projects = raw.get("projects") or []
-    monthly  = raw.get("monthly")  or {}
-    for p in projects:
-        monthly.setdefault(p, {})
-        for c in _OPS_CATS:
-            arr = monthly[p].get(c) or []
-            if len(arr) < 18:
-                arr = list(arr) + [0.0] * (18 - len(arr))
-            elif len(arr) > 18:
-                arr = arr[:18]
-            monthly[p][c] = [float(v or 0) for v in arr]
-    out = {"anchor": anchor, "projects": list(projects), "monthly": monthly}
-    history = raw.get("history")
-    if isinstance(history, dict):
-        out["history"] = {str(k): float(v or 0) for k, v in history.items()}
+def _ops_shift_ym(year, month, off):
+    """(year, month) shifted by `off` months."""
+    idx = (month - 1) + off
+    return year + (idx // 12), (idx % 12) + 1
+
+
+def _ops_month_span(start_ym, count):
+    """['YYYY-MM', ...] of length `count` starting at start_ym ('YYYY-MM')."""
+    y, m = int(start_ym[:4]), int(start_ym[5:7])
+    out = []
+    for off in range(count):
+        yy, mm = _ops_shift_ym(y, m, off)
+        out.append(f"{yy:04d}-{mm:02d}")
     return out
 
 
-def _ops_month_dates(anchor):
-    """18 months: anchor-3 .. anchor+14 (anchor at index 3)."""
+def _ops_categories(monthly):
+    """Categories to display: the canonical six first (stable colors/order),
+    then any additional category the upload actually contains.
+
+    The category list used to be hardcoded, which silently zeroed any row
+    whose label didn't match — the pivot would under-report while the KPIs
+    (summed from full history) kept counting it. Deriving it from the data
+    means a renamed or added category shows up instead of disappearing.
+    """
+    found = []
+    for cats in (monthly or {}).values():
+        for c in (cats or {}):
+            if c and c not in found:
+                found.append(c)
+    extra = sorted(c for c in found if c not in _OPS_CATS)
+    return [c for c in _OPS_CATS if c in found or not found] + extra
+
+
+def _ops_normalize(raw, anchor):
+    """Canonical shape: {anchor, months, categories, projects,
+    monthly{project: {category: [len(months) floats]}}}"""
+    projects = raw.get("projects") or []
+    monthly  = raw.get("monthly")  or {}
+    # Month axis: full span carried by the data when present, else the legacy
+    # 18-month window anchored at `anchor` (kept for the non-legacy shape).
+    months = raw.get("months")
+    if not months:
+        start_y, start_m = _ops_shift_ym(anchor.year, anchor.month, -3)
+        months = _ops_month_span(f"{start_y:04d}-{start_m:02d}", 18)
+    n = len(months)
+    cats = _ops_categories(monthly)
+    for p in projects:
+        monthly.setdefault(p, {})
+        for c in cats:
+            arr = monthly[p].get(c) or []
+            if len(arr) < n:
+                arr = list(arr) + [0.0] * (n - len(arr))
+            elif len(arr) > n:
+                arr = arr[:n]
+            monthly[p][c] = [float(v or 0) for v in arr]
+    out = {"anchor": anchor, "months": months, "categories": cats,
+           "projects": list(projects), "monthly": monthly}
+    history = raw.get("history")
+    if isinstance(history, dict):
+        out["history"] = {str(k): float(v or 0) for k, v in history.items()}
+    if raw.get("recon"):
+        out["recon"] = raw["recon"]
+    return out
+
+
+def _ops_month_dates(months):
+    """['YYYY-MM', ...] -> the display dicts the template/JS consume."""
     out = []
-    for off in range(-3, 15):
-        m_idx = anchor.month - 1 + off
-        y = anchor.year + (m_idx // 12)
-        m = (m_idx % 12) + 1
+    for ym in months:
+        y, m = int(ym[:4]), int(ym[5:7])
         out.append({
             "short": _OPS_MONTHS_SHORT[m - 1],
             "yy":    str(y)[-2:],
@@ -11725,20 +11769,37 @@ def _ops_translate_legacy(raw):
     if not project_order:
         return None
 
-    # Anchor on today's month; slice 18 months (-3..+14).
     anchor = datetime.date.today().replace(day=1)
+    # Month axis spans every month the upload carries, extended if needed so
+    # the default window (anchor-3 .. anchor+14) always fits. The axis used to
+    # be a fixed 18-month slice, which capped the Window dropdowns — revenue
+    # beyond it was unreachable on the page even though it was in the file.
+    data_yms = {ym for cats in by_pc.values() for m in cats.values() for ym in m}
+    win_start_y, win_start_m = _ops_shift_ym(anchor.year, anchor.month, -3)
+    win_end_y, win_end_m = _ops_shift_ym(anchor.year, anchor.month, 14)
+    bounds = data_yms | {f"{win_start_y:04d}-{win_start_m:02d}",
+                         f"{win_end_y:04d}-{win_end_m:02d}"}
+    first, last = min(bounds), max(bounds)
+    span = ((int(last[:4]) - int(first[:4])) * 12
+            + (int(last[5:7]) - int(first[5:7])) + 1)
+    months = _ops_month_span(first, span)
+
+    # Every category present in the file, so a renamed/added row can't be
+    # silently dropped from the pivot (it would still hit the KPIs below).
+    cats_found = []
+    for cats in by_pc.values():
+        for c in cats:
+            if c and c not in cats_found:
+                cats_found.append(c)
+    cats_out = [c for c in _OPS_CATS if c in cats_found] + \
+               sorted(c for c in cats_found if c not in _OPS_CATS)
+
     monthly_out = {}
     for p in project_order:
         monthly_out[p] = {}
-        for c in _OPS_CATS:
+        for c in cats_out:
             month_map = by_pc[p].get(c, {})
-            values = []
-            for off in range(-3, 15):
-                m_idx = anchor.month - 1 + off
-                yr = anchor.year + (m_idx // 12)
-                mo = (m_idx % 12) + 1
-                values.append(month_map.get(f"{yr:04d}-{mo:02d}", 0.0))
-            monthly_out[p][c] = values
+            monthly_out[p][c] = [month_map.get(ym, 0.0) for ym in months]
 
     # Full-history monthly grand totals (sum across projects/cats per
     # YYYY-MM). The chart window only carries 3 months of past data, so
@@ -11750,11 +11811,29 @@ def _ops_translate_legacy(raw):
             for ym, v in ym_map.items():
                 history[ym] = history.get(ym, 0.0) + v
 
+    # Reconciliation: the pivot is built from monthly_out, so prove it still
+    # carries every dollar the parser read. A nonzero delta means a row was
+    # dropped on the way in and the page should say so rather than quietly
+    # under-report.
+    pivot_sum = sum(v for cats in monthly_out.values()
+                    for arr in cats.values() for v in arr)
+    parsed_sum = sum(history.values())
     return {
         "anchor":   anchor.isoformat(),
+        "months":   months,
+        "categories": cats_out,
         "projects": project_order,
         "monthly":  monthly_out,
         "history":  history,
+        "recon": {
+            "parsed_total": round(parsed_sum, 2),
+            "pivot_total":  round(pivot_sum, 2),
+            "delta":        round(parsed_sum - pivot_sum, 2),
+            "months_span":  f"{months[0]} .. {months[-1]}",
+            "projects":     len(project_order),
+            "categories":   cats_out,
+            "unknown_categories": [c for c in cats_out if c not in _OPS_CATS],
+        },
     }
 
 
@@ -11762,17 +11841,29 @@ def _ops_fmtM(v):
     return f"${v / 1_000_000:.2f}M"
 
 
-def _ops_kpis(monthly, projects, anchor, history=None):
-    grand = [0.0] * 18
+def _ops_kpis(monthly, projects, anchor, history=None, cats=None, n_months=None,
+              now_idx=3):
+    """Headline KPIs. Index math is relative to `now_idx` (the anchor month's
+    position on the month axis) rather than the old fixed 18-month window."""
+    cats = cats or _OPS_CATS
+    n = n_months if n_months is not None else 18
+    grand = [0.0] * n
     for p in projects:
-        for c in _OPS_CATS:
-            for i, v in enumerate(monthly[p][c]):
-                grand[i] += v
+        for c in cats:
+            for i, v in enumerate(monthly.get(p, {}).get(c, [])):
+                if i < n:
+                    grand[i] += v
     fy_year = anchor.year
 
     def _shift(year, month, off):
         idx = (month - 1) + off
         return year + (idx // 12), (idx % 12) + 1
+
+    def _win(start_off, count):
+        """Sum `count` months of the axis starting `start_off` from the anchor."""
+        lo = max(0, now_idx + start_off)
+        hi = min(n, now_idx + start_off + count)
+        return sum(grand[lo:hi]) if hi > lo else 0.0
 
     def _hist_sum(start_y, start_m, n):
         if not history:
@@ -11790,13 +11881,11 @@ def _ops_kpis(monthly, projects, anchor, history=None):
     if ytd_hist is not None:
         realized_ytd = ytd_hist
     else:
-        realized_ytd = (
-            sum(grand[3 - anchor.month + 1 : 4]) if anchor.month <= 4
-            else sum(grand[max(0, 4 - anchor.month) : 4])
-        )
+        # Jan..anchor inclusive, as far back as the axis reaches.
+        realized_ytd = _win(-(anchor.month - 1), anchor.month)
 
-    # FY total: realized YTD + remaining months of fy_year from forecast window.
-    fy_total = realized_ytd + sum(grand[4 : 4 + (12 - anchor.month)])
+    # FY total: realized YTD + remaining months of fy_year from the forecast.
+    fy_total = realized_ytd + _win(1, 12 - anchor.month)
 
     # Trailing 12: 12 months ending at anchor (inclusive).
     t_y, t_m = _shift(fy_year, anchor.month, -11)
@@ -11808,11 +11897,11 @@ def _ops_kpis(monthly, projects, anchor, history=None):
             f"{_OPS_MONTHS_SHORT[anchor.month - 1]} {fy_year}"
         )
     else:
-        trailing12 = sum(grand[0:4])
-        trailing12_sub = "(window proxy — 4 past months)"
+        trailing12 = _win(-11, 12)
+        trailing12_sub = "(axis proxy — as far back as the file reaches)"
 
     # Next 12: month after anchor through 12 months later.
-    next12 = sum(grand[4 : 16])
+    next12 = _win(1, 12)
     n_start_y, n_start_m = _shift(fy_year, anchor.month, 1)
     n_end_y,   n_end_m   = _shift(fy_year, anchor.month, 12)
     next12_sub = (
@@ -11896,29 +11985,38 @@ def _build_operations_view_context(raw_data, uploaded_at):
     monthly  = data["monthly"]
     if not projects:
         return None
-    month_dates = _ops_month_dates(anchor)
-    now_idx = 3
+    months = data["months"]
+    cats   = data["categories"]
+    month_dates = _ops_month_dates(months)
+    n = len(months)
+    # Anchor's position on the axis (the "now" column). The axis now spans the
+    # whole file, so this is looked up rather than assumed to be index 3.
+    anchor_ym = f"{anchor.year:04d}-{anchor.month:02d}"
+    now_idx = months.index(anchor_ym) if anchor_ym in months else min(3, n - 1)
 
-    by_cat = {c: [0.0] * 18 for c in _OPS_CATS}
+    by_cat = {c: [0.0] * n for c in cats}
     for p in projects:
-        for c in _OPS_CATS:
+        for c in cats:
             for i, v in enumerate(monthly[p][c]):
                 by_cat[c][i] += v
 
-    proj_totals = {p: [0.0] * 18 for p in projects}
+    proj_totals = {p: [0.0] * n for p in projects}
     for p in projects:
-        for c in _OPS_CATS:
+        for c in cats:
             for i, v in enumerate(monthly[p][c]):
                 proj_totals[p][i] += v
 
-    grand = [0.0] * 18
-    for c in _OPS_CATS:
+    grand = [0.0] * n
+    for c in cats:
         for i, v in enumerate(by_cat[c]):
             grand[i] += v
 
-    kpis = _ops_kpis(monthly, projects, anchor, history=data.get("history"))
+    kpis = _ops_kpis(monthly, projects, anchor, history=data.get("history"),
+                     cats=cats, n_months=n, now_idx=now_idx)
 
-    default_from, default_to = 0, 17
+    # Default window unchanged: past 3 + next 15, clamped to the axis.
+    default_from = max(0, now_idx - 3)
+    default_to   = min(n - 1, now_idx + 14)
     window_months = month_dates[default_from : default_to + 1]
     window_now    = now_idx - default_from
     window_grand  = grand[default_from : default_to + 1]
@@ -11937,13 +12035,16 @@ def _build_operations_view_context(raw_data, uploaded_at):
     total_spark = _ops_sparkline(window_grand, "#08233B", bold=True, now_offset=window_now)
 
     client_json = json.dumps({
-        "cats":       _OPS_CATS,
+        "cats":       cats,
         "projects":   projects,
-        "cat_colors": _OPS_CAT_COLORS,
+        "cat_colors": {c: _OPS_CAT_COLORS.get(c, "#8D9AA7") for c in cats},
         "month_dates": month_dates,
         "now_idx":    now_idx,
         "monthly_totals_by_cat":  by_cat,
         "project_monthly_totals": proj_totals,
+        # Full project × category matrix, so clicking a project can expand
+        # into its individual revenue sources without another round trip.
+        "project_cat_monthly":    {p: {c: monthly[p][c] for c in cats} for p in projects},
         "monthly_grand_total":    grand,
         "default_from_idx":       default_from,
         "default_to_idx":         default_to,
@@ -11951,8 +12052,11 @@ def _build_operations_view_context(raw_data, uploaded_at):
 
     period_label = f"{_OPS_MONTHS_SHORT[anchor.month - 1]} {anchor.year}"
     return {
-        "cats":         _OPS_CATS,
+        "cats":         cats,
         "kpis":         kpis,
+        "recon":        data.get("recon"),
+        "axis_span":    f"{month_dates[0]['short']} {month_dates[0]['year']} – "
+                        f"{month_dates[-1]['short']} {month_dates[-1]['year']}",
         "month_dates":  month_dates,
         "default_from_idx":     default_from,
         "default_to_idx":       default_to,
@@ -12007,24 +12111,36 @@ def _ops_pie_donut_svg(slices, total, size=170, stroke_w=26):
 def _build_operations_report_context(view_ctx, run_date=None):
     """Pre-renders the Category × Month pivot, donut SVG, KPIs for the PDF."""
     anchor   = view_ctx["_anchor"]
-    by_cat   = view_ctx["_by_cat"]
     projects = view_ctx["_projects"]
-    months   = view_ctx["_month_dates"]
-    now_idx  = view_ctx["now_idx"]
+    cats     = view_ctx.get("cats") or _OPS_CATS
+    _color   = lambda c: _OPS_CAT_COLORS.get(c, "#8D9AA7")
 
-    month_totals = [sum(by_cat[c][i] for c in _OPS_CATS) for i in range(18)]
+    # The live page's month axis spans the whole uploaded file; the PDF keeps
+    # its fixed past-3 + next-15 window, so slice down to that before laying
+    # out the pivot (a 15-year axis would run off the page).
+    full_months = view_ctx["_month_dates"]
+    lo = view_ctx.get("default_from_idx", 0)
+    hi = view_ctx.get("default_to_idx", len(full_months) - 1)
+    months  = full_months[lo:hi + 1]
+    by_cat  = {c: view_ctx["_by_cat"][c][lo:hi + 1] for c in cats}
+    now_idx = max(0, view_ctx["now_idx"] - lo)
+    n_win   = len(months)
+    # Next twelve months = the year after the anchor column.
+    nx_lo, nx_hi = min(now_idx + 1, n_win), min(now_idx + 13, n_win)
+
+    month_totals = [sum(by_cat[c][i] for c in cats) for i in range(n_win)]
     cat_rows = [{
         "name":    c,
-        "color":   _OPS_CAT_COLORS[c],
+        "color":   _color(c),
         "row_k":   [int(round(v / 1000)) for v in by_cat[c]],
         "total_k": int(round(sum(by_cat[c]) / 1000)),
-    } for c in _OPS_CATS]
+    } for c in cats]
     grand_total_k  = int(round(sum(month_totals) / 1000))
     month_totals_k = [int(round(v / 1000)) for v in month_totals]
 
     next12_slices = [
-        {"name": c, "color": _OPS_CAT_COLORS[c], "value": sum(by_cat[c][4:16])}
-        for c in _OPS_CATS
+        {"name": c, "color": _color(c), "value": sum(by_cat[c][nx_lo:nx_hi])}
+        for c in cats
     ]
     next12_total = sum(s["value"] for s in next12_slices)
     pie_svg = _ops_pie_donut_svg(next12_slices, next12_total)
@@ -12043,8 +12159,9 @@ def _build_operations_report_context(view_ctx, run_date=None):
     if next12_total > 0:
         top_cat = max(next12_slices, key=lambda s: s["value"])
         recurring_total = sum(
-            sum(by_cat[c][4:16])
+            sum(by_cat[c][nx_lo:nx_hi])
             for c in ("Development Fees", "Project Personnel", "Bookkeeping")
+            if c in by_cat
         )
         mix_note = (
             f"<strong>{top_cat['name']}</strong> is the largest forecast revenue "
@@ -12069,7 +12186,7 @@ def _build_operations_report_context(view_ctx, run_date=None):
             "period_label":   period_label,
             "generated_iso":  generated,
             "project_count":  len(projects),
-            "cat_count":      len(_OPS_CATS),
+            "cat_count":      len(cats),
             "months":         months,
             "now_idx":        now_idx,
             "kpis":           view_ctx["kpis"],
