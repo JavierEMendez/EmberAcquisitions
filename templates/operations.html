@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="/static/theme.css?v=3"/>
-<link rel="stylesheet" href="/static/css/operations.css"/>
+<link rel="stylesheet" href="/static/css/operations.css?v=2"/>
 {# No-flash theme bootstrap — read localStorage before any CSS resolves. #}
 <script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 <style>
@@ -235,15 +235,16 @@
             </select>
 
             <div class="ops-filter-spacer"></div>
-            <div class="ops-filter-meta mono" data-window-meta>
-              Showing {{ ops.default_window_count }} months · default = past 3 + next 15
+            <div class="ops-filter-meta mono" data-window-meta
+                 data-axis-span="{{ ops.axis_span }}">
+              Showing {{ ops.default_window_count }} months · file covers {{ ops.axis_span }}
             </div>
           </div>
 
           <section class="ops-panel" data-pivot-panel>
             <div class="ops-panel-head">
               <div class="ops-panel-title" data-panel-title>Project × Month</div>
-              <div class="ops-panel-sub mono">$K · WITH SPARKLINE MOMENTUM</div>
+              <div class="ops-panel-sub mono">$K · CLICK A PROJECT FOR ITS REVENUE SOURCES</div>
             </div>
             <div class="ops-panel-body">
               <div class="ops-table-scroll" data-pivot-mount>

@@ -196,6 +196,29 @@
 .ops-pivot tr.tot-row td.tot.accent { color:var(--accent); }
 .ops-pivot .swatch { display:inline-block; width:6px; height:12px; margin-right:8px; vertical-align:-1px; border-radius:1px; }
 
+/* ── Expandable project rows (project pivot) ──────────────────
+   A project row toggles into one sub-row per revenue source; any number
+   of projects can be open at once. */
+.ops-rowtoggle {
+  display:inline-flex; align-items:center; gap:2px;
+  background:none; border:none; padding:0; margin:0;
+  font-family:inherit; font-size:12px; font-weight:500;
+  color:var(--ink); cursor:pointer; text-align:left;
+}
+.ops-rowtoggle:hover:not([disabled]) { color:var(--accent); }
+.ops-rowtoggle[disabled] { cursor:default; }
+.ops-caret {
+  display:inline-block; width:14px;
+  color:var(--accent); font-size:9px; line-height:1;
+}
+.ops-caret-empty { color:transparent; }
+.ops-pivot tr.ops-prow.is-open td { background:var(--accent-soft); }
+.ops-pivot tr.ops-prow.is-open td.l { font-weight:700; }
+.ops-pivot tr.ops-subrow td { color:var(--subtle); border-top:1px dashed var(--line); }
+.ops-pivot tr.ops-subrow td.l { color:var(--muted); font-weight:400; }
+.ops-pivot tr.ops-subrow td.tot { color:var(--muted); font-weight:600; }
+.ops-sub-label { display:inline-flex; align-items:center; padding-left:26px; }
+
 @media (max-width: 1100px) {
   .ops-kpi-band { grid-template-columns: repeat(2, 1fr); }
   .ops-kpi { border-left:1px solid var(--line); }
