@@ -98,3 +98,30 @@ ember_web/
     └── img/
         └── ember_logo.png
 ```
+
+## Acquisitions GIS tab
+
+Two things this tab needs that no other dashboard does.
+
+**A persistent volume.** The statewide parcel cache is a ~1.3 GB SQLite file
+with an R-Tree index — far too large for the image and wrong for Postgres,
+since it is a rebuildable geometry cache rather than application state. Mount a
+Railway volume and point `ACQ_DATA_DIR` at it:
+
+| Var | Value | Why |
+|---|---|---|
+| `ACQ_DATA_DIR` | `/app/acq-data` (matching the volume mount path) | Where `parcels_cache.db` lives. Without it the cache is rebuilt into the container and lost on every deploy, and every parcel search falls back to a slow live StratMap query. |
+
+**Worker threads.** `gunicorn.conf.py` now sets `threads = 4`
+(`GUNICORN_THREADS`). The analysis endpoint blocks for 30–60s on external GIS
+services — FEMA, USFWS wetlands, USGS elevation. With 2 sync workers and no
+threads, two concurrent analyses would occupy both workers and the entire
+portal would stop answering. Do not drop this back to workers-only.
+
+Optional, each degrading one card rather than breaking the page:
+
+| Var | Effect if unset |
+|---|---|
+| `CBAS_TOKEN` | competition / builder card reads "not configured" |
+| `CENSUS_API_KEY` | ACS demographics return empty |
+| `FRED_API_KEY` | macro context is skipped |

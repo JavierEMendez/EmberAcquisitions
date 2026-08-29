@@ -30,6 +30,7 @@ underwriting model and has grown into a multi-dashboard portal:
 | Verticals | `/verticals` | LightHaven / TGP / NOI / leasing pace |
 | Invoice Dashboard | `/invoice-dashboard` | Bi-weekly Stampli AP snapshots |
 | Financial Statements | `/financials` | Live Sage Intacct BS / IS / SCF |
+| Acquisitions GIS | `/acquisitions` | Land screening — parcel search, constraints, project assembly |
 | Home | `/home` | Landing page (nav cards, admin) |
 | Login | `/login` | Username + password |
 | Account Settings | (modal) | Self-serve, on every page |
@@ -68,6 +69,14 @@ EmberAcquisitions/
 ├── app.py                       # 10K+ line Flask app. All routes,
 │                                # auth, DB schema, scheduler, PDFs.
 │                                # Add new routes here.
+├── acq_gis.py                   # Acquisitions GIS engine — live ArcGIS/REST
+│                                # layer queries, geometry, HCAD/MCAD owner
+│                                # overlays, spatial enrichment
+├── acq_parcels.py               # Statewide parcel cache (SQLite + R-Tree).
+│                                # Lives on a volume, not in Postgres — see
+│                                # ACQ_DATA_DIR
+├── acq_store.py                 # Acquisitions persistence (Postgres JSONB
+│                                # document store, acq_objects)
 ├── calc.py                      # Underwriting calculation engine
 ├── frp_excel.py                 # Financial Reporting Package .xlsx builder
 ├── frp_mapping.py               # COA → FRP line-item rules

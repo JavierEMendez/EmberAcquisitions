@@ -1,37 +1,32 @@
 {# ============================================================
-   Ember · Vertical Dashboard — page wrapper.
+   Ember · Acquisitions GIS
+   Land screening: find parcels, assemble them into a project, run the
+   constraint and yield analysis. The engine lives in acq_gis.py; this
+   page is the map and the search over it.
 
-   The actual dashboard UI is the static SPA at
-   /static/verticals/index.html — ported from a standalone
-   Node/Express service (csaldierna1-bot/Vertical-Dashboard) and
-   now talking to /api/verticals/* routes hosted by this Flask app.
-
-   Same-origin iframe: keeps the SPA file as-is (8k lines, its own
-   internal vertical-sidebar + tabs) and lets the EmberApps outer
-   sidebar wrap it. Session cookies pass through automatically since
-   we're same-origin, so /api/verticals/* calls inside the iframe
-   are authenticated by the user's Ember login.
+   Shell copied from financials.html so the sidebar stays identical.
    ============================================================ #}
 <!DOCTYPE html>
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Vertical Dashboard · Ember Residential</title>
+<title>Acquisitions GIS · Ember Acquisitions</title>
 <link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
 <link rel="stylesheet" href="/static/theme.css?v=3"/>
+<link rel="stylesheet" href="/static/css/acquisitions.css?v=1"/>
 <script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 <style>
-  /* Shell — mirrors operations.html / capital.html so /verticals sits
-     inside the same chrome the rest of the app uses. */
+  /* App shell — copied from financials.html so /acquisitions nests in the
+     canonical sidebar chrome. */
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%;}
-  body{background:var(--eax-bg);color:var(--eax-ink);font-family:'Plus Jakarta Sans',system-ui,sans-serif;overflow:hidden;}
+  body{background:var(--eax-bg);color:var(--eax-ink);font-family:'DM Sans','Plus Jakarta Sans',system-ui,sans-serif;overflow:hidden;}
   #app{display:flex;height:100vh;overflow:hidden;}
-
-  /* Standard sidebar (matches the other dashboards). */
   #sidebar{width:240px;background:var(--eax-bg-2);border-right:1px solid var(--eax-line);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;}
   .sidebar-logo{padding:16px 18px 14px;border-bottom:1px solid var(--eax-line)}
   .logo-img{width:100%;max-width:160px;height:auto;display:block;margin:0 auto}
@@ -46,18 +41,7 @@
   .sidebar-item.active::before{content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:2px;background:var(--eax-accent);border-radius:2px}
   .sidebar-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0}
   .sidebar-item.active .icon{opacity:1;color:var(--eax-accent)}
-
-  #main-content{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;}
-
-  /* The dashboard frame fills main-content and renders the SPA inline.
-     border:0 removes the iframe edge so it visually merges with our
-     chrome. The 100% width/height + display:block keeps it from
-     leaving any gap. */
-  #vd-frame{
-    width:100%; height:100%;
-    border:0; display:block;
-    background:var(--eax-bg);
-  }
+  #main-content{flex:1;overflow:hidden;min-width:0;display:flex;}
 </style>
 </head>
 <body>
@@ -67,9 +51,8 @@
     <div class="sidebar-logo">
       <img src="/static/img/ember_logo.png"        alt="Ember" class="logo-img logo-dark">
       <img src="/static/img/ember_logo_light.png"  alt="Ember" class="logo-img logo-light">
-      <div class="logo-sub">Vertical Dashboard</div>
+      <div class="logo-sub">Acquisitions</div>
     </div>
-
     <div class="sidebar-section">Apps &amp; Dashboards</div>
     {% if page_access.get('mpc_underwriting', true) %}
     <a href="/" class="sidebar-item">
@@ -101,11 +84,16 @@
       Operating Revenues
     </a>
     {% endif %}
-
     {% if page_access.get('invoice_dashboard', true) %}
     <a href="/invoice-dashboard" class="sidebar-item">
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 2h6a2 2 0 012 2v16l-3-2-2 2-2-2-2 2-3-2V4a2 2 0 012-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 7h6M9 11h6M9 15h4" stroke-width="1.5" stroke-linecap="round"/></svg>
       Invoice Dashboard
+    </a>
+    {% endif %}
+    {% if page_access.get('financials', true) %}
+    <a href="/financials" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M9 17V9m4 8V5m4 12v-7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Financial Statements
     </a>
     {% endif %}
     {% if is_admin or page_access.get('unit_economics', false) %}
@@ -139,7 +127,7 @@
     </a>
     {% endif %}
     {% if page_access.get('verticals', true) %}
-    <a href="/verticals" class="sidebar-item active">
+    <a href="/verticals" class="sidebar-item">
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" stroke-width="1.5" stroke-linejoin="round"/></svg>
       Vertical Dashboard
     </a>
@@ -147,9 +135,8 @@
     {% if is_admin or page_access.get('bva', false) %}
     <a href="/bva" class="sidebar-item"><svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="7" y="10" width="3" height="7" rx="0.5"/><rect x="12" y="6" width="3" height="11" rx="0.5"/><rect x="17" y="13" width="3" height="4" rx="0.5"/></svg>Budget vs Actuals</a>
     {% endif %}
-
     {% if is_admin or page_access.get('acquisitions', false) %}
-    <a href="/acquisitions" class="sidebar-item">
+    <a href="/acquisitions" class="sidebar-item active">
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Acquisitions GIS
     </a>
@@ -159,14 +146,84 @@
   </nav>
 
   <div id="main-content">
-    <iframe id="vd-frame"
-            src="/static/verticals/index.html?v=4"
-            title="Vertical Dashboard"
-            allow="clipboard-write"></iframe>
+    <div class="acq-page">
+
+      <div class="acq-head">
+        <div class="acq-eyebrow">LAND &middot; SITE SCREENING</div>
+        <h1 class="acq-title">Acquisitions GIS</h1>
+        <p class="acq-sub">
+          Search Texas parcels by acreage and radius, review constraints and
+          ownership, then assemble tracts into a project to underwrite.
+        </p>
+      </div>
+
+      <div class="acq-controls">
+        <div class="acq-control acq-control--wide">
+          <label for="acq-where">Address, place or intersection</label>
+          <input id="acq-where" type="text" autocomplete="off"
+                 placeholder="Hockley, TX &middot; or 1234 FM 2920"/>
+          <div id="acq-suggest" class="acq-suggest"></div>
+        </div>
+        <div class="acq-control">
+          <label for="acq-radius">Radius (mi)</label>
+          <input id="acq-radius" type="number" value="5" min="0.5" max="50" step="0.5"/>
+        </div>
+        <div class="acq-control">
+          <label for="acq-min-acres">Min acres</label>
+          <input id="acq-min-acres" type="number" value="50" min="0" step="10"/>
+        </div>
+        <div class="acq-control">
+          <label for="acq-max-acres">Max acres</label>
+          <input id="acq-max-acres" type="number" value="5000" min="1" step="50"/>
+        </div>
+        <div class="acq-control">
+          <label>&nbsp;</label>
+          <button id="acq-search" class="acq-btn primary">
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" stroke-width="2"/><path d="M21 21l-4.35-4.35" stroke-width="2" stroke-linecap="round"/></svg>
+            Search parcels
+          </button>
+        </div>
+        <div class="acq-control">
+          <label>&nbsp;</label>
+          <button id="acq-projects" class="acq-btn">Projects</button>
+        </div>
+      </div>
+
+      <div class="acq-mapwrap">
+        <div id="acq-map"></div>
+
+        <div class="acq-layers" id="acq-layers">
+          <div class="acq-layers-head">
+            Layers
+            <button class="acq-layers-pin" id="acq-layers-pin"
+                    title="Keep this panel open">&#9679;</button>
+          </div>
+          <div class="acq-layers-body" id="acq-layers-body"><!-- built in JS --></div>
+        </div>
+
+        <div class="acq-dock" id="acq-dock">
+          <div class="acq-dock-head">
+            <div>
+              <div class="acq-dock-title" id="acq-dock-title">Results</div>
+              <div class="acq-dock-sub" id="acq-dock-sub"></div>
+            </div>
+            <button class="acq-dock-close" id="acq-dock-close" title="Close">&times;</button>
+          </div>
+          <div class="acq-dock-body" id="acq-dock-body"></div>
+        </div>
+
+        <div class="acq-status" id="acq-status"></div>
+      </div>
+
+    </div>
   </div>
+
 </div>
-{# Account Settings modal — required so the Account chip in
-   _sidebar_foot.html has a working openAcct() handler. #}
+
 {% include "_partials/_account_modal.html" %}
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="/static/js/acquisitions.js?v=1" defer></script>
 </body>
 </html>

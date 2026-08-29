@@ -504,12 +504,24 @@
   ('Market Intelligence', [
     ('macro',            '/macro',             'Macroeconomic Data',               'Population, income, GDP, employment, real estate for Houston metro.'),
   ]),
+  ('Land & Acquisitions', [
+    ('acquisitions',     '/acquisitions',      'Acquisitions GIS',                 'Screen Texas land: search parcels by acreage and radius, review floodplain, wetlands, easements and ownership, then assemble tracts into a project to underwrite.'),
+  ]),
 ] %}
+{# Cards default to visible, which is wrong for a page whose permission
+   defaults to False - the card would show and then bounce the user back
+   here. Keys listed here are gated the other way round. Only `acquisitions`
+   is listed: the other default-False pages (bva, budget, unit_economics,
+   partners_cf) have shown their cards to everyone since they shipped, and
+   quietly changing that is not this change's business. #}
+{% set default_false_pages = ['acquisitions'] %}
 {% for group_name, cards in dashboard_groups %}
   {# Build the list of cards visible to this user in this group. #}
   {% set visible = namespace(list=[]) %}
   {% for key, href, title, desc in cards %}
-    {% if key == 'ember_capital' or page_access.get(key, true) %}
+    {% if key == 'ember_capital'
+          or (key in default_false_pages and (is_admin or page_access.get(key, false)))
+          or (key not in default_false_pages and page_access.get(key, true)) %}
       {% set visible.list = visible.list + [(key, href, title, desc)] %}
     {% endif %}
   {% endfor %}
