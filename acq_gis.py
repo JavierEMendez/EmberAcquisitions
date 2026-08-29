@@ -34,6 +34,11 @@ from datetime import datetime
 from functools import wraps
 from pathlib import Path
 
+# Where this tab's file-backed data lives: the parcel cache and the
+# special-district rate sheet. On Railway this is a mounted volume; locally it
+# falls back to ./storage. acq_parcels reads the same variable.
+_ACQ_DATA_DIR = Path(os.environ.get("ACQ_DATA_DIR") or (Path(__file__).parent / "storage"))
+
 import requests
 from werkzeug.security import generate_password_hash, check_password_hash
 from shapely.geometry import Point
@@ -131,6 +136,11 @@ TAX_RATES = {
     "Webster":                                ("0.4900",  "City property tax"),
     "Stafford":                               ("0.0000",  "City property tax (Stafford has no city ad-valorem)"),
 }
+
+
+# Special-district tax rates ship as a spreadsheet next to the parcel cache.
+# Same directory as everything else this tab persists - see acq_parcels.
+STORAGE_DIR = _ACQ_DATA_DIR
 
 
 def _load_special_district_rates():
@@ -2307,3 +2317,1099 @@ def run_analysis(proj):
         "union_geometry":      shp_mapping(project_union),
     }
     return analysis
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Market and context helpers
+#
+# The rest of the standalone app's module-level machinery: CBAS subdivision
+# data, Overpass amenity lookups, ACS demographics, FRED series, KML parsing,
+# builder-name classification, and the tract-sheet PDF builder.
+#
+# Its Flask app, session auth, JSON storage, audit log, backup thread and cache
+# refresh thread are all deliberately left behind - EmberApps has its own, and
+# carrying them across would give the tab a second user table and a second
+# scheduler, which is the thing integrating is supposed to remove.
+# ══════════════════════════════════════════════════════════════════════════
+
+# Cache last search result for export endpoints (single-user local app)
+_last_search_cache = {"data": None, "meta": None, "saved_at": None}
+
+
+# Outreach status options — used for both the picker UI and validation.
+# Terminal "out of scope" statuses (not_interested, lost, passed) are hidden
+# by default in the corridors list so they don't clutter active workflow.
+OUTREACH_STATUSES = [
+    ("lead",              "Lead",              "#6B7B8B"),
+    ("contacted",         "Contacted",         "#1976D2"),
+    ("negotiating",       "Negotiating",       "#F25929"),
+    ("under_contract",    "Under contract",    "#FFA000"),
+    ("closed",            "Closed",            "#2E7D32"),
+    ("not_interested",    "Not interested",    "#7B1FA2"),
+    ("lost",              "Lost",              "#9E9E9E"),
+    ("passed",            "Passed",            "#5D4037"),
+]
+
+
+# Statuses considered "out of scope" / "don't show me again" — hidden in the
+# corridor list by default; a toggle brings them back.
+OUTREACH_OUT_OF_SCOPE = {"not_interested", "lost", "passed"}
+OUTREACH_METHODS = ["call", "email", "letter", "text", "meeting", "site visit", "other"]
+
+
+# In-memory cache for corridor tract searches. Keyed by
+# (uid, corridor_id, buffer_mi, min_ac, max_ac). 30-minute TTL.
+_CORRIDOR_TRACTS_CACHE = {}
+_CORRIDOR_CACHE_TTL = 30 * 60
+
+
+# --------------------------------------------------------------------------
+# Parcel-cache admin endpoints (Carlos / admin only). Used to bootstrap the
+# local SQLite cache county-by-county, see status, and force refresh.
+# --------------------------------------------------------------------------
+_cache_bootstrap_lock = threading.Lock()
+_cache_bootstrap_status = {"running": False, "county": None, "pct": 0, "msg": ""}
+
+
+def _export_filename(label, ext):
+    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in (label or "search"))
+    return f"ember_gis_{safe}_{datetime.now().strftime('%Y%m%d_%H%M')}.{ext}"
+
+
+# --------------------------------------------------------------------------
+# Single-tract PDF — comprehensive one-page report for a specific Prop_ID.
+# Used to send a broker / seller / partner as an offer cover sheet.
+# --------------------------------------------------------------------------
+def build_tract_sheet_pdf(tract_feature, search_meta=None,
+                          outreach_record=None, user_lookup=None,
+                          notes_records=None):
+    """One-page tract report. tract_feature is one GeoJSON Feature with all the
+    enrichment props already attached."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.platypus import (SimpleDocTemplate, Table, TableStyle, Paragraph,
+                                       Spacer, Image as RLImage, KeepInFrame)
+
+    props = tract_feature.get("properties") or {}
+    geom  = tract_feature.get("geometry") or {}
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=letter, leftMargin=0.4*inch,
+                            rightMargin=0.4*inch, topMargin=0.4*inch, bottomMargin=0.4*inch)
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("title", parent=styles["Heading1"], fontName="Helvetica-Bold",
+                                  fontSize=16, textColor=colors.HexColor("#13344E"), spaceAfter=2)
+    sub_style = ParagraphStyle("sub", parent=styles["Normal"], fontName="Helvetica",
+                                fontSize=9, textColor=colors.HexColor("#58595B"), spaceAfter=8)
+    h_style = ParagraphStyle("h", parent=styles["Normal"], fontName="Helvetica-Bold",
+                              fontSize=10, textColor=colors.HexColor("#F25929"), spaceBefore=4,
+                              spaceAfter=4, leading=12)
+    body_style = ParagraphStyle("body", parent=styles["Normal"], fontName="Helvetica",
+                                 fontSize=9, textColor=colors.HexColor("#13344E"), leading=11)
+
+    story = []
+    owner = props.get("OWNER_NAME") or "Unknown owner"
+    acres = props.get("Acres", "?")
+    pid   = props.get("Prop_ID", "")
+    story.append(Paragraph(f"{owner}", title_style))
+    story.append(Paragraph(
+        f"<b>{acres} ac</b> &nbsp;·&nbsp; "
+        f"{props.get('_county', '')} County &nbsp;·&nbsp; "
+        f"Prop ID {pid} &nbsp;·&nbsp; "
+        f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        sub_style))
+
+    # ----- Map snippet — same Esri World_Imagery export, just the tract -----
+    tracts_fc = {"type": "FeatureCollection", "features": [tract_feature]}
+    map_png = _build_search_map_png(tracts_fc, search_meta or {}, width=1100, height=520)
+    if map_png:
+        img = RLImage(io.BytesIO(map_png), width=7.5*inch, height=3.55*inch)
+        img.hAlign = "CENTER"
+        story.append(img)
+        story.append(Spacer(1, 4))
+
+    # ----- Two-column body: left = property/owner/tax, right = location/contact/utilities ---
+    def kv(label, value):
+        return [Paragraph(f"<b>{label}</b>", body_style),
+                Paragraph(str(value) if value not in (None, "", 0) else "—", body_style)]
+
+    mkt   = to_float(props.get("MARKET_VAL") or props.get("total_market_val"))
+    appr  = to_float(props.get("total_appraised_val"))
+    taxv  = to_float(props.get("tax_value"))
+    flood_pct = props.get("_flood_pct")
+    if flood_pct not in (None, ""):
+        flood_pct = f"{flood_pct}%"
+    util_counts = (
+        f"{props.get('_wells_n', '—')} / "
+        f"{props.get('_pipelines_n', '—')} / "
+        f"{props.get('_transmission_n', '—')}"
+    )
+    since = props.get("_owner_since") or "—"
+    tyr   = props.get("_hcad_tax_year") or "—"
+    src   = _tract_source_label(props)
+
+    left = [
+        kv("Owner",          owner),
+        kv("Mailing",        props.get("MAIL_ADDR") or ""),
+        kv("Site address",   props.get("SITUS_ADDR") or "(no street address)"),
+        kv("Legal desc",     (props.get("LEGAL_DESC") or "")[:120]),
+        kv("Acres",          acres),
+        kv("County",         props.get("_county") or ""),
+        kv("ETJ / city",     props.get("_city_etj") or "—"),
+        kv("School dist",    props.get("_school_dist") or "—"),
+    ]
+    right = [
+        kv("Source",          src),
+        kv("Owner since",     since),
+        kv("HCAD tax year",   tyr),
+        kv("Market value",    f"${mkt:,.0f}" if mkt is not None else "—"),
+        kv("Appraised",       f"${appr:,.0f}" if appr is not None else "—"),
+        kv("Taxable",         f"${taxv:,.0f}" if taxv is not None else "—"),
+        kv("Flood %",         flood_pct or "—"),
+        kv("Wells / Pipes / Tx", util_counts),
+    ]
+
+    def col(rows):
+        t = Table(rows, colWidths=[1.2*inch, 2.3*inch])
+        t.setStyle(TableStyle([
+            ("VALIGN", (0,0), (-1,-1), "TOP"),
+            ("LEFTPADDING", (0,0), (-1,-1), 0),
+            ("RIGHTPADDING", (0,0), (-1,-1), 4),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 1),
+            ("TOPPADDING", (0,0), (-1,-1), 1),
+        ]))
+        return t
+
+    two_col = Table([[col(left), col(right)]], colWidths=[3.8*inch, 3.8*inch])
+    two_col.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "TOP")]))
+    story.append(two_col)
+    story.append(Spacer(1, 8))
+
+    # ----- Outreach status block (if present) -----
+    # Passed in rather than read from storage: persistence is Postgres now and
+    # lives in acq_store, which this module deliberately does not import.
+    outreach = outreach_record or None
+    if outreach:
+        user_lookup = user_lookup or {}
+        status = outreach.get("status", "lead")
+        status_label = next((l for v, l, c in OUTREACH_STATUSES if v == status), status)
+        story.append(Paragraph(f"OUTREACH — {status_label.upper()}", h_style))
+        meta_bits = []
+        if outreach.get("broker_name"): meta_bits.append(f"Broker: <b>{outreach['broker_name']}</b>")
+        if outreach.get("next_action"): meta_bits.append(f"Next: <b>{outreach['next_action']}</b>"
+                                                          + (f" by {outreach.get('next_action_date','')}" if outreach.get('next_action_date') else ""))
+        if meta_bits:
+            story.append(Paragraph(" &nbsp;·&nbsp; ".join(meta_bits), body_style))
+        log = (outreach.get("log") or [])[-3:]   # last 3 entries
+        for e in reversed(log):
+            who = user_lookup.get(e.get("by"))
+            who_name = who["name"] if who else "Someone"
+            when = e.get("at", "")[:16].replace("T", " ")
+            story.append(Paragraph(
+                f"<font color='#9a9a9a'>[{when} · {who_name} · {e.get('method','')}]</font> "
+                f"{e.get('notes','')[:200]}",
+                body_style))
+
+    # ----- Notes thread (team-shared, append-only) — newest first -----
+    notes = [n for n in (notes_records or [])
+             if (n.get("text") or "").strip()]
+    notes.sort(key=lambda n: n.get("created_at") or n.get("updated_at") or "", reverse=True)
+    if notes:
+        story.append(Paragraph(f"NOTES ({len(notes)} entries — newest first)", h_style))
+        for n in notes:
+            u = user_lookup.get(n.get("owner_id"))
+            who = u.get("name") if u else "?"
+            when = (n.get("created_at") or n.get("updated_at") or "")[:16].replace("T", " ")
+            story.append(Paragraph(
+                f"<font color='#9a9a9a'>[{when} · {who}]</font> {(n.get('text') or '')[:400]}",
+                body_style))
+
+    story.append(Spacer(1, 8))
+    story.append(Paragraph(
+        f"<font size=7 color='#9a9a9a'><i>Generated by Ember Acquisitions GIS. "
+        f"Owner data: {src} (HCAD lags actual deed recordings by 2-8 weeks + annual roll). "
+        f"Floodplain: FEMA NFHL current effective.</i></font>", body_style))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf
+
+
+def _enrich_tract_sheet_feature(tract_feature):
+    """Attach search-style spatial fields needed by the one-tract PDF.
+
+    Search results already carry these fields, but a tract sheet can also be
+    opened from a cold tract page or after restart. Keep failures as missing
+    values so the PDF shows a dash instead of a false zero.
+    """
+    from shapely.geometry import box as shp_box, shape as shp_shape
+
+    props = tract_feature.get("properties") or {}
+    needed = (
+        "_city_etj", "_school_dist", "_flood_pct",
+        "_wells_n", "_pipelines_n", "_transmission_n",
+    )
+    if all(k in props and props.get(k) not in (None, "") for k in needed):
+        return []
+    if not tract_feature.get("geometry"):
+        return ["geometry missing"]
+
+    try:
+        g = shp_shape(tract_feature["geometry"])
+        minx, miny, maxx, maxy = g.bounds
+    except Exception as e:
+        return [f"bad geometry: {e}"]
+
+    pad_x = max((maxx - minx) * 0.08, 0.002)
+    pad_y = max((maxy - miny) * 0.08, 0.002)
+    bbox_poly = shp_box(minx - pad_x, miny - pad_y, maxx + pad_x, maxy + pad_y)
+    layers = {"tracts": {"type": "FeatureCollection", "features": [tract_feature]}}
+    original = dict(props)
+
+    fetchers = {
+        "counties":     lambda: cached_layer_query("counties", bbox_poly),
+        "etj":          lambda: arcgis_query(ENDPOINTS["etj"], bbox=bbox_poly.bounds),
+        "schools":      lambda: cached_layer_query("tea_schools", bbox_poly),
+        "flood":        lambda: cached_layer_query(
+            "fema_flood", bbox_poly,
+            where="FLD_ZONE IN ('A','AE','AH','AO','AR','A99','V','VE')",
+            out_fields="FLD_ZONE,ZONE_SUBTY",
+        ),
+        "wells":        lambda: arcgis_query(ENDPOINTS["rrc_wells"], geometry_polygon=bbox_poly),
+        "pipelines":    lambda: arcgis_query(ENDPOINTS["rrc_pipelines"], geometry_polygon=bbox_poly),
+        "transmission": lambda: cached_layer_query("transmission", bbox_poly),
+    }
+
+    failed = set()
+    errors = []
+    with ThreadPoolExecutor(max_workers=7) as pool:
+        futures = {pool.submit(fn): key for key, fn in fetchers.items()}
+        for fut in as_completed(futures):
+            key = futures[fut]
+            try:
+                fc = fut.result()
+                if fc.get("error"):
+                    raise RuntimeError(fc.get("error"))
+                layers[key] = fc
+            except Exception as e:
+                failed.add(key)
+                errors.append(f"{key}: {e}")
+                layers[key] = {"type": "FeatureCollection", "features": []}
+
+    annotate_tracts_with_enrichment(layers)
+
+    failed_outputs = {
+        "counties":     ("_county",),
+        "etj":          ("_city_etj", "_in_city"),
+        "schools":      ("_school_dist",),
+        "flood":        ("_flood_pct",),
+        "wells":        ("_wells_n",),
+        "pipelines":    ("_pipelines_n",),
+        "transmission": ("_transmission_n",),
+    }
+    for layer_key in failed:
+        for prop_key in failed_outputs.get(layer_key, ()):
+            if prop_key in original:
+                props[prop_key] = original[prop_key]
+            else:
+                props.pop(prop_key, None)
+
+    if errors:
+        props["_tract_sheet_layer_errors"] = errors
+        print(f"[tract-sheet] spatial enrichment partial: {errors}", flush=True)
+    return errors
+
+
+# --------------------------------------------------------------------------
+# Import KMZ / KML — accept a Google-Earth boundary file and parse out the
+# polygon(s) so the user can search inside them.
+# --------------------------------------------------------------------------
+def _parse_kml_coords(text):
+    """KML <coordinates> is whitespace-separated 'lon,lat,alt' triplets.
+    Return [[lon, lat], ...] (alt dropped — we're 2D)."""
+    out = []
+    if not text:
+        return out
+    for tok in text.split():
+        parts = tok.split(",")
+        if len(parts) < 2:
+            continue
+        try:
+            lon = float(parts[0]); lat = float(parts[1])
+        except ValueError:
+            continue
+        out.append([lon, lat])
+    return out
+
+
+def _kml_to_polygons(kml_bytes):
+    """Parse KML XML, return a list of polygons in GeoJSON-coord form:
+    each polygon = [outer_ring, inner_ring1, ...] where each ring is
+    [[lon, lat], ...].  Handles both <Polygon> and closed <LineString>
+    (a polyline drawn in Google Earth that the user closed)."""
+    import xml.etree.ElementTree as ET
+    kml_bytes = _sanitize_kml_bytes(kml_bytes)
+    try:
+        root = ET.fromstring(kml_bytes)
+    except ET.ParseError as e:
+        raise ValueError(f"Invalid KML XML: {e}")
+    polygons = []
+    # KML 2.2 namespace
+    NS = "{http://www.opengis.net/kml/2.2}"
+
+    # 1. Native <Polygon> elements (Google Earth's standard polygon draw)
+    for poly_el in root.iter(f"{NS}Polygon"):
+        outer_coords_el = poly_el.find(f".//{NS}outerBoundaryIs/{NS}LinearRing/{NS}coordinates")
+        if outer_coords_el is None:
+            continue
+        outer = _parse_kml_coords(outer_coords_el.text)
+        if len(outer) < 3:
+            continue
+        # Close the ring if not already closed
+        if outer[0] != outer[-1]:
+            outer.append(outer[0])
+        rings = [outer]
+        for inner_el in poly_el.findall(f".//{NS}innerBoundaryIs/{NS}LinearRing/{NS}coordinates"):
+            inner = _parse_kml_coords(inner_el.text)
+            if len(inner) >= 3:
+                if inner[0] != inner[-1]:
+                    inner.append(inner[0])
+                rings.append(inner)
+        polygons.append(rings)
+
+    # 2. Also handle LineStrings that LOOK closed (start == end) — those are
+    # polyline-drawn boundaries from Google Earth's "Add Path" tool.
+    for line_el in root.iter(f"{NS}LineString"):
+        coords_el = line_el.find(f"{NS}coordinates")
+        if coords_el is None:
+            continue
+        coords = _parse_kml_coords(coords_el.text)
+        if len(coords) < 3:
+            continue
+        # If start and end coincide (closed line), treat as a polygon
+        first, last = coords[0], coords[-1]
+        if abs(first[0] - last[0]) < 1e-7 and abs(first[1] - last[1]) < 1e-7:
+            polygons.append([coords])
+
+    # Try namespace-less parse as a last resort (some KML files drop the xmlns)
+    if not polygons:
+        for poly_el in root.iter("Polygon"):
+            outer_coords_el = poly_el.find(".//outerBoundaryIs/LinearRing/coordinates")
+            if outer_coords_el is None:
+                continue
+            outer = _parse_kml_coords(outer_coords_el.text)
+            if len(outer) >= 3:
+                if outer[0] != outer[-1]:
+                    outer.append(outer[0])
+                polygons.append([outer])
+
+    return polygons
+
+
+def _kml_to_linestrings(kml_bytes):
+    """Extract OPEN LineStrings from KML (closed ones already become polygons
+    via _kml_to_polygons). Returns list of [[lon, lat], ...]."""
+    import xml.etree.ElementTree as ET
+    kml_bytes = _sanitize_kml_bytes(kml_bytes)
+    try:
+        root = ET.fromstring(kml_bytes)
+    except ET.ParseError as e:
+        raise ValueError(f"Invalid KML XML: {e}")
+    NS = "{http://www.opengis.net/kml/2.2}"
+    lines = []
+    def _collect(iter_fn):
+        for line_el in iter_fn():
+            coords_el = line_el.find(f"{NS}coordinates") if NS in (line_el.tag or "") \
+                        else line_el.find("coordinates")
+            if coords_el is None:
+                # Try both NS and non-NS regardless
+                coords_el = line_el.find(f"{NS}coordinates") or line_el.find("coordinates")
+            if coords_el is None: continue
+            coords = _parse_kml_coords(coords_el.text)
+            if len(coords) < 2: continue
+            first, last = coords[0], coords[-1]
+            is_closed = (abs(first[0] - last[0]) < 1e-7 and abs(first[1] - last[1]) < 1e-7)
+            if not is_closed:
+                lines.append(coords)
+    _collect(lambda: root.iter(f"{NS}LineString"))
+    if not lines:
+        _collect(lambda: root.iter("LineString"))
+    return lines
+
+
+def _buffer_line_to_polygon(coords, meters):
+    """Buffer a LineString (lon/lat coords) by `meters` to produce a corridor
+    polygon. Projects to local UTM for accurate metric buffering, then back to
+    WGS84. Returns the outer-ring coords [[lon, lat], ...] or None."""
+    from shapely.geometry import LineString
+    from pyproj import Transformer
+    if len(coords) < 2:
+        return None
+    avg_lon = sum(c[0] for c in coords) / len(coords)
+    avg_lat = sum(c[1] for c in coords) / len(coords)
+    zone = int((avg_lon + 180) // 6) + 1
+    epsg = 32600 + zone if avg_lat >= 0 else 32700 + zone
+    try:
+        to_utm = Transformer.from_crs("EPSG:4326", f"EPSG:{epsg}", always_xy=True)
+        to_wgs = Transformer.from_crs(f"EPSG:{epsg}", "EPSG:4326", always_xy=True)
+        line_utm = LineString([to_utm.transform(c[0], c[1]) for c in coords])
+        poly_utm = line_utm.buffer(meters, cap_style=1, join_style=1)   # rounded caps + joins
+        if poly_utm.is_empty:
+            return None
+        if poly_utm.geom_type == "Polygon":
+            target = poly_utm
+        elif poly_utm.geom_type == "MultiPolygon":
+            target = max(poly_utm.geoms, key=lambda g: g.area)
+        else:
+            return None
+        return [
+            [round(to_wgs.transform(x, y)[0], 6),
+             round(to_wgs.transform(x, y)[1], 6)]
+            for x, y in target.exterior.coords
+        ]
+    except Exception as e:
+        print(f"[buffer] failed: {e}", flush=True)
+        return None
+
+
+# --------------------------------------------------------------------------
+# Land plans — existing / planned communities as toggleable polygon overlays.
+# Differs from corridors: these are about VISUALIZING context (where current
+# developments are) rather than DRIVING a search. Each plan stores rich
+# metadata (developer, status, lot counts, contact, notes).
+# --------------------------------------------------------------------------
+def _sanitize_kml_bytes(kml_bytes):
+    """Defensive pre-processing for KMLs exported by Google Earth Pro and other
+    tools that occasionally produce technically-invalid XML. Common issue:
+    a namespace prefix (xsi:, gx:, atom:) is used somewhere in the document
+    (often on <Document>'s schemaLocation attribute) but `xmlns:prefix=...`
+    is never declared on the root <kml> element. Patch the <kml> tag to add
+    the missing decl(s) so the standard XML parser doesn't throw on it."""
+    import re
+    # Locate the <kml ...> tag (case-insensitive)
+    head = kml_bytes[:8192]
+    m = re.search(rb'<kml\b([^>]*)>', head, re.IGNORECASE)
+    if not m: return kml_bytes
+    attrs = m.group(1)
+    # Scan a generous chunk of the document (not just the kml tag's attrs) for
+    # any `prefix:something` usage so we can detect prefixes referenced on
+    # nested elements like <Document xsi:schemaLocation=...>.
+    scan = kml_bytes[:65536]
+    additions = b""
+    for prefix, ns in [
+        (b"xsi",  b"http://www.w3.org/2001/XMLSchema-instance"),
+        (b"gx",   b"http://www.google.com/kml/ext/2.2"),
+        (b"atom", b"http://www.w3.org/2005/Atom"),
+    ]:
+        decl = b"xmlns:" + prefix + b"="
+        if decl in attrs:
+            continue
+        # Match `<Foo prefix:attr=` or ` prefix:attr=` inside any tag — that means
+        # the prefix is being used somewhere and needs a matching xmlns: decl.
+        if re.search(rb'\b' + prefix + rb':[A-Za-z_][\w.-]*\s*=', scan):
+            additions += b' xmlns:' + prefix + b'="' + ns + b'"'
+    if not additions: return kml_bytes
+    fixed_tag = b"<kml " + attrs.strip() + additions + b">"
+    return kml_bytes.replace(m.group(0), fixed_tag, 1)
+
+
+def _strip_buffer_suffix(label):
+    """Remove a trailing ' ±Nmi' suffix from a corridor label so we can
+    rebuild it cleanly when the buffer changes."""
+    import re
+    return re.sub(r"\s*±[\d.]+mi\s*$", "", label or "").rstrip()
+
+
+# --------------------------------------------------------------------------
+# Folders
+# --------------------------------------------------------------------------
+FOLDER_COLORS = ["#F25929", "#1976d2", "#2e7d32", "#7b1fa2",
+                 "#c62828", "#00838f", "#ef6c00", "#5d4037"]
+
+
+import re as _sub_parse_re
+
+_SUBDIVISION_CUT_RE = _sub_parse_re.compile(
+    r"^([A-Z0-9][A-Z0-9 &/'\-\.]{2,60}?)"
+    r"(?:\s+(?:SEC|SECTION|PHASE|PH|BLK|BLOCK|LT|LOT|PT|RES|RESERVE|SUB|TRACT|TR|ACRES?|U/R|UNRECORDED)\b|\s*\(|,|$)"
+)
+# Leading lot/block token (Harris/HCAD "lot-first" convention):
+#   "LT 22 BLK 3 CYPRESS CREEK LAKES SEC 5" — name comes AFTER the tokens.
+_LOTFIRST_TOKEN_RE = _sub_parse_re.compile(r"^(?:LTS?|LOTS?|BLKS?|BLOCK)\s+")
+# The designator(s) after a token: "22", "C1", "5A", "1-3", "1 & 2", "18 19 & 20"
+_LOTFIRST_DESIG_RE = _sub_parse_re.compile(
+    r"^(?:[A-Z]?\d+[A-Z]?(?:-[A-Z0-9]+)?|[A-Z])"
+    r"(?:\s*(?:&|,|AND)?\s*(?:[A-Z]?\d+[A-Z]?(?:-[A-Z0-9]+)?))*\s+"
+)
+
+
+def _parse_subdivision_name(legal: str):
+    """Extract a residential-subdivision name from a CAD legal description.
+
+    Handles both major Texas CAD conventions (verified against real cache data):
+      • name-first (Waller/Ft Bend/MCAD): "S778100 SKY LAKES 1 BLK 7 LOT 3"
+      • lot-first  (Harris/HCAD):        "LT 22 BLK 3 CYPRESS CREEK LAKES SEC 5"
+    Returns None for rural abstracts, street ROW, reserves, and raw dev tracts.
+    """
+    if not legal:
+        return None
+    u = legal.strip().upper()
+    # --- Hard rejects: not residential platted lots -------------------------
+    # Street right-of-way dedications ("ROW-STREET WIDENING (DEDICATED...)")
+    if u.startswith("ROW"):
+        return None
+    # Standalone reserves (landscape/utility/drainage) — not homes
+    if u.startswith(("RES ", "RESERVE")):
+        return None
+    # Raw tracts / development land ("TR 5Z PROPOSED DIRECTORS LOT...", "TRS O1 P1...")
+    if u.startswith(("TR ", "TRS ", "TRACT")):
+        return None
+    # Rural abstract land (unplatted survey acreage)
+    if u.startswith(("ABS ", "AB ", "ABST", "A-", "ABSTRACT")):
+        return None
+
+    # Strip ALL parenthesized noise: "(NM)", "(PURE ACCT*...)", "(OPEN SPACE...)"
+    u = _sub_parse_re.sub(r"\([^)]*\)", " ", u)
+    u = _sub_parse_re.sub(r"\s+", " ", u).strip()
+
+    # Strip CAD plat-code prefixes: Waller "S778100 ", MCAD "S9235 - "
+    u = _sub_parse_re.sub(r"^[SR]\d{3,8}\s*-?\s+", "", u)
+
+    # HARRIS lot-first: iteratively strip leading LT/BLK token+designator runs
+    # so the subdivision name floats to the front. Loop handles "LT 1 BLK 2 &
+    # RES C1 BLK 3 VILLAGE OF ..." style compound prefixes too.
+    guard = 0
+    while guard < 8:
+        guard += 1
+        m_tok = _LOTFIRST_TOKEN_RE.match(u)
+        if m_tok:
+            u = u[m_tok.end():]
+            m_desig = _LOTFIRST_DESIG_RE.match(u)
+            if m_desig:
+                u = u[m_desig.end():]
+            continue
+        # Mid-stream reserve refs in compound prefixes: "& RES C1 BLK 3 NAME"
+        m_join = _sub_parse_re.match(r"^(?:&|,|AND)\s+(?:RES(?:ERVE)?S?\s+[A-Z0-9\-]+\s+)?", u)
+        if m_join and m_join.end() > 0:
+            u = u[m_join.end():]
+            continue
+        break
+    u = u.strip(" -.,&")
+
+    # After stripping, reject if what's left is still abstract/rural
+    if u.startswith(("ABS ", "ABST", "ABSTRACT", "U/R")):
+        return None
+    if not u:
+        return None
+
+    m = _SUBDIVISION_CUT_RE.match(u)
+    if not m:
+        return None
+    name = m.group(1).strip(" -.,")
+    # Kill trailing noise the cut regex may leave
+    name = _sub_parse_re.sub(r"\s+ACRES?\s*[\d\.]*$", "", name)
+    name = _sub_parse_re.sub(r"\s+TRACTS?\s*[\d\-]*$", "", name)
+    name = name.strip(" -.,")
+    if len(name) < 4:
+        return None
+    # Reject leftovers that are clearly not subdivision names
+    if _sub_parse_re.match(r"^[SR]?\d+$", name):
+        return None
+    if _sub_parse_re.match(r"^(?:LT|LOT|BLK|BLOCK|TR|TRACT|SEC|SECTION|PT|RES|RESERVE)\b", name):
+        return None
+    if name in ("TRACT", "PARTIAL", "RESERVE", "UNRECORDED", "RURAL"):
+        return None
+    return name
+
+
+# Known Texas / Houston homebuilders — matched against parcel OWNER_NAME.
+# Shared by the /builders endpoint (who's active nearby) and the /communities
+# endpoint (builder-held % per subdivision = absorption proxy).
+_BUILDER_PATTERNS = [
+    # National publics
+    ("D.R. Horton",           [r"\bD\.?\s?R\.?\s?HORTON\b", r"\bDRH\b(?!\w)", r"\bDR HORTON\b"]),
+    ("Lennar",                [r"\bLENNAR\b"]),
+    ("PulteGroup",            [r"\bPULTE\b", r"\bDEL WEBB\b", r"\bCENTEX HOMES\b"]),
+    ("KB Home",               [r"\bKB HOME\b", r"\bKBS HOME\b"]),
+    ("Meritage Homes",        [r"\bMERITAGE\b"]),
+    ("Taylor Morrison",       [r"\bTAYLOR MORRISON\b"]),
+    ("Toll Brothers",         [r"\bTOLL BROS\b", r"\bTOLL BROTHERS\b"]),
+    ("Beazer Homes",          [r"\bBEAZER\b"]),
+    ("LGI Homes",             [r"\bLGI HOMES\b", r"\bLGI HOME\b"]),
+    ("Century Communities",   [r"\bCENTURY COMMUNITIES\b", r"\bCCS COMMUNITIES\b"]),
+    ("M/I Homes",             [r"\bM/I HOMES\b", r"\bMI HOMES\b"]),
+    ("Ashton Woods",          [r"\bASHTON WOODS\b", r"\bASHTON WOOD\b"]),
+    ("David Weekley Homes",   [r"\bDAVID WEEKLEY\b", r"\bWEEKLEY HOMES\b"]),
+    ("Dream Finders Homes",   [r"\bDREAM FINDERS\b"]),
+    ("Tri Pointe Homes",      [r"\bTRI POINTE\b", r"\bTRIPOINTE\b"]),
+    # Texas/Houston strong regionals
+    ("Perry Homes",           [r"\bPERRY HOMES\b"]),
+    ("Highland Homes",        [r"\bHIGHLAND HOMES\b"]),
+    ("Trendmaker Homes",      [r"\bTRENDMAKER\b"]),
+    ("Chesmar Homes",         [r"\bCHESMAR\b"]),
+    ("Coventry Homes",        [r"\bCOVENTRY HOMES\b"]),
+    ("Westin Homes",          [r"\bWESTIN HOMES\b"]),
+    ("Empire Communities",    [r"\bEMPIRE COMMUNITIES\b"]),
+    ("Village Builders",      [r"\bVILLAGE BUILDERS\b"]),
+    ("Ryland/CalAtlantic",    [r"\bRYLAND\b", r"\bCALATLANTIC\b"]),
+    ("Newmark Homes",         [r"\bNEWMARK HOMES\b"]),
+    ("Anglia Homes",          [r"\bANGLIA HOMES\b"]),
+    ("Long Lake Ltd",         [r"\bLONG LAKE\b"]),
+    ("Sitterle Homes",        [r"\bSITTERLE\b"]),
+    ("Plantation Homes",      [r"\bPLANTATION HOMES\b"]),
+    ("Riverside Homebuilders",[r"\bRIVERSIDE HOMEBUILDERS\b", r"\bRIVERSIDE HOMES\b"]),
+    # Master-planned / land developers
+    ("Land Tejas",            [r"\bLAND TEJAS\b"]),
+    ("Johnson Development",   [r"\bJOHNSON DEVELOPMENT\b"]),
+    ("Signorelli",            [r"\bSIGNORELLI\b"]),
+    ("Caldwell Companies",    [r"\bCALDWELL COMPANIES\b"]),
+    ("Newland",               [r"\bNEWLAND COMMUNITIES\b", r"\bNEWLAND ASSOCIATES\b"]),
+    # Common holding-company/LLC patterns builders use
+    ("Generic 'HOMES' entity",[r"\b(?:HOMES?|HOMEBUILDERS?)\s+(?:INC|LLC|LTD|LP|LP\.|CORP)\b"]),
+]
+_BUILDER_REGEX = [(name, [_sub_parse_re.compile(p) for p in patterns])
+                    for name, patterns in _BUILDER_PATTERNS]
+
+
+def _classify_builder(owner: str):
+    """Return the builder name if OWNER_NAME matches a known homebuilder, else None."""
+    if not owner: return None
+    u = owner.upper()
+    for name, patterns in _BUILDER_REGEX:
+        if any(p.search(u) for p in patterns):
+            return name
+    return None
+
+
+# --------------------------------------------------------------------------
+# Overpass (OpenStreetMap) query helper — shared by amenities + communities.
+# UA header required or .de returns 406 Not Acceptable.
+# --------------------------------------------------------------------------
+# Mirror reality, re-measured live 2026-08 with our actual amenities query:
+#   overpass-api.de   planet data, 22-33s, HTTP 504 roughly 1 run in 3
+#   maps.mail.ru      planet data, 17-21s, HTTP 504 roughly 1 run in 2
+#   kumi.systems      read-timeout at 36s+  — effectively down
+#   private.coffee    read-timeout at 36s+  — effectively down
+#   osm.jp            bad TLS cert;  nchc.org.tw / comeuppance  DNS dead
+#   overpass.osm.ch   answers in 1.3s but is a SWITZERLAND-ONLY extract — it
+#                     returns HTTP 200 with elements=[] for every Texas query,
+#                     including "find Houston". Fast and silently wrong is worse
+#                     than slow: never add a mirror without first checking it
+#                     can actually find something in Texas.
+#
+# Only two mirrors work and both fail often, but they fail INDEPENDENTLY. So we
+# race them instead of trying them in series — fire both at once and take the
+# first response that parses. Serial-with-backoff is what kept producing
+# "Overpass query failed on all mirrors": a 504 from .de burned 30s before the
+# fallback even started, and the fallback then timed out on its own leash.
+#
+# Throttled mirrors signal it two ways — a 504, or (worse) an HTML error page
+# under HTTP 200 that makes r.json() raise. Both are transient: lose the race,
+# don't fail the request.
+_OVERPASS_MIRRORS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+]
+
+
+# Texas airports with FAA commercial passenger service. OSM cannot be used to
+# derive this: only IAH tags aerodrome=international, while Hobby carries nothing
+# beyond iata/icao — identical to a private grass strip — so any tag-based filter
+# either drops Hobby or lets every GA field through.
+_TX_COMMERCIAL_AIRPORTS = {
+    "IAH", "HOU", "DFW", "DAL", "AUS", "SAT", "ELP", "LBB", "MAF", "AMA",
+    "CRP", "HRL", "BRO", "MFE", "LRD", "GRK", "SPS", "TYR", "ACT", "ABI",
+    "SJT", "VCT", "CLL", "BPT", "GGG", "DRT",
+}
+_OVERPASS_HEADERS = {
+    "User-Agent": "EmberAcquisitionsGIS/1.0 (internal real-estate analysis tool; contact: carlos@ember-grp.com)",
+}
+
+
+# Overpass answers never change minute-to-minute; cache them so a page reload
+# (or a second card needing the same query) doesn't re-hit a throttled server.
+_OVERPASS_CACHE = {}
+_OVERPASS_CACHE_LOCK = threading.Lock()
+_OVERPASS_CACHE_TTL = 6 * 60 * 60      # 6 hours
+
+
+def _overpass_query(query: str, read_timeout: int = 45, attempts: int = 3):
+    """POST an Overpass QL query, racing every mirror. Returns (json, error).
+
+    Each round fires all mirrors concurrently and takes the first response that
+    parses as JSON carrying an `elements` key; throttle responses (504, or an
+    HTML page under a 200) simply lose the race. Up to `attempts` rounds with
+    backoff, then the last error is returned. Results are cached for 6h.
+    """
+    import requests as _orq
+    import time as _time
+    import hashlib as _hl
+    from concurrent.futures import ThreadPoolExecutor as _TP, as_completed as _ac
+
+    key = _hl.sha1(query.encode("utf-8")).hexdigest()
+    now = _time.time()
+    with _OVERPASS_CACHE_LOCK:
+        hit = _OVERPASS_CACHE.get(key)
+        if hit and hit[1] > now:
+            return hit[0], None
+
+    def _store(data):
+        # Cache any well-formed response, including a legitimately empty one —
+        # a rural site really can have zero supermarkets, and re-querying that
+        # every page load burns the retry budget for ~60s. Only refuse to cache
+        # malformed payloads (no `elements` key), which is what a throttled or
+        # truncated response looks like.
+        if not isinstance(data, dict) or "elements" not in data:
+            return data
+        with _OVERPASS_CACHE_LOCK:
+            _OVERPASS_CACHE[key] = (data, _time.time() + _OVERPASS_CACHE_TTL)
+            if len(_OVERPASS_CACHE) > 200:
+                for k, _ in sorted(_OVERPASS_CACHE.items(), key=lambda kv: kv[1][1])[:50]:
+                    _OVERPASS_CACHE.pop(k, None)
+        return data
+
+    def _fetch(url):
+        r = _orq.post(url, data={"data": query}, headers=_OVERPASS_HEADERS,
+                      timeout=read_timeout)
+        if r.status_code in (429, 502, 503, 504):
+            raise RuntimeError(f"HTTP {r.status_code} (throttled)")
+        r.raise_for_status()
+        d = r.json()          # ValueError on the HTML throttle page
+        if not isinstance(d, dict) or "elements" not in d:
+            raise RuntimeError("malformed payload (no `elements`)")
+        return d
+
+    last = None
+    for i in range(attempts):
+        if i:
+            _time.sleep(1.5 * (2 ** (i - 1)))          # 1.5s, 3s
+        pool = _TP(max_workers=len(_OVERPASS_MIRRORS))
+        winner = None
+        try:
+            futs = {pool.submit(_fetch, m): m for m in _OVERPASS_MIRRORS}
+            for f in _ac(futs):
+                try:
+                    winner = f.result()
+                    break                              # first good answer wins
+                except Exception as e:
+                    host = futs[f].split("/")[2]
+                    last = RuntimeError(f"{host}: {str(e)[:90]}")
+        finally:
+            # Don't block on the losing mirror — it may sit there for 45s.
+            pool.shutdown(wait=False)
+        if winner is not None:
+            return _store(winner), None
+    return None, last
+
+
+def _osm_communities_near(lat: float, lon: float, radius_mi: float):
+    """Named residential communities near a point, keyed by normalized name.
+
+    Returns {NORMALIZEDNAME: {lat, lon, distance_mi}}. Radius is rounded to
+    whole miles and coordinates to 3dp so repeat calls from different cards
+    hit the same Overpass cache entry instead of issuing new queries — the
+    server throttles aggressively and every avoided query matters.
+    """
+    import math as _m
+    lat_r = round(lat, 3)
+    lon_r = round(lon, 3)
+    rad = int(round(max(1.0, min(radius_mi, 25.0))))
+    rad_m = int(rad * 1609.34)
+    # Kept deliberately lean: place nodes are cheap and cover most named
+    # subdivisions; named residential ways add the rest. Relations were dropped
+    # (rare here, and they roughly doubled query time into throttle territory).
+    q = f"""
+[out:json][timeout:25];
+(
+  node["place"~"^(neighbourhood|suburb|quarter|village|hamlet)$"](around:{rad_m},{lat_r},{lon_r});
+  way["landuse"="residential"]["name"](around:{rad_m},{lat_r},{lon_r});
+);
+out center 400;
+"""
+    data, _err = _overpass_query(q, 30)
+    out = {}
+    for el in (data or {}).get("elements", []):
+        tags = el.get("tags") or {}
+        nm = (tags.get("name") or "").strip()
+        if not nm:
+            continue
+        elat = el.get("lat") or (el.get("center") or {}).get("lat")
+        elon = el.get("lon") or (el.get("center") or {}).get("lon")
+        if elat is None or elon is None:
+            continue
+        key = "".join(ch for ch in nm.upper() if ch.isalnum())
+        d_mi = _m.hypot((elon - lon) * 69.0 * _m.cos(_m.radians(lat)),
+                         (elat - lat) * 69.0)
+        prev = out.get(key)
+        if not prev or d_mi < prev["distance_mi"]:
+            out[key] = {"name": nm, "lat": elat, "lon": elon,
+                        "distance_mi": round(d_mi, 2)}
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Census ACS vintage
+# ---------------------------------------------------------------------------
+# Census publishes a new ACS 5-year vintage every December, so a hardcoded year
+# goes quietly stale — this app was still reporting 2022 data in mid-2026, three
+# vintages behind. Probe newest-first instead and cache the answer for a day.
+#
+# The probe has to request real data, not metadata: api.census.gov returns a 200
+# for /data/<year>/acs/acs5.json on vintages that have no rows behind them yet.
+_ACS_YEAR_CACHE = {"year": None, "at": 0.0}
+_ACS_YEAR_LOCK = threading.Lock()
+
+
+def _acs_radius_demographics(lat, lon, radius_mi):
+    """Population / households / avg household size for tracts around a point.
+
+    Compact companion to the full submarket endpoint — just the household
+    numbers the retail-gap maths needs. Returns None when Census is unavailable
+    (tract-level ACS requires CENSUS_API_KEY; county-level sometimes answers
+    without one, tract-level does not), so every caller must have a fallback.
+    """
+    import requests as _rq
+    from concurrent.futures import ThreadPoolExecutor as _DTP
+
+    key = os.environ.get("CENSUS_API_KEY", "").strip()
+    year = _acs_year()
+    deg = radius_mi / 69.0
+    bbox = f"{lon-deg},{lat-deg},{lon+deg},{lat+deg}"
+    try:
+        r = _rq.get("https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/"
+                    "Tracts_Blocks/MapServer/0/query",
+                    params={"geometry": bbox, "geometryType": "esriGeometryEnvelope",
+                            "inSR": "4326", "spatialRel": "esriSpatialRelIntersects",
+                            "outFields": "GEOID,STATE,COUNTY,TRACT", "returnGeometry": "false",
+                            "f": "json"}, timeout=25)
+        feats = r.json().get("features") or []
+    except Exception:
+        return None
+    tracts = [(f["attributes"]["STATE"], f["attributes"]["COUNTY"], f["attributes"]["TRACT"])
+              for f in feats if f.get("attributes")]
+    if not tracts:
+        return None
+
+    VARS = "B01003_001E,B11001_001E,B25010_001E,B19013_001E,B25077_001E,B01002_001E"
+
+    def _one(t):
+        st, co, tr = t
+        p = {"get": VARS, "for": f"tract:{tr}", "in": f"state:{st} county:{co}"}
+        if key:
+            p["key"] = key
+        try:
+            rr = _rq.get(f"https://api.census.gov/data/{year}/acs/acs5", params=p, timeout=20)
+            if rr.status_code != 200 or not rr.text.lstrip().startswith("["):
+                return None
+            rows = rr.json()
+            return dict(zip(rows[0], rows[1]))
+        except Exception:
+            return None
+
+    with _DTP(max_workers=6) as pool:
+        got = [g for g in pool.map(_one, tracts[:25]) if g]
+    if not got:
+        return None
+
+    def _i(d, k):
+        try:
+            v = int(float(d.get(k)))
+            return v if v > -10000 else None      # Census uses -666666666 for nulls
+        except (TypeError, ValueError):
+            return None
+
+    pop = sum(_i(d, "B01003_001E") or 0 for d in got)
+    hh = sum(_i(d, "B11001_001E") or 0 for d in got)
+    incomes = [_i(d, "B19013_001E") for d in got]
+    incomes = [v for v in incomes if v]
+    values = [_i(d, "B25077_001E") for d in got]
+    values = [v for v in values if v]
+    ages = [_i(d, "B01002_001E") for d in got]
+    ages = [v for v in ages if v]
+    return {
+        "year": year, "tracts": len(got),
+        "population": pop, "households": hh,
+        "avg_household_size": round(pop / hh, 2) if hh else None,
+        "median_household_income": round(sum(incomes) / len(incomes)) if incomes else None,
+        "median_home_value": round(sum(values) / len(values)) if values else None,
+        "median_age": round(sum(ages) / len(ages), 1) if ages else None,
+    }
+
+
+def _acs_year(default=2023, probe_back=4):
+    """Newest ACS 5-year vintage that actually returns data."""
+    import requests as _rq
+    import time as _t
+    import datetime as _dt
+
+    with _ACS_YEAR_LOCK:
+        c = _ACS_YEAR_CACHE
+        if c["year"] and c["at"] + 24 * 3600 > _t.time():
+            return c["year"]
+    key = os.environ.get("CENSUS_API_KEY", "").strip()
+    newest = _dt.date.today().year - 1
+    for yr in range(newest, newest - probe_back, -1):
+        try:
+            p = {"get": "NAME,B01003_001E", "for": "county:201", "in": "state:48"}
+            if key:
+                p["key"] = key
+            r = _rq.get(f"https://api.census.gov/data/{yr}/acs/acs5", params=p, timeout=15)
+            if r.status_code == 200 and r.text.lstrip().startswith("["):
+                with _ACS_YEAR_LOCK:
+                    _ACS_YEAR_CACHE.update({"year": yr, "at": _t.time()})
+                return yr
+        except Exception:
+            continue
+    return default
+
+
+# ---------------------------------------------------------------------------
+# CBAS new-home market survey
+# ---------------------------------------------------------------------------
+# The public GraphQL endpoint (cv-server.cbashome.com/graphql) exposes only four
+# queries, and its survey entries carry NO builder names and NO coordinates.
+# That forced geo-scoping to be approximated by ZIP polygons and left every
+# competitor labelled "Builder #14".
+#
+# The CommunityVision portal bundle revealed the REST endpoints the app itself
+# uses. Two of them do everything we need:
+#
+#   POST /getData     -> every subdivision CBAS tracks (1,186 in Houston) with
+#                        lat/lng, builders + builders_names, lot_types (FF),
+#                        prices, startsByQuarter / closingsByQuarter, vdls,
+#                        futures, districtsNames, schoolNames, developerName,
+#                        sections[].lot_types_builders (lots by builder by lot
+#                        width) and latestFloorplanPricing (plan-level price,
+#                        sqft and $/sf carrying builderName). The request body is
+#                        ignored — it always returns the full set.
+#   POST /buildExcel  -> report generator; `topBuilderRanking` returns named
+#                        builders with annual starts/closings/VDL/market share.
+#
+# So: fetch /getData once, cache it, and filter by true great-circle distance
+# from the project centroid. That removes ~90 network round-trips per request
+# (80 builder probes + 5 lot-band queries + TIGERweb ZIP lookups + Overpass
+# geocoding) and replaces every "Builder #14" with a real name.
+#
+# These are undocumented internal endpoints, so they can change when CBAS
+# redeploys the portal. Everything below degrades to an error message rather
+# than a traceback if the shape shifts.
+_CBAS_BASE = "https://cv-server.cbashome.com"
+_CBAS_DATA_CACHE = {"at": 0.0, "entries": None, "latest": None}
+_CBAS_CACHE_LOCK = threading.Lock()
+_CBAS_CACHE_TTL = 6 * 60 * 60      # 6 hours; the survey moves quarterly
+
+
+def _cbas_headers(token):
+    return {"Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "User-Agent": "EmberAcquisitionsGIS/1.0",
+            "Origin": "https://cv.cbashome.com",
+            "Referer": "https://cv.cbashome.com/"}
+
+
+def _cbas_get_data(token, force=False):
+    """Every subdivision CBAS tracks, cached. -> (entries, latest_quarter, error)."""
+    import requests as _rq
+    import time as _t
+
+    now = _t.time()
+    with _CBAS_CACHE_LOCK:
+        c = _CBAS_DATA_CACHE
+        if not force and c["entries"] and c["at"] + _CBAS_CACHE_TTL > now:
+            return c["entries"], c["latest"], None
+    try:
+        r = _rq.post(f"{_CBAS_BASE}/getData", headers=_cbas_headers(token),
+                     json={"table": "subdivisions"}, timeout=120)
+        r.raise_for_status()
+        d = r.json()
+    except Exception as e:
+        return None, None, f"CBAS /getData failed: {str(e)[:200]}"
+    entries = d.get("entries") if isinstance(d, dict) else None
+    if not entries:
+        return None, None, "CBAS /getData returned no entries"
+    latest = d.get("latestQuarter")
+    with _CBAS_CACHE_LOCK:
+        _CBAS_DATA_CACHE.update({"at": now, "entries": entries, "latest": latest})
+    return entries, latest, None
+
+
+def _cbas_builder_map(entries):
+    """builder id -> name, read off the aligned builders / builders_names lists.
+
+    CBAS has no builders table in the API, but every subdivision carries both
+    the id list and the name list in the same order, so the union across all
+    subdivisions reconstructs the full roster (171 builders in Houston).
+    """
+    m = {}
+    for e in entries:
+        ids = e.get("builders") or []
+        nms = e.get("builders_names") or []
+        if isinstance(ids, list) and isinstance(nms, list) and len(ids) == len(nms):
+            for bid, nm in zip(ids, nms):
+                if isinstance(nm, str) and nm.strip():
+                    m[bid] = nm.strip()
+    return m
+
+
+# Lot widths in frontage feet — how the acquisitions team actually thinks about
+# product. CBAS `lot_type` is the width in FF already (0 = unspecified).
+_CBAS_LOT_BANDS = [(20, 40, "Under 40 FF"), (40, 50, "40–50 FF"), (50, 60, "50–60 FF"),
+                   (60, 70, "60–70 FF"), (70, 200, "70+ FF")]
+
+
+# Builder id 0 (and the literal name "Builder TBD") is CBAS's placeholder for
+# "lots exist, builder not yet assigned" — it is not a competitor.
+_CBAS_PLACEHOLDER_BUILDERS = {0}
+
+
+# CBAS lot_type is mostly a clean frontage width, but the field also carries
+# placeholders (0) and stray values (135, 1000). Anything outside a plausible
+# single-family frontage is dropped rather than rendered as a lot width.
+_CBAS_FF_MIN, _CBAS_FF_MAX = 20, 200
+
+
+def _cbas_ff(v):
+    """A lot width in frontage feet, or None if it isn't a plausible one."""
+    try:
+        f = int(v)
+    except (TypeError, ValueError):
+        return None
+    return f if _CBAS_FF_MIN <= f <= _CBAS_FF_MAX else None
+
+
+def _cbas_band(ft):
+    f = _cbas_ff(ft)
+    if f is None:
+        return None
+    for lo, hi, label in _CBAS_LOT_BANDS:
+        if lo <= f < hi:
+            return label
+    return None
+
+
+# FRED series — verified-working codes only. National series stripped.
+# Per Carlos's note: TRUE submarket data (down to school district + community level)
+# requires Zonda or scraping; FRED + Census tract-level cover Texas + Houston MSA
+# and the area immediately around the project (census tract).
+_FRED_HOUSTON_SERIES = [
+    # --- HOUSTON METRO ---
+    ("ATNHPIUS26420Q",       "Houston MSA home price index (FHFA, quarterly)",  "index"),
+
+    # --- TEXAS STATE ---
+    ("TXSTHPI",              "Texas home price index (FHFA)",                   "index"),
+    ("MEHOINUSTXA646N",      "Texas median household income",                   "dollars"),
+    ("TXUR",                 "Texas unemployment rate",                         "percent"),
+    ("TXNA",                 "Texas non-farm employment",                       "thousands"),
+    ("TXPOP",                "Texas resident population",                       "thousands"),
+    ("TXPCPI",               "Texas per capita personal income",                "dollars"),
+    ("TXBPPRIVSA",           "Texas total private permits (SA)",                "count"),
+    ("TXNQGSP",              "Texas GDP (nominal, $B)",                         "dollars_b"),
+    ("TXSLIND",              "Texas leading economic index",                    "index"),
+
+    # --- FINANCING CONTEXT (national, but financing cost is national) ---
+    ("MORTGAGE30US",         "30-yr fixed mortgage rate",                       "percent"),
+    ("MORTGAGE15US",         "15-yr fixed mortgage rate",                       "percent"),
+    ("DGS10",                "10-yr US Treasury yield",                         "percent"),
+]

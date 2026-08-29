@@ -77,6 +77,14 @@ EmberAcquisitions/
 │                                # ACQ_DATA_DIR
 ├── acq_store.py                 # Acquisitions persistence (Postgres JSONB
 │                                # document store, acq_objects)
+├── acq_routes.py                # Acquisitions routes, as a blueprint. The one
+│                                # dashboard whose routes are NOT in app.py:
+│                                # its handlers were ported wholesale from a
+│                                # standalone app and call engine helpers by
+│                                # bare name, so they live in a module that
+│                                # star-imports acq_gis. app.py hands it auth,
+│                                # get_db and the activity log via app.config
+│                                # so it never imports app.py back.
 ├── calc.py                      # Underwriting calculation engine
 ├── frp_excel.py                 # Financial Reporting Package .xlsx builder
 ├── frp_mapping.py               # COA → FRP line-item rules
