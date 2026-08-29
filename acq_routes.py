@@ -680,6 +680,115 @@ def api_acq_cache_status():
         return jsonify({"error": str(e), "counties": []}), 200
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# JSON-store compatibility shim
+#
+# Eight ported handlers - corridor search and import, the tract page, the
+# outreach campaign PDF, rebuffer - talk to the standalone app's storage
+# directly: `with _storage_lock: s = _load_storage()`, mutate `s["searches"]`,
+# `_save_storage(s)`. Rewriting each against acq_store would mean rewriting
+# their bodies, which is where a port this size goes wrong.
+#
+# So the old interface is presented over Postgres instead. `_load_storage`
+# builds the dict-of-lists those handlers expect; `_save_storage` writes back
+# only what actually changed, compared against a snapshot taken at load, so a
+# handler touching one saved search does not rewrite every row.
+#
+# What it deliberately does NOT support is deletion by omission - removing an
+# item from one of the lists and saving. No ported handler does that (they use
+# the DELETE routes), and silently honouring it would make an accidental list
+# rebuild destructive.
+# ══════════════════════════════════════════════════════════════════════════
+
+import json as _json
+import threading as _threading
+
+_STORE_KINDS = {
+    "projects": "project", "searches": "search", "folders": "folder",
+    "tract_pins": "tract_pin", "notes": "note", "polygons": "polygon",
+    "favorites": "favorite", "outreach": "outreach",
+}
+
+# Request-scoped snapshot of what _load_storage handed out, so _save_storage
+# can tell what moved. Thread-local because gunicorn runs threaded.
+_shim_state = _threading.local()
+
+
+class _NullLock:
+    """The standalone app serialised writes to one JSON file. Postgres does
+    its own concurrency control, so this is a no-op that keeps `with
+    _storage_lock:` reading naturally in the ported bodies."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+_storage_lock = _NullLock()
+
+
+def _current_user():
+    return {"id": session.get("user_id"),
+            "name": session.get("display_name") or session.get("username"),
+            "username": session.get("username"),
+            "is_admin": bool(session.get("is_admin"))}
+
+
+def _load_storage():
+    uid = session.get("user_id")
+    admin = bool(session.get("is_admin"))
+    out, snap = {}, {}
+    conn = get_db()
+    try:
+        for plural, kind in _STORE_KINDS.items():
+            rows = acq_store.list_objects(conn, kind, uid, admin)
+            for r in rows:
+                # Ported bodies read owner_id, not the store's _owner_id.
+                r["owner_id"] = r.get("_owner_id")
+            out[plural] = rows
+            snap[plural] = {r["id"]: _json.dumps(r, sort_keys=True, default=str)
+                            for r in rows if r.get("id")}
+        # Users come from EmberApps, not from this tab. The outreach campaign
+        # PDF looks up author names against this.
+        users = []
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT id, username, display_name FROM users")
+            users = [{"id": r["id"], "username": r["username"],
+                      "name": r.get("display_name") or r["username"]}
+                     for r in cur.fetchall()]
+            cur.close()
+        except Exception as e:
+            print(f"[acq-shim] user lookup failed: {e}", flush=True)
+        out["users"] = users
+    finally:
+        conn.close()
+    _shim_state.snapshot = snap
+    return out
+
+
+def _save_storage(s):
+    snap = getattr(_shim_state, "snapshot", None) or {}
+    uid = session.get("user_id")
+    written = 0
+    conn = get_db()
+    try:
+        for plural, kind in _STORE_KINDS.items():
+            for obj in s.get(plural) or []:
+                oid = obj.get("id")
+                now = _json.dumps(obj, sort_keys=True, default=str)
+                if oid and snap.get(plural, {}).get(oid) == now:
+                    continue                      # untouched
+                acq_store.put_object(conn, kind, obj, obj.get("owner_id") or uid)
+                written += 1
+    finally:
+        conn.close()
+    return written
+
+
+
 def _acq_log(event, detail=None):
     """The standalone app's _log_action, mapped onto EmberApps' activity_log."""
     try:
@@ -5523,3 +5632,1815 @@ def acq_api_elevation_profile(geometry=None):
         "grid": [[None if np.isnan(Z[i, j]) else round(float(Z[i, j]), 1)
                   for j in range(GRID)] for i in range(GRID)],
     })
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Saved objects: searches, folders, outreach, favourites, polygons
+#
+# Written against acq_store rather than ported. In the standalone app each of
+# these loaded the entire JSON store, mutated a list and wrote the whole file
+# back; against a document store they are a few lines each, and carrying that
+# read-modify-write-the-world shape into Postgres would have been pointless.
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def _crud_list(kind):
+    conn = get_db()
+    try:
+        return acq_store.list_objects(conn, kind, _acq_owner(), _acq_is_admin())
+    finally:
+        conn.close()
+
+
+def _crud_create(kind, body, required=()):
+    for f in required:
+        if not str(body.get(f) or "").strip():
+            return None, (jsonify({"error": f"{f} required"}), 400)
+    body = dict(body)
+    body.setdefault("created_at", datetime.datetime.utcnow().isoformat())
+    body.setdefault("created_by", session.get("username"))
+    conn = get_db()
+    try:
+        return acq_store.put_object(conn, kind, body, _acq_owner()), None
+    finally:
+        conn.close()
+
+
+def _crud_patch(kind, oid, body, fields):
+    conn = get_db()
+    try:
+        obj = acq_store.get_object(conn, kind, oid, _acq_owner(), _acq_is_admin())
+        if not obj:
+            return None, (jsonify({"error": "not found"}), 404)
+        for f in fields:
+            if f in body:
+                obj[f] = body[f]
+        obj["updated_at"] = datetime.datetime.utcnow().isoformat()
+        return acq_store.put_object(conn, kind, obj,
+                                    obj.get("_owner_id") or _acq_owner()), None
+    finally:
+        conn.close()
+
+
+def _crud_delete(kind, oid):
+    conn = get_db()
+    try:
+        return acq_store.delete_object(conn, kind, oid, _acq_owner(), _acq_is_admin())
+    finally:
+        conn.close()
+
+
+# ── Saved searches ────────────────────────────────────────────────────────
+
+@acq_bp.route("/api/acq/searches", methods=["GET", "POST"])
+@_login_required
+def acq_searches():
+    guard = _acq_guard()
+    if guard:
+        return guard
+    if request.method == "GET":
+        return jsonify({"searches": _crud_list("search")})
+    obj, err = _crud_create("search", request.get_json(silent=True) or {}, ("name",))
+    return err or (jsonify({"search": obj}), 201)
+
+
+@acq_bp.route("/api/acq/searches/<sid>", methods=["PATCH", "DELETE"])
+@_login_required
+def acq_search_one(sid):
+    guard = _acq_guard()
+    if guard:
+        return guard
+    if request.method == "DELETE":
+        ok = _crud_delete("search", sid)
+        return jsonify({"deleted": ok}), (200 if ok else 404)
+    obj, err = _crud_patch("search", sid, request.get_json(silent=True) or {},
+                           ("name", "starred", "folder_id", "criteria", "notes"))
+    return err or jsonify({"search": obj})
+
+
+@acq_bp.route("/api/acq/searches/<sid>/folder", methods=["POST"])
+@_login_required
+def acq_search_folder(sid):
+    guard = _acq_guard()
+    if guard:
+        return guard
+    body = request.get_json(silent=True) or {}
+    obj, err = _crud_patch("search", sid, {"folder_id": body.get("folder_id")},
+                           ("folder_id",))
+    return err or jsonify({"search": obj})
+
+
+# ── Folders ───────────────────────────────────────────────────────────────
+
+@acq_bp.route("/api/acq/folders/<fid>", methods=["PATCH", "DELETE"])
+@_login_required
+def acq_folder_one(fid):
+    guard = _acq_guard()
+    if guard:
+        return guard
+    if request.method == "DELETE":
+        ok = _crud_delete("folder", fid)
+        return jsonify({"deleted": ok}), (200 if ok else 404)
+    obj, err = _crud_patch("folder", fid, request.get_json(silent=True) or {},
+                           ("name", "color", "notes"))
+    return err or jsonify({"folder": obj})
+
+
+@acq_bp.route("/api/acq/folders/<fid>/share", methods=["POST"])
+@_login_required
+def acq_folder_share(fid):
+    """Share a folder with other users by id.
+
+    EmberApps has no per-object ACL, so this records the list on the folder and
+    the read path honours it. Anything more would mean inventing a permissions
+    model the rest of the portal does not have.
+    """
+    guard = _acq_guard()
+    if guard:
+        return guard
+    body = request.get_json(silent=True) or {}
+    ids = body.get("user_ids")
+    if not isinstance(ids, list):
+        return jsonify({"error": "user_ids must be a list"}), 400
+    obj, err = _crud_patch("folder", fid, {"shared_with": ids}, ("shared_with",))
+    return err or jsonify({"folder": obj})
+
+
+# ── Outreach ──────────────────────────────────────────────────────────────
+
+@acq_bp.route("/api/acq/outreach/<prop_id>", methods=["GET", "POST", "DELETE"])
+@_login_required
+def acq_outreach(prop_id):
+    guard = _acq_guard()
+    if guard:
+        return guard
+    conn = get_db()
+    try:
+        found = acq_store.find_by_prop(conn, "outreach", [prop_id],
+                                       _acq_owner(), _acq_is_admin())
+        rec = (found.get(str(prop_id)) or [None])[0]
+        if request.method == "GET":
+            return jsonify({"outreach": rec})
+        if request.method == "DELETE":
+            if not rec:
+                return jsonify({"deleted": False}), 404
+            ok = acq_store.delete_object(conn, "outreach", rec["id"],
+                                         _acq_owner(), _acq_is_admin())
+            return jsonify({"deleted": ok})
+        body = request.get_json(silent=True) or {}
+        rec = rec or {"prop_id": str(prop_id), "log": [],
+                      "created_at": datetime.datetime.utcnow().isoformat()}
+        for f in ("status", "broker_name", "broker_phone", "broker_email",
+                  "next_action", "next_action_date", "asking_price", "notes",
+                  "archived"):
+            if f in body:
+                rec[f] = body[f]
+        rec["updated_at"] = datetime.datetime.utcnow().isoformat()
+        saved = acq_store.put_object(conn, "outreach", rec,
+                                     rec.get("_owner_id") or _acq_owner())
+    finally:
+        conn.close()
+    return jsonify({"outreach": saved})
+
+
+@acq_bp.route("/api/acq/outreach/<prop_id>/log", methods=["POST"])
+@_login_required
+def acq_outreach_log(prop_id):
+    guard = _acq_guard()
+    if guard:
+        return guard
+    body = request.get_json(silent=True) or {}
+    conn = get_db()
+    try:
+        found = acq_store.find_by_prop(conn, "outreach", [prop_id],
+                                       _acq_owner(), _acq_is_admin())
+        rec = (found.get(str(prop_id)) or [None])[0] or {
+            "prop_id": str(prop_id), "log": [],
+            "created_at": datetime.datetime.utcnow().isoformat()}
+        entry = {
+            "id": acq_store.new_id("e"),
+            "at": body.get("at") or datetime.datetime.utcnow().isoformat(),
+            "method": body.get("method") or "other",
+            "notes": body.get("notes") or "",
+            "by": session.get("username"),
+        }
+        rec.setdefault("log", []).insert(0, entry)
+        rec["updated_at"] = entry["at"]
+        saved = acq_store.put_object(conn, "outreach", rec,
+                                     rec.get("_owner_id") or _acq_owner())
+    finally:
+        conn.close()
+    return jsonify({"outreach": saved, "entry": entry}), 201
+
+
+@acq_bp.route("/api/acq/outreach/<prop_id>/log/<entry_id>",
+              methods=["PATCH", "DELETE"])
+@_login_required
+def acq_outreach_log_entry(prop_id, entry_id):
+    guard = _acq_guard()
+    if guard:
+        return guard
+    conn = get_db()
+    try:
+        found = acq_store.find_by_prop(conn, "outreach", [prop_id],
+                                       _acq_owner(), _acq_is_admin())
+        rec = (found.get(str(prop_id)) or [None])[0]
+        if not rec:
+            return jsonify({"error": "not found"}), 404
+        log = rec.get("log") or []
+        if request.method == "DELETE":
+            before = len(log)
+            rec["log"] = [e for e in log if e.get("id") != entry_id]
+            if len(rec["log"]) == before:
+                return jsonify({"error": "entry not found"}), 404
+        else:
+            body = request.get_json(silent=True) or {}
+            hit = next((e for e in log if e.get("id") == entry_id), None)
+            if not hit:
+                return jsonify({"error": "entry not found"}), 404
+            for f in ("method", "notes", "at"):
+                if f in body:
+                    hit[f] = body[f]
+        rec["updated_at"] = datetime.datetime.utcnow().isoformat()
+        saved = acq_store.put_object(conn, "outreach", rec,
+                                     rec.get("_owner_id") or _acq_owner())
+    finally:
+        conn.close()
+    return jsonify({"outreach": saved})
+
+
+@acq_bp.route("/api/acq/outreach/<prop_id>/archive", methods=["POST"])
+@_login_required
+def acq_outreach_archive(prop_id):
+    guard = _acq_guard()
+    if guard:
+        return guard
+    conn = get_db()
+    try:
+        found = acq_store.find_by_prop(conn, "outreach", [prop_id],
+                                       _acq_owner(), _acq_is_admin())
+        rec = (found.get(str(prop_id)) or [None])[0]
+        if not rec:
+            return jsonify({"error": "not found"}), 404
+        rec["archived"] = bool((request.get_json(silent=True) or {}).get("archived", True))
+        rec["updated_at"] = datetime.datetime.utcnow().isoformat()
+        saved = acq_store.put_object(conn, "outreach", rec,
+                                     rec.get("_owner_id") or _acq_owner())
+    finally:
+        conn.close()
+    return jsonify({"outreach": saved})
+
+
+@acq_bp.route("/api/acq/outreach/by-props", methods=["POST"])
+@_login_required
+def acq_outreach_by_props():
+    guard = _acq_guard()
+    if guard:
+        return guard
+    ids = (request.get_json(silent=True) or {}).get("prop_ids") or []
+    conn = get_db()
+    try:
+        found = acq_store.find_by_prop(conn, "outreach", ids,
+                                       _acq_owner(), _acq_is_admin())
+    finally:
+        conn.close()
+    return jsonify({"outreach": {k: v[0] for k, v in found.items() if v}})
+
+
+@acq_bp.route("/api/acq/outreach/pipeline")
+@_login_required
+def acq_outreach_pipeline():
+    """Everything currently in the outreach pipeline, newest movement first.
+
+    Terminal statuses are hidden unless asked for - the point of the list is
+    what still needs doing.
+    """
+    guard = _acq_guard()
+    if guard:
+        return guard
+    show_closed = request.args.get("include_closed", "0") == "1"
+    rows = _crud_list("outreach")
+    if not show_closed:
+        rows = [r for r in rows
+                if r.get("status") not in OUTREACH_OUT_OF_SCOPE and not r.get("archived")]
+    rows.sort(key=lambda r: r.get("updated_at") or r.get("created_at") or "", reverse=True)
+    return jsonify({"pipeline": rows, "statuses": OUTREACH_STATUSES,
+                    "methods": OUTREACH_METHODS})
+
+
+# ── Favourites ────────────────────────────────────────────────────────────
+
+@acq_bp.route("/api/acq/favorites", methods=["GET", "POST"])
+@_login_required
+def acq_favorites():
+    guard = _acq_guard()
+    if guard:
+        return guard
+    if request.method == "GET":
+        return jsonify({"favorites": _crud_list("favorite")})
+    obj, err = _crud_create("favorite", request.get_json(silent=True) or {}, ("prop_id",))
+    return err or (jsonify({"favorite": obj}), 201)
+
+
+@acq_bp.route("/api/acq/favorites/<fid>", methods=["DELETE"])
+@_login_required
+def acq_favorite_delete(fid):
+    guard = _acq_guard()
+    if guard:
+        return guard
+    ok = _crud_delete("favorite", fid)
+    return jsonify({"deleted": ok}), (200 if ok else 404)
+
+
+@acq_bp.route("/api/acq/favorites/by-props", methods=["POST"])
+@_login_required
+def acq_favorites_by_props():
+    guard = _acq_guard()
+    if guard:
+        return guard
+    ids = (request.get_json(silent=True) or {}).get("prop_ids") or []
+    conn = get_db()
+    try:
+        found = acq_store.find_by_prop(conn, "favorite", ids,
+                                       _acq_owner(), _acq_is_admin())
+    finally:
+        conn.close()
+    return jsonify({"favorites": {k: v[0] for k, v in found.items() if v}})
+
+
+# ── Drawn polygons ────────────────────────────────────────────────────────
+
+@acq_bp.route("/api/acq/polygons", methods=["GET", "POST"])
+@_login_required
+def acq_polygons():
+    guard = _acq_guard()
+    if guard:
+        return guard
+    if request.method == "GET":
+        return jsonify({"polygons": _crud_list("polygon")})
+    obj, err = _crud_create("polygon", request.get_json(silent=True) or {},
+                            ("name", "geometry"))
+    return err or (jsonify({"polygon": obj}), 201)
+
+
+@acq_bp.route("/api/acq/polygons/<poly_id>", methods=["PATCH", "DELETE"])
+@_login_required
+def acq_polygon_one(poly_id):
+    guard = _acq_guard()
+    if guard:
+        return guard
+    if request.method == "DELETE":
+        ok = _crud_delete("polygon", poly_id)
+        return jsonify({"deleted": ok}), (200 if ok else 404)
+    obj, err = _crud_patch("polygon", poly_id, request.get_json(silent=True) or {},
+                           ("name", "geometry", "notes", "color"))
+    return err or jsonify({"polygon": obj})
+
+
+# ── Tract pins and project assembly ───────────────────────────────────────
+
+@acq_bp.route("/api/acq/tract-pins/<pin_id>/folder", methods=["POST"])
+@_login_required
+def acq_tract_pin_folder(pin_id):
+    guard = _acq_guard()
+    if guard:
+        return guard
+    body = request.get_json(silent=True) or {}
+    obj, err = _crud_patch("tract_pin", pin_id, {"folder_id": body.get("folder_id")},
+                           ("folder_id",))
+    return err or jsonify({"pin": obj})
+
+
+@acq_bp.route("/api/acq/projects/<pid>/add-tracts", methods=["POST"])
+@_login_required
+def acq_project_add_tracts(pid):
+    """Add tracts to an existing project, skipping ones already on it."""
+    guard = _acq_guard()
+    if guard:
+        return guard
+    incoming = (request.get_json(silent=True) or {}).get("tracts") or []
+    conn = get_db()
+    try:
+        proj = acq_store.get_object(conn, "project", pid, _acq_owner(), _acq_is_admin())
+        if not proj:
+            return jsonify({"error": "project not found"}), 404
+        have = {str(t.get("prop_id") or "").strip() for t in proj.get("tracts") or []}
+        added = 0
+        for t in incoming:
+            pid_str = str(t.get("prop_id") or "").strip()
+            if not pid_str or pid_str in have:
+                continue
+            try:
+                ac = float(t.get("acres") or 0)
+            except (TypeError, ValueError):
+                ac = 0.0
+            proj.setdefault("tracts", []).append({
+                "prop_id": pid_str,
+                "county": (t.get("county") or "").strip(),
+                "owner_name": (t.get("owner_name") or "").strip(),
+                "acres": round(ac, 2),
+                "geometry": t.get("geometry") or None,
+            })
+            have.add(pid_str)
+            added += 1
+        proj["total_acres"] = round(
+            sum(float(x.get("acres") or 0) for x in proj.get("tracts") or []), 2)
+        # The cached analysis described a different set of tracts; leaving it
+        # would show yesterday's acreage against today's assemblage.
+        if added:
+            proj.pop("analysis_cache", None)
+        saved = acq_store.put_object(conn, "project", proj,
+                                     proj.get("_owner_id") or _acq_owner())
+    finally:
+        conn.close()
+    return jsonify({"project": saved, "added": added})
+
+
+@acq_bp.route("/api/acq/tracts/bulk-folder", methods=["POST"])
+@_login_required
+def acq_bulk_folder():
+    """Pin a batch of tracts into one folder in a single call."""
+    guard = _acq_guard()
+    if guard:
+        return guard
+    body = request.get_json(silent=True) or {}
+    folder_id = body.get("folder_id")
+    tracts = body.get("tracts") or []
+    conn = get_db()
+    made = 0
+    try:
+        for t in tracts:
+            pid_str = str(t.get("prop_id") or "").strip()
+            if not pid_str:
+                continue
+            acq_store.put_object(conn, "tract_pin", {
+                "prop_id": pid_str, "folder_id": folder_id,
+                "owner_name": t.get("owner_name"), "acres": t.get("acres"),
+                "county": t.get("county"), "geometry": t.get("geometry"),
+                "created_at": datetime.datetime.utcnow().isoformat(),
+            }, _acq_owner())
+            made += 1
+    finally:
+        conn.close()
+    return jsonify({"pinned": made})
+
+
+@acq_bp.route("/api/acq/tracts/bulk-pipeline", methods=["POST"])
+@_login_required
+def acq_bulk_pipeline():
+    """Open outreach records for a batch of tracts at one status."""
+    guard = _acq_guard()
+    if guard:
+        return guard
+    body = request.get_json(silent=True) or {}
+    status = body.get("status") or "lead"
+    valid = {v for v, _l, _c in OUTREACH_STATUSES}
+    if status not in valid:
+        return jsonify({"error": f"unknown status {status!r}",
+                        "valid": sorted(valid)}), 400
+    tracts = body.get("tracts") or []
+    conn = get_db()
+    made = skipped = 0
+    try:
+        existing = acq_store.find_by_prop(
+            conn, "outreach",
+            [str(t.get("prop_id") or "") for t in tracts],
+            _acq_owner(), _acq_is_admin())
+        for t in tracts:
+            pid_str = str(t.get("prop_id") or "").strip()
+            if not pid_str:
+                continue
+            if existing.get(pid_str):
+                skipped += 1          # already in the pipeline; don't reset it
+                continue
+            acq_store.put_object(conn, "outreach", {
+                "prop_id": pid_str, "status": status, "log": [],
+                "owner_name": t.get("owner_name"), "acres": t.get("acres"),
+                "county": t.get("county"),
+                "created_at": datetime.datetime.utcnow().isoformat(),
+            }, _acq_owner())
+            made += 1
+    finally:
+        conn.close()
+    return jsonify({"created": made, "already_in_pipeline": skipped})
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Corridors, imports and exports
+#
+# Ported from the standalone app. Corridor searches run over KMZ/KML boundary
+# imports; the export routes build the KML, Excel and PDF deliverables.
+# ══════════════════════════════════════════════════════════════════════════
+
+@acq_bp.route("/api/acq/last-search")
+def acq_api_last_search():
+    """Returns the last search the server processed (its tracts + meta) so the
+    main map page can restore results when the user comes back to it after
+    navigating away. The map page calls this on load when no ?focus_* param
+    is present. Single-user — fine for now since the app is per-user."""
+    from flask import jsonify
+    if not _last_search_cache.get("data"):
+        return jsonify({"ok": False, "reason": "no_search"})
+    return jsonify({
+        "ok":         True,
+        "layers":     _last_search_cache["data"],
+        "meta":       _last_search_cache["meta"],
+        "saved_at":   _last_search_cache.get("saved_at"),
+    })
+
+
+@acq_bp.route("/api/acq/tract-page-data/<prop_id>")
+@_login_required
+def acq_api_tract_page_data(prop_id):
+    """Single endpoint that gathers everything the tract page needs in one
+    parallel fetch: parcel geom from cache, HCAD live, outreach record, notes
+    thread. Elevation loads separately (it's slow).
+
+    Optional `?county=<name>` query param disambiguates Prop_ID collisions
+    across counties (188287 is a 2,362-ac Fort Bend ranch AND a 0.1-ac
+    Galveston home — caller passes county to get the right one)."""
+    pid = (prop_id or "").strip()
+    if not pid:
+        return jsonify({"error": "prop_id required"}), 400
+    county_hint = (request.args.get("county") or "").strip() or None
+
+    import acq_parcels as parcel_cache
+    uid = _current_user()["id"]
+
+    # Parallel fetches
+    def fetch_parcel():
+        # strict=True when caller passed a county hint: never silently return a
+        # different-county parcel (the root of the "wrong tract" bug — e.g.
+        # pid=14966 is Grimes 7-D Investments AND Fort Bend Medina Bello).
+        try: return parcel_cache.find_parcel_by_pid(pid, county=county_hint, strict=bool(county_hint))
+        except Exception: return None
+
+    def fetch_hcad():
+        try:
+            fc = arcgis_query(ENDPOINTS["hcad"], where=f"HCAD_NUM='{pid}'",
+                              out_fields="*", page_size=1, max_pages=1,
+                              return_geometry=False, parallel_pagination=False)
+            return fc["features"][0].get("properties") if fc.get("features") else None
+        except Exception:
+            return None
+
+    def fetch_mcad():
+        if not pid.isdigit():
+            return None
+        try:
+            fc = arcgis_query(ENDPOINTS["mcad"], where=f"PIN={int(pid)}",
+                              out_fields="*", page_size=1, max_pages=1,
+                              return_geometry=False, parallel_pagination=False)
+            return fc["features"][0].get("properties") if fc.get("features") else None
+        except Exception:
+            return None
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        f_parcel = pool.submit(fetch_parcel)
+        f_hcad   = pool.submit(fetch_hcad)
+        f_mcad   = pool.submit(fetch_mcad)
+        parcel, hcad, mcad = f_parcel.result(), f_hcad.result(), f_mcad.result()
+
+    # NOTE: don't 404 when there's no parcel/hcad/mcad. The drawer still needs
+    # to render with outreach + notes from storage (e.g. a Grimes record where
+    # we don't cache parcels). It will show "No parcel data available" in body
+    # while the header still has owner/county from the outreach record.
+
+    # Outreach + notes from storage (in-memory)
+    with _storage_lock:
+        s = _load_storage()
+        user_lookup = {u["id"]: u for u in s["users"]}
+
+    outreach = next((r for r in s.get("outreach", []) if r.get("prop_id") == pid), None)
+    if outreach:
+        out_obj = {k: v for k, v in outreach.items() if k != "log"}
+        log = []
+        for e in outreach.get("log", []) or []:
+            u = user_lookup.get(e.get("by"))
+            log.append({**e, "by_name": u.get("name") if u else "Unknown",
+                        "can_edit": e.get("by") == uid, "can_delete": e.get("by") == uid})
+        out_obj["log"] = log
+    else:
+        out_obj = None
+
+    notes = []
+    for n in s.get("notes", []):
+        if n.get("prop_id") == pid and (n.get("text") or "").strip():
+            u = user_lookup.get(n.get("owner_id"))
+            notes.append({"id": n.get("id"), "text": n.get("text", ""),
+                          "by": n.get("owner_id"),
+                          "by_name": u.get("name") if u else "Unknown",
+                          "at": n.get("created_at") or n.get("updated_at") or "",
+                          "can_delete": n.get("owner_id") == uid})
+    notes.sort(key=lambda e: e["at"] or "", reverse=True)
+
+    # Sources marker
+    sources = []
+    if hcad: sources.append("HCAD live (Harris)")
+    if mcad: sources.append("MCAD live (Montgomery)")
+    if parcel and not (hcad or mcad): sources.append("StratMap (cache)")
+
+    return jsonify({
+        "prop_id": pid,
+        "parcel": parcel,
+        "hcad": hcad,
+        "mcad": mcad,
+        "sources": sources,
+        "outreach": out_obj,
+        "notes": notes,
+        "outreach_statuses": [{"value": v, "label": l, "color": c} for v, l, c in OUTREACH_STATUSES],
+        "outreach_methods":  OUTREACH_METHODS,
+    })
+
+
+@acq_bp.route("/api/acq/search-corridors", methods=["POST"])
+@_login_required
+def acq_api_search_corridors():
+    """Run a single search across the UNION of multiple corridor saved searches.
+
+    Body:
+      • search_ids  — list of corridor search ids to combine (default: all of
+                      the current user's KMZ corridor searches)
+      • min_acres   — same as /api/search (default 300)
+      • max_acres   — same as /api/search (default 100000)
+      • group_by    — 'owner' or 'plat' (optional)
+      • label       — display label for the cached run (optional)
+
+    Returns the standard /api/search response (tracts + ancillary layers)
+    plus a `corridor_meta` field describing which corridors were combined.
+    """
+    from shapely.geometry import shape as shp_shape, mapping as shp_mapping
+    from shapely.ops import unary_union
+
+    body = request.get_json(force=True) or {}
+    uid = _current_user()["id"]
+    requested_ids = body.get("search_ids") or []
+    try:
+        min_acres = float(body.get("min_acres", 300))
+        max_acres = float(body.get("max_acres", 100000))
+    except (TypeError, ValueError) as e:
+        return jsonify({"error": f"bad acres: {e}"}), 400
+
+    # `buffer_miles` (optional) — when provided, every selected corridor is
+    # re-buffered AT RUNTIME from its stored centerline at this half-width
+    # before unioning. This lets the user drive the corridor width with the
+    # sidebar's "Radius" input — one knob to widen / narrow every corridor at
+    # once. No persistence; the stored polygon stays at its original width.
+    runtime_buffer_miles = None
+    if "buffer_miles" in body and body["buffer_miles"] not in (None, ""):
+        try:
+            runtime_buffer_miles = float(body["buffer_miles"])
+        except (TypeError, ValueError):
+            return jsonify({"error": "buffer_miles must be a number"}), 400
+        if not (0 < runtime_buffer_miles <= 50):
+            return jsonify({"error": "buffer_miles must be between 0 and 50"}), 400
+
+    with _storage_lock:
+        s = _load_storage()
+
+    all_corridors = [
+        x for x in s.get("searches", [])
+        if x.get("owner_id") == uid
+        and ((x.get("polygon") or {}).get("properties") or {}).get("source") == "kmz_corridor"
+    ]
+    if requested_ids:
+        wanted = set(requested_ids)
+        targets = [x for x in all_corridors if x["id"] in wanted]
+    else:
+        targets = all_corridors
+    if not targets:
+        return jsonify({"error": "no corridors selected"}), 400
+
+    geoms, used = [], []
+    for t in targets:
+        props = ((t.get("polygon") or {}).get("properties") or {})
+        centerline = props.get("centerline_coords")
+        effective_buffer = props.get("buffer_miles")
+        fresh_geom = None
+
+        # When a runtime buffer is requested AND we have the original centerline,
+        # re-buffer at the requested width — same UTM/metric math as import.
+        if runtime_buffer_miles is not None and centerline and len(centerline) >= 2:
+            try:
+                outer = _buffer_line_to_polygon(centerline,
+                                                 runtime_buffer_miles * 1609.34)
+                if outer:
+                    fresh_geom = {"type": "Polygon", "coordinates": [outer]}
+                    effective_buffer = runtime_buffer_miles
+            except Exception as e:
+                print(f"[corridor-search] runtime rebuffer failed for {t['id']}: {e}", flush=True)
+
+        g = fresh_geom or (t.get("polygon") or {}).get("geometry")
+        if not g:
+            continue
+        try:
+            geoms.append(shp_shape(g))
+            used.append({
+                "id":           t["id"],
+                "label":        t.get("label"),
+                "filename":     props.get("filename"),
+                "buffer_miles": effective_buffer,
+                "rebuffered":   fresh_geom is not None,
+            })
+        except Exception as e:
+            print(f"[corridor-search] bad geometry for {t['id']}: {e}", flush=True)
+    if not geoms:
+        return jsonify({"error": "no valid corridor geometries"}), 400
+
+    union = unary_union(geoms)
+    union_feature = {
+        "type": "Feature",
+        "geometry": shp_mapping(union),
+        "properties": {
+            "source": "corridor_union",
+            "corridor_count": len(used),
+            "corridor_ids":   [u["id"] for u in used],
+        },
+    }
+    centroid = union.centroid
+
+    if body.get("label"):
+        label = body["label"].strip()
+    elif runtime_buffer_miles is not None:
+        label = f"All {len(used)} corridors @ ±{runtime_buffer_miles:g}mi"
+    else:
+        label = f"All {len(used)} corridors"
+    group_by = (body.get("group_by") or "").strip().lower()
+    if group_by not in ("owner", "plat"):
+        group_by = None
+
+    try:
+        # tracts_only=True skips the 13 ancillary layer queries (flood, wetlands,
+        # pipelines, etc.) and use_hcad_overlay=False skips the per-tract HCAD
+        # live calls. Both are crushingly slow for a multi-corridor union polygon
+        # that spans hundreds of miles. Layers can be loaded per-tract via the
+        # focus-tract flow when the user clicks an individual tract. 5-10x speedup.
+        result = run_search(float(centroid.y), float(centroid.x), 0.0,
+                            min_acres, max_acres,
+                            polygon_geojson=union_feature,
+                            tracts_only=True,
+                            use_hcad_overlay=False)
+        annotate_tracts_with_enrichment(result["layers"])
+        _last_search_cache["data"] = result["layers"]
+        _last_search_cache["saved_at"] = time.time()
+        _last_search_cache["meta"] = {
+            "center": [float(centroid.y), float(centroid.x)], "radius_mi": 0,
+            "min_acres": min_acres, "max_acres": max_acres,
+            "polygon": union_feature,
+            "label": label,
+        }
+        _acq_log("search_corridors_union",
+                    {"corridor_count": len(used),
+                     "min_acres": min_acres, "max_acres": max_acres,
+                     "tracts": result["summary"]["tracts"]})
+        result["corridor_meta"] = {
+            "count":         len(used),
+            "corridors":     used,
+            "label":         label,
+            "buffer_miles":  runtime_buffer_miles,
+            "rebuffered":    runtime_buffer_miles is not None,
+        }
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@acq_bp.route("/api/acq/corridors-list", methods=["GET"])
+@_login_required
+def acq_api_corridors_list():
+    """Lightweight metadata for the Corridors page tab strip — no search runs.
+    Returns one entry per saved corridor for the current user."""
+    uid = _current_user()["id"]
+    with _storage_lock:
+        s = _load_storage()
+    out = []
+    for x in s.get("searches", []):
+        if x.get("owner_id") != uid:
+            continue
+        props = ((x.get("polygon") or {}).get("properties") or {})
+        if props.get("source") != "kmz_corridor":
+            continue
+        out.append({
+            "id":               x["id"],
+            "label":            x.get("label"),
+            "filename":         props.get("filename"),
+            "buffer_miles":     props.get("buffer_miles"),
+            "centerline_pts":   len(props.get("centerline_coords") or []),
+            "has_centerline":   bool(props.get("centerline_coords")),
+            "saved_at":         x.get("saved_at"),
+        })
+    return jsonify({"corridors": out, "count": len(out)})
+
+
+@acq_bp.route("/api/acq/corridor/<sid>/tracts", methods=["POST"])
+@_login_required
+def acq_api_corridor_tracts(sid):
+    """Run a search inside ONE corridor and return enriched tracts.
+
+    Each tract is annotated with `_outreach_status`, `_outreach_next_action`,
+    `_outreach_next_action_date`, `_folder_names`, `_is_favorite`, `_has_notes`
+    so the Corridors page can display indicators and offer actions without a
+    second round-trip.
+
+    Body: { buffer_miles?, min_acres?, max_acres?, force? }
+    Pass `force=true` to bypass the per-user / per-args cache.
+    """
+    from shapely.geometry import shape as shp_shape, mapping as shp_mapping
+    body = request.get_json(force=True) or {}
+    uid = _current_user()["id"]
+
+    try:
+        min_acres = float(body.get("min_acres", 50))
+        max_acres = float(body.get("max_acres", 3000))
+    except (TypeError, ValueError):
+        return jsonify({"error": "bad acres"}), 400
+
+    runtime_buffer_miles = None
+    if "buffer_miles" in body and body["buffer_miles"] not in (None, ""):
+        try:
+            runtime_buffer_miles = float(body["buffer_miles"])
+        except (TypeError, ValueError):
+            return jsonify({"error": "bad buffer_miles"}), 400
+        if not (0 < runtime_buffer_miles <= 50):
+            return jsonify({"error": "buffer_miles must be 0–50"}), 400
+
+    force = bool(body.get("force"))
+    cache_key = (uid, sid, runtime_buffer_miles, min_acres, max_acres)
+    if not force:
+        cached = _CORRIDOR_TRACTS_CACHE.get(cache_key)
+        if cached and (time.time() - cached["t"]) < _CORRIDOR_CACHE_TTL:
+            cached["data"]["from_cache"] = True
+            cached["data"]["cached_age_seconds"] = int(time.time() - cached["t"])
+            return jsonify(cached["data"])
+
+    # Load the corridor
+    with _storage_lock:
+        s = _load_storage()
+    corridor = next((x for x in s.get("searches", [])
+                     if x["id"] == sid and x.get("owner_id") == uid), None)
+    if not corridor:
+        return jsonify({"error": "corridor not found"}), 404
+    props = ((corridor.get("polygon") or {}).get("properties") or {})
+    if props.get("source") != "kmz_corridor":
+        return jsonify({"error": "not a corridor search"}), 400
+
+    # Re-buffer if requested
+    centerline = props.get("centerline_coords")
+    polygon_feature = corridor["polygon"]
+    effective_buffer = props.get("buffer_miles")
+    if runtime_buffer_miles is not None and centerline and len(centerline) >= 2:
+        outer = _buffer_line_to_polygon(centerline, runtime_buffer_miles * 1609.34)
+        if outer:
+            polygon_feature = {
+                "type": "Feature",
+                "geometry": {"type": "Polygon", "coordinates": [outer]},
+                "properties": {**props, "buffer_miles": runtime_buffer_miles},
+            }
+            effective_buffer = runtime_buffer_miles
+
+    # Run search
+    geom = shp_shape(polygon_feature["geometry"])
+    c = geom.centroid
+    try:
+        # For the corridors page we skip BOTH the ancillary layer queries
+        # AND the HCAD/MCAD live overlays. The overlays make per-tract HTTP
+        # calls (hundreds-to-thousands per corridor) and the corridors view
+        # only needs owner+acres for triage — StratMap's annual data is fine.
+        # Users who need fresh owner data can click "Show on map" or "Full
+        # tract page" which do the live HCAD lookup on demand.
+        result = run_search(float(c.y), float(c.x), 0.0,
+                            min_acres, max_acres, polygon_geojson=polygon_feature,
+                            tracts_only=True, use_hcad_overlay=False)
+        annotate_tracts_with_enrichment(result["layers"])
+    except Exception as e:
+        return jsonify({"error": f"search failed: {e}"}), 500
+
+    tracts_fc = result["layers"]["tracts"]
+    tract_features = tracts_fc.get("features") or []
+
+    # ---- Enrichment: outreach + folder + favorite + notes lookups ----
+    user_lookup = {u["id"]: u for u in s.get("users", [])}
+    outreach_by_pid = {}
+    for o in s.get("outreach", []):
+        pid = o.get("prop_id")
+        if pid:
+            outreach_by_pid[pid] = o
+
+    notes_pids = set()
+    for n in s.get("notes", []):
+        if (n.get("text") or "").strip() and n.get("prop_id"):
+            notes_pids.add(n["prop_id"])
+
+    fav_pids = set()
+    for f in s.get("favorites", []):
+        if f.get("owner_id") == uid and f.get("prop_id"):
+            fav_pids.add(f["prop_id"])
+
+    # Folders this user owns OR is shared with — map prop_id -> [folder names]
+    folder_lookup = {fld["id"]: fld for fld in s.get("folders", [])}
+    pin_folders_by_pid = {}
+    for pin in s.get("tract_pins", []):
+        pid = pin.get("prop_id")
+        if not pid: continue
+        fid = pin.get("folder_id")
+        fld = folder_lookup.get(fid) if fid else None
+        if fld:
+            pin_folders_by_pid.setdefault(pid, []).append(fld.get("name") or "(folder)")
+        else:
+            pin_folders_by_pid.setdefault(pid, []).append("(loose pin)")
+
+    # Stamp each tract
+    for f in tract_features:
+        pid = str((f.get("properties") or {}).get("Prop_ID") or "")
+        p = f["properties"]
+        out = outreach_by_pid.get(pid)
+        if out:
+            p["_outreach_status"]            = out.get("status") or "lead"
+            p["_outreach_next_action"]       = out.get("next_action")
+            p["_outreach_next_action_date"]  = out.get("next_action_date")
+            p["_outreach_broker"]            = out.get("broker_name")
+            p["_outreach_log_count"]         = len(out.get("log") or [])
+        else:
+            p["_outreach_status"] = None
+        p["_folder_names"] = pin_folders_by_pid.get(pid, [])
+        p["_is_favorite"]  = pid in fav_pids
+        p["_has_notes"]    = pid in notes_pids
+
+    # ---- Summary KPIs ----
+    total_acres = sum((f["properties"].get("Acres") or 0) for f in tract_features)
+    counties = {}
+    statuses = {}
+    in_pipeline = 0
+    closed = 0
+    untouched = 0
+    for f in tract_features:
+        p = f["properties"]
+        c2 = p.get("_county") or "Unknown"
+        counties[c2] = counties.get(c2, 0) + 1
+        st = p.get("_outreach_status")
+        if st:
+            in_pipeline += 1
+            statuses[st] = statuses.get(st, 0) + 1
+            if st == "closed":
+                closed += 1
+        if (not p.get("_outreach_status")) and (not p.get("_has_notes")) \
+                and (not p.get("_is_favorite")) and not p.get("_folder_names"):
+            untouched += 1
+    top_counties = sorted(counties.items(), key=lambda kv: -kv[1])[:3]
+
+    response = {
+        "corridor": {
+            "id":               corridor["id"],
+            "label":            corridor.get("label"),
+            "filename":         props.get("filename"),
+            "buffer_miles":     effective_buffer,
+            "rebuffered":       runtime_buffer_miles is not None,
+            "polygon":          polygon_feature,
+        },
+        "tracts":  tract_features,
+        "summary": {
+            "tracts":       len(tract_features),
+            "total_acres":  round(total_acres, 1),
+            "avg_acres":    round(total_acres / len(tract_features), 1) if tract_features else 0,
+            "in_pipeline":  in_pipeline,
+            "closed":       closed,
+            "untouched":    untouched,
+            "counties":     [{"name": n, "count": c2} for n, c2 in top_counties],
+            "statuses":     statuses,
+            "min_acres":    min_acres,
+            "max_acres":    max_acres,
+            "truncated":    result.get("summary", {}).get("truncated", False),
+        },
+        "from_cache":         False,
+        "cached_age_seconds": 0,
+    }
+    _CORRIDOR_TRACTS_CACHE[cache_key] = {"t": time.time(), "data": response}
+    # Trim cache if it gets too big
+    if len(_CORRIDOR_TRACTS_CACHE) > 100:
+        oldest = sorted(_CORRIDOR_TRACTS_CACHE.items(), key=lambda kv: kv[1]["t"])[:20]
+        for k, _ in oldest:
+            _CORRIDOR_TRACTS_CACHE.pop(k, None)
+    return jsonify(response)
+
+
+@acq_bp.route("/api/acq/cache/bootstrap", methods=["POST"])
+@_login_required
+def acq_api_cache_bootstrap():
+    """Trigger a (re)bootstrap of one or more counties in the background.
+    Body: {"counties": ["48201", ...] or "all"}.  Returns immediately; the
+    actual work runs on a thread — poll /api/cache/status for progress.
+    """
+    import acq_parcels as parcel_cache
+    body = request.get_json(force=True) or {}
+    targets = body.get("counties")
+    if targets == "all" or not targets:
+        target_pairs = parcel_cache.HOUSTON_METRO_COUNTIES
+    else:
+        wanted = set(targets)
+        target_pairs = [(f, n) for f, n in parcel_cache.HOUSTON_METRO_COUNTIES if f in wanted]
+    if not target_pairs:
+        return jsonify({"error": "No valid county FIPS in request"}), 400
+
+    if _cache_bootstrap_status["running"]:
+        return jsonify({"error": "A cache bootstrap is already running",
+                        "in_progress": dict(_cache_bootstrap_status)}), 409
+
+    def _run():
+        with _cache_bootstrap_lock:
+            _cache_bootstrap_status.update({"running": True, "pct": 0, "msg": "Starting…"})
+            try:
+                for fips, name in target_pairs:
+                    _cache_bootstrap_status.update({"county": name, "pct": 0,
+                                                     "msg": f"Bootstrapping {name}…"})
+                    def _prog(pct, msg):
+                        _cache_bootstrap_status.update({"pct": pct, "msg": msg})
+                    try:
+                        parcel_cache.bootstrap_county(fips, name, _prog)
+                    except Exception as e:
+                        _cache_bootstrap_status.update({"msg": f"{name}: ERROR {e}"})
+                        print(f"[cache] bootstrap of {name} failed: {e}", flush=True)
+                _cache_bootstrap_status.update({"running": False, "county": None,
+                                                  "pct": 100, "msg": "All requested counties done."})
+            except Exception as e:
+                _cache_bootstrap_status.update({"running": False, "msg": f"FATAL: {e}"})
+
+    threading.Thread(target=_run, name="cache-bootstrap", daemon=True).start()
+    _acq_log("cache_bootstrap", {"counties": [n for _, n in target_pairs]})
+    return jsonify({"started": True,
+                    "counties": [{"fips": f, "name": n} for f, n in target_pairs]})
+
+
+@acq_bp.route("/api/acq/export/<fmt>")
+@_login_required
+def acq_api_export(fmt):
+    if not _last_search_cache["data"]:
+        return jsonify({"error": "No search run yet."}), 400
+    tracts = _last_search_cache["data"]["tracts"]
+    meta = _last_search_cache["meta"]
+    label = meta["label"]
+    # Optional: filter to a subset of Prop_IDs (bulk-export from the tract list)
+    prop_ids_param = (request.args.get("prop_ids") or "").strip()
+    if prop_ids_param:
+        wanted = set(p for p in prop_ids_param.split(",") if p)
+        if wanted:
+            tracts = {
+                "type": "FeatureCollection",
+                "features": [f for f in tracts.get("features", [])
+                             if str((f.get("properties") or {}).get("Prop_ID") or "") in wanted],
+            }
+            label = (label or "search") + f"_selected{len(tracts['features'])}"
+    if fmt == "kml":
+        buf = build_kml(tracts)
+        return send_file(buf, mimetype="application/vnd.google-earth.kml+xml",
+                          as_attachment=True, download_name=_export_filename(label, "kml"))
+    if fmt == "kmz":
+        buf = build_kmz(tracts)
+        return send_file(buf, mimetype="application/vnd.google-earth.kmz",
+                          as_attachment=True, download_name=_export_filename(label, "kmz"))
+    if fmt == "xlsx":
+        buf = build_excel(tracts)
+        return send_file(buf, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                          as_attachment=True, download_name=_export_filename(label, "xlsx"))
+    if fmt == "pdf":
+        buf = build_pdf(tracts, meta)
+        return send_file(buf, mimetype="application/pdf",
+                          as_attachment=True, download_name=_export_filename(label, "pdf"))
+    return jsonify({"error": "Unknown format"}), 400
+
+
+@acq_bp.route("/api/acq/outreach-campaign/<folder_id>")
+@_login_required
+def acq_api_outreach_campaign(folder_id):
+    """Build a multi-page PDF that contains a detailed summary for every
+    pinned tract in the folder. One page per tract with map + property block
+    + outreach log + notes thread, preceded by a cover page with overall
+    folder stats and a table of contents.
+
+    Enriches each tract from the parcel cache + a live HCAD/MCAD overlay so
+    ownership data is current; rendering is parallelized for speed."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.platypus import (SimpleDocTemplate, Table, TableStyle, Paragraph,
+                                       Spacer, Image as RLImage, PageBreak)
+    import acq_parcels as parcel_cache
+
+    with _storage_lock:
+        s = _load_storage()
+    folder = next((f for f in s.get("folders", []) if f.get("id") == folder_id), None)
+    if not folder:
+        return jsonify({"error": "folder not found"}), 404
+    pins = [p for p in s.get("tract_pins", []) if p.get("folder_id") == folder_id]
+    if not pins:
+        return jsonify({"error": "no tracts in this folder"}), 404
+
+    outreach_by_pid = {r.get("prop_id"): r for r in s.get("outreach", [])}
+    # All notes per prop_id (newest first) so each tract section can show its full thread.
+    notes_by_pid = {}
+    for n in sorted(s.get("notes", []),
+                    key=lambda n: n.get("created_at") or n.get("updated_at") or "",
+                    reverse=True):
+        if (n.get("text") or "").strip() and n.get("prop_id"):
+            notes_by_pid.setdefault(n["prop_id"], []).append(n)
+    user_lookup = {u["id"]: u for u in s.get("users", [])}
+
+    # ---- Enrich each pin in parallel: parcel-cache lookup, then HCAD/MCAD live overlay
+    def enrich(p):
+        pid = str(p.get("prop_id") or "")
+        if not pid:
+            return None
+        try:
+            feat = parcel_cache.find_parcel_by_pid(pid)
+        except Exception as e:
+            print(f"[campaign] cache lookup failed for {pid}: {e}", flush=True)
+            feat = None
+        if feat:
+            fc = {"type": "FeatureCollection", "features": [feat]}
+            try: hcad_live_overlay(fc)
+            except Exception as e: print(f"[campaign] hcad overlay failed for {pid}: {e}", flush=True)
+            try: mcad_live_overlay(fc)
+            except Exception as e: print(f"[campaign] mcad overlay failed for {pid}: {e}", flush=True)
+        else:
+            # No cache hit — fall back to whatever's stored on the pin so the
+            # tract still shows up in the PDF (just without a map).
+            feat = {"type": "Feature", "geometry": None, "properties": {}}
+        props = feat.setdefault("properties", {})
+        # Backfill from pin for any fields the cache didn't have
+        for pin_key, prop_key in [("owner_name", "OWNER_NAME"), ("mail_addr", "MAIL_ADDR"),
+                                   ("site_addr", "SITUS_ADDR"), ("county", "_county"),
+                                   ("acres", "Acres")]:
+            if not props.get(prop_key) and p.get(pin_key):
+                props[prop_key] = p[pin_key]
+        if not props.get("Prop_ID"):
+            props["Prop_ID"] = pid
+        return feat
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        features = [f for f in pool.map(enrich, pins) if f]
+
+    # ---- Pre-render every tract's map snippet in parallel (network-bound tile fetches)
+    def render_map(f):
+        if not f.get("geometry"):
+            return None
+        try:
+            tracts_fc = {"type": "FeatureCollection", "features": [f]}
+            return _build_search_map_png(tracts_fc, {"label": folder["name"]},
+                                          width=900, height=340)
+        except Exception as e:
+            print(f"[campaign] map render failed: {e}", flush=True)
+            return None
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        map_pngs = list(pool.map(render_map, features))
+
+    # ---- Build the PDF
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=letter, leftMargin=0.45*inch,
+                            rightMargin=0.45*inch, topMargin=0.45*inch, bottomMargin=0.45*inch)
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("title", parent=styles["Heading1"], fontName="Helvetica-Bold",
+                                  fontSize=22, textColor=colors.HexColor("#13344E"), spaceAfter=2)
+    folder_style = ParagraphStyle("folder", parent=styles["Normal"], fontName="Helvetica-Bold",
+                                   fontSize=14, textColor=colors.HexColor("#F25929"), spaceAfter=14)
+    body_style = ParagraphStyle("body", parent=styles["Normal"], fontName="Helvetica",
+                                 fontSize=9, textColor=colors.HexColor("#13344E"), leading=11)
+    body_muted = ParagraphStyle("muted", parent=body_style, textColor=colors.HexColor("#7A828D"))
+    cover_h_style = ParagraphStyle("ch", parent=styles["Normal"], fontName="Helvetica-Bold",
+                                    fontSize=11, textColor=colors.HexColor("#F25929"), spaceBefore=12,
+                                    spaceAfter=8, leading=14)
+    tract_title_style = ParagraphStyle("ttitle", parent=styles["Heading1"], fontName="Helvetica-Bold",
+                                        fontSize=15, textColor=colors.HexColor("#13344E"), spaceAfter=2)
+    tract_sub_style = ParagraphStyle("tsub", parent=styles["Normal"], fontName="Helvetica",
+                                      fontSize=9, textColor=colors.HexColor("#58595B"), spaceAfter=8)
+    section_h_style = ParagraphStyle("sh", parent=styles["Normal"], fontName="Helvetica-Bold",
+                                      fontSize=10, textColor=colors.HexColor("#F25929"), spaceBefore=8,
+                                      spaceAfter=4, leading=12)
+
+    story = []
+
+    # ===== Cover page =====
+    story.append(Paragraph("Outreach Campaign", title_style))
+    story.append(Paragraph(folder["name"], folder_style))
+
+    total_acres = sum((f.get("properties") or {}).get("Acres", 0) or 0 for f in features)
+    counties = sorted({(f.get("properties") or {}).get("_county") for f in features
+                       if (f.get("properties") or {}).get("_county")})
+    story.append(Paragraph(
+        f"<b>{len(features)}</b> tracts &nbsp;·&nbsp; "
+        f"<b>{total_acres:,.0f}</b> acres total &nbsp;·&nbsp; "
+        f"{len(counties)} {'county' if len(counties) == 1 else 'counties'}"
+        f"{(' (' + ', '.join(counties[:5]) + ')') if counties else ''}"
+        f" &nbsp;·&nbsp; "
+        f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')}", body_style))
+
+    # Status breakdown
+    status_counts = {}
+    for f in features:
+        pid = (f.get("properties") or {}).get("Prop_ID", "")
+        o = outreach_by_pid.get(pid)
+        st_v = (o.get("status") if o else None) or "lead"
+        status_counts[st_v] = status_counts.get(st_v, 0) + 1
+    if status_counts:
+        story.append(Paragraph("STATUS BREAKDOWN", cover_h_style))
+        sb_rows = [["Status", "Tracts"]]
+        for v, l, _ in OUTREACH_STATUSES:
+            ct = status_counts.get(v, 0)
+            if ct:
+                sb_rows.append([l, str(ct)])
+        sb = Table(sb_rows, colWidths=[3.0*inch, 1.0*inch])
+        sb.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#13344E")),
+            ("TEXTCOLOR",  (0, 0), (-1, 0), colors.white),
+            ("FONTNAME",   (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE",   (0, 0), (-1, -1), 9),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F1F2F3")]),
+            ("GRID",       (0, 0), (-1, -1), 0.25, colors.HexColor("#D1D3D4")),
+            ("LEFTPADDING",(0, 0), (-1, -1), 6),
+            ("ALIGN",      (1, 0), (1, -1), "RIGHT"),
+        ]))
+        story.append(sb)
+
+    # Table of contents
+    story.append(Paragraph("TRACTS IN THIS CAMPAIGN", cover_h_style))
+    toc_rows = [["#", "Owner / property", "Acres", "County", "Status"]]
+    for i, f in enumerate(features, start=1):
+        props = f.get("properties") or {}
+        pid = props.get("Prop_ID", "")
+        o = outreach_by_pid.get(pid)
+        st_label = next((l for v, l, _ in OUTREACH_STATUSES if v == (o.get("status") if o else None)),
+                        "—")
+        owner = (props.get("OWNER_NAME") or "").strip()
+        if not owner or owner.upper() in ("?", "UNKNOWN OWNER", "(NO OWNER)"):
+            # Fall back to site/mailing address so the row says something useful
+            owner = (props.get("SITUS_ADDR") or props.get("MAIL_ADDR") or f"Prop ID {pid}")
+        owner = owner[:48]
+        acres = props.get("Acres", 0) or 0
+        toc_rows.append([str(i), owner, f"{acres:,.1f}",
+                         (props.get("_county") or "")[:14], st_label])
+    toc = Table(toc_rows, colWidths=[0.4*inch, 4.0*inch, 0.8*inch, 1.0*inch, 1.1*inch])
+    toc.setStyle(TableStyle([
+        ("BACKGROUND",     (0, 0), (-1, 0), colors.HexColor("#13344E")),
+        ("TEXTCOLOR",      (0, 0), (-1, 0), colors.white),
+        ("FONTNAME",       (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE",       (0, 0), (-1, -1), 9),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F1F2F3")]),
+        ("GRID",           (0, 0), (-1, -1), 0.25, colors.HexColor("#D1D3D4")),
+        ("VALIGN",         (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING",    (0, 0), (-1, -1), 4),
+        ("ALIGN",          (2, 1), (2, -1), "RIGHT"),
+        ("ALIGN",          (0, 0), (0, -1), "CENTER"),
+    ]))
+    story.append(toc)
+
+    # ===== Per-tract pages =====
+    def kv(label, value):
+        return [Paragraph(f"<b>{label}</b>", body_style),
+                Paragraph(str(value) if value not in (None, "", 0) else "—", body_style)]
+
+    def col_table(rows):
+        t = Table(rows, colWidths=[1.2*inch, 2.4*inch])
+        t.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+            ("TOPPADDING", (0, 0), (-1, -1), 1),
+        ]))
+        return t
+
+    for i, f in enumerate(features, start=1):
+        story.append(PageBreak())
+        props = f.get("properties") or {}
+        pid = props.get("Prop_ID", "")
+        owner = (props.get("OWNER_NAME") or "").strip()
+        owner_display = owner if (owner and owner.upper() not in ("?", "UNKNOWN OWNER", "(NO OWNER)")) \
+            else (props.get("SITUS_ADDR") or props.get("MAIL_ADDR") or f"Prop ID {pid}")
+        acres = props.get("Acres", 0) or 0
+        county = props.get("_county") or ""
+
+        story.append(Paragraph(f"<font color='#7A828D'>#{i}</font>&nbsp;&nbsp;{owner_display}",
+                               tract_title_style))
+        story.append(Paragraph(
+            f"<b>{acres:,.1f} ac</b> &nbsp;·&nbsp; "
+            f"{county + ' County' if county else 'County —'} &nbsp;·&nbsp; "
+            f"Prop ID {pid}",
+            tract_sub_style))
+
+        # Map snippet (skip if no geometry — falls through with no error)
+        png = map_pngs[i - 1] if i - 1 < len(map_pngs) else None
+        if png:
+            img = RLImage(io.BytesIO(png), width=7.4*inch, height=2.8*inch)
+            img.hAlign = "CENTER"
+            story.append(img)
+            story.append(Spacer(1, 4))
+        else:
+            story.append(Paragraph(
+                "<i>No parcel geometry on file — map omitted.</i>", body_muted))
+            story.append(Spacer(1, 4))
+
+        # Two-column property block
+        mkt   = props.get("MARKET_VAL") or props.get("total_market_val")
+        appr  = props.get("total_appraised_val")
+        taxv  = props.get("tax_value")
+        since = props.get("_owner_since") or "—"
+        src   = _tract_source_label(props)
+
+        left = [
+            kv("Owner",         owner or "(no owner on file)"),
+            kv("Mailing",       props.get("MAIL_ADDR") or ""),
+            kv("Site address",  props.get("SITUS_ADDR") or "(no street address)"),
+            kv("Legal desc",    (props.get("LEGAL_DESC") or "")[:120]),
+            kv("County",        county),
+            kv("Acres",         f"{acres:,.1f}"),
+        ]
+        right = [
+            kv("Source",        src),
+            kv("Owner since",   since),
+            kv("Market value",  f"${mkt:,.0f}" if mkt else "—"),
+            kv("Appraised",     f"${appr:,.0f}" if appr else "—"),
+            kv("Taxable",       f"${taxv:,.0f}" if taxv else "—"),
+            kv("Flood %",       props.get("_flood_pct", "—")),
+        ]
+        two_col = Table([[col_table(left), col_table(right)]],
+                        colWidths=[3.9*inch, 3.9*inch])
+        two_col.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+        story.append(two_col)
+
+        # Outreach block
+        o = outreach_by_pid.get(pid)
+        if o:
+            status = o.get("status", "lead")
+            status_label = next((l for v, l, _ in OUTREACH_STATUSES if v == status), status)
+            story.append(Paragraph(f"OUTREACH — {status_label.upper()}", section_h_style))
+            meta_bits = []
+            if o.get("broker_name"): meta_bits.append(f"Broker: <b>{o['broker_name']}</b>")
+            if o.get("next_action"):
+                bit = f"Next: <b>{o['next_action']}</b>"
+                if o.get("next_action_date"): bit += f" by {o['next_action_date']}"
+                meta_bits.append(bit)
+            if meta_bits:
+                story.append(Paragraph(" &nbsp;·&nbsp; ".join(meta_bits), body_style))
+            log = (o.get("log") or [])[-5:]   # last 5 entries
+            for e in reversed(log):
+                who = user_lookup.get(e.get("by"))
+                who_name = who["name"] if who else "Someone"
+                when = (e.get("at") or "")[:16].replace("T", " ")
+                story.append(Paragraph(
+                    f"<font color='#9a9a9a'>[{when} · {who_name} · {e.get('method','')}]</font> "
+                    f"{(e.get('notes','') or '')[:280]}",
+                    body_style))
+        else:
+            story.append(Paragraph("OUTREACH — NOT STARTED", section_h_style))
+            story.append(Paragraph("<i>No outreach record yet for this tract.</i>", body_muted))
+
+        # Notes thread
+        tract_notes = notes_by_pid.get(pid, [])
+        if tract_notes:
+            story.append(Paragraph(f"NOTES &nbsp; <font color='#7A828D'>({len(tract_notes)} entries — newest first)</font>",
+                                   section_h_style))
+            for n in tract_notes[:6]:   # cap at 6 entries to keep PDF compact
+                u = user_lookup.get(n.get("owner_id"))
+                who = u.get("name") if u else "?"
+                when = (n.get("created_at") or n.get("updated_at") or "")[:16].replace("T", " ")
+                story.append(Paragraph(
+                    f"<font color='#9a9a9a'>[{when} · {who}]</font> "
+                    f"{(n.get('text') or '')[:500]}",
+                    body_style))
+            if len(tract_notes) > 6:
+                story.append(Paragraph(
+                    f"<i>… {len(tract_notes) - 6} older note(s) omitted. Open the tract in-app for the full thread.</i>",
+                    body_muted))
+
+    doc.build(story)
+    buf.seek(0)
+    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in folder["name"])
+    fname = f"campaign_{safe}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+    _acq_log("export_outreach_campaign",
+                {"folder_id": folder_id, "tracts": len(features)})
+    return send_file(buf, mimetype="application/pdf",
+                      as_attachment=True, download_name=fname)
+
+
+@acq_bp.route("/api/acq/import-boundary", methods=["POST"])
+@_login_required
+def acq_api_import_boundary():
+    """Accept a .kmz or .kml upload. Returns a GeoJSON Feature containing
+    a Polygon or MultiPolygon built from the file's polygons / closed paths."""
+    f = request.files.get("file")
+    if f is None:
+        return jsonify({"error": "no file uploaded (form field: 'file')"}), 400
+    raw = f.read()
+    if not raw:
+        return jsonify({"error": "uploaded file is empty"}), 400
+
+    # KMZ files start with the ZIP magic bytes 'PK'
+    if raw[:2] == b"PK":
+        import zipfile
+        try:
+            zf = zipfile.ZipFile(io.BytesIO(raw))
+        except zipfile.BadZipFile:
+            return jsonify({"error": "file looks like a KMZ but is not a valid zip"}), 400
+        kml_names = [n for n in zf.namelist() if n.lower().endswith(".kml")]
+        if not kml_names:
+            return jsonify({"error": "KMZ has no .kml file inside"}), 400
+        # Prefer doc.kml if present; otherwise first .kml
+        target = "doc.kml" if "doc.kml" in kml_names else kml_names[0]
+        kml_bytes = zf.read(target)
+    else:
+        kml_bytes = raw
+
+    try:
+        polygons = _kml_to_polygons(kml_bytes)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    if not polygons:
+        return jsonify({"error": "No polygons (or closed paths) found in this file. "
+                                  "Make sure your KMZ contains at least one Polygon, "
+                                  "or a Path/LineString whose first and last points coincide."}), 400
+
+    if len(polygons) == 1:
+        geom = {"type": "Polygon", "coordinates": polygons[0]}
+    else:
+        # MultiPolygon's coordinates is a list of polygon-coordinate-arrays
+        geom = {"type": "MultiPolygon", "coordinates": polygons}
+
+    _acq_log("import_boundary", {"filename": f.filename, "polygons": len(polygons)})
+    return jsonify({
+        "type": "Feature",
+        "geometry": geom,
+        "properties": {"source": "kmz_import", "filename": f.filename, "polygon_count": len(polygons)},
+    })
+
+
+@acq_bp.route("/api/acq/import-corridors", methods=["POST"])
+@_login_required
+def acq_api_import_corridors():
+    """Bulk import multiple KMZ/KML files. Each polygon in a file becomes a
+    saved search as-is; each OPEN LineString gets buffered by `buffer_miles`
+    (default 1.0 mi on each side) and saved as a corridor search. Returns a
+    list of created searches plus any per-file errors.
+
+    Form fields:
+      • files         — one or more file uploads (KMZ or KML)
+      • buffer_miles  — half-width of the corridor in miles (default 1.0)
+      • folder_id     — optional folder to drop the new searches into
+    """
+    files = request.files.getlist("files")
+    if not files:
+        return jsonify({"error": "no files uploaded (form field: 'files')"}), 400
+    try:
+        buffer_miles = float(request.form.get("buffer_miles", "1.0"))
+    except ValueError:
+        buffer_miles = 1.0
+    if not (0 < buffer_miles <= 50):
+        return jsonify({"error": "buffer_miles must be between 0 and 50"}), 400
+    buffer_m = buffer_miles * 1609.34
+    folder_id = request.form.get("folder_id") or None
+
+    # `replace=1` form field overrides the default dedupe behavior — when set,
+    # any existing corridor whose source filename matches an incoming file is
+    # deleted first, then the new one is created with the user's current buffer.
+    replace_existing = (request.form.get("replace", "0") == "1")
+
+    uid = _current_user()["id"]
+    imported = []
+    skipped  = []
+    errors   = []
+
+    # Index existing corridors by source filename (per user) so we can dedupe.
+    from shapely.geometry import shape as shp_shape
+    with _storage_lock:
+        s = _load_storage()
+        existing_by_file = {}
+        for ex in s.get("searches", []):
+            if ex.get("owner_id") != uid: continue
+            ep = (ex.get("polygon") or {}).get("properties") or {}
+            if ep.get("source") == "kmz_corridor" and ep.get("filename"):
+                existing_by_file.setdefault(ep["filename"], []).append(ex)
+
+        for f in files:
+            raw = f.read()
+            if not raw:
+                errors.append({"file": f.filename, "error": "empty file"}); continue
+
+            # ---- Dedupe check: if this filename already has a corridor, either
+            # skip it (default) or replace it (when replace=1 was passed).
+            already = existing_by_file.get(f.filename, [])
+            if already and not replace_existing:
+                skipped.append({
+                    "file": f.filename,
+                    "reason": f"already imported as {len(already)} corridor(s); pass replace=1 to overwrite, or use the buffer pill to change width in place",
+                    "existing_ids": [ex["id"] for ex in already],
+                })
+                continue
+            if already and replace_existing:
+                ids = {ex["id"] for ex in already}
+                s["searches"] = [x for x in s["searches"] if x["id"] not in ids]
+                # also drop them from our local index so subsequent files in this
+                # request don't re-trigger the same path
+                existing_by_file[f.filename] = []
+            if raw[:2] == b"PK":
+                import zipfile
+                try:
+                    zf = zipfile.ZipFile(io.BytesIO(raw))
+                except zipfile.BadZipFile:
+                    errors.append({"file": f.filename, "error": "not a valid KMZ"}); continue
+                kml_names = [n for n in zf.namelist() if n.lower().endswith(".kml")]
+                if not kml_names:
+                    errors.append({"file": f.filename, "error": "no .kml inside KMZ"}); continue
+                target = "doc.kml" if "doc.kml" in kml_names else kml_names[0]
+                kml_bytes = zf.read(target)
+            else:
+                kml_bytes = raw
+
+            try:
+                polygons = _kml_to_polygons(kml_bytes)
+                lines    = _kml_to_linestrings(kml_bytes)
+            except ValueError as e:
+                errors.append({"file": f.filename, "error": str(e)}); continue
+
+            if not polygons and not lines:
+                errors.append({"file": f.filename, "error": "no polygons or lines found"})
+                continue
+
+            base_label = (f.filename or "imported").rsplit(".", 1)[0]
+
+            # Polygon(s) → save each as-is
+            for i, rings in enumerate(polygons):
+                geom = {"type": "Polygon", "coordinates": rings}
+                try:
+                    c = shp_shape(geom).centroid
+                    lat0, lon0 = float(c.y), float(c.x)
+                except Exception:
+                    lat0, lon0 = 0.0, 0.0
+                label = base_label + (f" ({i+1})" if len(polygons) > 1 else "")
+                new = {
+                    "id": uuid.uuid4().hex[:10],
+                    "owner_id": uid,
+                    "folder_id": folder_id,
+                    "label": label,
+                    "lat": lat0, "lon": lon0, "radius_mi": 0,
+                    "min_acres": 1.0, "max_acres": 100000.0,
+                    "group_by": None,
+                    "polygon": {"type": "Feature", "geometry": geom,
+                                 "properties": {"source": "kmz_import",
+                                                "filename": f.filename}},
+                    "saved_at": datetime.now().isoformat(timespec="seconds"),
+                }
+                s["searches"].append(new)
+                imported.append({"file": f.filename, "label": label, "kind": "polygon",
+                                  "search_id": new["id"]})
+
+            # LineString(s) → buffer into corridor polygon, save
+            for i, coords in enumerate(lines):
+                outer = _buffer_line_to_polygon(coords, buffer_m)
+                if not outer:
+                    errors.append({"file": f.filename,
+                                    "error": f"line #{i+1} buffer failed"}); continue
+                geom = {"type": "Polygon", "coordinates": [outer]}
+                try:
+                    c = shp_shape(geom).centroid
+                    lat0, lon0 = float(c.y), float(c.x)
+                except Exception:
+                    lat0, lon0 = 0.0, 0.0
+                # Label includes buffer width so the user can tell them apart
+                label = base_label + (f" ({i+1})" if len(lines) > 1 else "") \
+                         + f"  ±{buffer_miles:g}mi"
+                new = {
+                    "id": uuid.uuid4().hex[:10],
+                    "owner_id": uid,
+                    "folder_id": folder_id,
+                    "label": label,
+                    "lat": lat0, "lon": lon0, "radius_mi": 0,
+                    "min_acres": 1.0, "max_acres": 100000.0,
+                    "group_by": None,
+                    "polygon": {"type": "Feature", "geometry": geom,
+                                 "properties": {"source":              "kmz_corridor",
+                                                "filename":            f.filename,
+                                                "buffer_miles":        buffer_miles,
+                                                "centerline_vertices": len(coords),
+                                                # Store the centerline so we can RE-BUFFER
+                                                # at a different width later without re-importing.
+                                                "centerline_coords":   [[round(c[0], 6),
+                                                                          round(c[1], 6)]
+                                                                         for c in coords],
+                                                "base_label":          base_label + (f" ({i+1})" if len(lines) > 1 else "")}},
+                    "saved_at": datetime.now().isoformat(timespec="seconds"),
+                }
+                s["searches"].append(new)
+                imported.append({"file": f.filename, "label": label, "kind": "corridor",
+                                  "search_id": new["id"], "buffer_miles": buffer_miles})
+        _save_storage(s)
+
+    _acq_log("import_corridors",
+                {"files": len(files), "imported": len(imported),
+                 "skipped": len(skipped), "errors": len(errors),
+                 "buffer_miles": buffer_miles})
+    return jsonify({"imported": imported, "skipped": skipped, "errors": errors,
+                    "buffer_miles": buffer_miles, "folder_id": folder_id})
+
+
+@acq_bp.route("/api/acq/draw-corridor", methods=["POST"])
+@_login_required
+def acq_api_draw_corridor():
+    """Create a corridor saved-search from a centerline drawn in the browser
+    (no KMZ upload required).
+
+    Body: {
+      "label":        string,                  // user-supplied name
+      "buffer_miles": float (0 < x <= 50),     // half-width
+      "centerline":   [[lng, lat], ...]        // ordered polyline vertices, EPSG:4326
+    }
+
+    Returns: { id, label, buffer_miles, polygon }
+    """
+    from shapely.geometry import shape as shp_shape
+
+    body = request.get_json(force=True) or {}
+    label = (body.get("label") or "").strip()
+    if not label:
+        return jsonify({"error": "label is required"}), 400
+    if len(label) > 120:
+        return jsonify({"error": "label too long (max 120 chars)"}), 400
+
+    try:
+        buffer_miles = float(body.get("buffer_miles", 1.0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "buffer_miles must be a number"}), 400
+    if not (0 < buffer_miles <= 50):
+        return jsonify({"error": "buffer_miles must be between 0 and 50"}), 400
+
+    centerline = body.get("centerline") or []
+    if not isinstance(centerline, list) or len(centerline) < 2:
+        return jsonify({"error": "centerline must be a list of at least 2 [lng, lat] points"}), 400
+    coords = []
+    for pt in centerline:
+        if not isinstance(pt, (list, tuple)) or len(pt) < 2:
+            return jsonify({"error": "each centerline point must be [lng, lat]"}), 400
+        try:
+            lng, lat = float(pt[0]), float(pt[1])
+        except (TypeError, ValueError):
+            return jsonify({"error": "centerline coords must be numeric"}), 400
+        coords.append((lng, lat))
+
+    buffer_m = buffer_miles * 1609.34
+    outer = _buffer_line_to_polygon(coords, buffer_m)
+    if not outer:
+        return jsonify({"error": "could not buffer this line — check that the points span a real path"}), 500
+
+    geom = {"type": "Polygon", "coordinates": [outer]}
+    try:
+        c = shp_shape(geom).centroid
+        lat0, lon0 = float(c.y), float(c.x)
+    except Exception:
+        lat0, lon0 = 0.0, 0.0
+
+    full_label = f"{label}  ±{buffer_miles:g}mi"
+    uid = _current_user()["id"]
+    new = {
+        "id": uuid.uuid4().hex[:10],
+        "owner_id": uid,
+        "folder_id": None,
+        "label": full_label,
+        "lat": lat0, "lon": lon0, "radius_mi": 0,
+        "min_acres": 1.0, "max_acres": 100000.0,
+        "group_by": None,
+        "polygon": {"type": "Feature", "geometry": geom,
+                    "properties": {"source":              "kmz_corridor",   # same shape as KMZ-imported corridors
+                                    "filename":            "(drawn in-app)",
+                                    "buffer_miles":        buffer_miles,
+                                    "centerline_vertices": len(coords),
+                                    "centerline_coords":   [[round(c[0], 6), round(c[1], 6)] for c in coords],
+                                    "base_label":          label,
+                                    "drawn":               True}},
+        "saved_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    with _storage_lock:
+        s = _load_storage()
+        s["searches"].append(new)
+        _save_storage(s)
+
+    _acq_log("draw_corridor", {"label": label, "buffer_miles": buffer_miles,
+                                    "vertices": len(coords)})
+    return jsonify({"id": new["id"], "label": full_label,
+                    "buffer_miles": buffer_miles, "polygon": new["polygon"]})
+
+
+@acq_bp.route("/api/acq/searches/<sid>/rebuffer", methods=["POST"])
+@_login_required
+def acq_api_search_rebuffer(sid):
+    """Re-buffer a corridor search at a new half-width (miles), in place.
+
+    Requires the search to have been imported by api_import_corridors so that
+    its `polygon.properties.centerline_coords` is populated. Returns the new
+    polygon + updated label.
+
+    Body: {"buffer_miles": float}
+    """
+    body = request.get_json(force=True) or {}
+    try:
+        buffer_miles = float(body.get("buffer_miles", 1.0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "buffer_miles must be a number"}), 400
+    if not (0 < buffer_miles <= 50):
+        return jsonify({"error": "buffer_miles must be between 0 and 50"}), 400
+
+    uid = _current_user()["id"]
+    with _storage_lock:
+        s = _load_storage()
+        search = next((x for x in s.get("searches", []) if x.get("id") == sid), None)
+        if not search:
+            return jsonify({"error": "search not found"}), 404
+        if search.get("owner_id") != uid:
+            return jsonify({"error": "not your search"}), 403
+
+        poly = search.get("polygon") or {}
+        props = (poly.get("properties") or {}) if isinstance(poly, dict) else {}
+        centerline = props.get("centerline_coords")
+        if not centerline or len(centerline) < 2:
+            return jsonify({
+                "error": ("This corridor was imported before we started storing the "
+                          "centerline. Delete it and re-import the KMZ to enable "
+                          "buffer editing.")
+            }), 400
+
+        outer = _buffer_line_to_polygon(centerline, buffer_miles * 1609.34)
+        if not outer:
+            return jsonify({"error": "buffer computation failed"}), 500
+
+        new_geom = {"type": "Polygon", "coordinates": [outer]}
+        # Refresh centroid
+        try:
+            from shapely.geometry import shape as shp_shape
+            c = shp_shape(new_geom).centroid
+            search["lat"], search["lon"] = float(c.y), float(c.x)
+        except Exception:
+            pass
+
+        # Update props + label
+        props["buffer_miles"] = buffer_miles
+        poly["geometry"] = new_geom
+        poly["properties"] = props
+        search["polygon"] = poly
+
+        # Rebuild the label so the buffer width in the name matches the geometry
+        base = props.get("base_label") or _strip_buffer_suffix(search.get("label", ""))
+        search["label"] = f"{base}  ±{buffer_miles:g}mi"
+        search["saved_at"] = datetime.now().isoformat(timespec="seconds")
+        _save_storage(s)
+
+    _acq_log("rebuffer_corridor", {"search_id": sid, "buffer_miles": buffer_miles})
+    return jsonify({
+        "ok": True,
+        "id": sid,
+        "label": search["label"],
+        "buffer_miles": buffer_miles,
+        "polygon": search["polygon"],
+    })
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Remaining pages
+#
+# Corridors, folders, pipeline and the single-tract view. Each is the
+# standalone app's page body and JS inside the portal shell, so the sidebar,
+# theme and account modal come from EmberApps rather than from the old app.
+# ══════════════════════════════════════════════════════════════════════════
+
+def _acq_render(template, **extra):
+    if not _can_view_acquisitions():
+        return redirect(url_for("home"))
+    return render_template(
+        template,
+        username=session.get("username"),
+        display_name=session.get("display_name", session.get("username")),
+        is_admin=session.get("is_admin", False),
+        page_access=session.get("page_access") or {},
+        **extra)
+
+
+@acq_bp.route("/acquisitions/corridors")
+@_login_required
+def acq_corridors_page():
+    return _acq_render("acquisitions_corridors.html")
+
+
+@acq_bp.route("/acquisitions/folders")
+@_login_required
+def acq_folders_page():
+    return _acq_render("acquisitions_folders.html")
+
+
+@acq_bp.route("/acquisitions/pipeline")
+@_login_required
+def acq_pipeline_page():
+    return _acq_render("acquisitions_pipeline.html")
+
+
+@acq_bp.route("/acquisitions/tract/<prop_id>")
+@_login_required
+def acq_tract_page(prop_id):
+    county = request.args.get("county", "")
+    return _acq_render("acquisitions_tract.html", prop_id=prop_id, county=county)

@@ -1,0 +1,1065 @@
+{# ============================================================
+   Ember · Acquisitions GIS — Outreach Pipeline
+   Ported from the standalone app. The page body and its JS come across as
+   they were; the shell, sidebar, theme tokens and account modal are the
+   portal's. API calls are repointed to /api/acq/.
+   ============================================================ #}
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Outreach Pipeline · Ember Acquisitions</title>
+<link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+
+<link rel="stylesheet" href="/static/theme.css?v=3"/>
+<link rel="stylesheet" href="/static/css/acquisitions.css?v=1"/>
+<script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
+<style>
+  /* App shell — copied from financials.html so /acquisitions nests in the
+     canonical sidebar chrome. */
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;}
+  body{background:var(--eax-bg);color:var(--eax-ink);font-family:'DM Sans','Plus Jakarta Sans',system-ui,sans-serif;overflow:hidden;}
+  #app{display:flex;height:100vh;overflow:hidden;}
+  #sidebar{width:240px;background:var(--eax-bg-2);border-right:1px solid var(--eax-line);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;}
+  .sidebar-logo{padding:16px 18px 14px;border-bottom:1px solid var(--eax-line)}
+  .logo-img{width:100%;max-width:160px;height:auto;display:block;margin:0 auto}
+  img.logo-light{display:none;}
+  [data-theme="light"] img.logo-dark{display:none;}
+  [data-theme="light"] img.logo-light{display:block;margin:0 auto;}
+  .logo-sub{font-size:10px;color:var(--eax-subtle);letter-spacing:0.2em;text-transform:uppercase;margin-top:8px;text-align:center;font-weight:700}
+  .sidebar-section{padding:8px 16px 4px;font-size:9px;line-height:1.2;color:var(--eax-subtle);letter-spacing:0.22em;text-transform:uppercase;margin-top:8px;font-weight:700}
+  .sidebar-item{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;border-radius:8px;margin:1px 8px;transition:all .15s;color:var(--eax-muted);font-size:13px;line-height:1.2;text-decoration:none;font-weight:500}
+  .sidebar-item:hover{background:var(--eax-accent-soft);color:var(--eax-ink);text-decoration:none}
+  .sidebar-item.active{background:var(--eax-surface);color:var(--eax-ink);font-weight:600;border:1px solid var(--eax-line);position:relative}
+  .sidebar-item.active::before{content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:2px;background:var(--eax-accent);border-radius:2px}
+  .sidebar-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0}
+  .sidebar-item.active .icon{opacity:1;color:var(--eax-accent)}
+  #main-content{flex:1;overflow:hidden;min-width:0;display:flex;}
+
+  .acq-legacy { flex:1; min-width:0; overflow:auto; padding:0 0 60px; }
+  /* The ported page's own styles. Rules targeting body, html, * or the old
+     nav were dropped at build time - they would have fought the shell. */
+
+
+  /* Top nav — shared header */
+  .top-nav { display: flex; align-items: center; height: 52px; background: #0A1825; color: #E8EBED;
+    padding: 0 20px; gap: 28px; border-bottom: 1px solid rgba(255,255,255,0.05); flex-shrink: 0; z-index: 100; }
+
+  .top-nav .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+
+  .top-nav .brand img { height: 22px; }
+
+  .top-nav .brand-name { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; color: #FFF; }
+
+  .top-nav .brand-name .accent-dot { color: var(--ember-orange); margin-left: 2px; }
+
+  .top-nav nav.primary { display: flex; gap: 2px; flex: 1; margin-left: 12px; }
+
+  .top-nav nav.primary a { color: #8993A1; text-decoration: none; padding: 7px 12px;
+    font-size: 13px; font-weight: 500; border-radius: var(--r-md); transition: all 120ms; }
+
+  .top-nav nav.primary a:hover { color: #FFF; background: rgba(255,255,255,0.05); }
+
+  .top-nav nav.primary a.active { color: #FFF; background: rgba(242,89,41,0.16); box-shadow: inset 0 -2px 0 var(--ember-orange); }
+
+  .top-nav .user-meta { display: flex; align-items: center; gap: 14px; font-size: 12px; color: #8993A1; }
+
+  .top-nav .user-meta .user-pill { color: #E8EBED; font-weight: 500; }
+
+  .top-nav .user-meta .role-tag { background: var(--ember-orange); color: #FFF; font-size: 9px; padding: 2px 6px; border-radius: var(--r-sm); font-weight: 700; margin-left: 4px; }
+
+  .top-nav .user-meta a { color: #8993A1; text-decoration: none; font-weight: 500; transition: color 120ms; }
+
+  .top-nav .user-meta a:hover { color: var(--ember-orange); }
+
+
+  /* Page header pattern */
+  .page-header { background: #FFF; border-bottom: 1px solid var(--gray-200); padding: 20px 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+
+  .page-header h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+
+  .page-header .meta { color: var(--gray-500); font-size: 13px; }
+
+  .page-header .breadcrumb { color: var(--gray-500); font-size: 12px; margin-bottom: 4px; }
+
+  .page-header .breadcrumb a { color: var(--gray-500); text-decoration: none; transition: color 120ms; }
+
+  .page-header .breadcrumb a:hover { color: var(--ember-orange); }
+
+  .page-header .breadcrumb .sep { color: var(--gray-300); margin: 0 6px; }
+
+
+  /* Generic buttons (light surface) */
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: var(--r-md);
+    font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 120ms;
+    border: 1px solid var(--gray-300); background: #FFF; color: var(--gray-700); text-decoration: none; }
+
+  .btn:hover { border-color: var(--gray-400); background: var(--gray-50); color: var(--gray-900); }
+
+  .btn-primary { background: var(--ember-orange); border-color: var(--ember-orange); color: #FFF; }
+
+  .btn-primary:hover { background: var(--ember-orange-hover); border-color: var(--ember-orange-hover); color: #FFF; }
+
+  .btn-danger { color: var(--red-600); border-color: var(--gray-300); }
+
+  .btn-danger:hover { background: #FEE2E2; border-color: #FCA5A5; color: var(--red-600); }
+
+  .btn.active { background: rgba(242,89,41,0.10); border-color: var(--ember-orange); color: var(--ember-orange); }
+
+
+  /* Cards */
+  .card { background: #FFF; border-radius: var(--r-lg); border: 1px solid var(--gray-200); box-shadow: var(--shadow-sm); padding: 20px; }
+
+  .card h2 { margin: 0 0 14px; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: var(--gray-900);
+    display: flex; align-items: center; gap: 6px; }
+
+  .card .row-label { font-size: 10px; font-weight: 600; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.08em; }
+
+
+  /* Status pill — used in tract + pipeline */
+  .status-pill { display: inline-block; padding: 2px 8px; border-radius: var(--r-sm); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #FFF; }
+
+
+
+  /* ---- KPI tile strip ---- */
+  .kpi-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
+    padding: 18px 28px 4px; background: var(--gray-50); }
+
+  .kpi { background: #FFF; border: 1px solid var(--gray-200); border-radius: var(--r-lg);
+    padding: 14px 18px; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 4px; }
+
+  .kpi .label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--gray-500); }
+
+  .kpi .value { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; color: var(--gray-900); }
+
+  .kpi .footnote { font-size: 11px; color: var(--gray-500); }
+
+  .kpi.alert { border-left: 3px solid var(--red-600); }
+
+  .kpi.alert .value { color: var(--red-600); }
+
+  .kpi.warn  { border-left: 3px solid var(--amber-600); }
+
+  .kpi.warn  .value { color: var(--amber-600); }
+
+  .kpi.success { border-left: 3px solid var(--green-600); }
+
+  .kpi.success .value { color: var(--green-600); }
+@media (max-width: 900px) { .kpi-strip { grid-template-columns: repeat(2, 1fr); } }
+
+
+  /* ---- Toolbar row ---- */
+  .pipe-toolbar { display: flex; align-items: center; gap: 12px; padding: 16px 28px 12px; background: var(--gray-50); flex-wrap: wrap; }
+
+  .pipe-toolbar input { padding: 8px 12px; border: 1px solid var(--gray-300); border-radius: var(--r-md);
+    font: inherit; font-size: 13px; min-width: 260px; background: #FFF; transition: all 120ms; }
+
+  .pipe-toolbar input:focus { outline: none; border-color: var(--ember-orange); box-shadow: 0 0 0 3px rgba(242,89,41,0.18); }
+
+
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
+
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px;
+    font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid var(--gray-200);
+    background: #FFF; color: var(--gray-700); transition: all 120ms; }
+
+  .chip:hover { border-color: var(--gray-300); color: var(--gray-900); }
+
+  .chip.active { background: var(--gray-900); border-color: var(--gray-900); color: #FFF; }
+
+  .chip .dot { width: 7px; height: 7px; border-radius: 50%; }
+
+  .chip .count { background: rgba(0,0,0,0.06); color: var(--gray-500); padding: 0 6px; border-radius: 999px; font-size: 10px; font-weight: 600; }
+
+  .chip.active .count { background: rgba(255,255,255,0.18); color: #FFF; }
+
+
+  /* ---- Single-column grouped list ---- */
+  .pipe-body { padding: 6px 28px 36px; max-width: 1200px; }
+
+  .pipe-section { margin-bottom: 6px; border-radius: var(--r-md); }
+
+  .pipe-section-header {
+    display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+    border-radius: var(--r-md); cursor: pointer; user-select: none;
+    transition: background 120ms;
+  }
+
+  .pipe-section-header:hover { background: var(--gray-100); }
+
+  .pipe-section-header.has-items { background: #FFF; border: 1px solid var(--gray-200); box-shadow: var(--shadow-sm); }
+
+  .pipe-section-header.has-items:hover { border-color: var(--gray-300); }
+
+  .pipe-section-header .caret { color: var(--gray-400); font-size: 11px; transition: transform 120ms; width: 12px; text-align: center; }
+
+  .pipe-section.collapsed .caret { transform: rotate(-90deg); }
+
+  .pipe-section-header .swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  .pipe-section-header .name { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--gray-700); }
+
+  .pipe-section.empty .pipe-section-header .name { color: var(--gray-400); }
+
+  .pipe-section-header .badge { background: var(--gray-100); color: var(--gray-700); padding: 2px 9px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; min-width: 22px; text-align: center; }
+
+  .pipe-section.has-items .pipe-section-header .badge { background: var(--gray-900); color: #FFF; }
+
+  .pipe-section.empty .pipe-section-header .badge { background: transparent; color: var(--gray-400); }
+
+
+  .pipe-list { padding: 4px 0; }
+
+  .pipe-section.collapsed .pipe-list { display: none; }
+
+
+  .pipe-row {
+    display: grid; grid-template-columns: 4px 1fr auto; align-items: stretch;
+    background: #FFF; border: 1px solid var(--gray-200); border-radius: var(--r-md);
+    margin-top: 8px; cursor: pointer; transition: all 120ms; overflow: hidden;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .pipe-row:hover { border-color: var(--gray-300); box-shadow: var(--shadow-md); transform: translateY(-1px); }
+
+  .pipe-row.archived { opacity: 0.55; }
+
+  .pipe-row .status-bar { background: var(--gray-300); }
+
+  .pipe-row .main { padding: 12px 16px; min-width: 0; }
+
+  .pipe-row .title-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+
+  .pipe-row .owner { font-weight: 600; color: var(--gray-900); font-size: 14px; line-height: 1.25;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 460px; }
+
+  /* When the title is a fallback (address or prop ID) rather than a real owner
+     name, make it visually softer so the user knows it's not an owner. */
+  .pipe-row .owner.fallback { color: var(--gray-700); font-weight: 500; font-style: normal; }
+
+  .pipe-row .meta { font-size: 12px; color: var(--gray-500); }
+
+  .pipe-row .meta .acres { font-weight: 600; color: var(--gray-700); }
+
+  .pipe-row .next-row { font-size: 12px; color: var(--gray-700); margin-top: 4px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+  .pipe-row .next-row .label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--gray-500); }
+
+  .pipe-row .due-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: var(--r-sm); color: #FFF;
+    text-transform: uppercase; letter-spacing: 0.04em; }
+
+
+  .pipe-row .actions { display: flex; align-items: center; gap: 4px; padding: 12px 14px; opacity: 0; transition: opacity 120ms; }
+
+  .pipe-row:hover .actions { opacity: 1; }
+
+  .pipe-row .actions button { background: var(--gray-100); border: 0; color: var(--gray-500); padding: 5px 9px;
+    border-radius: var(--r-sm); font-size: 11px; cursor: pointer; transition: all 120ms; font: inherit; font-weight: 500; }
+
+  .pipe-row .actions button:hover { background: var(--gray-200); color: var(--gray-900); }
+
+  .pipe-row .actions button.danger:hover { background: #FEE2E2; color: var(--red-600); }
+
+
+  /* ---- Empty state for whole page ---- */
+  .pipe-empty { text-align: center; padding: 80px 28px; color: var(--gray-500); }
+
+  .pipe-empty .icon { font-size: 36px; opacity: 0.40; margin-bottom: 12px; }
+
+  .pipe-empty h2 { font-size: 16px; font-weight: 600; color: var(--gray-700); margin: 0 0 6px; }
+
+  .pipe-empty p { margin: 0; font-size: 13px; }
+
+
+  /* ---- Slide-out detail drawer ---- */
+  .drawer-backdrop {
+    position: fixed; inset: 0; background: rgba(15,23,42,0.30); z-index: 200;
+    opacity: 0; pointer-events: none; transition: opacity 200ms;
+    backdrop-filter: blur(1px);
+  }
+
+  .drawer-backdrop.open { opacity: 1; pointer-events: auto; }
+
+
+  .detail-drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 95vw);
+    background: #FFF; z-index: 210; box-shadow: -8px 0 32px rgba(15,23,42,0.18);
+    transform: translateX(100%); transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex; flex-direction: column;
+  }
+
+  .detail-drawer.open { transform: translateX(0); }
+
+
+  .drawer-header { padding: 18px 22px 14px; border-bottom: 1px solid var(--gray-200);
+    background: var(--gray-50); display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+
+  .drawer-header .title { flex: 1; min-width: 0; }
+
+  .drawer-header .status-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+
+  .drawer-header h2 { font-size: 18px; font-weight: 600; margin: 0; color: var(--gray-900); line-height: 1.25; letter-spacing: -0.01em; word-break: break-word; }
+
+  .drawer-header .meta-row { color: var(--gray-500); font-size: 12px; margin-top: 4px; }
+
+  .drawer-header .meta-row .acres { font-weight: 600; color: var(--gray-700); }
+
+  .drawer-close { background: none; border: 0; color: var(--gray-500); font-size: 24px; cursor: pointer;
+    padding: 0 6px; line-height: 1; border-radius: var(--r-md); transition: all 120ms; }
+
+  .drawer-close:hover { color: var(--gray-900); background: var(--gray-200); }
+
+
+  .drawer-actions { display: flex; gap: 8px; padding: 14px 22px; border-bottom: 1px solid var(--gray-200);
+    background: #FFF; flex-wrap: wrap; }
+
+
+  .drawer-body { flex: 1; overflow-y: auto; padding: 16px 22px 28px; background: var(--gray-50); }
+
+  .drawer-body::-webkit-scrollbar { width: 6px; }
+
+  .drawer-body::-webkit-scrollbar-thumb { background: var(--gray-300); border-radius: 999px; }
+
+
+  .drawer-section { background: #FFF; border: 1px solid var(--gray-200); border-radius: var(--r-md);
+    padding: 14px 16px; margin-bottom: 12px; box-shadow: var(--shadow-sm); }
+
+  .drawer-section h3 { margin: 0 0 10px; font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--gray-500); display: flex; align-items: center; gap: 6px; }
+
+  .drawer-section h3 .count { background: var(--gray-100); color: var(--gray-700); padding: 1px 7px;
+    border-radius: 999px; font-size: 10px; font-weight: 600; }
+
+
+  .kv { display: grid; grid-template-columns: 110px 1fr; gap: 4px 12px; font-size: 13px; }
+
+  .kv dt { color: var(--gray-500); font-weight: 500; }
+
+  .kv dd { margin: 0; color: var(--gray-900); }
+
+
+  .source-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+
+  .source-badge { display: inline-block; padding: 2px 8px; border-radius: var(--r-sm); font-size: 10px;
+    font-weight: 600; background: var(--gray-100); color: var(--gray-700); text-transform: uppercase; letter-spacing: 0.04em; }
+
+  .source-badge.hcad { background: rgba(46,125,50,0.12); color: #2E7D32; }
+
+  .source-badge.mcad { background: rgba(25,118,210,0.12); color: #1976D2; }
+
+
+  .note-entry, .log-entry { padding: 10px 0; border-top: 1px solid var(--gray-100); font-size: 13px; }
+
+  .note-entry:first-child, .log-entry:first-child { padding-top: 4px; border-top: 0; }
+
+  .note-entry .text, .log-entry .text { color: var(--gray-900); white-space: pre-wrap; line-height: 1.45; }
+
+  .note-entry .when, .log-entry .when { color: var(--gray-500); font-size: 11px; margin-top: 4px; }
+
+  .log-entry .method-tag { display: inline-block; background: var(--gray-100); padding: 1px 7px; border-radius: var(--r-sm);
+    font-size: 10px; font-weight: 600; color: var(--gray-700); text-transform: uppercase; letter-spacing: 0.04em; margin-right: 6px; }
+
+  .drawer-section .empty-text { color: var(--gray-400); font-size: 12px; font-style: italic; padding: 6px 0; }
+
+
+  .drawer-section .next-action {
+    background: rgba(242,89,41,0.06); border-left: 3px solid var(--ember-orange);
+    padding: 8px 12px; border-radius: 0 var(--r-sm) var(--r-sm) 0; margin-top: 8px;
+  }
+
+  .drawer-section .next-action .label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ember-orange); }
+
+  .drawer-section .next-action .text { color: var(--gray-900); margin-top: 2px; }
+
+  .drawer-section .next-action .date { color: var(--gray-500); font-size: 11px; margin-top: 2px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <nav id="sidebar">
+    <div class="sidebar-logo">
+      <img src="/static/img/ember_logo.png"        alt="Ember" class="logo-img logo-dark">
+      <img src="/static/img/ember_logo_light.png"  alt="Ember" class="logo-img logo-light">
+      <div class="logo-sub">Acquisitions</div>
+    </div>
+    <div class="sidebar-section">Apps &amp; Dashboards</div>
+    {% if page_access.get('mpc_underwriting', true) %}
+    <a href="/" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+      MPC Underwriting
+    </a>
+    {% endif %}
+    {% if page_access.get('returns', true) %}
+    <a href="/returns" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Project Returns
+    </a>
+    {% endif %}
+    {% if page_access.get('loans', true) %}
+    <a href="/loans" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Loans &amp; Debt
+    </a>
+    {% endif %}
+    {% if is_admin or page_access.get('budget', false) %}
+    <a href="/budget" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 13l3 3 3-5 4 4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Operating Budget
+    </a>
+    {% endif %}
+    {% if page_access.get('operations', true) %}
+    <a href="/operations" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Operating Revenues
+    </a>
+    {% endif %}
+    {% if page_access.get('invoice_dashboard', true) %}
+    <a href="/invoice-dashboard" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 2h6a2 2 0 012 2v16l-3-2-2 2-2-2-2 2-3-2V4a2 2 0 012-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 7h6M9 11h6M9 15h4" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Invoice Dashboard
+    </a>
+    {% endif %}
+    {% if page_access.get('financials', true) %}
+    <a href="/financials" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M9 17V9m4 8V5m4 12v-7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Financial Statements
+    </a>
+    {% endif %}
+    {% if is_admin or page_access.get('unit_economics', false) %}
+    <a href="/unit-economics" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 2l9 5-9 5-9-5 9-5z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 12l9 5 9-5M3 17l9 5 9-5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Unit Economics
+    </a>
+    {% endif %}
+    {% if is_admin or page_access.get('partners_cf', false) %}
+    <a href="/partners-cf" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M7 10h10m0 0l-3-3m3 3l-3 3M17 17H7m0 0l3-3m-3 3l3 3" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Partners Cash Flow
+    </a>
+    {% endif %}
+    {% if page_access.get('macro', true) %}
+    <a href="/macro" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="1.5"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Macro Dashboard
+    </a>
+    {% endif %}
+    {% if page_access.get('portfolio', true) %}
+    <a href="/ember-capital" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 3.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Ember Capital
+    </a>
+    {% endif %}
+    {% if page_access.get('sales', true) %}
+    <a href="/sales" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l3-3 4 4 5-6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Community Sales
+    </a>
+    {% endif %}
+    {% if page_access.get('verticals', true) %}
+    <a href="/verticals" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      Vertical Dashboard
+    </a>
+    {% endif %}
+    {% if is_admin or page_access.get('bva', false) %}
+    <a href="/bva" class="sidebar-item"><svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="7" y="10" width="3" height="7" rx="0.5"/><rect x="12" y="6" width="3" height="11" rx="0.5"/><rect x="17" y="13" width="3" height="4" rx="0.5"/></svg>Budget vs Actuals</a>
+    {% endif %}
+    {% if is_admin or page_access.get('acquisitions', false) %}
+    <a href="/acquisitions" class="sidebar-item active">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Acquisitions GIS
+    </a>
+    {% endif %}
+    <div style="flex:1"></div>
+    {% include "_partials/_sidebar_foot.html" %}
+  </nav>
+
+  <div id="main-content">
+    <div class="acq-legacy">
+      <div style="padding:20px 28px 4px">
+        <div class="acq-eyebrow">LAND · OUTREACH</div>
+      </div>
+
+
+
+<div class="page-header">
+  <div>
+    <h1>Pipeline</h1>
+    <div class="meta" id="pipeline-meta">Loading…</div>
+  </div>
+  <div class="toolbar" style="display:flex;gap:8px;align-items:center">
+    <button class="btn"id="toggle-archived">Show archived</button>
+    <button class="btn" id="btn-refresh">⟳ Refresh</button>
+  </div>
+</div>
+
+<div class="kpi-strip" id="kpi-strip"></div>
+
+<div class="pipe-toolbar">
+  <input id="filter" type="text" placeholder="Filter by owner, county, action…">
+  <div class="chips" id="status-chips"></div>
+</div>
+
+<div class="pipe-body" id="pipe-body"></div>
+
+<!-- Slide-out tract details drawer -->
+<div class="drawer-backdrop" id="drawer-backdrop"></div>
+<aside class="detail-drawer" id="drawer" aria-hidden="true">
+  <div class="drawer-header">
+    <div class="title">
+      <div class="status-row" id="d-status-row"></div>
+      <h2 id="d-owner">Loading…</h2>
+      <div class="meta-row" id="d-meta"></div>
+    </div>
+    <button class="drawer-close" id="drawer-close" title="Close (esc)">×</button>
+  </div>
+  <div class="drawer-actions" id="d-actions"></div>
+  <div class="drawer-body" id="d-body">
+    <div style="padding:30px;text-align:center;color:#A5ADB7">Loading tract details…</div>
+  </div>
+</aside>
+
+
+
+    </div>
+  </div>
+
+</div>
+
+{% include "_partials/_account_modal.html" %}
+
+
+<script>
+
+function escapeHtml(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+
+// Statuses that count toward "Active" — anything not closed/lost/passed.
+const ACTIVE_STATUSES = new Set(['lead', 'contacted', 'negotiating', 'under_contract']);
+// Default-collapsed statuses (terminal funnel states)
+const COLLAPSED_BY_DEFAULT = new Set(['closed', 'lost', 'passed']);
+
+let _showArchived = false;
+let _filterText = '';
+let _statusFilter = 'all';   // 'all' or a specific status value
+let _pipelineData = null;
+const _userCollapsed = {};   // user clicks override defaults (per-status)
+
+function dueClass(dateStr) {
+  if (!dateStr) return null;
+  const due = new Date(dateStr + 'T23:59:59');
+  if (isNaN(due)) return null;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const days = Math.round((due - today) / 86400000);
+  if (days < 0)   return { label: `${-days}d overdue`,    color: '#C62828', isOverdue: true,  isDueSoon: false };
+  if (days === 0) return { label: 'due today',            color: '#F25929', isOverdue: false, isDueSoon: true  };
+  if (days <= 7)  return { label: `in ${days}d`,          color: '#F25929', isOverdue: false, isDueSoon: true  };
+  if (days <= 30) return { label: `in ${days}d`,          color: '#F59E0B', isOverdue: false, isDueSoon: false };
+  return { label: `in ${days}d`, color: '#7A828D', isOverdue: false, isDueSoon: false };
+}
+
+async function load() {
+  document.getElementById('pipeline-meta').textContent = 'Loading…';
+  try {
+    const qs = _showArchived ? '?archived=1' : '';
+    const r = await fetch('/api/acq/outreach/pipeline' + qs);
+    const d = await r.json();
+    _pipelineData = d;
+    render();
+  } catch (e) {
+    document.getElementById('pipe-body').innerHTML =
+      `<div class="pipe-empty"><div class="icon"></div><h2>Failed to load pipeline</h2><p>${escapeHtml(e.message)}</p></div>`;
+  }
+}
+
+function render() {
+  const d = _pipelineData; if (!d) return;
+  const statusOrder = (d.statuses || []).map(s => s.value);
+  const statusMeta = Object.fromEntries((d.statuses || []).map(s => [s.value, s]));
+
+  // ---- Apply text filter (status filter is applied at render-time per section) ----
+  const q = _filterText.toLowerCase().trim();
+  const filteredByStatus = {};
+  let totalAll = 0, activeAll = 0, overdueAll = 0, dueSoonAll = 0, closedAll = 0;
+  for (const [status, records] of Object.entries(d.by_status || {})) {
+    const filtered = q ? records.filter(r =>
+      (r.owner_name || '').toLowerCase().includes(q) ||
+      (r.county || '').toLowerCase().includes(q) ||
+      (r.next_action || '').toLowerCase().includes(q)
+    ) : records;
+    filteredByStatus[status] = filtered;
+    totalAll += filtered.length;
+    if (ACTIVE_STATUSES.has(status)) activeAll += filtered.length;
+    if (status === 'closed') closedAll += filtered.length;
+    for (const r of filtered) {
+      const u = dueClass(r.next_action_date);
+      if (u && u.isOverdue) overdueAll++;
+      else if (u && u.isDueSoon) dueSoonAll++;
+    }
+  }
+
+  // ---- Header meta ----
+  const metaParts = [];
+  if (totalAll === 0) {
+    metaParts.push(q ? `No tracts match "${q}"` : 'No outreach activity yet');
+  } else {
+    metaParts.push(`${activeAll} active`);
+    if (overdueAll) metaParts.push(`${overdueAll} overdue`);
+    if (dueSoonAll) metaParts.push(`${dueSoonAll} due ≤ 7d`);
+    if (closedAll)  metaParts.push(`${closedAll} closed`);
+    if (q)          metaParts.push(`filter: "${q}"`);
+    if (_showArchived) metaParts.push('incl. archived');
+  }
+  document.getElementById('pipeline-meta').textContent = metaParts.join(' · ');
+
+  // ---- KPI tiles ----
+  const kpiHtml = `
+    <div class="kpi">
+      <div class="label">Active pipeline</div>
+      <div class="value">${activeAll}</div>
+      <div class="footnote">leads → under contract</div>
+    </div>
+    <div class="kpi ${overdueAll ? 'alert' : ''}">
+      <div class="label">Overdue actions</div>
+      <div class="value">${overdueAll}</div>
+      <div class="footnote">${overdueAll ? 'past next-action date' : 'all caught up'}</div>
+    </div>
+    <div class="kpi ${dueSoonAll ? 'warn' : ''}">
+      <div class="label">Due this week</div>
+      <div class="value">${dueSoonAll}</div>
+      <div class="footnote">next 7 days</div>
+    </div>
+    <div class="kpi ${closedAll ? 'success' : ''}">
+      <div class="label">Closed</div>
+      <div class="value">${closedAll}</div>
+      <div class="footnote">deals closed</div>
+    </div>`;
+  document.getElementById('kpi-strip').innerHTML = kpiHtml;
+
+  // ---- Status chips ----
+  const chipsEl = document.getElementById('status-chips');
+  const chipsHtml = [`<button class="chip ${_statusFilter === 'all' ? 'active' : ''}" data-status="all">
+    All <span class="count">${totalAll}</span>
+  </button>`].concat(
+    statusOrder.map(st => {
+      const meta = statusMeta[st];
+      const count = (filteredByStatus[st] || []).length;
+      return `<button class="chip ${_statusFilter === st ? 'active' : ''}" data-status="${st}">
+        <span class="dot" style="background:${meta.color}"></span>
+        ${escapeHtml(meta.label)}
+        <span class="count">${count}</span>
+      </button>`;
+    })
+  ).join('');
+  chipsEl.innerHTML = chipsHtml;
+  chipsEl.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => {
+    _statusFilter = c.dataset.status;
+    render();
+  }));
+
+  // ---- Empty state ----
+  if (totalAll === 0) {
+    document.getElementById('pipe-body').innerHTML = `
+      <div class="pipe-empty">
+        <div class="icon"></div>
+        <h2>${q ? 'No matches' : 'No outreach activity yet'}</h2>
+        <p>${q ? 'Clear the filter to see all tracts.': 'Click Outreach on any tract popup to start tracking — it\'ll appear here.'}</p>
+      </div>`;
+    return;
+  }
+
+  // ---- Grouped list (single column) ----
+  const sectionsHtml = statusOrder
+    .filter(st => _statusFilter === 'all' || _statusFilter === st)
+    .map(status => {
+      const records = (filteredByStatus[status] || []).slice();
+      const meta = statusMeta[status] || { label: status, color: '#7A828D' };
+      // Sort: overdue → due-soon → date asc → owner name
+      records.sort((a, b) => {
+        const ua = dueClass(a.next_action_date), ub = dueClass(b.next_action_date);
+        const sa = ua ? (ua.isOverdue ? 0 : ua.isDueSoon ? 1 : 2) : 3;
+        const sb = ub ? (ub.isOverdue ? 0 : ub.isDueSoon ? 1 : 2) : 3;
+        if (sa !== sb) return sa - sb;
+        return (a.next_action_date || '~') < (b.next_action_date || '~') ? -1 : 1;
+      });
+
+      const hasItems = records.length > 0;
+      // Collapsed if user clicked it to be, OR (default-collapsed AND empty),
+      // OR (default-collapsed terminal status with items but user hasn't expanded)
+      let collapsed;
+      if (status in _userCollapsed) {
+        collapsed = _userCollapsed[status];
+      } else if (!hasItems) {
+        collapsed = true;
+      } else if (COLLAPSED_BY_DEFAULT.has(status)) {
+        collapsed = true;
+      } else {
+        collapsed = false;
+      }
+
+      const rows = records.map(r => {
+        const u = dueClass(r.next_action_date);
+        const dueBadge = u ? `<span class="due-badge" style="background:${u.color}">${u.label}</span>` : '';
+        const acresStr = r.acres ? Math.round(r.acres) + ' ac' : '';
+        const nextStr = r.next_action ? escapeHtml(r.next_action.slice(0, 120)) : '';
+        // Title fallback chain: owner → site address → mailing → "Prop ID xxx".
+        // We never want a bare "?" — it gives the user nothing to act on.
+        const ownerRaw = (r.owner_name || '').trim();
+        const goodOwner = ownerRaw && ownerRaw !== '?' && !ownerRaw.startsWith('(no owner');
+        let titleText, titleClass = '';
+        if (goodOwner) {
+          titleText = ownerRaw;
+        } else if (r.site_address) {
+          titleText = r.site_address; titleClass = 'fallback';
+        } else if (r.mail_address) {
+          titleText = r.mail_address; titleClass = 'fallback';
+        } else {
+          titleText = `Prop ID ${r.prop_id || '?'}`; titleClass = 'fallback';
+        }
+        const ownerSubline = (!goodOwner && (r.site_address || r.mail_address))
+          ? `<div style="font-size:11px;color:#A5ADB7;margin-top:2px;font-style:italic">Owner unknown</div>` : '';
+        return `
+          <div class="pipe-row${r.archived ? ' archived' : ''}" onclick='showTractDetails(${JSON.stringify(r.prop_id || "")}, ${JSON.stringify(titleText)}, ${JSON.stringify(meta)}, ${JSON.stringify(r.county || "")}, ${JSON.stringify(r.acres || 0)})'>
+            <div class="status-bar" style="background:${meta.color}"></div>
+            <div class="main">
+              <div class="title-row">
+                <div class="owner ${titleClass}">${escapeHtml(titleText.slice(0, 80))}</div>
+                <div class="meta">
+                  <span class="acres">${acresStr}</span>${acresStr && r.county ? ' · ' : ''}
+                  <span>${escapeHtml(r.county || '')}</span>
+                </div>
+              </div>
+              ${ownerSubline}
+              ${nextStr || r.next_action_date ? `
+                <div class="next-row">
+                  <span class="label">Next</span>
+                  <span>${nextStr || '<span style="color:#A5ADB7;font-style:italic">No action set</span>'}</span>
+                  ${r.next_action_date ? `<span style="color:#A5ADB7;font-size:11px">${escapeHtml(r.next_action_date)}</span>` : ''}
+                  ${dueBadge}
+                </div>
+              ` : (dueBadge ? `<div class="next-row">${dueBadge}</div>` : '')}
+            </div>
+            <div class="actions">
+              ${r.archived
+                ? `<button onclick='event.stopPropagation();restoreOutreach(${JSON.stringify(r.prop_id || "")})'>↩ Restore</button>`
+                : `<button onclick='event.stopPropagation();archiveOutreach(${JSON.stringify(r.prop_id || "")})'>Archive</button>`}
+              <button class="danger" onclick='event.stopPropagation();deleteOutreach(${JSON.stringify(r.prop_id || "")}, ${JSON.stringify(r.owner_name || "")})'>× Delete</button>
+            </div>
+          </div>`;
+      }).join('');
+
+      return `
+        <div class="pipe-section ${collapsed ? 'collapsed' : ''} ${hasItems ? 'has-items' : 'empty'}" data-status="${status}">
+          <div class="pipe-section-header ${hasItems ? 'has-items' : ''}" onclick='toggleSection(${JSON.stringify(status)})'>
+            <span class="caret">▾</span>
+            <span class="swatch" style="background:${meta.color}"></span>
+            <span class="name">${escapeHtml(meta.label)}</span>
+            <span class="badge">${records.length}</span>
+          </div>
+          <div class="pipe-list">${rows}</div>
+        </div>`;
+    }).join('');
+  document.getElementById('pipe-body').innerHTML = sectionsHtml;
+}
+
+window.toggleSection = function (status) {
+  const sec = document.querySelector(`.pipe-section[data-status="${status}"]`);
+  if (!sec) return;
+  const isCollapsed = sec.classList.toggle('collapsed');
+  _userCollapsed[status] = isCollapsed;
+};
+
+// Open the slide-out drawer showing tract details, notes, and outreach log.
+// User then decides whether to jump to the map, open full tract page, etc.
+window.showTractDetails = async function (propId, ownerHint, statusMeta, countyHint, acresHint) {
+  if (!propId) return;
+  const drawer = document.getElementById('drawer');
+  const backdrop = document.getElementById('drawer-backdrop');
+  const body = document.getElementById('d-body');
+  const ownerEl = document.getElementById('d-owner');
+  const metaEl = document.getElementById('d-meta');
+  const statusRow = document.getElementById('d-status-row');
+  const actions = document.getElementById('d-actions');
+
+  // Open immediately with placeholder content (snappier feel than waiting for fetch).
+  // Header trusts row-click values — owner/county/acres are authoritative because
+  // they're what the user clicked on.
+  ownerEl.textContent = ownerHint || 'Loading…';
+  const acresStr = (+acresHint > 0)
+    ? (+acresHint).toLocaleString('en-US', { maximumFractionDigits: 1 }) + ' ac'
+    : '';
+  metaEl.innerHTML =
+    (acresStr ? `<span class="acres">${acresStr}</span>` : '') +
+    ((acresStr && countyHint) ? ' · ' : '') +
+    (countyHint ? `${countyHint}` : '') +
+    ((acresStr || countyHint) ? ' · ' : '') +
+    `Prop ID ${propId}`;
+  statusRow.innerHTML = statusMeta
+    ? `<span class="status-pill" style="background:${statusMeta.color}">${escapeHtml(statusMeta.label)}</span>`
+    : '';
+  body.innerHTML = '<div style="padding:30px;text-align:center;color:#A5ADB7">Loading tract details…</div>';
+  // Buttons start disabled — they get wired up in _renderDrawerBody once we
+  // have the actual parcel feature. We can't use ?focus_tract= URLs because
+  // those trigger a server-side find_parcel_by_pid lookup that hits Prop_ID
+  // collisions across counties (e.g. 188287 = 2,362-ac Fort Bend ranch AND
+  // 0.1-ac Galveston home).
+  actions.innerHTML = `
+    <button class="btn btn-primary"id="d-show-on-map"disabled style="opacity:.5;cursor:wait">Take me to tract</button>
+    <button class="btn"id="d-full-page"disabled style="opacity:.5;cursor:wait">Full tract page</button>
+    <button class="btn"id="d-open-outreach"disabled style="opacity:.5;cursor:wait">Open outreach</button>
+  `;
+  drawer.classList.add('open');
+  backdrop.classList.add('open');
+  drawer.setAttribute('aria-hidden', 'false');
+
+  try {
+    // Pass county hint so the server-side find_parcel_by_pid disambiguates
+    // Prop_ID collisions across counties (e.g. 14966 in Grimes vs Fort Bend).
+    const qs = countyHint ? `?county=${encodeURIComponent(countyHint)}` : '';
+    const r = await fetch(`/api/acq/tract-page-data/${encodeURIComponent(propId)}${qs}`);
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    // Pass trusted countyHint so the drawer header never shows a wrong-county
+    // value (e.g. when no parcel was found for the right county and the body
+    // is empty, the header still says "Grimes" instead of falling through to
+    // a stale value).
+    _renderDrawerBody(d, propId, countyHint, ownerHint, acresHint);
+  } catch (e) {
+    body.innerHTML = `<div style="padding:20px;color:#c62828">Couldn't load details: ${escapeHtml(e.message)}</div>`;
+  }
+};
+
+function _renderDrawerBody(d, propId, countyHint, ownerHint, acresHint) {
+  const h = d.hcad || {};
+  const m = d.mcad || {};
+  const p = d.parcel ? d.parcel.properties : {};
+  // Trust the caller-provided ownerHint/countyHint/acresHint from the pipeline
+  // row FIRST — that's the data the user clicked. Only fall through to parcel/
+  // HCAD/MCAD when the hint is empty or a placeholder like "Prop ID 14966".
+  const goodOwnerHint = ownerHint && !/^Prop ID /i.test(ownerHint);
+  const owner = (goodOwnerHint ? ownerHint : null) || h.owner_name_1 || m.ownerName || p.OWNER_NAME || ownerHint || '(no owner on file)';
+  const acres = (+acresHint > 0) ? +acresHint :
+                (h.Acreage ? parseFloat(String(h.Acreage).replace(' AC', '')) : (p.Acres || 0));
+  const county = countyHint || p._county || h.site_county || (m.ownerAddress ? 'Montgomery' : '');
+
+  // Refresh header now that we have authoritative owner/acres
+  document.getElementById('d-owner').textContent = owner;
+  document.getElementById('d-meta').innerHTML =
+    `<span class="acres">${(+acres).toLocaleString('en-US', { maximumFractionDigits: 1 })} ac</span>` +
+    (county ? ` · ${escapeHtml(county)}` : '') + ` · Prop ID ${escapeHtml(propId)}`;
+
+  // Mailing address (rebuild from HCAD parts when present)
+  let mailing = '';
+  if (h.mail_addr_1) mailing = [h.mail_addr_1, h.mail_city, h.mail_state, h.mail_zip].filter(Boolean).join(', ');
+  else if (p.MAIL_ADDR) mailing = p.MAIL_ADDR;
+
+  // Site address
+  let site = '';
+  if (h.site_str_name) {
+    const num = (h.site_str_num && h.site_str_num !== '0') ? h.site_str_num : '';
+    site = [num, h.site_str_pfx, h.site_str_name, h.site_str_sfx].filter(s => s && String(s).trim()).join(' ').trim();
+    const tail = [h.site_city, 'TX', h.site_zip].filter(Boolean).join(', ');
+    site = [site, tail].filter(Boolean).join(', ');
+  } else if (p.SITUS_ADDR) site = p.SITUS_ADDR;
+
+  const legal = h.legal_dscr_1
+    ? [h.legal_dscr_1, h.legal_dscr_2, h.legal_dscr_3].filter(s => s && String(s).trim()).join(' ')
+    : (p.LEGAL_DESC || '');
+
+  const sourceBadges = (d.sources || []).map(s => {
+    const cls = s.includes('HCAD') ? 'hcad' : s.includes('MCAD') ? 'mcad' : '';
+    return `<span class="source-badge ${cls}">${escapeHtml(s)}</span>`;
+  }).join('');
+
+  // Outreach + next action
+  const out = d.outreach || {};
+  const nextAction = out.next_action ? `
+    <div class="next-action">
+      <div class="label">Next action</div>
+      <div class="text">${escapeHtml(out.next_action)}</div>
+      ${out.next_action_date ? `<div class="date">By ${escapeHtml(out.next_action_date)}</div>` : ''}
+    </div>` : '';
+
+  const log = (out.log || []).slice().reverse();
+  const logHtml = log.length === 0
+    ? '<div class="empty-text">No contact log yet</div>'
+    : log.map(e => {
+        const when = e.at ? new Date(e.at).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+        return `
+          <div class="log-entry">
+            <div><span class="method-tag">${escapeHtml(e.method || 'other')}</span></div>
+            <div class="text">${escapeHtml(e.notes || '')}</div>
+            <div class="when">${escapeHtml(e.by_name || 'Someone')} · ${escapeHtml(when)}</div>
+          </div>`;
+      }).join('');
+
+  const notes = d.notes || [];
+  const notesHtml = notes.length === 0
+    ? '<div class="empty-text">No notes yet</div>'
+    : notes.map(n => {
+        const when = n.at ? new Date(n.at).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+        return `
+          <div class="note-entry">
+            <div class="text">${escapeHtml(n.text || '')}</div>
+            <div class="when">${escapeHtml(n.by_name || 'Someone')} · ${escapeHtml(when)}</div>
+          </div>`;
+      }).join('');
+
+  document.getElementById('d-body').innerHTML = `
+    ${sourceBadges ? `<div class="source-badges" style="margin-bottom:12px">${sourceBadges}</div>` : ''}
+
+    <div class="drawer-section">
+      <h3>Property</h3>
+      <dl class="kv">
+        <dt>Mailing</dt><dd>${escapeHtml(mailing) || '—'}</dd>
+        <dt>Site address</dt><dd>${escapeHtml(site) || '<span style="color:#A5ADB7">(no street address)</span>'}</dd>
+        <dt>Legal</dt><dd>${escapeHtml(legal) || '—'}</dd>
+        ${h.state_class ? `<dt>State class</dt><dd>${escapeHtml(h.state_class)}</dd>` : ''}
+      </dl>
+    </div>
+
+    <div class="drawer-section">
+      <h3>Outreach <span class="count">${log.length}</span></h3>
+      ${out.broker_name ? `<dl class="kv" style="margin-bottom:8px"><dt>Broker</dt><dd>${escapeHtml(out.broker_name)}</dd></dl>` : ''}
+      ${nextAction}
+      ${log.length > 0 ? `<h3 style="margin-top:14px">Contact log</h3>${logHtml}` : ''}
+    </div>
+
+    <div class="drawer-section">
+      <h3>Notes <span class="count">${notes.length}</span></h3>
+      ${notesHtml}
+    </div>
+  `;
+
+  // ---- Wire up the action buttons now that we have the real parcel ----
+  // Stash the EXACT parcel the drawer is showing (not a re-lookup) so the map
+  // and tract pages render the same thing. Per-pid keys so multiple drawers
+  // open in different tabs don't step on each other. Opens NEW TABS so the
+  // pipeline view is preserved (back button works, no re-search needed).
+  const parcelFeature = d.parcel || null;
+  const tCounty = county || (parcelFeature && parcelFeature.properties && parcelFeature.properties._county) || '';
+
+  const btnMap = document.getElementById('d-show-on-map');
+  const btnFull = document.getElementById('d-full-page');
+  const btnOut = document.getElementById('d-open-outreach');
+
+  // Re-enable
+  [btnMap, btnFull, btnOut].forEach(b => { if (b) { b.disabled = false; b.style.opacity = ''; b.style.cursor = ''; } });
+
+  if (btnMap) {
+    btnMap.addEventListener('click', () => {
+      if (!parcelFeature || !parcelFeature.geometry) {
+        // No geometry available — this happens for counties we don't cache
+        // (e.g. Grimes, Walker — only the 10 Houston-metro counties are cached).
+        // Refuse to open the map instead of silently navigating to a wrong-county
+        // Prop_ID collision. Give the user a clear explanation.
+        alert(
+          `Can't show this tract on the map.\n\n` +
+          `${tCounty || 'This county'} is outside the cached parcel coverage ` +
+          `(Harris, Fort Bend, Montgomery, Brazoria, Galveston, Liberty, Waller, ` +
+          `Chambers, Austin, San Jacinto). We have no geometry to draw.\n\n` +
+          `Use "Full tract page" to see the outreach details, or search by ` +
+          `owner name on the map page.`
+        );
+        return;
+      }
+      const p = parcelFeature.properties || {};
+      try {
+        localStorage.setItem('focus_tract_data:' + propId, JSON.stringify({
+          prop_id:    String(propId),
+          owner_name: owner,
+          acres:      acres,
+          county:     tCounty,
+          geometry:   parcelFeature.geometry,
+          mail_addr:  mailing || p.MAIL_ADDR || '',
+          situs_addr: site || p.SITUS_ADDR || '',
+          legal:      legal || p.LEGAL_DESC || '',
+          stored_at:  Date.now(),
+        }));
+      } catch (e) {
+        console.error('focus_tract_data stash failed:', e);
+        alert('Could not pass the tract to the map (storage error).');
+        return;
+      }
+      window.open(`/?focus_tract_local=${encodeURIComponent(propId)}`, '_blank');
+    });
+  }
+
+  if (btnFull) {
+    btnFull.addEventListener('click', () => {
+      // Stash the full parcel feature so /tract uses it without a re-lookup.
+      if (parcelFeature) {
+        try {
+          localStorage.setItem('tract_page_local:' + propId, JSON.stringify({
+            prop_id:   String(propId),
+            tract:     parcelFeature,   // full GeoJSON: properties + geometry
+            stored_at: Date.now(),
+          }));
+        } catch (e) { console.warn('tract_page_local stash failed:', e); }
+      }
+      const qs = tCounty ? `?county=${encodeURIComponent(tCounty)}&from_pipeline=1` : `?from_pipeline=1`;
+      window.open(`/acquisitions/tract/${encodeURIComponent(propId)}${qs}`, '_blank');
+    });
+  }
+
+  if (btnOut) {
+    btnOut.addEventListener('click', () => {
+      const qs = tCounty ? `&county=${encodeURIComponent(tCounty)}` : '';
+      window.open(`/?focus_outreach=${encodeURIComponent(propId)}${qs}`, '_blank');
+    });
+  }
+}
+
+function _closeDrawer() {
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('drawer-backdrop').classList.remove('open');
+  document.getElementById('drawer').setAttribute('aria-hidden', 'true');
+}
+document.getElementById('drawer-close').addEventListener('click', _closeDrawer);
+document.getElementById('drawer-backdrop').addEventListener('click', _closeDrawer);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') _closeDrawer(); });
+
+window.archiveOutreach = async function (propId) {
+  if (!confirm('Archive this outreach record? Hidden from main view, can be restored.')) return;
+  await fetch(`/api/acq/outreach/${encodeURIComponent(propId)}/archive`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ archived: true }),
+  });
+  load();
+};
+window.restoreOutreach = async function (propId) {
+  await fetch(`/api/acq/outreach/${encodeURIComponent(propId)}/archive`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ archived: false }),
+  });
+  load();
+};
+window.deleteOutreach = async function (propId, ownerName) {
+  if (!confirm(`Permanently delete outreach for ${ownerName || propId}? (Cannot be undone.)`)) return;
+  await fetch(`/api/acq/outreach/${encodeURIComponent(propId)}`, { method: 'DELETE' });
+  load();
+};
+
+document.getElementById('filter').addEventListener('input', (e) => {
+  _filterText = e.target.value;
+  if (_pipelineData) render();
+});
+document.getElementById('toggle-archived').addEventListener('click', () => {
+  _showArchived = !_showArchived;
+  const btn = document.getElementById('toggle-archived');
+  btn.classList.toggle('active', _showArchived);
+  btn.innerHTML = _showArchived ? 'Hide archived': 'Show archived';
+  load();
+});
+document.getElementById('btn-refresh').addEventListener('click', load);
+
+load();
+
+</script>
+</body>
+</html>

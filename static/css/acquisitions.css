@@ -112,6 +112,10 @@
   background: var(--eax-accent-soft);
 }
 .acq-btn:disabled { opacity: .5; cursor: not-allowed; }
+/* Some of these are <a> rather than <button>; keep them the same height and
+   stop the link underline coming through. */
+a.acq-btn { text-decoration: none; justify-content: center; }
+a.acq-btn:hover { text-decoration: none; }
 .acq-btn.primary {
   background: var(--eax-accent);
   border-color: var(--eax-accent);
