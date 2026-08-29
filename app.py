@@ -16781,6 +16781,63 @@ def api_acq_search():
     })
 
 
+@app.route("/api/acq/projects/<pid>/analyze", methods=["POST"])
+@login_required
+def api_acq_project_analyze(pid):
+    """Run the constraint and yield analysis over the project's tracts.
+
+    Slow by nature - it queries FEMA, USFWS, USGS and the RRC live, and a large
+    assemblage against a busy wetlands service can take the better part of a
+    minute. gunicorn runs with threads for this reason; see gunicorn.conf.py.
+    """
+    guard = _acq_guard()
+    if guard:
+        return guard
+    conn = get_db()
+    try:
+        proj = acq_store.get_object(conn, "project", pid, _acq_owner(), _acq_is_admin())
+        if not proj:
+            return jsonify({"error": "project not found"}), 404
+        try:
+            analysis = acq_gis.run_analysis(proj)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        except Exception as e:
+            print(f"[acq-analyze] {pid} failed: {type(e).__name__}: {e}", flush=True)
+            return jsonify({"error": f"analysis failed: {type(e).__name__}: {e}"}), 500
+
+        # Cache on the project so reopening the page is instant.
+        proj["analysis_cache"] = analysis
+        proj["updated_at"] = analysis.get("computed_at")
+        acq_store.put_object(conn, "project", proj,
+                             proj.get("_owner_id") or _acq_owner())
+    finally:
+        conn.close()
+
+    # activity_log's second column is `path`, so pass one - the acreage detail
+    # rides along after it rather than pretending to be a path of its own.
+    _log_activity("acq_project_analyze",
+                  f"/acquisitions/project/{pid} "
+                  f"({analysis.get('gross_acres')} gross ac -> "
+                  f"{analysis.get('net_saleable_acres')} saleable ac)")
+    return jsonify({"ok": True, "analysis": analysis})
+
+
+@app.route("/acquisitions/project/<pid>")
+@login_required
+def acquisitions_project_page(pid):
+    if not _can_view_acquisitions():
+        return redirect(url_for("home"))
+    return render_template(
+        "acquisitions_project.html",
+        project_id=pid,
+        username=session.get("username"),
+        display_name=session.get("display_name", session.get("username")),
+        is_admin=session.get("is_admin", False),
+        page_access=session.get("page_access") or {},
+    )
+
+
 @app.route("/api/acq/cache/status")
 @login_required
 def api_acq_cache_status():

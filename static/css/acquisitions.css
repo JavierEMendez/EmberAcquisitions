@@ -356,3 +356,127 @@
   .acq-row { grid-template-columns: 1fr auto; }
   .acq-row .acq-row-meta:nth-of-type(2) { display: none; }
 }
+
+/* ── Project analysis page ──────────────────────────────────────────────── */
+
+.acqp-grid {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 18px;
+  margin-top: 22px;
+  align-items: start;
+}
+.acqp-card {
+  background: var(--eax-surface);
+  border: 1px solid var(--eax-line);
+  border-radius: 12px;
+  padding: 22px 24px;
+  box-shadow: var(--eax-shadow-card, 0 2px 8px -4px rgba(0,0,0,.12));
+}
+.acqp-card--wide { grid-column: 2; }
+.acqp-card-title {
+  font-family: var(--font-display, 'Plus Jakarta Sans'), system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--eax-ink-2, var(--eax-ink));
+  margin-bottom: 14px;
+}
+.acqp-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--eax-subtle);
+  margin-bottom: 6px;
+}
+.acqp-hint {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--eax-subtle);
+  margin-top: 2px;
+}
+.acqp-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+  color: var(--eax-muted);
+  cursor: pointer;
+}
+.acqp-check input { width: auto; margin: 0; accent-color: var(--eax-accent); }
+.acqp-check:hover { color: var(--eax-ink); }
+
+/* The ladder. Every row is one step from gross to what you can actually sell,
+   so the yield number below is traceable rather than asserted. */
+.acqp-rung {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 14px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--eax-line);
+  font-size: 13px;
+  color: var(--eax-muted);
+}
+.acqp-rung .num {
+  font-family: var(--font-mono, 'JetBrains Mono'), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.acqp-rung.head, .acqp-rung.sub {
+  font-weight: 700;
+  color: var(--eax-ink);
+  border-top: 1px solid var(--eax-line-2);
+}
+.acqp-rung.total {
+  font-weight: 700;
+  color: var(--eax-accent);
+  border-top: 2px solid var(--eax-accent);
+  border-bottom: none;
+  font-size: 14px;
+  padding-top: 10px;
+}
+.acqp-rung.kept { opacity: .65; }
+.acqp-rung .note { font-size: 10.5px; color: var(--eax-subtle); }
+.acqp-rung .note.err { color: var(--eax-bad); font-weight: 700; }
+
+.acqp-kpis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 16px 0 4px;
+}
+.acqp-kpi {
+  flex: 1;
+  min-width: 130px;
+  border: 1px solid var(--eax-line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--eax-bg-2);
+}
+.acqp-kpi.accent { border-color: var(--eax-accent); background: var(--eax-accent-soft); }
+.acqp-kpi .k {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--eax-subtle);
+}
+.acqp-kpi .v {
+  font-family: var(--font-mono, 'JetBrains Mono'), ui-monospace, monospace;
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--eax-ink);
+  margin-top: 3px;
+  font-variant-numeric: tabular-nums;
+}
+.acqp-kpi.accent .v { color: var(--eax-accent); }
+
+@media (max-width: 1000px) {
+  .acqp-grid { grid-template-columns: 1fr; }
+  .acqp-card--wide { grid-column: 1; }
+}

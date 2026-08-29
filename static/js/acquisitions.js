@@ -503,7 +503,9 @@
         <div class="acq-row-name">${escapeHtml(p.name || 'Untitled')}</div>
         <div class="acq-row-meta">${fmtNum(p.total_acres, 1)} ac</div>
         <div class="acq-row-meta">${(p.tracts || []).length} tracts</div>
-        <div class="acq-row-actions"></div>
+        <div class="acq-row-actions">
+          <button onclick="location.href='/acquisitions/project/${encodeURIComponent(p.id)}'">Analyse</button>
+        </div>
       </div>`).join('') : `<div class="acq-empty">${empty}</div>`;
 
     $('acq-dock-sub').textContent =
@@ -535,6 +537,12 @@
       const d = await r.json();
       if (!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
       staged.clear();
+      const newId = (d.project || {}).id;
+      if (newId) {
+        setStatus(`Saved “${escapeHtml(name.trim())}” — opening it…`);
+        location.href = '/acquisitions/project/' + encodeURIComponent(newId);
+        return;
+      }
       setStatus(`Saved “${escapeHtml(name.trim())}”.`);
       showProjects();
     } catch (e) {

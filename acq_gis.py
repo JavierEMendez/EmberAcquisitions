@@ -1825,3 +1825,485 @@ def parcel_detail(prop_id):
     props = dict(feat.get("properties") or {})
     props["_source"] = _tract_source_label(props)
     return {"prop_id": pid, "properties": props, "geometry": feat.get("geometry")}
+
+
+# --------------------------------------------------------------------------
+# The constraint / yield engine
+#
+# Lifted out of the standalone app's /api/projects/<pid>/analyze handler, which
+# had the whole thing inline. It is a pure function of the project dict, so it
+# belongs here rather than in a route.
+#
+# The order matters and is not arbitrary:
+#   gross -> physical constraints (unioned, so overlaps are not double-counted)
+#         -> net developable
+#         -> infrastructure and landscaping
+#         -> net saleable, which is what yield runs off
+#
+# Each constraint can be switched off through proj["netout_assumptions"];
+# wetlands in particular are often mitigable or already permitted, so a blanket
+# deduction understates a site. Defaults stay conservative - everything
+# deducted, infrastructure at 30%.
+#
+# A layer that fails to load is reported as unavailable rather than as zero
+# acres. Those two states look identical in a total and mean opposite things:
+# one of them silently overstates how much of the site you can sell.
+# --------------------------------------------------------------------------
+
+def run_analysis(proj):
+    """Analyse one project dict. Returns the analysis, or raises ValueError
+    when the project carries no usable tract geometry."""
+    from shapely.geometry import shape as shp_shape, mapping as shp_mapping
+    from shapely.ops import unary_union, transform
+
+    tracts = proj.get("tracts") or []
+    geoms = []
+    for t in tracts:
+        g = t.get("geometry")
+        if not g:
+            continue
+        try:
+            geoms.append(shp_shape(g))
+        except Exception:
+            continue
+    if not geoms:
+        raise ValueError("no tract geometries - re-create the project with tract polygons")
+
+    project_union = unary_union(geoms)
+    project_union_utm = transform(to_utm, project_union)
+    gross_acres_m2 = project_union_utm.area
+    gross_acres = gross_acres_m2 / 4046.8564224
+
+    # Build a SIMPLIFIED query polygon for the Esri spatial filter — complex
+    # parcel geometry (thousands of vertices) gets rejected by some Esri layers
+    # (FEMA NFHL especially). Buffer it slightly so the simplification doesn't
+    # exclude any real floodplain coverage at the edges.
+    try:
+        # tolerance in degrees — 0.0002° ≈ 22m, good detail for ancillary layers.
+        simplified_query_poly = project_union.simplify(0.0002, preserve_topology=True)
+        # Small outward buffer so simplification + tiny gaps don't miss edge features.
+        # This buffer is ONLY for the QUERY; we still intersect with the real polygon later.
+        bbox_query_poly = project_union.envelope.buffer(0.005)   # ~500m envelope buffer
+    except Exception:
+        simplified_query_poly = project_union
+        bbox_query_poly = project_union.envelope
+
+    # Pull constraint layers from cached/live sources, clipped to project polygon.
+    #
+    # Every layer variable is bound to an empty FeatureCollection FIRST. A failed
+    # fetch used to leave the name unbound entirely, and the net-out loop below
+    # then swallowed a NameError - so the constraint silently did not apply and
+    # net developable came back overstated with no clear reason why.
+    constraints = {}
+    flood_fc = {"type": "FeatureCollection", "features": []}
+    wet_fc = {"type": "FeatureCollection", "features": []}
+    flood_union = None
+    wet_union = None
+    # The three line layers need the same treatment. Each is assigned inside its
+    # own try, and the net-out loop below reads all three from a list literal
+    # that is evaluated BEFORE the loop body's except can catch anything - so a
+    # single failed layer used to take the whole analysis down with an
+    # UnboundLocalError 500 rather than degrading to "layer unavailable".
+    trans_lines = []
+    stream_lines = []
+    pipe_lines = []
+
+    def _safe_union(geoms):
+        """Union layer polygons, repairing the invalid ones first.
+
+        NWI and NFHL both ship self-intersecting rings. unary_union raises
+        TopologyException ("side location conflict") on those, and the callers
+        below used to swallow it - so the constraint silently did not apply and
+        the acreage came back overstated. make_valid repairs the ring; buffer(0)
+        is the fallback, and anything still broken is dropped rather than taking
+        the whole layer down with it."""
+        from shapely.validation import make_valid
+        from shapely.geometry import Polygon, MultiPolygon, GeometryCollection
+        cleaned = []
+        for g in geoms or []:
+            if g is None or g.is_empty:
+                continue
+            if not g.is_valid:
+                try:
+                    g = make_valid(g)
+                except Exception:
+                    try:
+                        g = g.buffer(0)
+                    except Exception:
+                        continue
+            if g is None or g.is_empty:
+                continue
+            # make_valid can hand back a collection with stray lines in it;
+            # only the polygonal parts have area worth deducting.
+            if isinstance(g, GeometryCollection):
+                parts = [p for p in g.geoms if isinstance(p, (Polygon, MultiPolygon))]
+                if not parts:
+                    continue
+                g = parts[0] if len(parts) == 1 else MultiPolygon(
+                    [q for p in parts for q in (p.geoms if isinstance(p, MultiPolygon) else [p])])
+            cleaned.append(g)
+        if not cleaned:
+            return None
+        try:
+            return unary_union(cleaned)
+        except Exception:
+            acc = None                     # union what we can, drop what we cannot
+            for c in cleaned:
+                try:
+                    acc = c if acc is None else acc.union(c)
+                except Exception:
+                    continue
+            return acc
+
+    def _fetch_flood(attempts=3):
+        """FEMA NFHL answers in under a second but drops roughly one connection
+        in four under load. It is worth retrying rather than reporting the
+        floodplain as unavailable and overstating the developable acreage."""
+        last = None
+        for i in range(attempts):
+            if i:
+                time.sleep(1.2 * i)
+            try:
+                return cached_layer_query(
+                    "fema_flood", bbox_query_poly,
+                    where="FLD_ZONE IN ('A','AE','AH','AO','AR','A99','V','VE')",
+                    out_fields="FLD_ZONE"), None
+            except Exception as e:
+                last = e
+                print(f"[analyze] floodplain attempt {i + 1}/{attempts} failed: "
+                      f"{type(e).__name__}: {str(e)[:90]}", flush=True)
+        return None, last
+
+    try:
+        # FEMA NFHL is sensitive to polygon complexity — use the simplified
+        # bbox-envelope polygon for the query, then intersect with the real
+        # project polygon client-side.
+        _ff, _ferr = _fetch_flood()
+        if _ff is None:
+            raise RuntimeError(f"FEMA NFHL unavailable after 3 attempts: {_ferr}")
+        flood_fc = _ff
+        flood_geoms = [shp_shape(f["geometry"]) for f in flood_fc.get("features", [])
+                        if f.get("geometry")]
+        print(f"[analyze] floodplain features returned: {len(flood_geoms)}", flush=True)
+        flood_union = _safe_union(flood_geoms)
+        if flood_union:
+            flood_in_project = transform(to_utm, flood_union.intersection(project_union))
+            constraints["floodplain"] = {
+                "acres":   round(flood_in_project.area / 4046.8564224, 2),
+                "pct":     round(flood_in_project.area / gross_acres_m2 * 100, 1) if gross_acres_m2 > 0 else 0,
+                "feature_count": len(flood_geoms),
+            }
+        else:
+            constraints["floodplain"] = {"acres": 0, "pct": 0, "feature_count": 0}
+    except Exception as e:
+        print(f"[analyze] floodplain ERROR: {e}", flush=True)
+        constraints["floodplain"] = {"error": str(e)}
+
+    try:
+        _wf = cached_wetlands(bbox_query_poly, project_union.centroid.y,
+                              project_union.centroid.x, 1.0)
+        if _wf and _wf.get("features") is not None:
+            wet_fc = _wf
+        wet_geoms = [shp_shape(f["geometry"]) for f in wet_fc.get("features", [])
+                      if f.get("geometry")]
+        print(f"[analyze] wetlands features returned: {len(wet_geoms)}", flush=True)
+        wet_union = _safe_union(wet_geoms)
+        if wet_union:
+            wet_in_project = transform(to_utm, wet_union.intersection(project_union))
+            constraints["wetlands"] = {
+                "acres":   round(wet_in_project.area / 4046.8564224, 2),
+                "pct":     round(wet_in_project.area / gross_acres_m2 * 100, 1) if gross_acres_m2 > 0 else 0,
+                "feature_count": len(wet_geoms),
+            }
+        else:
+            constraints["wetlands"] = {"acres": 0, "pct": 0, "feature_count": 0}
+    except Exception as e:
+        constraints["wetlands"] = {"error": str(e)}
+
+    # Transmission lines — assume 75ft each side (150ft ROW) standard
+    try:
+        trans_fc = cached_layer_query("transmission", bbox_query_poly)
+        trans_lines = [shp_shape(f["geometry"]) for f in trans_fc.get("features", [])
+                        if f.get("geometry")]
+        print(f"[analyze] transmission features returned: {len(trans_lines)}", flush=True)
+        if trans_lines:
+            # Buffer each line in UTM by 75ft = ~22.86m
+            trans_lines_utm = [transform(to_utm, l) for l in trans_lines]
+            buffered = unary_union([l.buffer(22.86) for l in trans_lines_utm])
+            project_utm = transform(to_utm, project_union)
+            trans_in_project = buffered.intersection(project_utm)
+            constraints["transmission_row"] = {
+                "acres":         round(trans_in_project.area / 4046.8564224, 2),
+                "pct":           round(trans_in_project.area / gross_acres_m2 * 100, 1) if gross_acres_m2 > 0 else 0,
+                "line_count":    len(trans_lines),
+                "row_width_ft":  150,
+            }
+        else:
+            constraints["transmission_row"] = {"acres": 0, "pct": 0, "line_count": 0,
+                                                 "row_width_ft": 150}
+    except Exception as e:
+        constraints["transmission_row"] = {"error": str(e)}
+
+    # Streams — 50ft buffer each side (riparian setback)
+    try:
+        streams_fc = cached_layer_query("streams", bbox_query_poly)
+        stream_lines = [shp_shape(f["geometry"]) for f in streams_fc.get("features", [])
+                        if f.get("geometry")]
+        print(f"[analyze] stream features returned: {len(stream_lines)}", flush=True)
+        if stream_lines:
+            stream_lines_utm = [transform(to_utm, l) for l in stream_lines]
+            buffered = unary_union([l.buffer(15.24) for l in stream_lines_utm])  # 50ft = 15.24m
+            project_utm = transform(to_utm, project_union)
+            streams_in_project = buffered.intersection(project_utm)
+            constraints["stream_buffers"] = {
+                "acres":         round(streams_in_project.area / 4046.8564224, 2),
+                "pct":           round(streams_in_project.area / gross_acres_m2 * 100, 1) if gross_acres_m2 > 0 else 0,
+                "stream_count":  len(stream_lines),
+                "buffer_ft":     50,
+            }
+        else:
+            constraints["stream_buffers"] = {"acres": 0, "pct": 0, "stream_count": 0,
+                                              "buffer_ft": 50}
+    except Exception as e:
+        constraints["stream_buffers"] = {"error": str(e)}
+
+    # Pipelines — 50ft each side (standard pipeline easement). Query by bbox
+    # envelope to avoid Esri polygon-complexity rejection.
+    try:
+        pipe_fc = arcgis_query(ENDPOINTS["rrc_pipelines"], bbox=bbox_query_poly.bounds)
+        pipe_lines = [shp_shape(f["geometry"]) for f in pipe_fc.get("features", [])
+                       if f.get("geometry")]
+        print(f"[analyze] pipeline features returned: {len(pipe_lines)}", flush=True)
+        if pipe_lines:
+            pipe_lines_utm = [transform(to_utm, l) for l in pipe_lines]
+            buffered = unary_union([l.buffer(15.24) for l in pipe_lines_utm])
+            project_utm = transform(to_utm, project_union)
+            pipes_in_project = buffered.intersection(project_utm)
+            constraints["pipeline_easements"] = {
+                "acres":         round(pipes_in_project.area / 4046.8564224, 2),
+                "pct":           round(pipes_in_project.area / gross_acres_m2 * 100, 1) if gross_acres_m2 > 0 else 0,
+                "pipeline_count": len(pipe_lines),
+                "buffer_ft":     50,
+            }
+        else:
+            constraints["pipeline_easements"] = {"acres": 0, "pct": 0,
+                                                   "pipeline_count": 0, "buffer_ft": 50}
+    except Exception as e:
+        constraints["pipeline_easements"] = {"error": str(e)}
+
+    # Recompute carefully — use individual unions.
+    #
+    # Every net-out is individually switchable. Wetlands in particular are often
+    # mitigable or already permitted, so a blanket deduction understates a site;
+    # the same applies to a pipeline easement that runs along a boundary you were
+    # never going to build on. Defaults stay conservative (everything netted out)
+    # and the project's `netout_assumptions` overrides them.
+    netout = proj.get("netout_assumptions") or {}
+    def _on(key):
+        return netout.get(key, True) is not False
+
+    project_utm = transform(to_utm, project_union)
+    all_constraints_utm = []
+    netout_detail = []          # per-constraint acreage, so the UI can show the ladder
+
+    def _record(key, label, geom_utm, enabled):
+        """Measure a constraint's own footprint, then include it only if enabled."""
+        try:
+            ac = geom_utm.area / 4046.8564224 if geom_utm else 0.0
+        except Exception:
+            ac = 0.0
+        netout_detail.append({"key": key, "label": label,
+                              "acres": round(ac, 2), "applied": bool(enabled and ac > 0)})
+        if enabled and geom_utm is not None and not geom_utm.is_empty:
+            all_constraints_utm.append(geom_utm)
+
+    # Reuse the unions built above rather than repeating the work - on a large
+    # tract against a dense NWI area that union is the expensive part.
+    for key, label, geom_wgs, ckey in [
+        ("flood", "Floodplain (100-yr)", flood_union, "floodplain"),
+        ("wetlands", "Wetlands (NWI)", wet_union, "wetlands"),
+    ]:
+        layer_err = (constraints.get(ckey) or {}).get("error")
+        if layer_err:
+            # The layer never loaded. That is not the same as a zero-acre
+            # constraint, and the UI has to be able to tell them apart.
+            netout_detail.append({"key": key, "label": label, "acres": 0.0,
+                                  "applied": False, "error": True,
+                                  "reason": str(layer_err)[:120]})
+            continue
+        try:
+            g = transform(to_utm, geom_wgs.intersection(project_union)) if geom_wgs is not None else None
+            _record(key, label, g, _on(key))
+        except Exception as e:
+            netout_detail.append({"key": key, "label": label, "acres": 0.0,
+                                  "applied": False, "error": True, "reason": str(e)[:120]})
+
+    for key, label, lines, buf, ckey in [
+        ("transmission", "Transmission easement", trans_lines, 22.86, "transmission_row"),
+        ("streams", "Stream buffer", stream_lines, 15.24, "stream_buffers"),
+        ("pipelines", "Pipeline easement", pipe_lines, 15.24, "pipeline_easements"),
+    ]:
+        try:
+            if lines:
+                ls = [transform(to_utm, l) for l in lines]
+                g = unary_union([l.buffer(buf) for l in ls]).intersection(project_utm)
+                _record(key, label, g, _on(key))
+            else:
+                # An empty list means either "nothing here" or "the fetch died".
+                # Those are opposite facts about the site - one of them means the
+                # acreage is overstated - so read which it was off the constraints
+                # dict rather than reporting a confident zero either way.
+                _err = (constraints.get(ckey) or {}).get("error")
+                netout_detail.append({"key": key, "label": label, "acres": 0.0,
+                                      "applied": False,
+                                      **({"error": True, "reason": str(_err)[:120]} if _err else {})})
+        except Exception as e:
+            netout_detail.append({"key": key, "label": label, "acres": 0.0,
+                                  "applied": False, "error": True, "reason": str(e)[:120]})
+
+    if all_constraints_utm:
+        constraints_union = unary_union(all_constraints_utm)
+        net_dev_utm = project_utm.difference(constraints_union)
+        net_dev_acres = net_dev_utm.area / 4046.8564224
+    else:
+        net_dev_acres = gross_acres
+
+    # Infrastructure and landscaping. What survives the physical constraints is
+    # still raw land: roads, detention, utility corridors, amenity and open space
+    # all come out of it before a single lot can be platted. 30% is the planning
+    # default here; it is an input, not a constant, so it can be dialled per deal.
+    try:
+        infra_pct = float(netout.get("infrastructure_pct", 30))
+    except (TypeError, ValueError):
+        infra_pct = 30.0
+    infra_pct = max(0.0, min(infra_pct, 90.0))
+    infra_acres = net_dev_acres * (infra_pct / 100.0)
+    net_saleable_acres = max(0.0, net_dev_acres - infra_acres)
+
+    # Yield — pro-forma with multi-product mix. Each lot type has:
+    #   - allocation_pct (% of net developable assigned to this product)
+    #   - units_per_acre (density, gross — roads/drainage already factored in)
+    # Total lots = sum of (net_dev × allocation% × density).
+    assumptions = proj.get("yield_assumptions") or {}
+    lot_types_in = assumptions.get("lot_types") or []
+    # Back-compat: if an old project has just units_per_acre, treat as single-type
+    if not lot_types_in and assumptions.get("units_per_acre"):
+        lot_types_in = [{
+            "label": "Default",
+            "units_per_acre": float(assumptions["units_per_acre"]),
+            "allocation_pct": 100,
+        }]
+    if not lot_types_in:
+        lot_types_in = [
+            {"label": "40 FF", "units_per_acre": 6.0, "allocation_pct": 25},
+            {"label": "50 FF", "units_per_acre": 5.0, "allocation_pct": 25},
+            {"label": "60 FF", "units_per_acre": 4.0, "allocation_pct": 25},
+            {"label": "70 FF", "units_per_acre": 3.5, "allocation_pct": 25},
+        ]
+    # Normalize: clamp values + compute per-type yield + totals
+    breakdown = []
+    total_lots = 0
+    total_alloc_pct = 0
+    for lt in lot_types_in:
+        try:
+            upa  = max(0.0, float(lt.get("units_per_acre") or 0))
+            alloc = max(0.0, min(100.0, float(lt.get("allocation_pct") or 0)))
+        except (TypeError, ValueError):
+            upa, alloc = 0.0, 0.0
+        ac_for_type = net_saleable_acres * (alloc / 100.0)
+        lots = int(round(ac_for_type * upa))
+        breakdown.append({
+            "label":           lt.get("label") or "Lot type",
+            "units_per_acre":  upa,
+            "allocation_pct":  alloc,
+            "acres":           round(ac_for_type, 2),
+            "lots":            lots,
+        })
+        total_lots += lots
+        total_alloc_pct += alloc
+    weighted_density = (total_lots / net_saleable_acres) if net_saleable_acres > 0 else 0
+    yields = {
+        "total_lots":         total_lots,
+        "weighted_density":   round(weighted_density, 2),
+        "total_allocation_pct": round(total_alloc_pct, 1),
+        "breakdown":          breakdown,
+        "assumptions": {
+            "lot_types": breakdown,
+        },
+    }
+
+    # Build constraint GEOMETRIES (clipped to project) for client-side visualization.
+    # Each entry is a GeoJSON FeatureCollection ready to drop into Leaflet.
+    constraint_geoms = {}
+    def _constraint_geom_failed(key, err):
+        print(f"[analyze] constraint geometry '{key}' skipped: {type(err).__name__}: {err}",
+              flush=True)
+
+    try:
+        if flood_union:
+            clipped = flood_union.intersection(project_union)
+            if not clipped.is_empty:
+                constraint_geoms["floodplain"] = {"type": "Feature",
+                                                    "geometry": shp_mapping(clipped),
+                                                    "properties": {"acres": constraints["floodplain"]["acres"]}}
+    except Exception as e:
+        _constraint_geom_failed("floodplain", e)
+    try:
+        if wet_union:
+            clipped = wet_union.intersection(project_union)
+            if not clipped.is_empty:
+                constraint_geoms["wetlands"] = {"type": "Feature",
+                                                   "geometry": shp_mapping(clipped),
+                                                   "properties": {"acres": constraints["wetlands"]["acres"]}}
+    except Exception as e:
+        _constraint_geom_failed("wetlands", e)
+    try:
+        # Transmission and pipelines are LINES — return them so client can render with the standard line style
+        if trans_lines:
+            constraint_geoms["transmission"] = {
+                "type": "FeatureCollection",
+                "features": [{"type": "Feature", "geometry": shp_mapping(l), "properties": {}}
+                              for l in trans_lines],
+            }
+    except Exception as e:
+        _constraint_geom_failed("transmission", e)
+    try:
+        if stream_lines:
+            constraint_geoms["streams"] = {
+                "type": "FeatureCollection",
+                "features": [{"type": "Feature", "geometry": shp_mapping(l), "properties": {}}
+                              for l in stream_lines],
+            }
+    except Exception as e:
+        _constraint_geom_failed("streams", e)
+    try:
+        if pipe_lines:
+            constraint_geoms["pipelines"] = {
+                "type": "FeatureCollection",
+                "features": [{"type": "Feature", "geometry": shp_mapping(l), "properties": {}}
+                              for l in pipe_lines],
+            }
+    except Exception as e:
+        _constraint_geom_failed("pipelines", e)
+
+    analysis = {
+        "computed_at":         datetime.now().isoformat(timespec="seconds"),
+        "gross_acres":         round(gross_acres, 2),
+        "net_developable_acres": round(net_dev_acres, 2),
+        "net_developable_pct": round(net_dev_acres / gross_acres * 100, 1) if gross_acres > 0 else 0,
+        "netout_detail": netout_detail,
+        "infrastructure_pct": round(infra_pct, 1),
+        "infrastructure_acres": round(infra_acres, 2),
+        "net_saleable_acres": round(net_saleable_acres, 2),
+        "net_saleable_pct": round(net_saleable_acres / gross_acres * 100, 1) if gross_acres > 0 else 0,
+        "netout_assumptions": {
+            **{k: _on(k) for k in ("flood", "wetlands", "transmission", "streams", "pipelines")},
+            "infrastructure_pct": round(infra_pct, 1),
+        },
+        "constraints":         constraints,
+        "constraint_geoms":    constraint_geoms,   # for client-side map overlay
+        "yield_estimates":     yields,
+        "tract_count":         len(tracts),
+        "union_geometry":      shp_mapping(project_union),
+    }
+    return analysis
