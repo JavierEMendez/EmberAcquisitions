@@ -5888,6 +5888,10 @@ def _pcf_build_context(data: dict, uploaded_at) -> dict:
         "months": data.get("months") or [],
         "categories": data.get("categories") or [],
         "grand_total": data.get("grand_total") or {},
+        # Deal toggles + the workbook's scenario engine (base/delta series per
+        # ledger row) so the page can rebuild any toggle combination exactly.
+        "toggles": data.get("toggles") or [],
+        "scenario_overrides": data.get("scenario_overrides") or {},
         "actuals_through": cutoff,
         "uploaded_at": uploaded_at.isoformat() if hasattr(uploaded_at, "isoformat") else str(uploaded_at or ""),
         "source_filename": data.get("source_filename") or "",

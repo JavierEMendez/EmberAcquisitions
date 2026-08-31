@@ -50,7 +50,7 @@ def parse_partners_cf(file_bytes: bytes) -> dict:
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
 
     # Locate the sheet + title cell ("EMBER PARTNERS CF").
-    grid, title_row, title_col = None, None, None
+    grid, title_row, title_col, ws_title = None, None, None, None
     for name in wb.sheetnames:
         ws = wb[name]
         g = {}
@@ -64,7 +64,7 @@ def parse_partners_cf(file_bytes: bytes) -> dict:
                     g[(rn, i + 1)] = v
         for (r, c), v in g.items():
             if _str(v).upper() == _TITLE:
-                grid, title_row, title_col = g, r, c
+                grid, title_row, title_col, ws_title = g, r, c, name
                 break
         if grid:
             break
@@ -101,7 +101,9 @@ def parse_partners_cf(file_bytes: bytes) -> dict:
                 out[key] = v
         return out
 
-    # Category blocks down the label column.
+    # Category blocks down the label column. Each item keeps its sheet row
+    # (the scenario engine's deltas target rows by number) and its ownership
+    # tag (E / CCDL) from the column left of the block when present.
     categories = []
     current = None
     grand_total = {}
@@ -125,10 +127,32 @@ def parse_partners_cf(file_bytes: bytes) -> dict:
             current = {"name": label, "items": [], "total": {}}
             categories.append(current)
         else:
-            current["items"].append({"name": label, "months": _row_values(r)})
+            entity = ""
+            for cc in range(1, title_col):
+                tag = _str(grid.get((r, cc)))
+                if tag and len(tag) <= 10:
+                    entity = tag
+                    break
+            current["items"].append({"name": label, "row": r,
+                                     "entity": entity, "months": _row_values(r)})
     categories = [c for c in categories if c["items"]]
     if not categories:
         raise ValueError("No category blocks found under the title cell")
+
+    # Deal toggles: labelled booleans above the title cell ("1080 Tract 1
+    # Sold" / "Data Center Deal" / "Millican Reserve" = TRUE). Their order
+    # matches the Scenario engine's numbering (D1 -> scenario 1, ...).
+    toggles = []
+    for r in range(1, title_row):
+        name = _str(grid.get((r, title_col)))
+        flag = grid.get((r, title_col + 1))
+        if name and isinstance(flag, bool):
+            toggles.append({"num": len(toggles) + 1, "name": name, "on": flag,
+                            "row": r})
+
+    item_rows = {it["row"] for c in categories for it in c["items"]}
+    overrides = _parse_scenarios(file_bytes, wb, ws_title, month_cols,
+                                 item_rows, toggles)
 
     # "Actuals through" month from a date in the filename-style title or the
     # workbook itself is not carried on-sheet; the caller stamps it.
@@ -136,7 +160,107 @@ def parse_partners_cf(file_bytes: bytes) -> dict:
         "months": months,
         "categories": categories,
         "grand_total": grand_total,
+        "toggles": toggles,
+        "scenario_overrides": overrides,
     }
+
+
+# A scenario-driven ledger cell:  =Scenarios!<base>+Scenarios!<delta>*Scenarios!$B$<flag>
+_SCEN_CELL_RE = re.compile(
+    r"^=Scenarios!\$?([A-Z]{1,3})\$?(\d+)\s*\+\s*Scenarios!\$?([A-Z]{1,3})\$?(\d+)"
+    r"\s*\*\s*Scenarios!\$?B\$?(\d+)$", re.I)
+# The flag cell:  =IF('EMBER PARTNERS'!$D$<toggle row>=TRUE,1,0)
+_SCEN_FLAG_RE = re.compile(r"!\$?[A-Z]{1,3}\$?(\d+)\s*=\s*TRUE", re.I)
+
+
+def _parse_scenarios(file_bytes, wb_values, ws_title, month_cols,
+                     item_rows, toggles) -> dict:
+    """The workbook's own scenario engine, extracted from the FORMULAS.
+
+    Every scenario-driven cell on the main ledger reads
+    `=Scenarios!<base> + Scenarios!<delta> * Scenarios!$B$<flag>`, where the
+    flag cell is 1/0 off one of the toggle booleans. The Scenarios sheet's
+    Zone A does NOT reliably mirror the ledger's columns (the Data Center
+    cells read column T from a December column), so the wiring is taken
+    per-cell from the formulas rather than assumed geometrically.
+
+    Returns {"<ledger row>": {"base": {ym: $}, "deltas": {"<toggle num>": {ym: $}}}}
+    — empty for workbooks that predate the engine.
+    """
+    from openpyxl.utils import column_index_from_string
+
+    if not toggles:
+        return {}
+    scen_name = None
+    for name in wb_values.sheetnames:
+        if name.strip().lower() == "scenarios":
+            scen_name = name
+            break
+    if scen_name is None:
+        return {}
+
+    # Second pass over the SAME file for formulas (read_only keeps it cheap).
+    wbf = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True,
+                                 data_only=False)
+    max_c = max(c for c, _ym in month_cols)
+    fgrid = {}
+    rn = 0
+    for row in wbf[ws_title].iter_rows(min_row=1, max_row=max(item_rows) + 1,
+                                       max_col=max_c):
+        rn += 1
+        for i, c in enumerate(row):
+            v = getattr(c, "value", None)
+            if isinstance(v, str) and v.startswith("="):
+                fgrid[(rn, i + 1)] = v
+
+    # Flag row on Scenarios!B -> toggle number, via the flag's own formula
+    # referencing the toggle's $D$<row> on the ledger sheet.
+    row_to_toggle = {t["row"]: str(t["num"]) for t in toggles}
+    flag_to_toggle = {}
+    frn = 0
+    for row in wbf[scen_name].iter_rows(min_row=1, max_row=40, max_col=2):
+        frn += 1
+        v = getattr(row[1], "value", None) if len(row) > 1 else None
+        if isinstance(v, str) and v.startswith("="):
+            m = _SCEN_FLAG_RE.search(v)
+            if m and int(m.group(1)) in row_to_toggle:
+                flag_to_toggle[str(frn)] = row_to_toggle[int(m.group(1))]
+    wbf.close()
+
+    # Scenarios sheet VALUES, at the exact cells the formulas reference.
+    sws = wb_values[scen_name]
+    sgrid = {}
+    rn = 0
+    for row in sws.iter_rows(min_row=1, max_row=min(sws.max_row, 300),
+                             max_col=min(sws.max_column, max_c)):
+        rn += 1
+        for i, c in enumerate(row):
+            v = getattr(c, "value", None)
+            if v is not None:
+                sgrid[(rn, i + 1)] = v
+
+    overrides = {}
+    for (r, c), f in fgrid.items():
+        if r not in item_rows:
+            continue
+        ym = next((m for cc, m in month_cols if cc == c), None)
+        if ym is None:
+            continue                      # a per-year Total column
+        m = _SCEN_CELL_RE.match(f.replace("'", ""))
+        if not m:
+            continue
+        tog = flag_to_toggle.get(m.group(5))
+        if tog is None:
+            continue
+        base = _num(sgrid.get((int(m.group(2)), column_index_from_string(m.group(1)))))
+        delta = _num(sgrid.get((int(m.group(4)), column_index_from_string(m.group(3)))))
+        o = overrides.setdefault(str(r), {"base": {}, "deltas": {}})
+        if base:
+            o["base"][ym] = base
+        if delta:
+            o["deltas"].setdefault(tog, {})[ym] = delta
+    # Rows whose engine cells are all zero add nothing — drop empty shells.
+    return {r: o for r, o in overrides.items() if o["base"] or o["deltas"]}
 
 
 _FILENAME_DATE_RE = re.compile(r"(\d{4})[_\-. ](\d{1,2})(?:[_\-. ](\d{1,2}))?")

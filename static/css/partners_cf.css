@@ -79,6 +79,51 @@
   white-space: nowrap;
 }
 
+/* ── Deal-scenario pills (mirror the workbook's toggles) ───── */
+.pcf-toggles {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pcf-toggles-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--eax-subtle);
+  margin-right: 2px;
+}
+.pcf-scen {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--eax-bg-2);
+  border: 1px solid var(--eax-line);
+  color: var(--eax-muted);
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+}
+.pcf-scen:hover { border-color: var(--eax-line-2); color: var(--eax-ink); }
+.pcf-scen-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--eax-line-2);
+  transition: background .15s;
+}
+.pcf-scen.is-on {
+  background: var(--eax-accent);
+  border-color: var(--eax-accent);
+  color: var(--eax-accent-fg);
+  font-weight: 700;
+  box-shadow: 0 2px 10px rgba(242, 89, 41, 0.22);
+}
+.pcf-scen.is-on .pcf-scen-dot { background: var(--eax-accent-fg); }
+
 /* ── Ledger table (BVA-style, year columns + month drill) ──── */
 .pcf-tablewrap {
   background: var(--eax-bg-2);
@@ -135,6 +180,44 @@ th.pcf-year.open { color: var(--eax-accent); }
   letter-spacing: 0.04em;
   font-size: 11px;
 }
+.pcf-table tr.pcf-cat { cursor: pointer; }
+.pcf-table tr.pcf-cat:hover td { filter: brightness(0.97); }
+.pcf-table tr.pcf-cat td.left .caret {
+  display: inline-block; width: 14px;
+  color: var(--eax-accent); font-size: 9px;
+}
+.pcf-count {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--eax-subtle);
+  background: var(--eax-surface);
+  border: 1px solid var(--eax-line);
+  border-radius: 999px;
+  padding: 1px 7px;
+  margin-left: 8px;
+  vertical-align: 1px;
+  letter-spacing: 0;
+}
+.pcf-table th.trend, .pcf-table td.trend {
+  border-left: 1px solid var(--eax-line);
+  border-right: 1px solid var(--eax-line);
+  width: 100px; min-width: 100px;
+  text-align: center;
+  padding: 4px 6px;
+}
+.pcf-ent {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--eax-muted);
+  background: var(--eax-bg-2);
+  border: 1px solid var(--eax-line);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-left: 8px;
+  vertical-align: 1px;
+}
+.pcf-scenflag { color: var(--eax-accent); margin-left: 6px; font-size: 10px; }
 .pcf-table tr.item td.left { padding-left: 28px; color: var(--eax-ink-2); }
 .pcf-table tr.total td { font-weight: 700; background: var(--eax-bg-2); }
 .pcf-table tr.grand td {

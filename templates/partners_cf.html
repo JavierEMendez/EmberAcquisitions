@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="/static/theme.css?v=3"/>
-<link rel="stylesheet" href="/static/css/partners_cf.css?v=2"/>
+<link rel="stylesheet" href="/static/css/partners_cf.css?v=3"/>
 <script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 <style>
   /* App shell — canonical sidebar chrome (same as /financials). */
@@ -147,13 +147,15 @@
       <p class="pcf-sub">
         Partner-level sources &amp; uses from the <b>EMBER Partners CF</b> workbook —
         contributions and dividends per partner, opex, pre-development, GP co-invest,
-        and promotes. Click a year header to expand its months; columns after the
-        actuals cutoff render as projections.
+        and promotes. Click a category to open its line items, a year header to
+        expand its months, and the deal-scenario pills to see the plan with or
+        without each deal; columns after the actuals cutoff render as projections.
       </p>
 
       {# ── Controls ────────────────────────────────────────── #}
       <div class="pcf-controls">
         <span class="pcf-cutoff-chip" id="pcf-cutoff" style="display:none;"></span>
+        <div class="pcf-toggles" id="pcf-toggles" style="display:none;"></div>
         <span style="flex:1"></span>
         {% if is_admin %}
         <button id="pcf-upload-btn" class="pcf-btn primary">
@@ -186,7 +188,12 @@
   const $ = (id) => document.getElementById(id);
   const IS_ADMIN = {{ 'true' if is_admin else 'false' }};
 
-  const state = { ctx: null, expandedYear: null };
+  const state = {
+    ctx: null,
+    expandedYear: null,
+    openCats: {},     // category name -> true (any number open at once)
+    scen: {},         // toggle num (string) -> bool; seeded from the workbook
+  };
 
   const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
@@ -236,7 +243,72 @@
       $('pcf-cutoff').textContent = 'Actuals through ' + fmtCutoff(d.actuals_through);
       $('pcf-cutoff').style.display = '';
     }
+    (d.toggles || []).forEach(t => {
+      if (!(String(t.num) in state.scen)) state.scen[String(t.num)] = !!t.on;
+    });
+    readHash();
+    renderToggles();
     render();
+  }
+
+  // ── deal scenario pills ────────────────────────────────────
+  function renderToggles() {
+    const wrap = $('pcf-toggles');
+    const toggles = (state.ctx && state.ctx.toggles) || [];
+    if (!toggles.length) { wrap.style.display = 'none'; return; }
+    wrap.style.display = '';
+    wrap.innerHTML = '<span class="pcf-toggles-label">Deal Scenarios</span>' +
+      toggles.map(t => {
+        const on = !!state.scen[String(t.num)];
+        return `<button type="button" class="pcf-scen ${on ? 'is-on' : ''}"
+                        data-scen="${t.num}" aria-pressed="${on}">
+                  <span class="pcf-scen-dot"></span>${escapeHtml(t.name)}</button>`;
+      }).join('');
+    wrap.querySelectorAll('.pcf-scen').forEach(btn =>
+      btn.addEventListener('click', () => {
+        const k = btn.dataset.scen;
+        state.scen[k] = !state.scen[k];
+        renderToggles();
+        render();
+        syncHash();
+      }));
+  }
+
+  // ── effective monthly series under the current toggle state ─
+  // Engine-wired cells rebuild as base + Σ(active deltas); everything else
+  // keeps the workbook's stored value — exactly the ledger's own formula.
+  function effMonths(item) {
+    const ov = (state.ctx.scenario_overrides || {})[String(item.row)];
+    if (!ov) return item.months || {};
+    const out = Object.assign({}, item.months || {});
+    const wired = new Set(Object.keys(ov.base || {}));
+    for (const series of Object.values(ov.deltas || {}))
+      for (const ym of Object.keys(series)) wired.add(ym);
+    for (const ym of wired) {
+      let v = (ov.base || {})[ym] || 0;
+      for (const [num, series] of Object.entries(ov.deltas || {}))
+        if (state.scen[num]) v += series[ym] || 0;
+      if (v) out[ym] = v; else delete out[ym];
+    }
+    return out;
+  }
+
+  // ── sparkline (ops-style, 88×22) over the displayed columns ─
+  function sparkline(values, color, bold) {
+    const w = 88, h = 22, pad = 2;
+    if (!values.length || values.every(v => v === 0)) return '';
+    const max = Math.max(...values), min = Math.min(...values);
+    const range = (max - min) || 1;
+    const step = (w - pad * 2) / Math.max(1, values.length - 1);
+    let dAttr = '';
+    values.forEach((v, i) => {
+      const x = pad + i * step;
+      const y = pad + (1 - (v - min) / range) * (h - pad * 2);
+      dAttr += (i === 0 ? 'M' : 'L') + ' ' + x.toFixed(1) + ' ' + y.toFixed(1) + ' ';
+    });
+    return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+      <path d="${dAttr}" fill="none" stroke="${color}"
+            stroke-width="${bold ? 1.6 : 1.1}" opacity="${bold ? 1 : 0.8}"/></svg>`;
   }
 
   // ── column model: years, one of which may be expanded to months ──
@@ -280,7 +352,7 @@
   function render() {
     const ctx = state.ctx;
     const cols = columns();
-    const head = `<thead><tr><th class="left">Line Item</th>` + cols.map(c => {
+    const head = `<thead><tr><th class="left">Line Item</th><th class="trend">Trend</th>` + cols.map(c => {
       const yend = c.yend ? ' yend' : '';
       if (c.key === 'life') return `<th>Life</th>`;
       if (c.month) {
@@ -297,29 +369,59 @@
     const cells = (months, cls) => cols.map(c =>
       `<td class="${c.proj ? 'proj' : ''}${c.yend ? ' yend' : ''}${cls ? ' ' + cls(cellValue(months, c)) : ''}">${fmt(cellValue(months, c))}</td>`).join('');
 
+    const trendCell = (months, color, bold) => {
+      const vals = cols.filter(c => c.key !== 'life').map(c => cellValue(months, c));
+      return `<td class="trend">${sparkline(vals, color, bold)}</td>`;
+    };
+
     let body = '';
     const netMonths = {};
     for (const cat of ctx.categories) {
-      body += `<tr class="band"><td class="left">${escapeHtml(cat.name)}</td>${cells(cat.total)}</tr>`;
-      for (const it of cat.items) {
-        body += `<tr class="item"><td class="left">${escapeHtml(it.name)}</td>${cells(it.months)}</tr>`;
+      // Category totals recompute from the items' EFFECTIVE series so the
+      // deal toggles flow through (the workbook's stored totals bake in
+      // the toggle state it was saved with).
+      const catTotal = {};
+      const effs = cat.items.map(it => {
+        const m = effMonths(it);
+        for (const [ym, v] of Object.entries(m)) catTotal[ym] = (catTotal[ym] || 0) + v;
+        return m;
+      });
+      const open = !!state.openCats[cat.name];
+      body += `<tr class="band pcf-cat ${open ? 'is-open' : ''}" data-cat="${encodeURIComponent(cat.name)}">
+        <td class="left"><span class="caret">${open ? '▾' : '▸'}</span>${escapeHtml(cat.name)}
+          <span class="pcf-count">${cat.items.length}</span></td>
+        ${trendCell(catTotal, 'var(--eax-accent)', true)}${cells(catTotal)}</tr>`;
+      if (open) {
+        cat.items.forEach((it, i) => {
+          const scen = ctx.scenario_overrides && ctx.scenario_overrides[String(it.row)];
+          const chip = it.entity ? `<span class="pcf-ent">${escapeHtml(it.entity)}</span>` : '';
+          const flag = scen ? `<span class="pcf-scenflag" title="Moves with a deal scenario">◈</span>` : '';
+          body += `<tr class="item"><td class="left">${escapeHtml(it.name)}${chip}${flag}</td>
+            ${trendCell(effs[i], 'var(--eax-muted)', false)}${cells(effs[i])}</tr>`;
+        });
       }
-      for (const [m, v] of Object.entries(cat.total || {})) netMonths[m] = (netMonths[m] || 0) + v;
+      for (const [m, v] of Object.entries(catTotal)) netMonths[m] = (netMonths[m] || 0) + v;
     }
     const flowCls = (v) => Math.round(v) > 0 ? 'pos' : (Math.round(v) < 0 ? 'neg' : '');
-    body += `<tr class="grand"><td class="left">Net Cash Flow</td>${cells(netMonths, flowCls)}</tr>`;
+    body += `<tr class="grand"><td class="left">Net Cash Flow</td>
+      ${trendCell(netMonths, 'var(--eax-ink)', true)}${cells(netMonths, flowCls)}</tr>`;
     // Cumulative through the END of each displayed column.
     const sortedMonths = [...state.ctx.months];
-    const cumCells = cols.map(c => {
-      let end;
-      if (c.key === 'life') end = sortedMonths[sortedMonths.length - 1];
-      else if (c.month) end = c.month;
-      else end = c.year + '-12';
+    const cumEnd = (c) => c.key === 'life' ? sortedMonths[sortedMonths.length - 1]
+                        : (c.month ? c.month : c.year + '-12');
+    const cumAt = (end) => {
       let s = 0;
       for (const [m, v] of Object.entries(netMonths)) if (m <= end) s += v;
+      return s;
+    };
+    const cumSeries = {};
+    cols.filter(c => c.key !== 'life').forEach(c => { cumSeries[cumEnd(c)] = cumAt(cumEnd(c)); });
+    const cumCells = cols.map(c => {
+      const s = cumAt(cumEnd(c));
       return `<td class="${c.proj ? 'proj' : ''}${c.yend ? ' yend' : ''} ${flowCls(s)}">${fmt(s)}</td>`;
     }).join('');
-    body += `<tr class="grand cumm"><td class="left">Cumulative</td>${cumCells}</tr>`;
+    body += `<tr class="grand cumm"><td class="left">Cumulative</td>
+      ${trendCell(cumSeries, 'var(--eax-subtle)', false)}${cumCells}</tr>`;
 
     const foot = `
       <div class="pcf-data-dates">
@@ -337,7 +439,40 @@
       th.addEventListener('click', () => {
         state.expandedYear = state.expandedYear === th.dataset.year ? null : th.dataset.year;
         render();
+        syncHash();
       }));
+    document.querySelectorAll('tr.pcf-cat').forEach(tr =>
+      tr.addEventListener('click', () => {
+        const name = decodeURIComponent(tr.dataset.cat);
+        if (state.openCats[name]) delete state.openCats[name];
+        else state.openCats[name] = true;
+        render();
+        syncHash();
+      }));
+  }
+
+  // ── deep-linking (#open=CAT|CAT&year=YYYY&off=1|3) ─────────
+  function syncHash() {
+    const parts = [];
+    const open = Object.keys(state.openCats);
+    if (open.length) parts.push('open=' + open.map(encodeURIComponent).join('|'));
+    if (state.expandedYear) parts.push('year=' + state.expandedYear);
+    const offs = Object.entries(state.scen).filter(([_k, v]) => !v).map(([k]) => k);
+    if (offs.length) parts.push('off=' + offs.join('|'));
+    history.replaceState(null, '', parts.length ? '#' + parts.join('&') : '#');
+  }
+  function readHash() {
+    const h = (location.hash || '').replace(/^#/, '');
+    if (!h) return;
+    h.split('&').forEach(kv => {
+      const i = kv.indexOf('=');
+      const k = kv.slice(0, i), v = kv.slice(i + 1);
+      if (k === 'open' && v) v.split('|').forEach(n => { state.openCats[decodeURIComponent(n)] = true; });
+      if (k === 'year' && /^\d{4}$/.test(v)) state.expandedYear = v;
+      if (k === 'off' && v) v.split('|').forEach(n => {
+        if (n in state.scen) state.scen[n] = false;
+      });
+    });
   }
 
   // ── upload (admin) ─────────────────────────────────────────
