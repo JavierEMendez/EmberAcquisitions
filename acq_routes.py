@@ -575,7 +575,9 @@ def api_acq_search():
 
     try:
         if cached:
-            features = parcel_cache.query_parcels_in_polygon(buf, min_acres, max_acres)
+            # Returns a FeatureCollection, not a bare list of features.
+            features = (parcel_cache.query_parcels_in_polygon(
+                buf, min_acres, max_acres) or {}).get("features") or []
         else:
             source = "live"
             fc = arcgis_query(

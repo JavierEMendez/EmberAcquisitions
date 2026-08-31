@@ -80,9 +80,12 @@ def init_db():
     """Create tables + R-Tree index if they don't exist. Idempotent."""
     with _db_lock, _conn() as c:
         c.executescript("""
+            -- Identity is (county_fips, prop_id), never prop_id alone: StratMap
+            -- Prop_IDs are unique only within a county, and treating them as
+            -- globally unique made each county overwrite the last one's parcels.
             CREATE TABLE IF NOT EXISTS parcels (
                 rowid       INTEGER PRIMARY KEY AUTOINCREMENT,
-                prop_id     TEXT UNIQUE NOT NULL,
+                prop_id     TEXT NOT NULL,
                 county_fips TEXT,
                 county_name TEXT,
                 owner_name  TEXT,
@@ -92,12 +95,11 @@ def init_db():
                 gis_area    REAL,
                 legal_area  REAL,
                 shape_wkb   BLOB,
-                updated_at  INTEGER
+                updated_at  INTEGER,
+                UNIQUE (county_fips, prop_id)
             );
             CREATE INDEX IF NOT EXISTS ix_parcels_county ON parcels(county_fips);
-            CREATE INDEX IF NOT EXISTS ix_parcels_owner  ON parcels(owner_name);
-            CREATE INDEX IF NOT EXISTS ix_parcels_owner_nocase
-                ON parcels(owner_name COLLATE NOCASE);
+            CREATE INDEX IF NOT EXISTS ix_parcels_propid ON parcels(prop_id);
 
             -- R-Tree spatial index. Query by bbox first (sublinear), then exact
             -- intersection in shapely. Keyed by parcels.rowid for fast joins.
@@ -116,6 +118,79 @@ def init_db():
                 status             TEXT        -- 'pending', 'loading', 'fresh', 'stale', 'error'
             );
         """)
+
+
+    # Heal a database created before parcel identity became (county, prop_id).
+    try:
+        with _db_lock, _conn() as _c:
+            _migrate_propid_unique(_c)
+    except Exception as _e:
+        print(f"[cache] parcels migration skipped: {_e}", flush=True)
+
+def _migrate_propid_unique(conn):
+    """Rebuild `parcels` if it still declares prop_id as globally UNIQUE.
+
+    That constraint plus INSERT OR REPLACE meant a county loaded later silently
+    replaced an earlier county's parcels wherever Prop_IDs collided - 22% of the
+    cache in practice. Rowids are preserved so parcels_rtree stays valid.
+    """
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='parcels'").fetchone()
+    if not row or not row[0]:
+        return False
+    sql = row[0]
+    if "UNIQUE (county_fips, prop_id)" in sql or "UNIQUE(county_fips, prop_id)" in sql:
+        return False        # already migrated
+    if "prop_id     TEXT UNIQUE" not in sql and "prop_id TEXT UNIQUE" not in sql:
+        return False        # some other shape; leave it alone
+
+    print("[cache] migrating parcels: prop_id UNIQUE -> UNIQUE(county_fips, prop_id)",
+          flush=True)
+    before = conn.execute("SELECT COUNT(*) FROM parcels").fetchone()[0]
+    conn.execute("PRAGMA foreign_keys=OFF")
+    conn.execute("BEGIN")
+    try:
+        conn.execute("""
+            CREATE TABLE parcels_migrated (
+                rowid       INTEGER PRIMARY KEY,
+                prop_id     TEXT NOT NULL,
+                county_fips TEXT,
+                county_name TEXT,
+                owner_name  TEXT,
+                mail_addr   TEXT,
+                situs_addr  TEXT,
+                legal_desc  TEXT,
+                gis_area    REAL,
+                legal_area  REAL,
+                shape_wkb   BLOB,
+                updated_at  INTEGER,
+                UNIQUE (county_fips, prop_id)
+            )
+        """)
+        conn.execute("""
+            INSERT INTO parcels_migrated
+                (rowid, prop_id, county_fips, county_name, owner_name, mail_addr,
+                 situs_addr, legal_desc, gis_area, legal_area, shape_wkb, updated_at)
+            SELECT rowid, prop_id, county_fips, county_name, owner_name, mail_addr,
+                   situs_addr, legal_desc, gis_area, legal_area, shape_wkb, updated_at
+              FROM parcels
+        """)
+        conn.execute("DROP TABLE parcels")
+        conn.execute("ALTER TABLE parcels_migrated RENAME TO parcels")
+        conn.execute("CREATE INDEX IF NOT EXISTS ix_parcels_county ON parcels(county_fips)")
+        conn.execute("CREATE INDEX IF NOT EXISTS ix_parcels_owner  ON parcels(owner_name)")
+        conn.execute("CREATE INDEX IF NOT EXISTS ix_parcels_owner_nocase "
+                     "ON parcels(owner_name COLLATE NOCASE)")
+        conn.execute("CREATE INDEX IF NOT EXISTS ix_parcels_propid ON parcels(prop_id)")
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    after = conn.execute("SELECT COUNT(*) FROM parcels").fetchone()[0]
+    print(f"[cache] migration done: {before:,} rows in, {after:,} rows out. "
+          f"Re-bootstrap each county to recover parcels lost to the old constraint.",
+          flush=True)
+    return True
 
 
 def cache_status():
