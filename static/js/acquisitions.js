@@ -514,7 +514,7 @@
     $('acq-dock-body').innerHTML = stageBlock
       + list(d.projects || [], 'No saved projects yet. Stage tracts on the map, then save them here.')
       + (d.history.length
-          ? '<div class="acq-layers-head" style="border-top:1px solid var(--eax-line)">Quick analysis history</div>'
+          ? '<div class="acq-layers-head" style="border-top:1px solid var(--eax-line)">Analysis history</div>'
             + list(d.history, '')
           : '');
 

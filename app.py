@@ -16251,6 +16251,7 @@ app.config["ACQ_GET_DB"] = get_db
 app.config["ACQ_LOGIN_REQUIRED"] = login_required
 app.config["ACQ_REFRESH_PAGE_ACCESS"] = _refresh_page_access_from_db
 app.config["ACQ_LOG_ACTIVITY"] = _log_activity
+app.config["ACQ_ADMIN_REQUIRED"] = admin_required
 
 import acq_routes
 acq_routes.init_app(app)

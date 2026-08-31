@@ -33,19 +33,36 @@ acq_bp = Blueprint("acq", __name__)
 # Filled in by init_app so this module never imports app.py.
 get_db = None
 login_required = None
+admin_required = None
 _refresh_page_access_from_db = None
 _log_activity = None
 
 
 def init_app(app):
     """Wire the blueprint to the host app's auth, DB and logging."""
-    global get_db, login_required, _refresh_page_access_from_db, _log_activity
+    global get_db, login_required, admin_required
+    global _refresh_page_access_from_db, _log_activity
     get_db = app.config["ACQ_GET_DB"]
     login_required = app.config["ACQ_LOGIN_REQUIRED"]
+    admin_required = app.config["ACQ_ADMIN_REQUIRED"]
     _refresh_page_access_from_db = app.config["ACQ_REFRESH_PAGE_ACCESS"]
     _log_activity = app.config["ACQ_LOG_ACTIVITY"]
     app.register_blueprint(acq_bp)
 
+
+
+def _admin_required(f):
+    """Defer to the host app's admin_required, resolved per request.
+
+    Needed because bootstrapping the parcel cache downloads millions of parcels
+    from TxGIO; it was admin-only in the standalone app and stays that way.
+    """
+    from functools import wraps
+
+    @wraps(f)
+    def wrapper(*a, **kw):
+        return admin_required(f)(*a, **kw)
+    return wrapper
 
 
 def _login_required(f):
@@ -6625,6 +6642,7 @@ def acq_api_corridor_tracts(sid):
 
 @acq_bp.route("/api/acq/cache/bootstrap", methods=["POST"])
 @_login_required
+@_admin_required
 def acq_api_cache_bootstrap():
     """Trigger a (re)bootstrap of one or more counties in the background.
     Body: {"counties": ["48201", ...] or "all"}.  Returns immediately; the
