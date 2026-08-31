@@ -127,6 +127,45 @@ def init_db():
     except Exception as _e:
         print(f"[cache] parcels migration skipped: {_e}", flush=True)
 
+    # Once per process: a county still marked 'loading' was killed, not failed.
+    global _loading_healed
+    if not _loading_healed:
+        _loading_healed = True
+        try:
+            with _db_lock, _conn() as _c:
+                _heal_stuck_loading(_c)
+        except Exception as _e:
+            print(f"[cache] stuck-loading heal skipped: {_e}", flush=True)
+
+_loading_healed = False
+
+
+def _heal_stuck_loading(conn):
+    """Clear 'loading' rows left behind by a process that died mid-bootstrap.
+
+    'loading' is only meaningful while a loader is alive, so any row still
+    carrying it when a process starts belongs to a run that was killed rather
+    than one that failed -- a kill raises nothing, so bootstrap_county's except
+    branch never sets 'error' and the county sits at 'loading' forever. The
+    admin page then shows it as work in progress, which is the same shape of
+    bug as a half-loaded county reporting 'fresh'.
+
+    A county with rows is marked 'partial' (it has data, but an unknown amount
+    is missing); one with none is marked 'error'.
+    """
+    rows = conn.execute(
+        "SELECT county_fips, county_name FROM cache_meta WHERE status='loading'").fetchall()
+    for fips, name in rows:
+        n = conn.execute("SELECT COUNT(*) FROM parcels WHERE county_fips=?",
+                         (fips,)).fetchone()[0]
+        conn.execute("UPDATE cache_meta SET status=?, parcel_count=? WHERE county_fips=?",
+                     ("partial" if n else "error", n, fips))
+        print(f"[cache] {name}: bootstrap died mid-load, {n:,} parcels present "
+              f"-- marked {'partial' if n else 'error'}, re-bootstrap to complete",
+              flush=True)
+    return len(rows)
+
+
 def _migrate_propid_unique(conn):
     """Rebuild `parcels` if it still declares prop_id as globally UNIQUE.
 
@@ -231,7 +270,7 @@ def _get_county_polygon(county_fips: str):
     ~300m of edge slop, fine for county-level filtering."""
     from shapely.geometry import shape as shp_shape
     # Lazy import to avoid circular dep with app.py
-    from app import arcgis_query, ENDPOINTS
+    from acq_gis import arcgis_query, ENDPOINTS
     state_fips = county_fips[:2]
     county_only = county_fips[2:]
     fc = arcgis_query(
@@ -268,7 +307,7 @@ def bootstrap_county(county_fips: str, county_name: str, on_progress=None) -> di
     """
     from shapely.geometry import shape as shp_shape, box as shp_box
     from shapely.wkb import dumps as wkb_dumps
-    from app import arcgis_query, ENDPOINTS, to_float
+    from acq_gis import arcgis_query, ENDPOINTS, to_float
 
     init_db()
     t0 = time.time()
@@ -299,33 +338,32 @@ def bootstrap_county(county_fips: str, county_name: str, on_progress=None) -> di
             x += TILE_SIZE_DEG
         if on_progress: on_progress(5, f"Querying {len(tiles)} bbox tiles for {county_name}…")
 
-        # Fetch one tile at a time. Each tile uses a clean envelope query (no
-        # polygon complexity issues). Pages within a tile run in parallel.
-        all_features = []
+        # Fetch AND insert one tile at a time. Each tile uses a clean envelope
+        # query (no polygon complexity issues); pages within a tile run in
+        # parallel.
+        #
+        # Streaming per tile rather than accumulating the county is deliberate.
+        # This used to build one `all_features` list holding every parcel in the
+        # county before inserting any of them. For Harris -- ~1.5M parcels of
+        # polygon geometry -- that ran the process to 3.5 GB and it was killed
+        # mid-load. A kill is not an exception, so the except branch below never
+        # ran, and the county sat pinned at 'loading' with half its parcels and
+        # no error anywhere. Peak memory is now one tile.
         tile_failures = 0
-        for i, tile_bbox in enumerate(tiles):
-            try:
-                fc = arcgis_query(
-                    ENDPOINTS["parcels"],
-                    bbox=tile_bbox,
-                    out_fields="Prop_ID,OWNER_NAME,LEGAL_DESC,SITUS_ADDR,MAIL_ADDR,LEGAL_AREA,GIS_AREA",
-                    page_size=2000, max_pages=200,
-                )
-                all_features.extend(fc.get("features", []))
-            except Exception as e:
-                tile_failures += 1
-                print(f"  [cache] {county_name} tile {i+1}/{len(tiles)} failed: {e}", flush=True)
-            if on_progress:
-                pct = 5 + int(60 * (i + 1) / max(1, len(tiles)))
-                on_progress(pct, f"Tile {i+1}/{len(tiles)} — {len(all_features):,} parcels so far…")
-
-        if not all_features:
-            raise RuntimeError(f"No parcels returned across {len(tiles)} tiles")
-
-        if on_progress: on_progress(70, f"Indexing {len(all_features):,} parcels into local DB…")
-
-        now = int(time.time())
+        fetched = 0
         inserted = 0
+        skipped_outside = 0
+        seen = set()
+        now = int(time.time())
+
+        # 1.5M point-in-polygon tests against a raw county polygon is the other
+        # half of Harris's runtime. Preparing the polygon builds an index once.
+        try:
+            from shapely.prepared import prep as _prep
+            poly_test = _prep(poly)
+        except Exception:
+            poly_test = poly
+
         with _db_lock, _conn() as c:
             # Clear any prior rows for this county before re-insert
             c.execute("""
@@ -335,62 +373,94 @@ def bootstrap_county(county_fips: str, county_name: str, on_progress=None) -> di
             """, (county_fips,))
             c.execute("DELETE FROM parcels WHERE county_fips = ?", (county_fips,))
 
-            c.execute("BEGIN")
-            seen = set()
-            skipped_outside = 0
-            for f in all_features:
-                if not f.get("geometry"):
-                    continue
-                props = f["properties"] or {}
-                pid = str(props.get("Prop_ID") or "").strip()
-                if not pid or pid in seen:
-                    continue   # tiles overlap; dedup on Prop_ID
+            for i, tile_bbox in enumerate(tiles):
                 try:
-                    g = shp_shape(f["geometry"])
-                except Exception:
-                    continue
-                if g.is_empty:
-                    continue
-                # Drop parcels whose centroid is outside the actual county polygon —
-                # cleanup of tile-edge artifacts from neighboring counties
-                try:
-                    if not poly.contains(g.centroid):
-                        skipped_outside += 1
-                        continue
-                except Exception:
-                    pass   # if centroid test fails, keep the parcel — safer
-                seen.add(pid)
-                wkb = wkb_dumps(g)
-                gminx, gminy, gmaxx, gmaxy = g.bounds
-                cur = c.execute("""
-                    INSERT OR REPLACE INTO parcels
-                    (prop_id, county_fips, county_name, owner_name, mail_addr,
-                     situs_addr, legal_desc, gis_area, legal_area, shape_wkb, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (pid, county_fips, county_name,
-                      props.get("OWNER_NAME"), props.get("MAIL_ADDR"),
-                      props.get("SITUS_ADDR"), props.get("LEGAL_DESC"),
-                      to_float(props.get("GIS_AREA")), to_float(props.get("LEGAL_AREA")),
-                      wkb, now))
-                c.execute("""
-                    INSERT OR REPLACE INTO parcels_rtree (id, minx, maxx, miny, maxy)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (cur.lastrowid, gminx, gmaxx, gminy, gmaxy))
-                inserted += 1
+                    fc = arcgis_query(
+                        ENDPOINTS["parcels"],
+                        bbox=tile_bbox,
+                        out_fields="Prop_ID,OWNER_NAME,LEGAL_DESC,SITUS_ADDR,MAIL_ADDR,LEGAL_AREA,GIS_AREA",
+                        page_size=2000, max_pages=200,
+                    )
+                    feats = fc.get("features", []) or []
+                except Exception as e:
+                    tile_failures += 1
+                    print(f"  [cache] {county_name} tile {i+1}/{len(tiles)} failed: {e}",
+                          flush=True)
+                    feats = []
 
+                fetched += len(feats)
+                c.execute("BEGIN")
+                try:
+                    for f in feats:
+                        if not f.get("geometry"):
+                            continue
+                        props = f["properties"] or {}
+                        pid = str(props.get("Prop_ID") or "").strip()
+                        if not pid or pid in seen:
+                            continue   # tiles overlap; dedup on Prop_ID
+                        try:
+                            g = shp_shape(f["geometry"])
+                        except Exception:
+                            continue
+                        if g.is_empty:
+                            continue
+                        # Drop parcels whose centroid is outside the actual county
+                        # polygon -- cleanup of tile-edge artifacts from neighbors
+                        try:
+                            if not poly_test.contains(g.centroid):
+                                skipped_outside += 1
+                                continue
+                        except Exception:
+                            pass   # if centroid test fails, keep the parcel -- safer
+                        seen.add(pid)
+                        wkb = wkb_dumps(g)
+                        gminx, gminy, gmaxx, gmaxy = g.bounds
+                        cur = c.execute("""
+                            INSERT OR REPLACE INTO parcels
+                            (prop_id, county_fips, county_name, owner_name, mail_addr,
+                             situs_addr, legal_desc, gis_area, legal_area, shape_wkb, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (pid, county_fips, county_name,
+                              props.get("OWNER_NAME"), props.get("MAIL_ADDR"),
+                              props.get("SITUS_ADDR"), props.get("LEGAL_DESC"),
+                              to_float(props.get("GIS_AREA")), to_float(props.get("LEGAL_AREA")),
+                              wkb, now))
+                        c.execute("""
+                            INSERT OR REPLACE INTO parcels_rtree (id, minx, maxx, miny, maxy)
+                            VALUES (?, ?, ?, ?, ?)
+                        """, (cur.lastrowid, gminx, gmaxx, gminy, gmaxy))
+                        inserted += 1
+                    c.execute("COMMIT")
+                except Exception:
+                    c.execute("ROLLBACK")
+                    raise
+                feats = fc = None    # release the tile before fetching the next
+
+                if on_progress:
+                    pct = 5 + int(90 * (i + 1) / max(1, len(tiles)))
+                    on_progress(pct, f"Tile {i+1}/{len(tiles)} - {inserted:,} parcels loaded...")
+
+            if not inserted:
+                raise RuntimeError(f"No parcels returned across {len(tiles)} tiles")
+
+            # A county whose tiles partly failed is NOT fresh. The loader
+            # deletes the county's rows before re-inserting, so a run that lost
+            # tiles leaves a hole — and marking that 'fresh' is how a county
+            # ends up looking healthy while a third of it is absent. Harris lost
+            # 12 of 32 tiles to a DNS blip and reported fresh regardless.
+            final_status = "partial" if tile_failures else "fresh"
             c.execute("""
                 INSERT INTO cache_meta
                 (county_fips, county_name, bootstrapped_at, last_refreshed_at,
                  parcel_count, status)
                 VALUES (?, ?, COALESCE((SELECT bootstrapped_at FROM cache_meta WHERE county_fips=?), ?),
-                        ?, ?, 'fresh')
+                        ?, ?, ?)
                 ON CONFLICT(county_fips) DO UPDATE SET
                     county_name=excluded.county_name,
                     last_refreshed_at=excluded.last_refreshed_at,
                     parcel_count=excluded.parcel_count,
-                    status='fresh'
-            """, (county_fips, county_name, county_fips, now, now, inserted))
-            c.execute("COMMIT")
+                    status=excluded.status
+            """, (county_fips, county_name, county_fips, now, now, inserted, final_status))
 
         elapsed = round(time.time() - t0, 1)
         msg = (f"{county_name}: {inserted:,} parcels in {elapsed}s "
@@ -400,7 +470,9 @@ def bootstrap_county(county_fips: str, county_name: str, on_progress=None) -> di
         print(f"[cache] {msg}", flush=True)
         return {"county_fips": county_fips, "county_name": county_name,
                 "parcel_count": inserted, "elapsed_sec": elapsed,
-                "tiles": len(tiles), "tile_failures": tile_failures}
+                "tiles": len(tiles), "tile_failures": tile_failures,
+                "status": final_status,
+                "complete": tile_failures == 0}
     except Exception as e:
         with _db_lock, _conn() as c:
             c.execute("UPDATE cache_meta SET status='error' WHERE county_fips=?",
@@ -471,7 +543,7 @@ def query_parcels_in_polygon(buffer_wgs, min_acres=0, max_acres=1e12):
 def coverage_for_polygon(buffer_wgs) -> list:
     """Return which counties this buffer touches and their cache status.
     Used by the search path to decide cache-vs-live."""
-    from app import arcgis_query, ENDPOINTS
+    from acq_gis import arcgis_query, ENDPOINTS
 
     # arcgis_query expects a shapely polygon (NOT a GeoJSON dict)
     fc = arcgis_query(
