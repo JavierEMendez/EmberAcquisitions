@@ -1,0 +1,784 @@
+{# ============================================================
+   Ember · Acquisitions GIS — Tract Detail
+   Ported from the standalone app. The page body and its JS come across as
+   they were; the shell, sidebar, theme tokens and account modal are the
+   portal's. API calls are repointed to /api/acq/.
+   ============================================================ #}
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Tract Detail · Ember Acquisitions</title>
+<link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="/static/theme.css?v=3"/>
+<link rel="stylesheet" href="/static/css/acquisitions.css?v=1"/>
+<script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
+<style>
+  /* App shell — copied from financials.html so /acquisitions nests in the
+     canonical sidebar chrome. */
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;}
+  body{background:var(--eax-bg);color:var(--eax-ink);font-family:'DM Sans','Plus Jakarta Sans',system-ui,sans-serif;overflow:hidden;}
+  #app{display:flex;height:100vh;overflow:hidden;}
+  #sidebar{width:240px;background:var(--eax-bg-2);border-right:1px solid var(--eax-line);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;}
+  .sidebar-logo{padding:16px 18px 14px;border-bottom:1px solid var(--eax-line)}
+  .logo-img{width:100%;max-width:160px;height:auto;display:block;margin:0 auto}
+  img.logo-light{display:none;}
+  [data-theme="light"] img.logo-dark{display:none;}
+  [data-theme="light"] img.logo-light{display:block;margin:0 auto;}
+  .logo-sub{font-size:10px;color:var(--eax-subtle);letter-spacing:0.2em;text-transform:uppercase;margin-top:8px;text-align:center;font-weight:700}
+  .sidebar-section{padding:8px 16px 4px;font-size:9px;line-height:1.2;color:var(--eax-subtle);letter-spacing:0.22em;text-transform:uppercase;margin-top:8px;font-weight:700}
+  .sidebar-item{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;border-radius:8px;margin:1px 8px;transition:all .15s;color:var(--eax-muted);font-size:13px;line-height:1.2;text-decoration:none;font-weight:500}
+  .sidebar-item:hover{background:var(--eax-accent-soft);color:var(--eax-ink);text-decoration:none}
+  .sidebar-item.active{background:var(--eax-surface);color:var(--eax-ink);font-weight:600;border:1px solid var(--eax-line);position:relative}
+  .sidebar-item.active::before{content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:2px;background:var(--eax-accent);border-radius:2px}
+  .sidebar-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0}
+  .sidebar-item.active .icon{opacity:1;color:var(--eax-accent)}
+  #main-content{flex:1;overflow:hidden;min-width:0;display:flex;}
+
+  .acq-legacy { flex:1; min-width:0; overflow:auto; padding:0 0 60px; }
+  /* The ported page's own styles. Rules targeting body, html, * or the old
+     nav were dropped at build time - they would have fought the shell. */
+
+
+  /* Top nav — shared header */
+  .top-nav { display: flex; align-items: center; height: 52px; background: #0A1825; color: #E8EBED;
+    padding: 0 20px; gap: 28px; border-bottom: 1px solid rgba(255,255,255,0.05); flex-shrink: 0; z-index: 100; }
+
+  .top-nav .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+
+  .top-nav .brand img { height: 22px; }
+
+  .top-nav .brand-name { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; color: #FFF; }
+
+  .top-nav .brand-name .accent-dot { color: var(--ember-orange); margin-left: 2px; }
+
+  .top-nav nav.primary { display: flex; gap: 2px; flex: 1; margin-left: 12px; }
+
+  .top-nav nav.primary a { color: #8993A1; text-decoration: none; padding: 7px 12px;
+    font-size: 13px; font-weight: 500; border-radius: var(--r-md); transition: all 120ms; }
+
+  .top-nav nav.primary a:hover { color: #FFF; background: rgba(255,255,255,0.05); }
+
+  .top-nav nav.primary a.active { color: #FFF; background: rgba(242,89,41,0.16); box-shadow: inset 0 -2px 0 var(--ember-orange); }
+
+  .top-nav .user-meta { display: flex; align-items: center; gap: 14px; font-size: 12px; color: #8993A1; }
+
+  .top-nav .user-meta .user-pill { color: #E8EBED; font-weight: 500; }
+
+  .top-nav .user-meta .role-tag { background: var(--ember-orange); color: #FFF; font-size: 9px; padding: 2px 6px; border-radius: var(--r-sm); font-weight: 700; margin-left: 4px; }
+
+  .top-nav .user-meta a { color: #8993A1; text-decoration: none; font-weight: 500; transition: color 120ms; }
+
+  .top-nav .user-meta a:hover { color: var(--ember-orange); }
+
+
+  /* Page header pattern */
+  .page-header { background: #FFF; border-bottom: 1px solid var(--gray-200); padding: 20px 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+
+  .page-header h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+
+  .page-header .meta { color: var(--gray-500); font-size: 13px; }
+
+  .page-header .breadcrumb { color: var(--gray-500); font-size: 12px; margin-bottom: 4px; }
+
+  .page-header .breadcrumb a { color: var(--gray-500); text-decoration: none; transition: color 120ms; }
+
+  .page-header .breadcrumb a:hover { color: var(--ember-orange); }
+
+  .page-header .breadcrumb .sep { color: var(--gray-300); margin: 0 6px; }
+
+
+  /* Generic buttons (light surface) */
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: var(--r-md);
+    font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 120ms;
+    border: 1px solid var(--gray-300); background: #FFF; color: var(--gray-700); text-decoration: none; }
+
+  .btn:hover { border-color: var(--gray-400); background: var(--gray-50); color: var(--gray-900); }
+
+  .btn-primary { background: var(--ember-orange); border-color: var(--ember-orange); color: #FFF; }
+
+  .btn-primary:hover { background: var(--ember-orange-hover); border-color: var(--ember-orange-hover); color: #FFF; }
+
+  .btn-danger { color: var(--red-600); border-color: var(--gray-300); }
+
+  .btn-danger:hover { background: #FEE2E2; border-color: #FCA5A5; color: var(--red-600); }
+
+  .btn.active { background: rgba(242,89,41,0.10); border-color: var(--ember-orange); color: var(--ember-orange); }
+
+
+  /* Cards */
+  .card { background: #FFF; border-radius: var(--r-lg); border: 1px solid var(--gray-200); box-shadow: var(--shadow-sm); padding: 20px; }
+
+  .card h2 { margin: 0 0 14px; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: var(--gray-900);
+    display: flex; align-items: center; gap: 6px; }
+
+  .card .row-label { font-size: 10px; font-weight: 600; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.08em; }
+
+
+  /* Status pill — used in tract + pipeline */
+  .status-pill { display: inline-block; padding: 2px 8px; border-radius: var(--r-sm); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #FFF; }
+
+
+
+  /* Tract page layout: left = map, right = data panels */
+  .tract-layout { display: flex; flex: 1; min-height: 0; }
+
+  .tract-map { width: 55%; min-width: 480px; height: 100%; position: relative; background: var(--gray-200); }
+
+  .tract-map #t-map { width: 100%; height: 100%; }
+
+  .tract-panels { width: 45%; min-width: 420px; background: var(--gray-50); overflow-y: auto; padding: 24px 28px; }
+
+  .tract-panels::-webkit-scrollbar { width: 8px; }
+
+  .tract-panels::-webkit-scrollbar-thumb { background: var(--gray-300); border-radius: 999px; }
+
+
+  /* Hero block with owner name + acres + actions */
+  .tract-hero { background: #FFF; border-radius: var(--r-lg); padding: 22px 24px; border: 1px solid var(--gray-200); box-shadow: var(--shadow-sm); margin-bottom: 16px; }
+
+  .tract-hero .owner { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; color: var(--gray-900); line-height: 1.2; margin-bottom: 6px; word-break: break-word; }
+
+  .tract-hero .acres-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+
+  .tract-hero .acres { font-size: 26px; font-weight: 700; color: var(--ember-orange); }
+
+  .tract-hero .acres-unit { font-size: 12px; font-weight: 500; color: var(--gray-500); }
+
+  .tract-hero .meta-row { color: var(--gray-500); font-size: 13px; margin-top: 4px; }
+
+  .tract-hero .source-badges { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+
+  .tract-hero .source-badge { background: var(--gray-100); color: var(--gray-700); font-size: 10px; padding: 3px 8px; border-radius: var(--r-sm); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+
+  .tract-hero .source-badge.hcad { background: rgba(242,89,41,0.10); color: var(--ember-orange); }
+
+  .tract-hero .source-badge.mcad { background: rgba(59,130,246,0.10); color: var(--blue-600); }
+
+  .tract-hero .action-row { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+
+
+  /* Data sections */
+  .section { background: #FFF; border-radius: var(--r-lg); border: 1px solid var(--gray-200); margin-bottom: 14px; overflow: hidden; }
+
+  .section-header { padding: 14px 20px 10px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--gray-100); }
+
+  .section-header h3 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: -0.005em; color: var(--gray-900); text-transform: none; }
+
+  .section-header .meta { font-size: 11px; color: var(--gray-500); }
+
+  .section-body { padding: 14px 20px 18px; }
+
+  .kv-table { width: 100%; border-collapse: collapse; }
+
+  .kv-table td { padding: 5px 8px 5px 0; vertical-align: top; font-size: 13px; }
+
+  .kv-table td:first-child { color: var(--gray-500); font-weight: 500; width: 38%; }
+
+  .kv-table td:last-child { color: var(--gray-900); }
+
+  .kv-table tr + tr td { border-top: 1px solid var(--gray-100); }
+
+
+  /* Outreach + notes log entries — same style on this page and elsewhere */
+  .log-entry { padding: 10px 0; border-bottom: 1px solid var(--gray-100); }
+
+  .log-entry:last-child { border-bottom: 0; }
+
+  .log-entry .text { font-size: 13px; color: var(--gray-900); white-space: pre-wrap; line-height: 1.5; }
+
+  .log-entry .meta { font-size: 11px; color: var(--gray-500); margin-top: 4px; display: flex; gap: 12px; align-items: center; }
+
+  .log-entry .meta .who { color: var(--gray-700); font-weight: 500; }
+
+  .log-entry .actions { display: flex; gap: 8px; }
+
+  .log-entry .actions button { background: none; border: 0; color: var(--gray-500); font-size: 11px; cursor: pointer; padding: 0; font: inherit; }
+
+  .log-entry .actions button:hover { color: var(--ember-orange); }
+
+  .log-entry .actions .delete:hover { color: var(--red-600); }
+
+
+  /* Form inputs (light surface) */
+  .input { width: 100%; padding: 9px 12px; border: 1px solid var(--gray-300); border-radius: var(--r-md); font: inherit; font-size: 13px; background: #FFF; color: var(--gray-900); transition: border-color 120ms, box-shadow 120ms; }
+
+  .input:focus { outline: none; border-color: var(--ember-orange); box-shadow: 0 0 0 3px rgba(242,89,41,0.18); }
+
+  .input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+
+  /* Tax breakdown table accents */
+  .tax-rate-row { display: flex; justify-content: space-between; align-items: baseline; padding: 6px 0; font-size: 12px; border-bottom: 1px dashed var(--gray-200); }
+
+  .tax-rate-row:last-child { border-bottom: 0; font-weight: 600; padding-top: 10px; border-top: 1px solid var(--gray-300); border-bottom: 0; }
+
+  .tax-rate-row .name { color: var(--gray-700); }
+
+  .tax-rate-row .rate { color: var(--gray-900); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+
+  .loading { padding: 40px; text-align: center; color: var(--gray-400); font-size: 13px; }
+
+  .empty-state { text-align: center; color: var(--gray-400); font-size: 12px; padding: 20px; font-style: italic; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <nav id="sidebar">
+    <div class="sidebar-logo">
+      <img src="/static/img/ember_logo.png"        alt="Ember" class="logo-img logo-dark">
+      <img src="/static/img/ember_logo_light.png"  alt="Ember" class="logo-img logo-light">
+      <div class="logo-sub">Acquisitions</div>
+    </div>
+    <div class="sidebar-section">Apps &amp; Dashboards</div>
+    {% if page_access.get('mpc_underwriting', true) %}
+    <a href="/" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+      MPC Underwriting
+    </a>
+    {% endif %}
+    {% if page_access.get('returns', true) %}
+    <a href="/returns" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Project Returns
+    </a>
+    {% endif %}
+    {% if page_access.get('loans', true) %}
+    <a href="/loans" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Loans &amp; Debt
+    </a>
+    {% endif %}
+    {% if is_admin or page_access.get('budget', false) %}
+    <a href="/budget" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 13l3 3 3-5 4 4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Operating Budget
+    </a>
+    {% endif %}
+    {% if page_access.get('operations', true) %}
+    <a href="/operations" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Operating Revenues
+    </a>
+    {% endif %}
+    {% if page_access.get('invoice_dashboard', true) %}
+    <a href="/invoice-dashboard" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 2h6a2 2 0 012 2v16l-3-2-2 2-2-2-2 2-3-2V4a2 2 0 012-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 7h6M9 11h6M9 15h4" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Invoice Dashboard
+    </a>
+    {% endif %}
+    {% if page_access.get('financials', true) %}
+    <a href="/financials" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M9 17V9m4 8V5m4 12v-7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Financial Statements
+    </a>
+    {% endif %}
+    {% if is_admin or page_access.get('unit_economics', false) %}
+    <a href="/unit-economics" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 2l9 5-9 5-9-5 9-5z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 12l9 5 9-5M3 17l9 5 9-5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Unit Economics
+    </a>
+    {% endif %}
+    {% if is_admin or page_access.get('partners_cf', false) %}
+    <a href="/partners-cf" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M7 10h10m0 0l-3-3m3 3l-3 3M17 17H7m0 0l3-3m-3 3l3 3" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Partners Cash Flow
+    </a>
+    {% endif %}
+    {% if page_access.get('macro', true) %}
+    <a href="/macro" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="1.5"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Macro Dashboard
+    </a>
+    {% endif %}
+    {% if page_access.get('portfolio', true) %}
+    <a href="/ember-capital" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 3.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Ember Capital
+    </a>
+    {% endif %}
+    {% if page_access.get('sales', true) %}
+    <a href="/sales" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l3-3 4 4 5-6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Community Sales
+    </a>
+    {% endif %}
+    {% if page_access.get('verticals', true) %}
+    <a href="/verticals" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      Vertical Dashboard
+    </a>
+    {% endif %}
+    {% if is_admin or page_access.get('bva', false) %}
+    <a href="/bva" class="sidebar-item"><svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="7" y="10" width="3" height="7" rx="0.5"/><rect x="12" y="6" width="3" height="11" rx="0.5"/><rect x="17" y="13" width="3" height="4" rx="0.5"/></svg>Budget vs Actuals</a>
+    {% endif %}
+    {% if is_admin or page_access.get('acquisitions', false) %}
+    <a href="/acquisitions" class="sidebar-item active">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Acquisitions GIS
+    </a>
+    {% endif %}
+    <div style="flex:1"></div>
+    {% include "_partials/_sidebar_foot.html" %}
+  </nav>
+
+  <div id="main-content">
+    <div class="acq-legacy">
+      <div style="padding:20px 28px 4px">
+        <div class="acq-eyebrow">LAND · PARCEL</div>
+      </div>
+
+
+
+<div class="page-header">
+  <div>
+    <div class="breadcrumb">
+      <a href="/">Map</a><span class="sep">›</span><span id="bc-owner">Tract</span>
+    </div>
+    <h1 id="page-title">Prop ID {{ prop_id }}</h1>
+  </div>
+  <div style="display:flex;gap:8px">
+    <button class="btn" id="btn-back" type="button" title="Return to wherever you came from (Corridors, Pipeline, Folders, or the Map)">← Back</button>
+    <a class="btn"id="btn-tract-pdf"target="_blank"href="/api/acq/tract-sheet/{{ prop_id }}">Tract sheet PDF</a>
+  </div>
+</div>
+
+
+<div class="tract-layout">
+  <div class="tract-map"><div id="t-map"></div></div>
+  <div class="tract-panels" id="panels">
+    <div class="loading">Loading tract data…</div>
+  </div>
+</div>
+
+
+
+    </div>
+  </div>
+
+</div>
+
+{% include "_partials/_account_modal.html" %}
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+
+// Smart "Back" button: closes this tab if it was opened in a new tab from
+// another page (window.opener present); otherwise uses browser history; falls
+// back to the document.referrer if history is empty; finally lands on /.
+document.getElementById('btn-back').addEventListener('click', () => {
+  try {
+    if (window.opener && !window.opener.closed) { window.close(); return; }
+  } catch {}
+  if (window.history.length > 1) { window.history.back(); return; }
+  if (document.referrer) { window.location.href = document.referrer; return; }
+  window.location.href = '/';
+});
+
+
+const PROP_ID = {{ prop_id | tojson }};
+const COUNTY_HINT = {{ county | tojson }};   // disambiguates prop_id collisions across counties
+const FROM_CORRIDORS = new URLSearchParams(window.location.search).get('from_corridors') === '1';
+const tmap = L.map('t-map', { zoomControl: true, attributionControl: true }).setView([30.0258, -95.8452], 11);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  { maxZoom: 19, attribution: '© Esri' }).addTo(tmap);
+
+function escapeHtml(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+function fmtMoney(v) { const n = parseFloat(v); return (!isFinite(n) || n === 0) ? '—' : '$' + n.toLocaleString('en-US', { maximumFractionDigits: 0 }); }
+function fmtDate(v) { if (!v) return '—'; try { return new Date(v).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }); } catch { return v; } }
+function fmtDateShort(v) { if (!v) return '—'; try { return new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); } catch { return v; } }
+function _epochMsToDate(v) {
+  if (v == null || v === 0 || v === '0') return '—';
+  try { return new Date(parseInt(v)).toISOString().slice(0, 10); } catch { return '—'; }
+}
+
+let _data = null;
+
+async function load() {
+  try {
+    // If the user arrived from the corridors page, the in-memory tract data
+    // (geometry, owner, addresses) is stashed in sessionStorage. Use that
+    // as the parcel base AND skip the buggy server-side prop_id lookup that
+    // would return a wrong-county collision (e.g. 188287 in Galveston when
+    // we want the Fort Bend one).
+    if (FROM_CORRIDORS) {
+      try {
+        // Per-pid key in localStorage (shared across tabs). Fallback to legacy
+        // sessionStorage key in case the user has an old tab open.
+        const raw = localStorage.getItem('tract_page_local:' + PROP_ID)
+                 || sessionStorage.getItem('tract_page_local');
+        if (raw) {
+          const d2 = JSON.parse(raw);
+          if (String(d2.prop_id) === String(PROP_ID) && d2.tract) {
+            try { localStorage.removeItem('tract_page_local:' + PROP_ID); } catch {}
+            try { sessionStorage.removeItem('tract_page_local'); } catch {}
+            // Synthesize the same shape that /api/tract-page-data returns
+            _data = {
+              prop_id: PROP_ID,
+              parcel:  d2.tract,
+              hcad:    null,
+              mcad:    null,
+              outreach: null,
+              notes:    [],
+              sources:  ['Corridor search result (StratMap)'],
+              outreach_statuses: [],
+              outreach_methods:  [],
+            };
+            render();
+            // Then fetch outreach/notes ONLY (no parcel re-lookup) so the
+            // outreach + notes sections populate without overwriting the
+            // confirmed parcel data.
+            try {
+              const r2 = await fetch(`/api/acq/outreach/${encodeURIComponent(PROP_ID)}`);
+              const d3 = await r2.json();
+              if (d3 && d3.record) {
+                _data.outreach = { ...d3.record };
+                _data.outreach_statuses = d3.statuses || [];
+                _data.outreach_methods  = d3.methods  || [];
+                render();
+              }
+            } catch {}
+            return;
+          }
+        }
+      } catch (e) { console.warn('tract_page_local read failed:', e); }
+      // If stash missing, show clear error rather than fall through to the
+      // buggy lookup.
+      document.getElementById('panels').innerHTML =
+        `<div class="card" style="color:#c62828">Couldn't load this tract — its data wasn't passed from the Corridors page.
+        <a href="/acquisitions/corridors"style="color:#F25929;font-weight:600">Back to Corridors</a>and click the Full page button again.</div>`;
+      return;
+    }
+    const qs = COUNTY_HINT ? `?county=${encodeURIComponent(COUNTY_HINT)}` : '';
+    const r = await fetch(`/api/acq/tract-page-data/${encodeURIComponent(PROP_ID)}${qs}`);
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    _data = d;
+    render();
+  } catch (e) {
+    document.getElementById('panels').innerHTML = `<div class="card" style="color:#c62828">Failed to load: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function render() {
+  const d = _data;
+  const h = d.hcad || {};
+  const m = d.mcad || {};
+  const p = d.parcel ? d.parcel.properties : {};
+
+  // Owner / acres / source resolution — prefer HCAD live → MCAD → parcel cache
+  const owner = h.owner_name_1 || m.ownerName || p.OWNER_NAME || '(no owner on file)';
+  const acres = h.Acreage ? parseFloat(String(h.Acreage).replace(' AC', '')) : (p.Acres || 0);
+  const county = p._county || h.site_county || (m.ownerAddress ? 'Montgomery' : '');
+
+  document.title = `${owner} — Tract`;
+  document.getElementById('bc-owner').textContent = owner.length > 40 ? owner.slice(0, 40) + '…' : owner;
+  document.getElementById('page-title').textContent = owner;
+
+  // ---- Draw the tract on the map ----
+  if (d.parcel && d.parcel.geometry) {
+    const layer = L.geoJSON(d.parcel.geometry, {
+      style: { color: '#F25929', weight: 4, opacity: 1, fillColor: '#F25929', fillOpacity: 0.10 }
+    }).addTo(tmap);
+    try { tmap.fitBounds(layer.getBounds().pad(0.20)); } catch {}
+  }
+
+  // ---- Build hero block ----
+  const sourceBadges = (d.sources || []).map(s => {
+    const cls = s.includes('HCAD') ? 'hcad' : s.includes('MCAD') ? 'mcad' : '';
+    return `<span class="source-badge ${cls}">${escapeHtml(s)}</span>`;
+  }).join('');
+
+  // Mailing address (rebuild from HCAD parts when present)
+  let mailing = '';
+  if (h.mail_addr_1) {
+    mailing = [h.mail_addr_1, h.mail_city, h.mail_state, h.mail_zip].filter(Boolean).join(', ');
+  } else if (p.MAIL_ADDR) {
+    mailing = p.MAIL_ADDR;
+  }
+
+  // Site address
+  let site = '';
+  if (h.site_str_name) {
+    const num = (h.site_str_num && h.site_str_num !== '0') ? h.site_str_num : '';
+    site = [num, h.site_str_pfx, h.site_str_name, h.site_str_sfx].filter(s => s && String(s).trim()).join(' ').trim();
+    const tail = [h.site_city, 'TX', h.site_zip].filter(Boolean).join(', ');
+    site = [site, tail].filter(Boolean).join(', ');
+  } else if (p.SITUS_ADDR) {
+    site = p.SITUS_ADDR;
+  }
+
+  // Legal description
+  const legal = h.legal_dscr_1
+    ? [h.legal_dscr_1, h.legal_dscr_2, h.legal_dscr_3].filter(s => s && String(s).trim()).join(' ')
+    : (p.LEGAL_DESC || '');
+
+  // Owner since (HCAD's new_owner_date is ms-epoch)
+  const ownerSince = h.new_owner_date ? _epochMsToDate(h.new_owner_date) : '—';
+
+  // Tax fields
+  const market = h.total_market_val;
+  const appraised = h.total_appraised_val;
+  const taxable = h.tax_value;
+  const taxYear = h.tax_year || '';
+
+  // Outreach status pill
+  const out = d.outreach;
+  const statusMeta = out ? (d.outreach_statuses || []).find(s => s.value === out.status) : null;
+  const statusPill = statusMeta
+    ? `<span class="status-pill" style="background:${statusMeta.color}">${escapeHtml(statusMeta.label)}</span>`
+    : '<span class="status-pill" style="background:#7A828D">No outreach yet</span>';
+
+  document.getElementById('panels').innerHTML = `
+    <div class="tract-hero">
+      <div class="owner">${escapeHtml(owner)}</div>
+      <div class="acres-row">
+        <span class="acres">${(+acres).toLocaleString('en-US', { maximumFractionDigits: 1 })}</span>
+        <span class="acres-unit">acres</span>
+        <span class="meta-row">· ${escapeHtml(county || '—')} · Prop ID ${escapeHtml(PROP_ID)}</span>
+      </div>
+      <div class="source-badges">${sourceBadges}</div>
+      <div class="action-row">
+        ${statusPill}
+        <button class="btn"onclick="document.getElementById('outreach-section').scrollIntoView({behavior:'smooth'})">Outreach &amp; log</button>
+        <button class="btn"onclick="document.getElementById('elev-section').scrollIntoView({behavior:'smooth'})">Elevation</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header"><h3>Property</h3></div>
+      <div class="section-body">
+        <table class="kv-table">
+          <tr><td>Mailing</td><td>${escapeHtml(mailing) || '—'}</td></tr>
+          <tr><td>Site address</td><td>${escapeHtml(site) || '<span style="color:#A5ADB7">(no street address)</span>'}</td></tr>
+          <tr><td>Legal description</td><td>${escapeHtml(legal) || '—'}</td></tr>
+          <tr><td>Owner since</td><td>${escapeHtml(ownerSince)}</td></tr>
+          <tr><td>State class</td><td>${escapeHtml(h.state_class || '—')}</td></tr>
+          <tr><td>Land use code</td><td>${escapeHtml(String(h.land_use || '—'))}</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <h3>Tax &amp; valuation</h3>
+        <span class="meta">${taxYear ? 'Tax year ' + taxYear : ''}</span>
+      </div>
+      <div class="section-body">
+        <table class="kv-table">
+          <tr><td>Land value</td><td>${fmtMoney(h.land_value)}</td></tr>
+          <tr><td>Improvements</td><td>${fmtMoney(h.impr_value)}</td></tr>
+          <tr><td>Building value</td><td>${fmtMoney(h.bld_value)}</td></tr>
+          <tr><td>Productivity value</td><td>${fmtMoney(h.productivity_value)}</td></tr>
+          <tr><td><b>Total market</b></td><td><b>${fmtMoney(market)}</b></td></tr>
+          <tr><td><b>Total appraised</b></td><td><b>${fmtMoney(appraised)}</b></td></tr>
+          <tr><td><b>Taxable value</b></td><td><b>${fmtMoney(taxable)}</b></td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="section" id="elev-section">
+      <div class="section-header">
+        <h3>Elevation &amp; drainage</h3>
+        <button class="btn" id="btn-load-elev">Load elevation profile</button>
+      </div>
+      <div class="section-body">
+        <div id="elev-content" class="empty-state">Click "Load elevation profile" to sample USGS 3DEP elevation across this tract (~5-10 seconds).</div>
+      </div>
+    </div>
+
+    <div class="section" id="outreach-section">
+      <div class="section-header">
+        <h3>Outreach</h3>
+      </div>
+      <div class="section-body" id="outreach-content"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-header"><h3>Notes</h3></div>
+      <div class="section-body" id="notes-content"></div>
+    </div>
+  `;
+
+  renderOutreach();
+  renderNotes();
+
+  document.getElementById('btn-load-elev').addEventListener('click', loadElevation);
+}
+
+// ---- Outreach panel: status form + log + add-entry form ----
+function renderOutreach() {
+  const d = _data;
+  const rec = d.outreach || { status: 'lead', broker_name: '', next_action: '', next_action_date: '', log: [] };
+  const statusOpts = (d.outreach_statuses || []).map(s =>
+    `<option value="${s.value}" ${s.value === rec.status ? 'selected' : ''}>${escapeHtml(s.label)}</option>`
+  ).join('');
+  const methodOpts = (d.outreach_methods || []).map(m =>
+    `<option value="${m}">${m.charAt(0).toUpperCase() + m.slice(1)}</option>`
+  ).join('');
+  const log = (rec.log || []).slice().reverse();
+
+  document.getElementById('outreach-content').innerHTML = `
+    <div class="input-row" style="margin-bottom:10px">
+      <div>
+        <div class="row-label" style="margin-bottom:4px">Status</div>
+        <select class="input" id="o-status">${statusOpts}</select>
+      </div>
+      <div>
+        <div class="row-label" style="margin-bottom:4px">Broker</div>
+        <input class="input" id="o-broker" type="text" value="${escapeHtml(rec.broker_name || '')}" placeholder="(none)">
+      </div>
+      <div>
+        <div class="row-label" style="margin-bottom:4px">Next action</div>
+        <input class="input" id="o-next" type="text" value="${escapeHtml(rec.next_action || '')}" placeholder="e.g. Send LOI">
+      </div>
+      <div>
+        <div class="row-label" style="margin-bottom:4px">By when</div>
+        <input class="input" id="o-next-date" type="date" value="${escapeHtml(rec.next_action_date || '')}">
+      </div>
+    </div>
+    <button class="btn btn-primary" id="o-save-fields" style="margin-bottom:18px">Save status &amp; fields</button>
+
+    <div class="row-label" style="margin-bottom:6px">Contact log</div>
+    <div id="o-log" style="background:var(--gray-50);border-radius:var(--r-md);padding:0 12px;margin-bottom:14px;max-height:280px;overflow-y:auto">
+      ${log.length === 0 ? '<div class="empty-state">No entries yet.</div>' :
+        log.map(e => {
+          const methodEmoji = { call:'', email:'', letter:'', text:'', meeting:'', 'site visit':'', status:'', other:''}[e.method] || '';
+          return `
+            <div class="log-entry">
+              <div class="text">${escapeHtml(e.notes || '')}</div>
+              <div class="meta">
+                <span>${methodEmoji} <span class="who">${escapeHtml(e.method || 'other')} · ${escapeHtml(e.by_name || 'Someone')}</span> · ${fmtDate(e.at)}${e.edited_at ? ' (edited)' : ''}</span>
+                ${e.can_delete ? `<div class="actions"><button class="delete" onclick="deleteLogEntry(${JSON.stringify(e.id)})">Delete</button></div>` : ''}
+              </div>
+            </div>`;
+        }).join('')}
+    </div>
+
+    <div class="row-label" style="margin-bottom:6px">+ Add log entry</div>
+    <div style="display:grid;grid-template-columns:140px 1fr;gap:8px;margin-bottom:8px">
+      <select class="input" id="o-method">${methodOpts}</select>
+      <textarea class="input" id="o-notes" placeholder="What happened? (e.g. 'Spoke with owner; wants $22k/ac, will follow up next week')" style="min-height:60px;resize:vertical"></textarea>
+    </div>
+    <button class="btn btn-primary" id="o-add-log">Add log entry</button>
+  `;
+
+  document.getElementById('o-save-fields').addEventListener('click', async () => {
+    const payload = {
+      status: document.getElementById('o-status').value,
+      broker_name: document.getElementById('o-broker').value.trim(),
+      next_action: document.getElementById('o-next').value.trim(),
+      next_action_date: document.getElementById('o-next-date').value,
+      owner_name: document.querySelector('.tract-hero .owner').textContent,
+      county: _data.parcel ? _data.parcel.properties._county : '',
+      acres: _data.parcel ? _data.parcel.properties.Acres : null,
+    };
+    await fetch(`/api/acq/outreach/${encodeURIComponent(PROP_ID)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    });
+    load();
+  });
+  document.getElementById('o-add-log').addEventListener('click', async () => {
+    const method = document.getElementById('o-method').value;
+    const notes = document.getElementById('o-notes').value.trim();
+    if (!notes) return;
+    await fetch(`/api/acq/outreach/${encodeURIComponent(PROP_ID)}/log`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method, notes }),
+    });
+    load();
+  });
+}
+
+window.deleteLogEntry = async function (entryId) {
+  if (!confirm('Delete this log entry?')) return;
+  await fetch(`/api/acq/outreach/${encodeURIComponent(PROP_ID)}/log/${encodeURIComponent(entryId)}`, { method: 'DELETE' });
+  load();
+};
+
+// ---- Notes panel ----
+function renderNotes() {
+  const notes = _data.notes || [];
+  document.getElementById('notes-content').innerHTML = `
+    <div id="notes-thread" style="background:var(--gray-50);border-radius:var(--r-md);padding:0 12px;margin-bottom:14px;max-height:280px;overflow-y:auto">
+      ${notes.length === 0 ? '<div class="empty-state">No notes yet. Add the first below.</div>' :
+        notes.map(n => `
+          <div class="log-entry">
+            <div class="text">${escapeHtml(n.text || '')}</div>
+            <div class="meta">
+              <span><span class="who">${escapeHtml(n.by_name || 'Someone')}</span>· ${fmtDate(n.at)}</span>
+              ${n.can_delete ? `<div class="actions"><button class="delete" onclick="deleteNoteEntry(${JSON.stringify(n.id)})">Delete</button></div>` : ''}
+            </div>
+          </div>`).join('')}
+    </div>
+    <textarea class="input" id="new-note" placeholder="Add a new note — calls made, offer status, broker, soil reports, anything." style="min-height:70px;resize:vertical;margin-bottom:8px"></textarea>
+    <button class="btn btn-primary" id="add-note">Add note</button>
+  `;
+  document.getElementById('add-note').addEventListener('click', async () => {
+    const text = document.getElementById('new-note').value.trim();
+    if (!text) return;
+    await fetch(`/api/acq/notes/${encodeURIComponent(PROP_ID)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    load();
+  });
+}
+window.deleteNoteEntry = async function (noteId) {
+  if (!confirm('Delete this note entry?')) return;
+  await fetch(`/api/acq/notes/${encodeURIComponent(noteId)}`, { method: 'DELETE' });
+  load();
+};
+
+// ---- Elevation profile (loads lazily) ----
+async function loadElevation() {
+  const content = document.getElementById('elev-content');
+  const btn = document.getElementById('btn-load-elev');
+  if (!_data.parcel || !_data.parcel.geometry) {
+    content.innerHTML = '<div class="empty-state">No geometry available for this tract.</div>';
+    return;
+  }
+  btn.disabled = true; btn.textContent = 'Loading…';
+  content.innerHTML = '<div class="loading">Sampling USGS 3DEP across the tract…</div>';
+  try {
+    const r = await fetch('/api/acq/elevation-profile', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ geometry: _data.parcel.geometry }),
+    });
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    content.innerHTML = `
+      <div style="display:flex;gap:14px;flex-wrap:wrap">
+        <div style="flex:1;min-width:180px;background:var(--gray-100);border-radius:var(--r-md);padding:14px">
+          <div class="row-label">Elevation range</div>
+          <div style="font-size:22px;font-weight:700;color:var(--gray-900);margin-top:4px">${d.min_ft} – ${d.max_ft} <span style="font-size:13px;color:var(--gray-500);font-weight:400">ft</span></div>
+          <div style="font-size:12px;color:var(--gray-700);margin-top:4px">Range <b>${d.range_ft}</b> ft · Median <b>${d.median_ft}</b> ft</div>
+        </div>
+        <div style="flex:1;min-width:200px;background:#FFF4ED;border-left:3px solid var(--ember-orange);border-radius:var(--r-md);padding:14px">
+          <div class="row-label">Water drains toward</div>
+          <div style="font-size:22px;font-weight:700;color:var(--ember-orange);margin-top:4px">${escapeHtml(d.drainage_dir)}</div>
+          <div style="font-size:12px;color:var(--gray-700);margin-top:4px">${d.range_ft < 2 ? 'Very flat — engineered grading required for drainage.' : d.range_ft < 10 ? 'Gentle gradient — standard grading sufficient.' : 'Significant relief — natural drainage; verify floodplain on low side.'}</div>
+        </div>
+      </div>
+      <div style="margin-top:10px;font-size:11px;color:var(--gray-400)">${d.sample_count} grid points sampled from USGS 3DEP (1-meter LiDAR-derived where available).</div>
+    `;
+    btn.textContent = 'Reload';
+    btn.disabled = false;
+  } catch (e) {
+    content.innerHTML = `<div style="color:#c62828">Failed: ${escapeHtml(e.message)}</div>`;
+    btn.disabled = false; btn.textContent = 'Retry';
+  }
+}
+
+load();
+
+</script>
+</body>
+</html>

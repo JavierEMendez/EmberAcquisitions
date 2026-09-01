@@ -1,0 +1,486 @@
+/* ==========================================================================
+   Acquisitions GIS — page styles
+   Prefix: .acq-*
+   Colors come only from the EAX tokens in theme.css, so the map chrome
+   follows the light/dark switch along with the rest of the portal.
+   ========================================================================== */
+
+/* The map fills its pane and does its own scrolling, so unlike the other
+   dashboards this page does not scroll the content container. */
+#main-content { display: flex; }
+
+.acq-page {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Header strip ───────────────────────────────────────────────────────── */
+
+.acq-head {
+  padding: 18px 28px 14px;
+  border-bottom: 1px solid var(--eax-line);
+  background: var(--eax-surface);
+  flex-shrink: 0;
+}
+.acq-eyebrow {
+  font-family: var(--font-eyebrow, 'Plus Jakarta Sans'), system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--eax-accent);
+}
+.acq-title {
+  font-family: var(--font-display, 'Plus Jakarta Sans'), system-ui, sans-serif;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--eax-ink-2, var(--eax-ink));
+  margin-top: 4px;
+  line-height: 1.15;
+}
+.acq-sub {
+  font-size: 13px;
+  color: var(--eax-muted);
+  margin-top: 4px;
+  max-width: 780px;
+}
+
+/* ── Search + control bar ───────────────────────────────────────────────── */
+
+.acq-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px;
+  padding: 14px 28px;
+  border-bottom: 1px solid var(--eax-line);
+  background: var(--eax-bg-2);
+  flex-shrink: 0;
+}
+.acq-control { display: flex; flex-direction: column; gap: 5px; }
+.acq-control label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--eax-subtle);
+}
+.acq-control input,
+.acq-control select {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--eax-line-2);
+  border-radius: 8px;
+  background: var(--eax-surface);
+  color: var(--eax-ink);
+  font-family: inherit;
+  font-size: 13px;
+  min-width: 110px;
+}
+.acq-control input:focus,
+.acq-control select:focus {
+  outline: none;
+  border-color: var(--eax-accent);
+  box-shadow: 0 0 0 3px var(--eax-accent-soft);
+}
+.acq-control--wide { flex: 1; min-width: 260px; }
+.acq-control--wide input { width: 100%; }
+
+.acq-btn {
+  height: 34px;
+  padding: 0 15px;
+  border: 1px solid var(--eax-line-2);
+  border-radius: 8px;
+  background: var(--eax-surface);
+  color: var(--eax-muted);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+.acq-btn:hover:not(:disabled) {
+  border-color: var(--eax-accent);
+  color: var(--eax-ink);
+  background: var(--eax-accent-soft);
+}
+.acq-btn:disabled { opacity: .5; cursor: not-allowed; }
+/* Some of these are <a> rather than <button>; keep them the same height and
+   stop the link underline coming through. */
+a.acq-btn { text-decoration: none; justify-content: center; }
+a.acq-btn:hover { text-decoration: none; }
+.acq-btn.primary {
+  background: var(--eax-accent);
+  border-color: var(--eax-accent);
+  color: var(--eax-accent-fg, #fff);
+  box-shadow: 0 4px 10px -4px var(--eax-accent);
+}
+.acq-btn.primary:hover:not(:disabled) {
+  filter: brightness(1.05);
+  color: var(--eax-accent-fg, #fff);
+}
+
+/* Geocoder autocomplete */
+.acq-suggest {
+  position: absolute;
+  z-index: 1200;
+  background: var(--eax-surface);
+  border: 1px solid var(--eax-line-2);
+  border-radius: 10px;
+  box-shadow: var(--eax-shadow-card, 0 8px 24px -8px rgba(0,0,0,.25));
+  max-height: 260px;
+  overflow-y: auto;
+  min-width: 320px;
+  display: none;
+}
+.acq-suggest.show { display: block; }
+.acq-suggest-item {
+  padding: 9px 12px;
+  font-size: 13px;
+  color: var(--eax-ink);
+  cursor: pointer;
+  border-bottom: 1px solid var(--eax-line);
+}
+.acq-suggest-item:last-child { border-bottom: none; }
+.acq-suggest-item:hover { background: var(--eax-accent-soft); }
+
+/* ── Map ────────────────────────────────────────────────────────────────── */
+
+.acq-mapwrap { flex: 1; position: relative; min-height: 0; }
+#acq-map { position: absolute; inset: 0; background: var(--eax-bg); }
+
+/* Leaflet paints its own chrome in its own colors; pull it onto the tokens
+   so the controls do not glow white in Deep Navy. */
+.leaflet-control-layers,
+.leaflet-bar a,
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--eax-surface);
+  color: var(--eax-ink);
+  border-color: var(--eax-line-2);
+}
+.leaflet-bar a { border-bottom-color: var(--eax-line); }
+.leaflet-bar a:hover { background: var(--eax-accent-soft); }
+.leaflet-control-attribution {
+  background: var(--eax-surface) !important;
+  color: var(--eax-subtle) !important;
+}
+.leaflet-control-attribution a { color: var(--eax-muted) !important; }
+.leaflet-popup-content { font-family: inherit; font-size: 13px; color: var(--eax-ink); }
+
+.acq-popup-owner {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--eax-ink-2, var(--eax-ink));
+  margin-bottom: 3px;
+}
+.acq-popup-meta {
+  font-size: 11px;
+  color: var(--eax-muted);
+  font-family: var(--font-mono, 'JetBrains Mono'), ui-monospace, monospace;
+  margin-bottom: 8px;
+}
+.acq-popup-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+.acq-popup-actions button {
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--eax-line-2);
+  background: var(--eax-surface);
+  color: var(--eax-muted);
+  cursor: pointer;
+}
+.acq-popup-actions button:hover {
+  border-color: var(--eax-accent);
+  background: var(--eax-accent-soft);
+  color: var(--eax-ink);
+}
+
+/* ── Status line ────────────────────────────────────────────────────────── */
+
+.acq-status {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 18px;
+  z-index: 1100;
+  background: var(--eax-surface);
+  border: 1px solid var(--eax-line-2);
+  border-radius: 999px;
+  padding: 8px 18px;
+  font-size: 12px;
+  color: var(--eax-muted);
+  box-shadow: var(--eax-shadow-card, 0 8px 24px -8px rgba(0,0,0,.25));
+  display: none;
+  max-width: 70%;
+  text-align: center;
+}
+.acq-status.show { display: block; }
+.acq-status.error { border-color: var(--eax-bad); color: var(--eax-bad); }
+
+/* ── Results dock ───────────────────────────────────────────────────────── */
+/* Owner search and search results land in a bottom dock rather than a side
+   panel: a side panel covered the layer controls, which are exactly what you
+   want to reach while reading the results. */
+
+.acq-dock {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  z-index: 1150;
+  background: var(--eax-surface);
+  border-top: 1px solid var(--eax-line-2);
+  box-shadow: 0 -8px 24px -12px rgba(0,0,0,.3);
+  max-height: 46%;
+  display: none;
+  flex-direction: column;
+}
+.acq-dock.show { display: flex; }
+.acq-dock-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 20px;
+  border-bottom: 1px solid var(--eax-line);
+  flex-shrink: 0;
+}
+.acq-dock-title {
+  font-family: var(--font-display, 'Plus Jakarta Sans'), system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--eax-ink-2, var(--eax-ink));
+}
+.acq-dock-sub { font-size: 12px; color: var(--eax-muted); }
+.acq-dock-close {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--eax-subtle);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.acq-dock-close:hover { color: var(--eax-ink); }
+.acq-dock-body { overflow-y: auto; padding: 6px 0 10px; }
+
+.acq-row {
+  display: grid;
+  grid-template-columns: 1fr 90px 110px auto;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--eax-line);
+  font-size: 13px;
+  cursor: pointer;
+}
+.acq-row:hover, .acq-row.active { background: var(--eax-accent-soft); }
+.acq-row-name { color: var(--eax-ink); font-weight: 500; }
+.acq-row-meta {
+  font-family: var(--font-mono, 'JetBrains Mono'), ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--eax-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.acq-row-actions { display: flex; gap: 5px; }
+
+.acq-empty { padding: 26px 20px; text-align: center; color: var(--eax-subtle); font-size: 13px; }
+
+/* ── Layer panel ────────────────────────────────────────────────────────── */
+
+.acq-layers {
+  position: absolute;
+  top: 12px; right: 12px;
+  z-index: 1100;
+  background: var(--eax-surface);
+  border: 1px solid var(--eax-line-2);
+  border-radius: 10px;
+  box-shadow: var(--eax-shadow-card, 0 8px 24px -8px rgba(0,0,0,.25));
+  width: 224px;
+  max-height: calc(100% - 24px);
+  display: flex;
+  flex-direction: column;
+}
+.acq-layers-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--eax-line);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--eax-subtle);
+}
+.acq-layers-pin {
+  margin-left: auto;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--eax-subtle);
+  font-size: 13px;
+  padding: 0 2px;
+}
+.acq-layers-pin.pinned, .acq-layers-pin:hover { color: var(--eax-accent); }
+.acq-layers-body { overflow-y: auto; padding: 6px 0; }
+.acq-layer {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  color: var(--eax-muted);
+  cursor: pointer;
+}
+.acq-layer:hover { background: var(--eax-accent-soft); color: var(--eax-ink); }
+.acq-layer input { width: auto; margin: 0; accent-color: var(--eax-accent); }
+.acq-layer .swatch {
+  width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0;
+  border: 1px solid var(--eax-line-2);
+}
+.acq-layer .count {
+  margin-left: auto;
+  font-family: var(--font-mono, 'JetBrains Mono'), ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--eax-subtle);
+}
+
+@media (max-width: 900px) {
+  .acq-layers { width: 190px; }
+  .acq-row { grid-template-columns: 1fr auto; }
+  .acq-row .acq-row-meta:nth-of-type(2) { display: none; }
+}
+
+/* ── Project analysis page ──────────────────────────────────────────────── */
+
+.acqp-grid {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 18px;
+  margin-top: 22px;
+  align-items: start;
+}
+.acqp-card {
+  background: var(--eax-surface);
+  border: 1px solid var(--eax-line);
+  border-radius: 12px;
+  padding: 22px 24px;
+  box-shadow: var(--eax-shadow-card, 0 2px 8px -4px rgba(0,0,0,.12));
+}
+.acqp-card--wide { grid-column: 2; }
+.acqp-card-title {
+  font-family: var(--font-display, 'Plus Jakarta Sans'), system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--eax-ink-2, var(--eax-ink));
+  margin-bottom: 14px;
+}
+.acqp-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--eax-subtle);
+  margin-bottom: 6px;
+}
+.acqp-hint {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--eax-subtle);
+  margin-top: 2px;
+}
+.acqp-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+  color: var(--eax-muted);
+  cursor: pointer;
+}
+.acqp-check input { width: auto; margin: 0; accent-color: var(--eax-accent); }
+.acqp-check:hover { color: var(--eax-ink); }
+
+/* The ladder. Every row is one step from gross to what you can actually sell,
+   so the yield number below is traceable rather than asserted. */
+.acqp-rung {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 14px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--eax-line);
+  font-size: 13px;
+  color: var(--eax-muted);
+}
+.acqp-rung .num {
+  font-family: var(--font-mono, 'JetBrains Mono'), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.acqp-rung.head, .acqp-rung.sub {
+  font-weight: 700;
+  color: var(--eax-ink);
+  border-top: 1px solid var(--eax-line-2);
+}
+.acqp-rung.total {
+  font-weight: 700;
+  color: var(--eax-accent);
+  border-top: 2px solid var(--eax-accent);
+  border-bottom: none;
+  font-size: 14px;
+  padding-top: 10px;
+}
+.acqp-rung.kept { opacity: .65; }
+.acqp-rung .note { font-size: 10.5px; color: var(--eax-subtle); }
+.acqp-rung .note.err { color: var(--eax-bad); font-weight: 700; }
+
+.acqp-kpis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 16px 0 4px;
+}
+.acqp-kpi {
+  flex: 1;
+  min-width: 130px;
+  border: 1px solid var(--eax-line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--eax-bg-2);
+}
+.acqp-kpi.accent { border-color: var(--eax-accent); background: var(--eax-accent-soft); }
+.acqp-kpi .k {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--eax-subtle);
+}
+.acqp-kpi .v {
+  font-family: var(--font-mono, 'JetBrains Mono'), ui-monospace, monospace;
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--eax-ink);
+  margin-top: 3px;
+  font-variant-numeric: tabular-nums;
+}
+.acqp-kpi.accent .v { color: var(--eax-accent); }
+
+@media (max-width: 1000px) {
+  .acqp-grid { grid-template-columns: 1fr; }
+  .acqp-card--wide { grid-column: 1; }
+}

@@ -1,0 +1,1726 @@
+{# ============================================================
+   Ember · Acquisitions GIS — Corridors
+   Ported from the standalone app. The page body and its JS come across as
+   they were; the shell, sidebar, theme tokens and account modal are the
+   portal's. API calls are repointed to /api/acq/.
+   ============================================================ #}
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Corridors · Ember Acquisitions</title>
+<link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="/static/theme.css?v=3"/>
+<link rel="stylesheet" href="/static/css/acquisitions.css?v=1"/>
+<script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
+<style>
+  /* App shell — copied from financials.html so /acquisitions nests in the
+     canonical sidebar chrome. */
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;}
+  body{background:var(--eax-bg);color:var(--eax-ink);font-family:'DM Sans','Plus Jakarta Sans',system-ui,sans-serif;overflow:hidden;}
+  #app{display:flex;height:100vh;overflow:hidden;}
+  #sidebar{width:240px;background:var(--eax-bg-2);border-right:1px solid var(--eax-line);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;}
+  .sidebar-logo{padding:16px 18px 14px;border-bottom:1px solid var(--eax-line)}
+  .logo-img{width:100%;max-width:160px;height:auto;display:block;margin:0 auto}
+  img.logo-light{display:none;}
+  [data-theme="light"] img.logo-dark{display:none;}
+  [data-theme="light"] img.logo-light{display:block;margin:0 auto;}
+  .logo-sub{font-size:10px;color:var(--eax-subtle);letter-spacing:0.2em;text-transform:uppercase;margin-top:8px;text-align:center;font-weight:700}
+  .sidebar-section{padding:8px 16px 4px;font-size:9px;line-height:1.2;color:var(--eax-subtle);letter-spacing:0.22em;text-transform:uppercase;margin-top:8px;font-weight:700}
+  .sidebar-item{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;border-radius:8px;margin:1px 8px;transition:all .15s;color:var(--eax-muted);font-size:13px;line-height:1.2;text-decoration:none;font-weight:500}
+  .sidebar-item:hover{background:var(--eax-accent-soft);color:var(--eax-ink);text-decoration:none}
+  .sidebar-item.active{background:var(--eax-surface);color:var(--eax-ink);font-weight:600;border:1px solid var(--eax-line);position:relative}
+  .sidebar-item.active::before{content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:2px;background:var(--eax-accent);border-radius:2px}
+  .sidebar-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0}
+  .sidebar-item.active .icon{opacity:1;color:var(--eax-accent)}
+  #main-content{flex:1;overflow:hidden;min-width:0;display:flex;}
+
+  .acq-legacy { flex:1; min-width:0; overflow:auto; padding:0 0 60px; }
+  /* The ported page's own styles. Rules targeting body, html, * or the old
+     nav were dropped at build time - they would have fought the shell. */
+
+
+  /* Top nav — shared header */
+  .top-nav { display: flex; align-items: center; height: 52px; background: #0A1825; color: #E8EBED;
+    padding: 0 20px; gap: 28px; border-bottom: 1px solid rgba(255,255,255,0.05); flex-shrink: 0; z-index: 100; }
+
+  .top-nav .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+
+  .top-nav .brand img { height: 22px; }
+
+  .top-nav .brand-name { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; color: #FFF; }
+
+  .top-nav .brand-name .accent-dot { color: var(--ember-orange); margin-left: 2px; }
+
+  .top-nav nav.primary { display: flex; gap: 2px; flex: 1; margin-left: 12px; }
+
+  .top-nav nav.primary a { color: #8993A1; text-decoration: none; padding: 7px 12px;
+    font-size: 13px; font-weight: 500; border-radius: var(--r-md); transition: all 120ms; }
+
+  .top-nav nav.primary a:hover { color: #FFF; background: rgba(255,255,255,0.05); }
+
+  .top-nav nav.primary a.active { color: #FFF; background: rgba(242,89,41,0.16); box-shadow: inset 0 -2px 0 var(--ember-orange); }
+
+  .top-nav .user-meta { display: flex; align-items: center; gap: 14px; font-size: 12px; color: #8993A1; }
+
+  .top-nav .user-meta .user-pill { color: #E8EBED; font-weight: 500; }
+
+  .top-nav .user-meta .role-tag { background: var(--ember-orange); color: #FFF; font-size: 9px; padding: 2px 6px; border-radius: var(--r-sm); font-weight: 700; margin-left: 4px; }
+
+  .top-nav .user-meta a { color: #8993A1; text-decoration: none; font-weight: 500; transition: color 120ms; }
+
+  .top-nav .user-meta a:hover { color: var(--ember-orange); }
+
+
+  /* Page header pattern */
+  .page-header { background: #FFF; border-bottom: 1px solid var(--gray-200); padding: 20px 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+
+  .page-header h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+
+  .page-header .meta { color: var(--gray-500); font-size: 13px; }
+
+  .page-header .breadcrumb { color: var(--gray-500); font-size: 12px; margin-bottom: 4px; }
+
+  .page-header .breadcrumb a { color: var(--gray-500); text-decoration: none; transition: color 120ms; }
+
+  .page-header .breadcrumb a:hover { color: var(--ember-orange); }
+
+  .page-header .breadcrumb .sep { color: var(--gray-300); margin: 0 6px; }
+
+
+  /* Generic buttons (light surface) */
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: var(--r-md);
+    font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 120ms;
+    border: 1px solid var(--gray-300); background: #FFF; color: var(--gray-700); text-decoration: none; }
+
+  .btn:hover { border-color: var(--gray-400); background: var(--gray-50); color: var(--gray-900); }
+
+  .btn-primary { background: var(--ember-orange); border-color: var(--ember-orange); color: #FFF; }
+
+  .btn-primary:hover { background: var(--ember-orange-hover); border-color: var(--ember-orange-hover); color: #FFF; }
+
+  .btn-danger { color: var(--red-600); border-color: var(--gray-300); }
+
+  .btn-danger:hover { background: #FEE2E2; border-color: #FCA5A5; color: var(--red-600); }
+
+  .btn.active { background: rgba(242,89,41,0.10); border-color: var(--ember-orange); color: var(--ember-orange); }
+
+
+  /* Cards */
+  .card { background: #FFF; border-radius: var(--r-lg); border: 1px solid var(--gray-200); box-shadow: var(--shadow-sm); padding: 20px; }
+
+  .card h2 { margin: 0 0 14px; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: var(--gray-900);
+    display: flex; align-items: center; gap: 6px; }
+
+  .card .row-label { font-size: 10px; font-weight: 600; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.08em; }
+
+
+  /* Status pill — used in tract + pipeline */
+  .status-pill { display: inline-block; padding: 2px 8px; border-radius: var(--r-sm); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #FFF; }
+
+
+
+  /* ====== Tab strip ====== */
+  .tabs { display: flex; gap: 2px; padding: 0 28px; background: #FFF; border-bottom: 1px solid var(--gray-200); overflow-x: auto; }
+
+  .tab { padding: 12px 16px; font-size: 13px; font-weight: 500; color: var(--gray-500);
+    cursor: pointer; border-bottom: 2px solid transparent; transition: all 120ms;
+    white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; background: none; border-top: 0; border-left: 0; border-right: 0; font-family: inherit; }
+
+  .tab:hover { color: var(--gray-900); }
+
+  .tab.active { color: var(--ember-orange); border-bottom-color: var(--ember-orange); font-weight: 600; }
+
+  .tab .badge { background: var(--gray-100); color: var(--gray-700); padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 700; min-width: 18px; text-align: center; }
+
+  .tab.active .badge { background: rgba(242,89,41,0.16); color: var(--ember-orange); }
+
+  .tab.loading .badge::after { content: '…'; }
+
+
+  /* ====== KPI strip ====== */
+  .kpi-strip { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; padding: 16px 28px; background: var(--gray-50); }
+
+  .kpi { background: #FFF; border: 1px solid var(--gray-200); border-radius: var(--r-md); padding: 12px 14px; box-shadow: var(--shadow-sm); }
+
+  .kpi .label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--gray-500); }
+
+  .kpi .value { font-size: 22px; font-weight: 600; color: var(--gray-900); margin-top: 4px; letter-spacing: -0.01em; line-height: 1.1; }
+
+  .kpi .sub { font-size: 11px; color: var(--gray-500); margin-top: 2px; }
+
+  .kpi.alert .value   { color: var(--red-600); }
+
+  .kpi.warn  .value   { color: var(--amber-600); }
+
+  .kpi.ok    .value   { color: var(--green-600); }
+@media (max-width: 1100px) { .kpi-strip { grid-template-columns: repeat(3, 1fr); } }
+
+
+  /* ====== Filter bar ====== */
+  .filter-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    padding: 12px 28px; background: var(--gray-50); border-bottom: 1px solid var(--gray-200); }
+
+  .filter-bar label { font-size: 11px; font-weight: 600; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.06em; }
+
+  .filter-bar input, .filter-bar select { padding: 6px 10px; border: 1px solid var(--gray-300); border-radius: var(--r-md); font: inherit; font-size: 12px; background: #FFF; }
+
+  .filter-bar input:focus, .filter-bar select:focus { outline: none; border-color: var(--ember-orange); box-shadow: 0 0 0 3px rgba(242,89,41,0.18); }
+
+  .filter-bar .group { display: inline-flex; align-items: center; gap: 6px; }
+
+  .filter-bar .toggle { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--gray-300); border-radius: var(--r-md); cursor: pointer; font-size: 12px; background: #FFF; color: var(--gray-700); transition: all 120ms; }
+
+  .filter-bar .toggle:hover { border-color: var(--gray-400); }
+
+  .filter-bar .toggle.active { background: rgba(242,89,41,0.10); border-color: var(--ember-orange); color: var(--ember-orange); font-weight: 600; }
+
+  .filter-bar .toggle input { display: none; }
+
+
+  /* ====== Body layout ====== */
+  .body-wrap { display: grid; grid-template-columns: 320px 1fr; gap: 16px; padding: 14px 28px 80px; align-items: start; }
+@media (max-width: 1100px) { .body-wrap { grid-template-columns: 1fr; } }
+
+
+  /* Inline mini-map */
+  .mini-map-card { background: #FFF; border: 1px solid var(--gray-200); border-radius: var(--r-lg); padding: 12px; box-shadow: var(--shadow-sm); position: sticky; top: 14px; }
+
+  .mini-map-card h3 { margin: 0 0 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--gray-500); }
+
+  #mini-map { height: 280px; border-radius: var(--r-md); overflow: hidden; background: var(--gray-100); }
+
+  .mini-map-card .legend { font-size: 11px; color: var(--gray-500); margin-top: 8px; line-height: 1.5; }
+
+  .mini-map-card .legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle; margin-right: 4px; }
+
+
+  /* ====== Tract table ====== */
+  .table-wrap { background: #FFF; border: 1px solid var(--gray-200); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); overflow: hidden; }
+
+  table.tracts { width: 100%; border-collapse: collapse; font-size: 13px; }
+
+  table.tracts thead th { background: var(--gray-50); padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gray-700); border-bottom: 1px solid var(--gray-200); position: sticky; top: 0; z-index: 1; cursor: pointer; user-select: none; }
+
+  table.tracts thead th .sort-arrow { color: var(--gray-300); margin-left: 4px; font-size: 10px; }
+
+  table.tracts thead th.sorted { color: var(--ember-orange); }
+
+  table.tracts thead th.sorted .sort-arrow { color: var(--ember-orange); }
+
+  table.tracts thead th.nosort { cursor: default; }
+
+  table.tracts tbody td { padding: 10px 12px; border-top: 1px solid var(--gray-100); vertical-align: middle; }
+
+  table.tracts tbody tr { transition: background 80ms; }
+
+  table.tracts tbody tr:hover { background: var(--gray-50); }
+
+  table.tracts tbody tr.selected { background: rgba(242,89,41,0.06); }
+
+  table.tracts tbody tr.selected:hover { background: rgba(242,89,41,0.10); }
+
+  table.tracts .col-cb { width: 32px; padding-right: 0; }
+
+  table.tracts .col-num { width: 36px; color: var(--gray-400); font-size: 11px; text-align: right; }
+
+  table.tracts .col-acres { text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; white-space: nowrap; }
+
+  table.tracts .owner-cell { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+  table.tracts .owner-cell .name { font-weight: 600; color: var(--gray-900); }
+
+  table.tracts .owner-cell .indicators { display: inline-flex; gap: 3px; }
+
+  table.tracts .indicators .ind { font-size: 11px; padding: 1px 5px; border-radius: 3px; background: var(--gray-100); color: var(--gray-500); cursor: default; }
+
+  table.tracts .indicators .ind.fav { background: rgba(255,160,0,0.14); color: #C28100; }
+
+  table.tracts .indicators .ind.note { background: rgba(25,118,210,0.14); color: #1565C0; }
+
+  table.tracts .indicators .ind.folder { background: rgba(46,125,50,0.14); color: #2E7D32; }
+
+  table.tracts .status-pill { display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #FFF; }
+
+  table.tracts .status-pill.none { background: transparent; color: var(--gray-400); border: 1px dashed var(--gray-300); font-style: italic; font-weight: 500; text-transform: none; }
+
+  table.tracts .actions-cell { display: flex; gap: 4px; white-space: nowrap; }
+
+  table.tracts .actions-cell button, table.tracts .actions-cell a { background: var(--gray-50); border: 1px solid var(--gray-200); color: var(--gray-700); padding: 3px 8px; border-radius: var(--r-sm); font-size: 11px; cursor: pointer; transition: all 120ms; text-decoration: none; font-family: inherit; }
+
+  table.tracts .actions-cell button:hover, table.tracts .actions-cell a:hover { background: var(--gray-100); border-color: var(--gray-300); color: var(--gray-900); }
+
+
+  .agg-row { background: rgba(242,89,41,0.04); }
+
+  .agg-row td { font-weight: 600; }
+
+
+  /* Empty + loading states */
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--gray-500); }
+
+  .empty-state .icon { font-size: 32px; opacity: 0.4; margin-bottom: 10px; }
+
+  .empty-state h2 { font-size: 16px; font-weight: 600; color: var(--gray-700); margin: 0 0 6px; }
+
+  .empty-state p { margin: 0; font-size: 13px; }
+
+  .loading-state { padding: 40px; text-align: center; color: var(--gray-500); }
+
+  .spinner { display: inline-block; width: 22px; height: 22px; border: 2.5px solid var(--gray-200); border-top-color: var(--ember-orange); border-radius: 50%; animation: spin 1s linear infinite; vertical-align: middle; margin-right: 8px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+
+  /* Bulk action toolbar — sticky at the bottom when any tracts selected */
+  .bulk-bar { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%) translateY(140%);
+    background: var(--gray-900); color: #FFF; padding: 12px 18px; border-radius: var(--r-lg);
+    box-shadow: 0 12px 32px rgba(15,23,42,0.30); z-index: 1000; display: flex; align-items: center; gap: 12px;
+    transition: transform 240ms cubic-bezier(0.16,1,0.3,1); min-width: 540px; max-width: 95vw; }
+
+  .bulk-bar.show { transform: translateX(-50%) translateY(0); }
+
+  .bulk-bar .count { background: var(--ember-orange); padding: 4px 10px; border-radius: 999px; font-weight: 600; font-size: 13px; }
+
+  .bulk-bar select, .bulk-bar button { background: #232E3D; border: 1px solid #3A4555; color: #FFF; padding: 7px 11px; border-radius: var(--r-md); font: inherit; font-size: 13px; cursor: pointer; transition: all 120ms; }
+
+  .bulk-bar select:hover, .bulk-bar button:hover { background: #2D3A4D; border-color: #4B5566; }
+
+  .bulk-bar button.primary { background: var(--ember-orange); border-color: var(--ember-orange); font-weight: 600; }
+
+  .bulk-bar button.primary:hover { background: var(--ember-orange-hover); border-color: var(--ember-orange-hover); }
+
+  .bulk-bar .clear-btn { background: transparent; border-color: transparent; opacity: 0.6; }
+
+  .bulk-bar .clear-btn:hover { opacity: 1; background: transparent; }
+
+
+  /* ====== Inline tract drawer ====== */
+  .tract-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,0.30); z-index: 1100;
+    opacity: 0; pointer-events: none; transition: opacity 200ms; backdrop-filter: blur(1px); }
+
+  .tract-backdrop.show { opacity: 1; pointer-events: auto; }
+
+  .tract-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 96vw); background: #FFF;
+    box-shadow: -8px 0 32px rgba(15,23,42,0.18); transform: translateX(100%);
+    transition: transform 260ms cubic-bezier(0.16,1,0.3,1); z-index: 1110;
+    display: flex; flex-direction: column; }
+
+  .tract-drawer.show { transform: translateX(0); }
+
+  .tract-drawer header { padding: 18px 22px 14px; border-bottom: 1px solid var(--gray-200);
+    background: var(--gray-50); display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+
+  .tract-drawer header .title { flex: 1; min-width: 0; }
+
+  .tract-drawer header .acres-pill { font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--eax-accent); margin-bottom: 2px; }
+
+  .tract-drawer header h2 { margin: 0; font-size: 18px; font-weight: 600; color: var(--gray-900);
+    line-height: 1.25; word-break: break-word; }
+
+  .tract-drawer header .meta { color: var(--gray-500); font-size: 12px; margin-top: 4px; }
+
+  .tract-drawer header .close-btn { background: none; border: 0; color: var(--gray-500);
+    font-size: 22px; cursor: pointer; padding: 0 6px; line-height: 1; border-radius: 4px; }
+
+  .tract-drawer header .close-btn:hover { color: var(--gray-900); background: var(--gray-200); }
+
+  .tract-drawer .actions { display: flex; gap: 6px; padding: 12px 22px; border-bottom: 1px solid var(--gray-200); flex-wrap: wrap; background: #FFF; }
+
+  .tract-drawer .body { flex: 1; overflow-y: auto; padding: 16px 22px 28px; background: var(--gray-50); }
+
+  .tract-drawer .section { background: #FFF; border: 1px solid var(--gray-200); border-radius: var(--r-md);
+    padding: 14px 16px; margin-bottom: 12px; box-shadow: var(--shadow-sm); }
+
+  .tract-drawer .section h3 { margin: 0 0 8px; font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--gray-500); }
+
+  .tract-drawer .kv { display: grid; grid-template-columns: 130px 1fr; gap: 4px 12px; font-size: 13px; }
+
+  .tract-drawer .kv dt { color: var(--gray-500); font-weight: 500; }
+
+  .tract-drawer .kv dd { margin: 0; color: var(--gray-900); word-break: break-word; }
+
+  .tract-drawer .tag-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+
+  .tract-drawer .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px;
+    font-weight: 600; background: var(--gray-100); color: var(--gray-700); }
+
+  .tract-drawer .tag.corridor { background: rgba(242,89,41,0.12); color: #C04217; }
+
+  .tract-drawer .tag.fav   { background: rgba(255,160,0,0.16); color: #C28100; }
+
+  .tract-drawer .tag.note  { background: rgba(25,118,210,0.14); color: #1565C0; }
+
+  .tract-drawer .tag.folder { background: rgba(46,125,50,0.14); color: #2E7D32; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <nav id="sidebar">
+    <div class="sidebar-logo">
+      <img src="/static/img/ember_logo.png"        alt="Ember" class="logo-img logo-dark">
+      <img src="/static/img/ember_logo_light.png"  alt="Ember" class="logo-img logo-light">
+      <div class="logo-sub">Acquisitions</div>
+    </div>
+    <div class="sidebar-section">Apps &amp; Dashboards</div>
+    {% if page_access.get('mpc_underwriting', true) %}
+    <a href="/" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+      MPC Underwriting
+    </a>
+    {% endif %}
+    {% if page_access.get('returns', true) %}
+    <a href="/returns" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Project Returns
+    </a>
+    {% endif %}
+    {% if page_access.get('loans', true) %}
+    <a href="/loans" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Loans &amp; Debt
+    </a>
+    {% endif %}
+    {% if is_admin or page_access.get('budget', false) %}
+    <a href="/budget" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 13l3 3 3-5 4 4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Operating Budget
+    </a>
+    {% endif %}
+    {% if page_access.get('operations', true) %}
+    <a href="/operations" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Operating Revenues
+    </a>
+    {% endif %}
+    {% if page_access.get('invoice_dashboard', true) %}
+    <a href="/invoice-dashboard" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 2h6a2 2 0 012 2v16l-3-2-2 2-2-2-2 2-3-2V4a2 2 0 012-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 7h6M9 11h6M9 15h4" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Invoice Dashboard
+    </a>
+    {% endif %}
+    {% if page_access.get('financials', true) %}
+    <a href="/financials" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M9 17V9m4 8V5m4 12v-7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Financial Statements
+    </a>
+    {% endif %}
+    {% if is_admin or page_access.get('unit_economics', false) %}
+    <a href="/unit-economics" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 2l9 5-9 5-9-5 9-5z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 12l9 5 9-5M3 17l9 5 9-5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Unit Economics
+    </a>
+    {% endif %}
+    {% if is_admin or page_access.get('partners_cf', false) %}
+    <a href="/partners-cf" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M7 10h10m0 0l-3-3m3 3l-3 3M17 17H7m0 0l3-3m-3 3l3 3" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Partners Cash Flow
+    </a>
+    {% endif %}
+    {% if page_access.get('macro', true) %}
+    <a href="/macro" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="1.5"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Macro Dashboard
+    </a>
+    {% endif %}
+    {% if page_access.get('portfolio', true) %}
+    <a href="/ember-capital" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 3.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Ember Capital
+    </a>
+    {% endif %}
+    {% if page_access.get('sales', true) %}
+    <a href="/sales" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l3-3 4 4 5-6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Community Sales
+    </a>
+    {% endif %}
+    {% if page_access.get('verticals', true) %}
+    <a href="/verticals" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      Vertical Dashboard
+    </a>
+    {% endif %}
+    {% if is_admin or page_access.get('bva', false) %}
+    <a href="/bva" class="sidebar-item"><svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="7" y="10" width="3" height="7" rx="0.5"/><rect x="12" y="6" width="3" height="11" rx="0.5"/><rect x="17" y="13" width="3" height="4" rx="0.5"/></svg>Budget vs Actuals</a>
+    {% endif %}
+    {% if is_admin or page_access.get('acquisitions', false) %}
+    <a href="/acquisitions" class="sidebar-item active">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Acquisitions GIS
+    </a>
+    {% endif %}
+    <div style="flex:1"></div>
+    {% include "_partials/_sidebar_foot.html" %}
+  </nav>
+
+  <div id="main-content">
+    <div class="acq-legacy">
+      <div style="padding:20px 28px 4px">
+        <div class="acq-eyebrow">LAND · SAVED SEARCHES</div>
+      </div>
+
+
+
+<div class="page-header">
+  <div>
+    <h1>Growth Corridors</h1>
+    <div class="meta" id="page-meta">Loading…</div>
+  </div>
+</div>
+
+<div class="tabs" id="tabs"></div>
+
+<div class="kpi-strip" id="kpi-strip"></div>
+
+<div class="filter-bar">
+  <div class="group"><label>Buffer ±mi</label><input id="f-buffer" type="number" step="0.5" value="3" style="width:70px"></div>
+  <div class="group"><label>Acres</label><input id="f-min-ac" type="number" step="10" value="50" style="width:80px"> – <input id="f-max-ac" type="number" step="100" value="3000" style="width:90px"></div>
+  <div class="group"><label>County</label><select id="f-county"><option value="">all</option></select></div>
+  <div class="group"><label>Status</label><select id="f-status">
+    <option value="">all</option>
+    <option value="lead">Lead</option>
+    <option value="contacted">Contacted</option>
+    <option value="negotiating">Negotiating</option>
+    <option value="under_contract">Under contract</option>
+    <option value="closed">Closed</option>
+    <option value="not_interested">Not interested</option>
+    <option value="lost">Lost</option>
+    <option value="passed">Passed</option>
+    <option value="__none__">(no outreach yet)</option>
+  </select></div>
+  <div class="group" id="corridor-filter-group" style="display:none"><label>Corridor</label><select id="f-corridor"><option value="">all</option></select></div>
+  <label class="toggle"><input type="checkbox"id="f-by-owner">Group by owner</label>
+  <label class="toggle"id="by-corridor-toggle"style="display:none"><input type="checkbox"id="f-by-corridor">Group by corridor</label>
+  <input id="f-search" type="text" placeholder="Search owner / county…" style="flex:1;min-width:160px">
+  <button class="btn" id="btn-recompute" type="button" title="Re-run the search with current acres + buffer">⟳ Recompute</button>
+</div>
+
+<div class="body-wrap">
+  <div class="mini-map-card">
+    <h3>Map</h3>
+    <div id="mini-map"></div>
+    <div class="legend">
+      <div><span class="dot" style="background:#F25929;border:2px solid #F25929"></span>Corridor outline</div>
+      <div><span class="dot" style="background:#13344E"></span>Untouched tract</div>
+      <div><span class="dot" style="background:#1976D2"></span>In pipeline</div>
+      <div><span class="dot" style="background:#2E7D32"></span>Closed deal</div>
+    </div>
+  </div>
+  <div>
+    <!-- "Currently viewing" header — shows the active corridor name with a
+         back button to return to the All-corridors view. Hidden until a tab
+         is loaded. -->
+    <div id="active-corridor-bar" style="display:none;background:#FFF;border:1px solid var(--gray-200);border-left:4px solid #F25929;border-radius:6px;padding:10px 14px;margin-bottom:10px;display:none;align-items:center;gap:12px;box-shadow:var(--shadow-sm)">
+      <button id="back-to-all" type="button" style="background:transparent;border:1px solid var(--gray-300);color:var(--gray-700);padding:5px 11px;border-radius:4px;font-size:12px;cursor:pointer;font-family:inherit;transition:all 120ms" title="Return to the All-corridors view">← All corridors</button>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#7A828D">Viewing tracts in</div>
+        <div id="active-corridor-name" style="font-size:15px;font-weight:600;color:#1A2330;line-height:1.2"></div>
+      </div>
+      <div id="active-corridor-stat" style="font-size:12px;color:#7A828D;text-align:right;white-space:nowrap"></div>
+    </div>
+    <div class="table-wrap" id="table-wrap">
+      <div class="loading-state"><span class="spinner"></span>Loading…</div>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk action toolbar — pipeline assignment moved into the per-row Pipeline
+     Status dropdown. Bulk bar focuses on cross-tract actions: add to folder,
+     export. Clear the selection with the × button. -->
+<div class="bulk-bar" id="bulk-bar">
+  <span class="count" id="bulk-count">0</span>
+  <span style="opacity:0.85">selected</span>
+  <select id="bulk-folder" title="Pick a folder">
+    <option value="">— pick a folder —</option>
+  </select>
+  <button class="primary"id="bulk-add-folder"type="button">Add to folder</button>
+  <button id="bulk-csv"type="button">Export CSV</button>
+  <button class="clear-btn" id="bulk-clear" type="button">Clear</button>
+</div>
+
+<!-- Inline tract details drawer (uses in-memory tract data — no re-fetch, no
+     wrong-tract risk from prop_id ambiguity). -->
+<div class="tract-backdrop" id="tract-backdrop"></div>
+<aside class="tract-drawer" id="tract-drawer">
+  <header>
+    <div class="title">
+      <div class="acres-pill" id="td-acres-pill">—</div>
+      <h2 id="td-owner">—</h2>
+      <div class="meta" id="td-meta"></div>
+    </div>
+    <button class="close-btn" id="td-close" type="button" title="Close (esc)">×</button>
+  </header>
+  <div class="actions" id="td-actions"></div>
+  <div class="body" id="td-body"></div>
+</aside>
+
+
+
+    </div>
+  </div>
+
+</div>
+
+{% include "_partials/_account_modal.html" %}
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+
+function escapeHtml(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+function fmtN(n){ if (n == null) return '—'; return (+n).toLocaleString('en-US', { maximumFractionDigits: 1 }); }
+
+const OUTREACH_COLORS = {
+  lead: '#6B7B8B', contacted: '#1976D2', negotiating: '#F25929',
+  under_contract: '#FFA000', closed: '#2E7D32',
+  not_interested: '#7B1FA2', lost: '#9E9E9E', passed: '#5D4037',
+};
+const OUTREACH_LABELS = {
+  lead: 'Lead', contacted: 'Contacted', negotiating: 'Negotiating',
+  under_contract: 'Under contract', closed: 'Closed',
+  not_interested: 'Not interested', lost: 'Lost', passed: 'Passed',
+};
+
+// =========================================================================
+// State
+// =========================================================================
+let _corridors = [];        // list of {id,label,filename,buffer_miles,...}
+let _activeCorridorId = null;  // id of the active tab; 'ALL' for the All tab
+let _activeData = null;     // last response from /api/corridor/<id>/tracts
+let _selected = new Set();  // selected prop_ids
+let _sortKey = 'acres';
+let _sortDir = 'desc';
+let _miniMap = null;
+let _miniLayer = null;
+
+// =========================================================================
+// Init
+// =========================================================================
+(async function init() {
+  _miniMap = L.map('mini-map', { zoomControl: false, attributionControl: false }).setView([29.95, -95.6], 8);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    { maxZoom: 19 }).addTo(_miniMap);
+  _miniLayer = L.layerGroup().addTo(_miniMap);
+
+  try {
+    const r = await fetch('/api/acq/corridors-list');
+    const d = await r.json();
+    _corridors = d.corridors || [];
+  } catch (e) {
+    document.getElementById('tabs').innerHTML =
+      `<div style="padding:20px;color:#c62828">Failed to load corridors: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  if (_corridors.length === 0) {
+    document.getElementById('page-meta').textContent = 'No corridors imported yet.';
+    document.getElementById('tabs').innerHTML = '';
+    document.getElementById('kpi-strip').innerHTML = '';
+    document.getElementById('table-wrap').innerHTML =
+      `<div class="empty-state"><div class="icon"></div><h2>No corridors yet</h2>
+        <p>Go to the <a href="/" style="color:#F25929">Map page</a> and import KMZs to set up your growth corridors.</p></div>`;
+    return;
+  }
+  document.getElementById('page-meta').textContent =
+    `${_corridors.length} corridor${_corridors.length === 1 ? '' : 's'} · click a tab to load its matching tracts`;
+
+  // Restore the active tab from ?tab= in the URL so navigating away and back
+  // (or sharing a link) lands on the same view. Browser back/forward also
+  // syncs via the popstate handler below.
+  const urlTab = new URLSearchParams(window.location.search).get('tab');
+  const validTab = urlTab && (urlTab === 'ALL' || _corridors.some(c => c.id === urlTab));
+  _activeCorridorId = validTab ? urlTab : null;
+  renderTabs();
+  if (_activeCorridorId) {
+    loadActiveTab();   // restore previous tab — fast on warm cache (30-min TTL)
+  } else {
+    _renderEmptyPicker();
+  }
+  // NOTE: no background preload — running 6 serial corridor searches in the
+  // background makes the browser feel busy + slows whichever tab the user
+  // clicks. Badges stay as "…" until the user clicks the tab. Click → load.
+})();
+
+// Keep the URL in sync when the user switches tabs, AND restore state on
+// browser back/forward navigation.
+window.addEventListener('popstate', () => {
+  const t = new URLSearchParams(window.location.search).get('tab');
+  const valid = t && (t === 'ALL' || _corridors.some(c => c.id === t));
+  _activeCorridorId = valid ? t : null;
+  renderTabs();
+  if (_activeCorridorId) loadActiveTab();
+  else _renderEmptyPicker();
+});
+
+// Helper: update the URL's ?tab= without triggering a navigation. Pushes a
+// history entry so the browser back button works.
+function _setUrlTab(tabId) {
+  const url = new URL(window.location.href);
+  if (tabId) url.searchParams.set('tab', tabId);
+  else       url.searchParams.delete('tab');
+  // Only push if it actually changed (prevents history spam on no-op clicks)
+  if (window.location.search !== url.search) {
+    window.history.pushState({}, '', url);
+  }
+}
+
+// Empty-state shown until the user picks a tab — fast page load.
+function _renderEmptyPicker() {
+  document.getElementById('kpi-strip').innerHTML = '';
+  document.getElementById('table-wrap').innerHTML = `
+    <div class="empty-state">
+      <div class="icon"></div>
+      <h2>Pick a corridor tab to load tracts</h2>
+      <p>Loading is on-demand to keep the page snappy.
+         Click any corridor above to see its matching tracts —
+         or the <b>All corridors</b> tab to see them merged.</p>
+    </div>`;
+  document.getElementById('corridor-filter-group').style.display = 'none';
+  document.getElementById('by-corridor-toggle').style.display = 'none';
+}
+
+// (Preload removed — was making the browser feel busy without giving the
+// user anything actionable. Tab badges populate when the user clicks them.)
+
+function renderTabs() {
+  const el = document.getElementById('tabs');
+  const allTab = `
+    <button class="tab ${_activeCorridorId === 'ALL' ? 'active' : ''}" data-id="ALL">
+      All corridors <span class="badge">${_corridors.length}</span>
+    </button>`;
+  el.innerHTML = allTab + _corridors.map(c => `
+    <button class="tab ${_activeCorridorId === c.id ? 'active' : ''}" data-id="${c.id}">
+      ${escapeHtml(_stripBufSuffix(c.label))}
+      <span class="badge" id="badge-${c.id}" title="Click to load tract count">…</span>
+    </button>`).join('');
+  el.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => {
+    _activeCorridorId = b.dataset.id;
+    _selected.clear();
+    _setUrlTab(_activeCorridorId);
+    renderTabs();
+    loadActiveTab();
+  }));
+}
+
+function _stripBufSuffix(s) {
+  return (s || '').replace(/\s*±[\d.]+mi\s*$/, '').trim();
+}
+
+// =========================================================================
+// Load tracts for the active tab
+// =========================================================================
+async function loadActiveTab(opts) {
+  opts = opts || {};
+  const wrap = document.getElementById('table-wrap');
+  wrap.innerHTML = `<div class="loading-state"><span class="spinner"></span>Searching corridor… (5–30 seconds depending on county cache)</div>`;
+
+  const buffer  = parseFloat(document.getElementById('f-buffer').value) || 3;
+  const minAc   = parseFloat(document.getElementById('f-min-ac').value) || 50;
+  const maxAc   = parseFloat(document.getElementById('f-max-ac').value) || 3000;
+  const force   = !!opts.force;
+
+  if (_activeCorridorId === 'ALL') {
+    // Run all corridors in parallel and merge
+    try {
+      const results = await Promise.all(_corridors.map(c =>
+        fetch(`/api/acq/corridor/${encodeURIComponent(c.id)}/tracts`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ buffer_miles: buffer, min_acres: minAc, max_acres: maxAc, force }),
+        }).then(r => r.json().then(d => ({ ok: r.ok, d, corridor: c })))
+      ));
+      const mergedTracts = [];
+      const seenPids = new Set();
+      const summary = { tracts: 0, total_acres: 0, in_pipeline: 0, closed: 0, untouched: 0, counties: {} };
+      const allCorridorPolygons = [];
+      results.forEach(({ ok, d, corridor }) => {
+        if (!ok || d.error) return;
+        document.getElementById(`badge-${corridor.id}`).textContent = String(d.summary.tracts);
+        allCorridorPolygons.push(d.corridor.polygon);
+        for (const t of (d.tracts || [])) {
+          const pid = String(t.properties.Prop_ID);
+          if (seenPids.has(pid)) {
+            // Track that this tract is in multiple corridors
+            const existing = mergedTracts.find(x => String(x.properties.Prop_ID) === pid);
+            if (existing) {
+              existing.properties._corridors = existing.properties._corridors || [];
+              existing.properties._corridors.push(_stripBufSuffix(corridor.label));
+            }
+            continue;
+          }
+          seenPids.add(pid);
+          t.properties._corridors = [_stripBufSuffix(corridor.label)];
+          mergedTracts.push(t);
+        }
+      });
+      // Aggregate summary from the merged set (deduplicated)
+      for (const t of mergedTracts) {
+        const p = t.properties;
+        summary.tracts++;
+        summary.total_acres += (p.Acres || 0);
+        if (p._outreach_status) {
+          summary.in_pipeline++;
+          if (p._outreach_status === 'closed') summary.closed++;
+        }
+        if (!p._outreach_status && !p._has_notes && !p._is_favorite && !(p._folder_names || []).length) {
+          summary.untouched++;
+        }
+        const c2 = p._county || 'Unknown';
+        summary.counties[c2] = (summary.counties[c2] || 0) + 1;
+      }
+      summary.total_acres = Math.round(summary.total_acres);
+      summary.avg_acres = summary.tracts ? Math.round(summary.total_acres / summary.tracts) : 0;
+      summary.counties_list = Object.entries(summary.counties)
+        .sort((a,b) => b[1]-a[1]).slice(0,3).map(([n,c2]) => ({name: n, count: c2}));
+      _activeData = {
+        tracts: mergedTracts, summary,
+        corridor: { id: 'ALL', label: 'All corridors', buffer_miles: buffer,
+                     polygons: allCorridorPolygons },
+      };
+    } catch (e) {
+      wrap.innerHTML = `<div class="empty-state"><div class="icon"></div><h2>Search failed</h2><p>${escapeHtml(e.message)}</p></div>`;
+      return;
+    }
+  } else {
+    const c = _corridors.find(x => x.id === _activeCorridorId);
+    if (!c) return;
+    try {
+      const r = await fetch(`/api/acq/corridor/${encodeURIComponent(c.id)}/tracts`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ buffer_miles: buffer, min_acres: minAc, max_acres: maxAc, force }),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) {
+        wrap.innerHTML = `<div class="empty-state"><div class="icon"></div><h2>Couldn't load</h2><p>${escapeHtml(d.error || ('HTTP '+ r.status))}</p></div>`;
+        return;
+      }
+      document.getElementById(`badge-${c.id}`).textContent = String(d.summary.tracts);
+      // Normalize summary shape vs "All"
+      d.summary.counties_list = d.summary.counties || [];
+      _activeData = d;
+    } catch (e) {
+      wrap.innerHTML = `<div class="empty-state"><div class="icon"></div><h2>Search failed</h2><p>${escapeHtml(e.message)}</p></div>`;
+      return;
+    }
+  }
+  // Populate county dropdown from this dataset
+  _refreshCountyDropdown();
+  _refreshCorridorControls();
+  _refreshActiveCorridorBar();
+  renderKPI();
+  renderTable();
+  renderMiniMap();
+}
+
+function _refreshCountyDropdown() {
+  const sel = document.getElementById('f-county');
+  const cur = sel.value;
+  const counties = new Set();
+  (_activeData?.tracts || []).forEach(t => {
+    const c = t.properties._county;
+    if (c) counties.add(c);
+  });
+  const sorted = Array.from(counties).sort();
+  sel.innerHTML = '<option value="">all</option>' +
+    sorted.map(c => `<option value="${escapeHtml(c)}" ${c === cur ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
+}
+
+// Corridor filter dropdown + Group-by-corridor toggle only make sense on the
+// "All corridors" tab (where every tract carries a `_corridors` list). Hide
+// them otherwise. Use explicit display values — `style.display = ''` doesn't
+// always defer to the CSS class default when the inline style was set first.
+function _refreshCorridorControls() {
+  const group  = document.getElementById('corridor-filter-group');
+  const toggle = document.getElementById('by-corridor-toggle');
+  const isAll  = (_activeCorridorId === 'ALL');
+  if (!isAll) {
+    group.style.display  = 'none';
+    toggle.style.display = 'none';
+    return;
+  }
+  group.style.display  = 'inline-flex';
+  toggle.style.display = 'inline-flex';
+
+  // Populate the dropdown from the corridor labels found in the active dataset
+  const sel = document.getElementById('f-corridor');
+  const cur = sel.value;
+  const present = new Set();
+  (_activeData?.tracts || []).forEach(t => {
+    (t.properties._corridors || []).forEach(c => present.add(c));
+  });
+  // Use the canonical corridor list order
+  const ordered = _corridors
+    .map(c => _stripBufSuffix(c.label))
+    .filter(label => present.has(label));
+  sel.innerHTML = '<option value="">all</option>' +
+    ordered.map(c => `<option value="${escapeHtml(c)}" ${c === cur ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
+}
+
+// "Currently viewing" bar — sits above the table on individual corridor tabs
+// with a back button to jump back to the All-corridors view.
+function _refreshActiveCorridorBar() {
+  const bar = document.getElementById('active-corridor-bar');
+  if (!bar) return;
+  if (_activeCorridorId && _activeCorridorId !== 'ALL') {
+    const c = _corridors.find(x => x.id === _activeCorridorId);
+    if (c) {
+      document.getElementById('active-corridor-name').textContent = _stripBufSuffix(c.label);
+      const s = _activeData?.summary;
+      document.getElementById('active-corridor-stat').innerHTML = s
+        ? `<b style="color:#1A2330">${s.tracts}</b> tracts · ${fmtN(s.total_acres)} ac total · ${s.in_pipeline} in pipeline`
+        : '';
+      bar.style.display = 'flex';
+    } else {
+      bar.style.display = 'none';
+    }
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+// Wire the back button — jumps to the All tab (same as clicking the All tab)
+document.addEventListener('DOMContentLoaded', () => {
+  const btn = document.getElementById('back-to-all');
+  if (btn) btn.addEventListener('click', () => {
+    _activeCorridorId = 'ALL';
+    _selected.clear();
+    _setUrlTab('ALL');
+    renderTabs();
+    loadActiveTab();
+  });
+});
+// Fallback if DOMContentLoaded already fired (script loads at end of body)
+if (document.readyState !== 'loading') {
+  const btn = document.getElementById('back-to-all');
+  if (btn) btn.addEventListener('click', () => {
+    _activeCorridorId = 'ALL';
+    _selected.clear();
+    _setUrlTab('ALL');
+    renderTabs();
+    loadActiveTab();
+  });
+}
+
+// =========================================================================
+// KPI strip
+// =========================================================================
+function renderKPI() {
+  const d = _activeData; if (!d) return;
+  const s = d.summary;
+  const topCo = (s.counties_list || []).slice(0, 3).map(c => `${c.name} ${c.count}`).join(' · ');
+  // Count "not developable" tracts in the active dataset so we can surface it
+  // as a KPI tile (replaces the old Untouched tile).
+  let notDev = 0;
+  for (const t of (d.tracts || [])) {
+    if (t.properties && t.properties._outreach_status === 'not_interested') notDev++;
+  }
+  document.getElementById('kpi-strip').innerHTML = `
+    <div class="kpi"><div class="label">Matching tracts</div><div class="value">${s.tracts}</div><div class="sub">${fmtN(s.total_acres)} ac total · avg ${fmtN(s.avg_acres)} ac</div></div>
+    <div class="kpi ${s.in_pipeline ? 'ok' : ''}"><div class="label">In pipeline</div><div class="value">${s.in_pipeline}</div><div class="sub">${s.tracts ? Math.round(s.in_pipeline / s.tracts * 100) : 0}% of tracts</div></div>
+    <div class="kpi ${s.closed ? 'ok' : ''}"><div class="label">Closed</div><div class="value">${s.closed}</div><div class="sub">deals closed</div></div>
+    <div class="kpi ${notDev ? 'alert' : ''}" title="Tracts flagged as not developable — flood plain, no access, easement, etc."><div class="label">Not interested</div><div class="value">${notDev}</div><div class="sub">disqualified</div></div>
+    <div class="kpi"><div class="label">Top counties</div><div class="value" style="font-size:14px;font-weight:600">${escapeHtml(topCo || '—')}</div><div class="sub">tracts</div></div>
+  `;
+}
+
+// =========================================================================
+// Mini-map: corridor outline(s) + tract centroid dots
+// =========================================================================
+function renderMiniMap() {
+  if (!_miniLayer) return;
+  _miniLayer.clearLayers();
+  const d = _activeData; if (!d) return;
+  let bounds = null;
+
+  // Corridor outline(s)
+  const polys = (d.corridor && d.corridor.polygons) ? d.corridor.polygons
+              : (d.corridor && d.corridor.polygon) ? [d.corridor.polygon] : [];
+  polys.forEach(p => {
+    if (!p) return;
+    const lyr = L.geoJSON(p, {
+      style: { color: '#F25929', weight: 2.5, fillColor: '#F25929', fillOpacity: 0.08, dashArray: '4,3' },
+    }).addTo(_miniLayer);
+    try { bounds = bounds ? bounds.extend(lyr.getBounds()) : L.latLngBounds(lyr.getBounds()); } catch {}
+  });
+
+  // Tract centroid dots, colored by status
+  for (const t of (d.tracts || [])) {
+    let lat, lon;
+    try {
+      const g = t.geometry;
+      if (g.type === 'Polygon') {
+        const ring = g.coordinates[0];
+        let sx = 0, sy = 0;
+        for (const [x, y] of ring) { sx += x; sy += y; }
+        lon = sx / ring.length; lat = sy / ring.length;
+      } else if (g.type === 'MultiPolygon') {
+        const ring = g.coordinates[0][0];
+        let sx = 0, sy = 0;
+        for (const [x, y] of ring) { sx += x; sy += y; }
+        lon = sx / ring.length; lat = sy / ring.length;
+      } else continue;
+    } catch { continue; }
+
+    const st = t.properties._outreach_status;
+    const color = (st === 'closed') ? '#2E7D32'
+                : (st                  ) ? '#1976D2'
+                :                          '#13344E';
+    L.circleMarker([lat, lon], {
+      radius: 4, color: color, weight: 1, fillColor: color, fillOpacity: 0.85,
+    }).bindTooltip(`${t.properties.OWNER_NAME || '(no owner)'} — ${fmtN(t.properties.Acres)} ac`,
+                    { sticky: true }).addTo(_miniLayer);
+  }
+  if (bounds && bounds.isValid()) {
+    try { _miniMap.fitBounds(bounds.pad(0.1)); } catch {}
+  }
+}
+
+// =========================================================================
+// Table
+// =========================================================================
+function _filteredSorted() {
+  const d = _activeData; if (!d) return [];
+  const search = (document.getElementById('f-search').value || '').toLowerCase().trim();
+  const countyFilter = document.getElementById('f-county').value || '';
+  const statusFilter = document.getElementById('f-status').value || '';
+  const corridorFilter = (document.getElementById('f-corridor')?.value || '');
+
+  let rows = d.tracts.filter(t => {
+    const p = t.properties;
+    if (search) {
+      const blob = `${p.OWNER_NAME || ''} ${p._county || ''}`.toLowerCase();
+      if (!blob.includes(search)) return false;
+    }
+    if (countyFilter && p._county !== countyFilter) return false;
+    if (statusFilter) {
+      if (statusFilter === '__none__') {
+        if (p._outreach_status) return false;
+      } else if (p._outreach_status !== statusFilter) {
+        return false;
+      }
+    }
+    if (corridorFilter && _activeCorridorId === 'ALL') {
+      const corridors = p._corridors || [];
+      if (!corridors.includes(corridorFilter)) return false;
+    }
+    return true;
+  });
+
+  // Sort
+  const cmp = {
+    num:     (a, b) => (a._num || 0) - (b._num || 0),
+    owner:   (a, b) => (a.properties.OWNER_NAME || '').localeCompare(b.properties.OWNER_NAME || ''),
+    acres:   (a, b) => (a.properties.Acres || 0) - (b.properties.Acres || 0),
+    county:  (a, b) => (a.properties._county || '').localeCompare(b.properties._county || ''),
+    status:  (a, b) => (a.properties._outreach_status || '~').localeCompare(b.properties._outreach_status || '~'),
+  }[_sortKey] || (() => 0);
+  rows.sort(cmp);
+  if (_sortDir === 'desc') rows.reverse();
+  rows.forEach((r, i) => r._num = i + 1);
+  return rows;
+}
+
+function renderTable() {
+  const wrap = document.getElementById('table-wrap');
+  const d = _activeData;
+  if (!d) { wrap.innerHTML = ''; return; }
+  if (d.tracts.length === 0) {
+    wrap.innerHTML = `<div class="empty-state"><div class="icon"></div><h2>No tracts found</h2><p>Try widening the buffer or relaxing the acres filter.</p></div>`;
+    return;
+  }
+  const rows = _filteredSorted();
+  const byOwner = document.getElementById('f-by-owner').checked;
+  const byCorridor = document.getElementById('f-by-corridor')?.checked && _activeCorridorId === 'ALL';
+
+  const headers = [
+    { key: 'num',    label: '#',       cls: 'col-num',    sortable: true },
+    { key: 'owner',  label: 'Owner / property',           sortable: true },
+    { key: 'acres',  label: 'Acres',   cls: 'col-acres',  sortable: true },
+    { key: 'county', label: 'County',                     sortable: true },
+    { key: 'status', label: 'Pipeline status',            sortable: true },
+    { key: '',       label: 'Actions',    cls: 'nosort',  sortable: false },
+  ];
+
+  let bodyRows = '';
+  if (byCorridor) {
+    // Group rows by corridor. A tract that appears in N corridors shows up
+    // once under each — let the user see the cross-corridor membership.
+    const groups = {};
+    for (const t of rows) {
+      const corridors = (t.properties._corridors && t.properties._corridors.length)
+        ? t.properties._corridors : ['(unknown)'];
+      for (const c of corridors) (groups[c] = groups[c] || []).push(t);
+    }
+    // Render in the canonical corridor order (so tabs and table line up)
+    const canonicalOrder = _corridors.map(c => _stripBufSuffix(c.label));
+    const orderedKeys = canonicalOrder.filter(k => groups[k])
+      .concat(Object.keys(groups).filter(k => !canonicalOrder.includes(k)));
+    for (const corridorName of orderedKeys) {
+      const group = groups[corridorName];
+      const ac = group.reduce((s, t) => s + (t.properties.Acres || 0), 0);
+      const inPipe = group.filter(t => t.properties._outreach_status).length;
+      const notDev = group.filter(t => t.properties._outreach_status === 'not_interested').length;
+      const groupPids = group.map(t => String(t.properties.Prop_ID));
+      const allSelected = groupPids.every(pid => _selected.has(pid));
+      // 7-column layout: cb · # · owner · acres · county · status · actions
+      bodyRows += `
+        <tr class="agg-row" data-corridor="${escapeHtml(corridorName)}">
+          <td class="col-cb"><input type="checkbox" class="cb-group" data-pids="${escapeHtml(groupPids.join(','))}" ${allSelected ? 'checked' : ''}></td>
+          <td class="col-num"></td>
+          <td><b>${escapeHtml(corridorName)}</b><span style="color:#7A828D;font-weight:400">— ${group.length} tract${group.length === 1 ? '': 's'}</span></td>
+          <td class="col-acres">${fmtN(ac)}</td>
+          <td></td>
+          <td><span style="font-size:11px;color:#7A828D">${inPipe} in pipeline${notDev ? ` · ${notDev} not interested` : ''}</span></td>
+          <td></td>
+        </tr>`;
+      for (const t of group) {
+        bodyRows += _rowHtml(t, /*nested=*/ true);
+      }
+    }
+  } else if (byOwner) {
+    // Group rows by owner name
+    const groups = {};
+    for (const t of rows) {
+      const key = (t.properties.OWNER_NAME || '(no owner)').trim();
+      (groups[key] = groups[key] || []).push(t);
+    }
+    const ordered = Object.entries(groups).sort((a, b) => {
+      // primary sort by group size (desc), secondary by group acres (desc)
+      const aac = a[1].reduce((s, t) => s + (t.properties.Acres || 0), 0);
+      const bac = b[1].reduce((s, t) => s + (t.properties.Acres || 0), 0);
+      if (b[1].length !== a[1].length) return b[1].length - a[1].length;
+      return bac - aac;
+    });
+    for (const [owner, group] of ordered) {
+      const ac = group.reduce((s, t) => s + (t.properties.Acres || 0), 0);
+      const counties = Array.from(new Set(group.map(t => t.properties._county).filter(Boolean))).join(', ');
+      const statuses = Array.from(new Set(group.map(t => t.properties._outreach_status).filter(Boolean)));
+      const statusPill = statuses.length
+        ? statuses.map(st => `<span class="status-pill" style="background:${OUTREACH_COLORS[st]}">${OUTREACH_LABELS[st]}</span>`).join(' ')
+        : `<span class="status-pill none">no outreach</span>`;
+      const groupPids = group.map(t => String(t.properties.Prop_ID));
+      const allSelected = groupPids.every(pid => _selected.has(pid));
+      // 7-column layout: cb · # · owner · acres · county · status · actions
+      bodyRows += `
+        <tr class="agg-row" data-group="${escapeHtml(owner)}">
+          <td class="col-cb"><input type="checkbox" class="cb-group" data-pids="${escapeHtml(groupPids.join(','))}" ${allSelected ? 'checked' : ''}></td>
+          <td class="col-num"></td>
+          <td><b>${escapeHtml(owner)}</b> <span style="color:#7A828D;font-weight:400">— ${group.length} tract${group.length === 1 ? '' : 's'}</span></td>
+          <td class="col-acres">${fmtN(ac)}</td>
+          <td>${escapeHtml(counties || '—')}</td>
+          <td>${statusPill}</td>
+          <td></td>
+        </tr>`;
+      for (const t of group) {
+        bodyRows += _rowHtml(t, /*nested=*/ true);
+      }
+    }
+  } else {
+    bodyRows = rows.map(t => _rowHtml(t, /*nested=*/ false)).join('');
+  }
+
+  const thead = headers.map(h => {
+    const sortedCls = (h.key && _sortKey === h.key) ? ' sorted' : '';
+    const arrow = h.sortable
+      ? `<span class="sort-arrow">${_sortKey === h.key ? (_sortDir === 'asc' ? '▲' : '▼') : '↕'}</span>`
+      : '';
+    return `<th data-key="${h.key}" class="${h.cls || ''}${sortedCls}">${h.label}${arrow}</th>`;
+  }).join('');
+
+  // Select-all checkbox in header
+  const allRowsPids = rows.map(t => String(t.properties.Prop_ID));
+  const allChecked = allRowsPids.length > 0 && allRowsPids.every(pid => _selected.has(pid));
+
+  wrap.innerHTML = `
+    <table class="tracts">
+      <thead>
+        <tr>
+          <th class="col-cb nosort"><input type="checkbox" id="cb-all" ${allChecked ? 'checked' : ''}></th>
+          ${thead}
+        </tr>
+      </thead>
+      <tbody>${bodyRows}</tbody>
+    </table>`;
+
+  // Wire sort headers
+  wrap.querySelectorAll('thead th[data-key]').forEach(th => {
+    const k = th.dataset.key;
+    if (!k) return;
+    th.addEventListener('click', () => {
+      if (_sortKey === k) _sortDir = (_sortDir === 'asc' ? 'desc' : 'asc');
+      else { _sortKey = k; _sortDir = (k === 'acres' ? 'desc' : 'asc'); }
+      renderTable();
+    });
+  });
+
+  // Wire row checkboxes
+  wrap.querySelectorAll('.cb-row').forEach(cb => {
+    cb.addEventListener('click', e => e.stopPropagation());
+    cb.addEventListener('change', () => {
+      const pid = cb.dataset.pid;
+      if (cb.checked) _selected.add(pid); else _selected.delete(pid);
+      _syncBulkBar();
+      // Toggle row highlight
+      cb.closest('tr').classList.toggle('selected', cb.checked);
+    });
+  });
+  // Wire group checkboxes
+  wrap.querySelectorAll('.cb-group').forEach(cb => {
+    cb.addEventListener('click', e => e.stopPropagation());
+    cb.addEventListener('change', () => {
+      const pids = (cb.dataset.pids || '').split(',').filter(Boolean);
+      pids.forEach(pid => cb.checked ? _selected.add(pid) : _selected.delete(pid));
+      _syncBulkBar();
+      renderTable();
+    });
+  });
+  document.getElementById('cb-all').addEventListener('change', (e) => {
+    if (e.target.checked) allRowsPids.forEach(pid => _selected.add(pid));
+    else allRowsPids.forEach(pid => _selected.delete(pid));
+    _syncBulkBar();
+    renderTable();
+  });
+
+  // Wire row action buttons
+  wrap.querySelectorAll('[data-act]').forEach(btn => btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const act = btn.dataset.act;
+    if (act === 'details') {
+      _openTractDrawer(btn.dataset.pid);
+    } else if (act === 'view-map') {
+      _showOnMap(btn.dataset.pid);
+    } else if (act === 'bulk-group-pipeline') {
+      const pids = (btn.dataset.pids || '').split(',').filter(Boolean);
+      _bulkSetStatus(pids, 'lead');
+    }
+  }));
+
+  // Wire inline pipeline-status dropdown — change a tract's status (or
+  // remove it from the pipeline) right from the table row.
+  wrap.querySelectorAll('.status-select').forEach(sel => {
+    sel.addEventListener('change', (e) => {
+      e.stopPropagation();
+      const pid = sel.dataset.pid;
+      const newVal = sel.value;
+      _changeTractStatus(pid, newVal, {
+        owner_name: sel.dataset.owner,
+        acres: parseFloat(sel.dataset.acres) || 0,
+        county: sel.dataset.county,
+      });
+    });
+    sel.addEventListener('click', e => e.stopPropagation());
+  });
+
+  // Keep the bulk-action bar in sync with the current selection (visible
+  // when any tract is checked, hidden when none).
+  _syncBulkBar();
+}
+
+// Open the tract on the map using the geometry we ALREADY have in memory —
+// avoids the prop_id ambiguity that previously could send you to the wrong
+// parcel. We stash the tract data in sessionStorage and the map page reads
+// it on load.
+function _showOnMap(pid) {
+  const t = (_activeData?.tracts || []).find(t => String(t.properties.Prop_ID) === String(pid));
+  if (!t) {
+    alert('Tract not found in the current corridor data. Refresh the tab and try again.');
+    return;
+  }
+  if (!t.geometry) {
+    alert(`This tract (${t.properties.OWNER_NAME || pid}) has no map geometry on file. ` +
+          `Open its full page instead.`);
+    return;
+  }
+  const payload = {
+    prop_id:    String(pid),
+    owner_name: t.properties.OWNER_NAME || '',
+    acres:      t.properties.Acres || 0,
+    county:     t.properties._county || '',
+    geometry:   t.geometry,
+    mail_addr:  t.properties.MAIL_ADDR || '',
+    situs_addr: t.properties.SITUS_ADDR || '',
+    legal:      t.properties.LEGAL_DESC || '',
+    hcad_live:  !!t.properties._hcad_owner_verified,
+    mcad_live:  !!t.properties._mcad_owner_verified,
+    stored_at:  Date.now(),
+  };
+  console.log('[show-on-map] stashing', { pid: payload.prop_id, owner: payload.owner_name,
+                                            county: payload.county, acres: payload.acres,
+                                            geom_type: payload.geometry?.type });
+  try {
+    // localStorage shares across tabs (sessionStorage doesn't), so the new
+    // map tab can read it. Use a per-pid key so multiple open tabs don't
+    // step on each other.
+    const key = `focus_tract_data:${pid}`;
+    localStorage.setItem(key, JSON.stringify(payload));
+  } catch (e) {
+    console.error('localStorage write FAILED — map page won\'t get the geometry:', e);
+    alert('Could not pass the tract to the map (storage error). Try again or use the Details drawer.');
+    return;
+  }
+  // Open in a NEW TAB so the user doesn't lose their corridor results.
+  // Closing the new tab leaves them right back where they were.
+  window.open(`/?focus_tract_local=${encodeURIComponent(pid)}`, '_blank');
+}
+
+// Single-tract inline status change. Also handles "__remove__" (delete the
+// outreach record) and refreshes the active tab so KPIs update.
+async function _changeTractStatus(pid, newStatus, meta) {
+  if (newStatus === '__remove__') {
+    if (!confirm('Remove this tract from the pipeline? (The outreach record + log will be deleted.)')) {
+      await loadActiveTab({ force: true });
+      return;
+    }
+    const r = await fetch(`/api/acq/outreach/${encodeURIComponent(pid)}`, { method: 'DELETE' });
+    if (!r.ok) { alert('Remove failed'); }
+    await loadActiveTab({ force: true });
+    return;
+  }
+  if (!newStatus) {
+    // Placeholder picked — nothing to do
+    return;
+  }
+  // Use the existing single-tract POST /api/outreach/<pid> which creates or
+  // updates the record at the new status.
+  try {
+    const r = await fetch(`/api/acq/outreach/${encodeURIComponent(pid)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status:     newStatus,
+        owner_name: meta.owner_name || '',
+        acres:      meta.acres || 0,
+        county:     meta.county || '',
+      }),
+    });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      alert(`Failed to update status: ${d.error || ('HTTP ' + r.status)}`);
+      return;
+    }
+    await loadActiveTab({ force: true });
+  } catch (e) {
+    alert('Update failed: ' + e.message);
+  }
+}
+
+// Bulk status helper (used by group action buttons + the bulk bar — but the
+// bulk bar's "Move to pipeline" is gone now, so this is only called from the
+// group-bulk action).
+async function _bulkSetStatus(pids, status) {
+  const tracts = (_activeData?.tracts || [])
+    .filter(t => pids.includes(String(t.properties.Prop_ID)))
+    .map(t => ({
+      prop_id:    t.properties.Prop_ID,
+      owner_name: t.properties.OWNER_NAME || '',
+      acres:      t.properties.Acres || 0,
+      county:     t.properties._county || '',
+    }));
+  if (!tracts.length) return;
+  if (!confirm(`Move ${tracts.length} tract${tracts.length === 1 ? '' : 's'} into the pipeline at status "${OUTREACH_LABELS[status]}"?`)) return;
+  const r = await fetch('/api/acq/tracts/bulk-pipeline', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tracts, status }),
+  });
+  const d = await r.json();
+  alert(`Added ${d.added} tract${d.added === 1 ? '' : 's'} as ${OUTREACH_LABELS[status]}.` +
+        (d.skipped ? `\n${d.skipped} already in pipeline (skipped).` : ''));
+  _selected.clear();
+  await loadActiveTab({ force: true });
+}
+
+function _rowHtml(t, nested) {
+  const p = t.properties;
+  const pid = String(p.Prop_ID);
+  const sel = _selected.has(pid);
+  const owner = (p.OWNER_NAME || '(no owner)');
+  // Indicators are inlined next to the owner name — clearer than a separate
+  // unlabeled column and saves horizontal space.
+  const indInline = [
+    p._is_favorite ? `<span class="ind fav"title="Favorited"></span>` : '',
+    p._has_notes ? `<span class="ind note"title="Has notes"></span>` : '',
+    (p._folder_names || []).length
+      ? `<span class="ind folder"title="In folder(s): ${escapeHtml((p._folder_names || []).join(', '))}">${p._folder_names.length}</span>`
+      : '',
+  ].filter(Boolean).join('');
+  const corridors = (p._corridors && p._corridors.length > 1)
+    ? `<span style="color:#7A828D;font-size:11px;margin-left:6px"> · in ${p._corridors.length} corridors</span>`
+    : '';
+
+  // Status column is now a dropdown so you can assign / change status inline.
+  // Build options including a special "(remove)" entry for tracts already in
+  // the pipeline.
+  const cur = p._outreach_status || '';
+  const statusOptions = Object.entries(OUTREACH_LABELS)
+    .map(([v, label]) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${escapeHtml(label)}</option>`)
+    .join('');
+  const placeholderOpt = cur
+    ? ''  // already has a status → no placeholder
+    : `<option value="" selected>+ Add to pipeline ▾</option>`;
+  const removeOpt = cur
+    ? `<option value="__remove__" style="color:#C62828">— Remove from pipeline</option>`
+    : '';
+  const statusSelect = `
+    <select class="status-select" data-pid="${escapeHtml(pid)}" data-current="${cur}"
+            data-owner="${escapeHtml(owner)}" data-acres="${p.Acres || 0}" data-county="${escapeHtml(p._county || '')}"
+            style="border:0;font-weight:600;font-size:11px;padding:3px 8px;border-radius:3px;cursor:pointer;
+                   color:#FFF;background:${cur ? OUTREACH_COLORS[cur] : 'transparent'};
+                   ${cur ? '' : 'color:#7A828D;border:1px dashed #CFD4DB;background:#FFF;font-style:italic;'}">
+      ${placeholderOpt}${statusOptions}${removeOpt}
+    </select>`;
+  const nextLine = (cur && p._outreach_next_action)
+    ? `<div style="font-size:11px;color:#7A828D;margin-top:3px">Next: ${escapeHtml(p._outreach_next_action.slice(0, 40))}${p._outreach_next_action_date ? ` · ${p._outreach_next_action_date}` : ''}</div>`
+    : '';
+
+  return `
+    <tr data-pid="${escapeHtml(pid)}" class="${sel ? 'selected' : ''}" ${nested ? 'style="background:#FAFBFC"' : ''}>
+      <td class="col-cb"><input type="checkbox" class="cb-row" data-pid="${escapeHtml(pid)}" ${sel ? 'checked' : ''}></td>
+      <td class="col-num">${t._num || ''}</td>
+      <td>
+        <div class="owner-cell">
+          <span class="name">${escapeHtml(owner)}</span>
+          ${indInline ? `<span class="indicators" style="margin-left:6px">${indInline}</span>` : ''}
+          ${corridors}
+        </div>
+      </td>
+      <td class="col-acres">${fmtN(p.Acres)}</td>
+      <td>${escapeHtml(p._county || '')}</td>
+      <td>${statusSelect}${nextLine}</td>
+      <td class="actions-cell">
+        <button data-act="details"data-pid="${escapeHtml(pid)}"title="View tract details (inline)"style="background:rgba(242,89,41,0.10);border-color:#F25929;color:#F25929;font-weight:600">Details</button>
+        <button data-act="view-map"data-pid="${escapeHtml(pid)}"title="Show this tract on the map"></button>
+      </td>
+    </tr>`;
+}
+
+// =========================================================================
+// Bulk action bar
+// =========================================================================
+function _syncBulkBar() {
+  const bar = document.getElementById('bulk-bar');
+  document.getElementById('bulk-count').textContent = String(_selected.size);
+  bar.classList.toggle('show', _selected.size > 0);
+}
+document.getElementById('bulk-clear').addEventListener('click', () => {
+  _selected.clear();
+  renderTable();
+});
+document.getElementById('bulk-add-folder').addEventListener('click', async () => {
+  const pids = Array.from(_selected);
+  if (pids.length === 0) return;
+  const folderId = document.getElementById('bulk-folder').value;
+  if (!folderId) {
+    alert('Pick a folder from the dropdown first (or create one on the /folders page).');
+    return;
+  }
+  const folderName = document.getElementById('bulk-folder').selectedOptions[0].textContent;
+  const tracts = (_activeData?.tracts || [])
+    .filter(t => _selected.has(String(t.properties.Prop_ID)))
+    .map(t => {
+      const p = t.properties;
+      // Cheap centroid for lat/lon
+      let lat = 0, lon = 0;
+      try {
+        const g = t.geometry;
+        const ring = g.type === 'Polygon' ? g.coordinates[0] : g.coordinates[0][0];
+        let sx = 0, sy = 0;
+        for (const [x, y] of ring) { sx += x; sy += y; }
+        lon = sx / ring.length; lat = sy / ring.length;
+      } catch {}
+      return {
+        prop_id: p.Prop_ID, owner_name: p.OWNER_NAME, acres: p.Acres,
+        county: p._county, lat, lon, geometry: t.geometry,
+      };
+    });
+  if (!confirm(`Add ${tracts.length} tract${tracts.length === 1 ? '' : 's'} to folder "${folderName}"?`)) return;
+  try {
+    const r = await fetch('/api/acq/tracts/bulk-folder', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folder_id: folderId, tracts }),
+    });
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    alert(`Added ${d.added} new pin${d.added === 1 ? '' : 's'} to "${folderName}".` +
+          (d.updated ? `\n${d.updated} existing pin${d.updated === 1 ? '' : 's'} updated.` : ''));
+    _selected.clear();
+    await loadActiveTab({ force: true });
+  } catch (e) {
+    alert('Add to folder failed: ' + e.message);
+  }
+});
+document.getElementById('bulk-csv').addEventListener('click', () => {
+  const pids = Array.from(_selected);
+  if (pids.length === 0) return;
+  const selectedTracts = (_activeData?.tracts || []).filter(t => _selected.has(String(t.properties.Prop_ID)));
+  _downloadCSV(selectedTracts);
+});
+
+// Load the user's folders into the bulk dropdown (also after refresh)
+async function _loadFolders() {
+  try {
+    const r = await fetch('/api/acq/folders');
+    const d = await r.json();
+    const sel = document.getElementById('bulk-folder');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— pick a folder —</option>' +
+      (d.folders || []).map(f => `<option value="${f.id}" ${f.id === cur ? 'selected' : ''}>${escapeHtml(f.name)}</option>`).join('');
+  } catch (e) {
+    console.warn('folders load failed:', e);
+  }
+}
+_loadFolders();
+
+// =========================================================================
+// Inline tract drawer — uses ONLY the in-memory tract data from the active
+// corridor search. No re-fetch by prop_id (avoids the wrong-tract bug where
+// the same prop_id could resolve to a different parcel via HCAD's account
+// numbering). Click Open on map for the live map view + tract overlay.
+// =========================================================================
+function _openTractDrawer(pid) {
+  pid = String(pid);
+  const t = (_activeData?.tracts || []).find(t => String(t.properties.Prop_ID) === pid);
+  if (!t) {
+    alert('Could not find this tract in the loaded corridor results. Try refreshing.');
+    return;
+  }
+  const p = t.properties;
+  // ---- Header ----
+  document.getElementById('td-acres-pill').textContent =
+    `${fmtN(p.Acres)} ac · ${escapeHtml(p._county || 'unknown county')}`;
+  document.getElementById('td-owner').textContent = p.OWNER_NAME || '(no owner on file)';
+  const subBits = [];
+  if (p.Prop_ID)   subBits.push(`Prop ID ${escapeHtml(String(p.Prop_ID))}`);
+  if (p._hcad_owner_verified)  subBits.push('HCAD live');
+  else if (p._mcad_owner_verified) subBits.push('MCAD live');
+  else                          subBits.push('StratMap (statewide)');
+  document.getElementById('td-meta').innerHTML = subBits.join(' · ');
+
+  // ---- Action buttons ----
+  // NOTE: "Show on map" goes through _showOnMap (sessionStorage path) NOT a
+  // raw /?focus_tract URL — the latter does a server-side by-prop_id lookup
+  // that can resolve to a different parcel (e.g. a same-numbered Galveston
+  // home for what's actually a Fort Bend ranch). Same fix as the row's .
+  const acts = document.getElementById('td-actions');
+  // Pass county to /tract page so prop_id collisions resolve correctly.
+  const tCounty = t.properties._county || '';
+  acts.innerHTML = `
+    <button class="btn"id="td-show-on-map"title="Open the parcel on the map (using the in-memory geometry — no lookup)">Show on map</button>
+    <a class="btn"href="/?focus_outreach=${encodeURIComponent(pid)}"title="Open outreach modal on the map">Outreach</a>
+    <button class="btn"id="td-bulk-pipe"title="Add this tract to the pipeline at the bulk-status">Move to pipeline</button>
+    <button class="btn"id="td-full-page"title="Open the full tract page in a new tab (uses this tract's data, no re-lookup)"style="margin-left:auto">Full page →</button>
+  `;
+  document.getElementById('td-show-on-map').addEventListener('click', () => _showOnMap(pid));
+  document.getElementById('td-bulk-pipe').addEventListener('click', () => _bulkPipeline([pid]));
+  // "Full page" button stashes the ENTIRE tract (geom + properties) in
+  // sessionStorage so the /tract page renders the same parcel you clicked,
+  // bypassing the buggy server-side prop_id lookup that grabs whatever the
+  // local cache happens to have for that ID (often a wrong-county hit).
+  document.getElementById('td-full-page').addEventListener('click', () => {
+    try {
+      // Per-pid key in localStorage so the NEW TAB can read it (sessionStorage
+      // is per-tab and wouldn't survive the window.open).
+      localStorage.setItem('tract_page_local:' + pid, JSON.stringify({
+        prop_id: pid,
+        tract:   t,          // full GeoJSON feature: properties + geometry
+        stored_at: Date.now(),
+      }));
+    } catch (e) { console.warn('tract_page_local stash failed:', e); }
+    const url = `/acquisitions/tract/${encodeURIComponent(pid)}` +
+                (tCounty ? `?county=${encodeURIComponent(tCounty)}` : '') +
+                `${tCounty ? '&' : '?'}from_corridors=1`;
+    window.open(url, '_blank');
+  });
+
+  // ---- Body sections ----
+  const fmtMoney = v => { const n = parseFloat(v); return (!isFinite(n) || n === 0) ? '—' : '$' + n.toLocaleString('en-US', { maximumFractionDigits: 0 }); };
+
+  // Property block
+  const propRows = [
+    ['Owner',         p.OWNER_NAME || '—'],
+    ['Mailing',       p.MAIL_ADDR || '—'],
+    ['Site address',  p.SITUS_ADDR || '(no street address)'],
+    ['Legal',         (p.LEGAL_DESC || '—').slice(0, 200)],
+    ['County',        p._county || '—'],
+    ['Acres',         fmtN(p.Acres)],
+    ['Prop ID',       p.Prop_ID || '—'],
+  ];
+
+  // Tax / valuation block — pulled from HCAD overlay fields when present
+  const taxRows = [];
+  if (p.total_market_val != null)    taxRows.push(['Market value', fmtMoney(p.total_market_val)]);
+  if (p.total_appraised_val != null) taxRows.push(['Appraised',    fmtMoney(p.total_appraised_val)]);
+  if (p.tax_value != null)           taxRows.push(['Taxable',      fmtMoney(p.tax_value)]);
+  if (p._owner_since)                taxRows.push(['Owner since',  p._owner_since]);
+  if (p._hcad_tax_year)              taxRows.push(['HCAD tax year', p._hcad_tax_year]);
+  if (p.state_class)                 taxRows.push(['State class',  p.state_class]);
+  if (p.land_use)                    taxRows.push(['Land use code', p.land_use]);
+
+  // Location / spatial block
+  const locRows = [];
+  if (p._city_etj)        locRows.push(['City ETJ',        p._city_etj]);
+  if (p._school_dist)     locRows.push(['School district', p._school_dist]);
+  if (p._water_dist_name) locRows.push(['Water district',  `${p._water_dist_name}${p._water_dist_type ? ` (${p._water_dist_type})` : ''}`]);
+  if (p._water_provider && !p._water_dist_name) locRows.push(['Water provider', p._water_provider]);
+  if (p._electric_provider) locRows.push(['Electric',      p._electric_provider]);
+  if (p._flood_pct != null) locRows.push(['Floodplain',    `${p._flood_pct}%`]);
+  if (p._wetlands_pct != null) locRows.push(['Wetlands',   `${p._wetlands_pct}%`]);
+  if (p._wells_n)         locRows.push(['Oil/gas wells',   p._wells_n]);
+  if (p._pipelines_n)     locRows.push(['Pipelines',       p._pipelines_n]);
+  if (p._transmission_n)  locRows.push(['Transmission lines', p._transmission_n]);
+
+  // Outreach block
+  let outreachHtml = '';
+  if (p._outreach_status) {
+    const sLabel = OUTREACH_LABELS[p._outreach_status] || p._outreach_status;
+    const sColor = OUTREACH_COLORS[p._outreach_status] || '#7A828D';
+    outreachHtml = `
+      <div class="section">
+        <h3>Outreach</h3>
+        <div style="margin-bottom:8px"><span class="status-pill" style="background:${sColor}">${escapeHtml(sLabel)}</span></div>
+        <dl class="kv">
+          ${p._outreach_broker ? `<dt>Broker</dt><dd>${escapeHtml(p._outreach_broker)}</dd>` : ''}
+          ${p._outreach_next_action ? `<dt>Next action</dt><dd>${escapeHtml(p._outreach_next_action)}${p._outreach_next_action_date ? ` <span style="color:#7A828D">(by ${escapeHtml(p._outreach_next_action_date)})</span>` : ''}</dd>` : ''}
+          ${p._outreach_log_count ? `<dt>Log entries</dt><dd>${p._outreach_log_count}</dd>` : ''}
+        </dl>
+      </div>`;
+  }
+
+  // Corridors block — show which corridor(s) this tract belongs to
+  let corridorsHtml = '';
+  if (p._corridors && p._corridors.length) {
+    corridorsHtml = `
+      <div class="section">
+        <h3>Corridor membership</h3>
+        <div class="tag-row">${p._corridors.map(c =>`<span class="tag corridor">${escapeHtml(c)}</span>`).join('')}</div>
+      </div>`;
+  }
+
+  // Indicators (favorites / notes / folders)
+  const indTags = [];
+  if (p._is_favorite) indTags.push('<span class="tag fav">Favorited</span>');
+  if (p._has_notes) indTags.push('<span class="tag note">Has notes</span>');
+  if ((p._folder_names || []).length)
+    indTags.push(`<span class="tag folder">${(p._folder_names || []).map(escapeHtml).join(', ')}</span>`);
+
+  // Render
+  document.getElementById('td-body').innerHTML = `
+    ${indTags.length ? `<div class="tag-row" style="margin-bottom:10px">${indTags.join('')}</div>` : ''}
+    ${corridorsHtml}
+    ${outreachHtml}
+    <div class="section">
+      <h3>Property</h3>
+      <dl class="kv">
+        ${propRows.map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(String(v))}</dd>`).join('')}
+      </dl>
+    </div>
+    ${taxRows.length ? `
+      <div class="section">
+        <h3>Tax &amp; valuation</h3>
+        <dl class="kv">${taxRows.map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(String(v))}</dd>`).join('')}</dl>
+      </div>` : ''}
+    ${locRows.length ? `
+      <div class="section">
+        <h3>Location &amp; utilities</h3>
+        <dl class="kv">${locRows.map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(String(v))}</dd>`).join('')}</dl>
+      </div>` : ''}
+    <div style="font-size:10px;color:#A5ADB7;margin-top:8px">
+      All data shown above is from the in-memory corridor search — no re-fetch, so what you see here matches the row exactly.
+    </div>
+  `;
+
+  document.getElementById('tract-drawer').classList.add('show');
+  document.getElementById('tract-backdrop').classList.add('show');
+}
+function _closeTractDrawer() {
+  document.getElementById('tract-drawer').classList.remove('show');
+  document.getElementById('tract-backdrop').classList.remove('show');
+}
+document.getElementById('td-close').addEventListener('click', _closeTractDrawer);
+document.getElementById('tract-backdrop').addEventListener('click', _closeTractDrawer);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') _closeTractDrawer(); });
+
+async function _bulkPipeline(pids, opts) {
+  opts = opts || {};
+  const tracts = (_activeData?.tracts || [])
+    .filter(t => pids.includes(String(t.properties.Prop_ID)))
+    .map(t => ({
+      prop_id:    t.properties.Prop_ID,
+      owner_name: t.properties.OWNER_NAME || '',
+      acres:      t.properties.Acres || 0,
+      county:     t.properties._county || '',
+    }));
+  if (tracts.length === 0) return;
+  const status = document.getElementById('bulk-status').value || 'lead';
+  const label = opts.ownerLabel ? `${tracts.length} tracts of ${opts.ownerLabel}` : `${tracts.length} tract${tracts.length === 1 ? '' : 's'}`;
+  if (!confirm(`Move ${label} to the pipeline at status "${OUTREACH_LABELS[status]}"?\n\nAny tract that's already in the pipeline will be skipped.`)) return;
+  try {
+    const r = await fetch('/api/acq/tracts/bulk-pipeline', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tracts, status }),
+    });
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    alert(`Added ${d.added} tract${d.added === 1 ? '' : 's'} to the pipeline as ${OUTREACH_LABELS[status]}.` +
+          (d.skipped ? `\n${d.skipped} already had an outreach record (skipped).` : '') +
+          `\n\nGo to /pipeline to edit them, or click an ""row action to refine status / add a log entry / next action.`);
+    _selected.clear();
+    // Re-fetch this tab so indicators update (in_pipeline counts, status pills)
+    await loadActiveTab({ force: true });
+  } catch (e) {
+    alert('Bulk move failed: ' + e.message);
+  }
+}
+
+function _downloadCSV(tracts) {
+  const headers = ['#', 'Prop_ID', 'Owner', 'Acres', 'County', 'Pipeline status', 'Next action', 'In pipeline', 'Favorite', 'Has notes', 'Folders'];
+  const rows = [headers.join(',')];
+  tracts.forEach((t, i) => {
+    const p = t.properties;
+    const row = [
+      i + 1,
+      `"${(p.Prop_ID || '').replace(/"/g, '""')}"`,
+      `"${(p.OWNER_NAME || '').replace(/"/g, '""')}"`,
+      p.Acres || 0,
+      `"${(p._county || '').replace(/"/g, '""')}"`,
+      p._outreach_status ? OUTREACH_LABELS[p._outreach_status] : '',
+      `"${(p._outreach_next_action || '').replace(/"/g, '""')}"`,
+      p._outreach_status ? 'yes' : 'no',
+      p._is_favorite ? 'yes' : 'no',
+      p._has_notes ? 'yes' : 'no',
+      `"${((p._folder_names || []).join('; ')).replace(/"/g, '""')}"`,
+    ];
+    rows.push(row.join(','));
+  });
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `corridor_tracts_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+
+// =========================================================================
+// Filter bar wiring
+// =========================================================================
+['f-search','f-county','f-status','f-corridor','f-by-owner','f-by-corridor'].forEach(id => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', () => {
+    // Keep the toggle's visual `.active` styling in sync with its checked state
+    if (el.type === 'checkbox' && el.parentElement && el.parentElement.classList.contains('toggle')) {
+      el.parentElement.classList.toggle('active', el.checked);
+    }
+    renderTable();
+  });
+});
+document.getElementById('btn-recompute').addEventListener('click', () => loadActiveTab({ force: true }));
+['f-buffer','f-min-ac','f-max-ac'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => loadActiveTab({ force: true }));
+});
+
+</script>
+</body>
+</html>

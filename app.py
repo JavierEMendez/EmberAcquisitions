@@ -28,6 +28,13 @@ from hpermits_parser import parse_hpermits
 from uw_parser import parse_uw
 from ember_budget_parser import parse_ember_budget
 from unit_economics_parser import parse_unit_economics, blend_blocks, sum_units
+
+# Acquisitions GIS tab. acq_gis is the engine lifted from the standalone app
+# (live GIS layer queries, geometry, spatial enrichment); acq_parcels is the
+# SQLite parcel cache; acq_store is its Postgres persistence.
+import acq_gis
+import acq_parcels
+import acq_store
 from partners_cf_parser import parse_partners_cf, actuals_through_from_filename
 import sage_intacct
 from frp_mapping import roll_up_balance_sheet, summarize_bs
@@ -513,6 +520,9 @@ def init_db():
         WHERE report_opt_in = TRUE
           AND (report_subscriptions IS NULL OR report_subscriptions = '{}'::jsonb)
     """)
+    # Acquisitions GIS tab — document store keyed by kind + id (see acq_store).
+    cur.execute(acq_store.SCHEMA)
+
     # Create default admin if no users exist
     cur.execute("SELECT COUNT(*) as cnt FROM users")
     row = cur.fetchone()
@@ -16378,6 +16388,30 @@ def _start_scheduler():
         print(f"Scheduler failed to start: {e}")
 
 _start_scheduler()
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# ACQUISITIONS GIS
+#
+# The routes live in acq_routes.py as a blueprint rather than inline here.
+# This subsystem is ~3,400 lines of engine plus the handlers ported from the
+# standalone app, and those handlers call the engine's helpers by bare name -
+# keeping them in a module that does `from acq_gis import *` is what lets them
+# port across unchanged instead of being rewritten with a prefix on every call.
+#
+# Everything namespaces under /acquisitions and /api/acq/. The standalone app
+# used bare /api/projects, which is MPC Underwriting's here.
+# ══════════════════════════════════════════════════════════════════════════
+
+# Handed across rather than imported by acq_routes, which would be circular.
+app.config["ACQ_GET_DB"] = get_db
+app.config["ACQ_LOGIN_REQUIRED"] = login_required
+app.config["ACQ_REFRESH_PAGE_ACCESS"] = _refresh_page_access_from_db
+app.config["ACQ_LOG_ACTIVITY"] = _log_activity
+app.config["ACQ_ADMIN_REQUIRED"] = admin_required
+
+import acq_routes
+acq_routes.init_app(app)
 
 
 if __name__ == "__main__":

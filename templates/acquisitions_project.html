@@ -1,33 +1,28 @@
 {# ============================================================
-   Ember · Operating Cashflows — page template (Concept C · Pivot Grid).
-   Visual ground truth: ember-operations__claude-code-handoff/_design_reference/
-                        Operations Redesign.html (Concept C section).
-   Hosted in our standard sidebar shell. Data shaping lives in app.py
-   (`_build_operations_view_context()`); the JS island #ops-data carries
-   everything the pivot/window controller needs.
+   Ember · Acquisitions GIS — project analysis
+   Gross acreage through the physical constraints, the infrastructure
+   deduction, and out the other side as net saleable acres and a lot count.
+   Engine is acq_gis.run_analysis().
    ============================================================ #}
 <!DOCTYPE html>
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Operating Cashflows · Ember Residential</title>
+<title>Project Analysis · Ember Acquisitions</title>
 <link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
 <link rel="stylesheet" href="/static/theme.css?v=3"/>
-<link rel="stylesheet" href="/static/css/operations.css?v=2"/>
-{# No-flash theme bootstrap — read localStorage before any CSS resolves. #}
+<link rel="stylesheet" href="/static/css/acquisitions.css?v=1"/>
 <script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 <style>
-  /* App shell (sidebar + main) — matches capital.html / portfolio.html so
-     /operations sits inside the same chrome the rest of the app uses. */
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%;}
-  body{background:var(--eax-bg);color:var(--eax-ink);font-family:'Plus Jakarta Sans',system-ui,sans-serif;overflow:hidden;}
+  body{background:var(--eax-bg);color:var(--eax-ink);font-family:'DM Sans','Plus Jakarta Sans',system-ui,sans-serif;overflow:hidden;}
   #app{display:flex;height:100vh;overflow:hidden;}
-
-  /* Canonical sidebar (matches capital.html) */
   #sidebar{width:240px;background:var(--eax-bg-2);border-right:1px solid var(--eax-line);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;}
   .sidebar-logo{padding:16px 18px 14px;border-bottom:1px solid var(--eax-line)}
   .logo-img{width:100%;max-width:160px;height:auto;display:block;margin:0 auto}
@@ -42,20 +37,8 @@
   .sidebar-item.active::before{content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:2px;background:var(--eax-accent);border-radius:2px}
   .sidebar-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0}
   .sidebar-item.active .icon{opacity:1;color:var(--eax-accent)}
-
   #main-content{flex:1;overflow:hidden;min-width:0;display:flex;}
-  .ops-page{flex:1;min-width:0;overflow:auto;}
-  /* Hide the handoff's bundled sidebar — we use ours. */
-  .ops-page .ops-sidebar{display:none;}
-
-  /* Empty-state when no operations data has been uploaded yet. */
-  .ops-empty{
-    display:flex;flex-direction:column;align-items:center;justify-content:center;
-    flex:1;padding:60px 32px;text-align:center;color:var(--eax-muted);
-    background:var(--eax-bg);
-  }
-  .ops-empty h2{font-family:'Plus Jakarta Sans',sans-serif;font-weight:500;font-size:18px;color:var(--eax-ink-2);margin-bottom:8px;}
-  .ops-empty p{font-size:13px;max-width:480px;line-height:1.55;}
+  .acqp-page{flex:1;min-width:0;overflow:auto;padding:26px 32px 80px;}
 </style>
 </head>
 <body>
@@ -65,9 +48,8 @@
     <div class="sidebar-logo">
       <img src="/static/img/ember_logo.png"        alt="Ember" class="logo-img logo-dark">
       <img src="/static/img/ember_logo_light.png"  alt="Ember" class="logo-img logo-light">
-      <div class="logo-sub">Operating Revenues</div>
+      <div class="logo-sub">Acquisitions</div>
     </div>
-
     <div class="sidebar-section">Apps &amp; Dashboards</div>
     {% if page_access.get('mpc_underwriting', true) %}
     <a href="/" class="sidebar-item">
@@ -94,16 +76,21 @@
     </a>
     {% endif %}
     {% if page_access.get('operations', true) %}
-    <a href="/operations" class="sidebar-item active">
+    <a href="/operations" class="sidebar-item">
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Operating Revenues
     </a>
     {% endif %}
-
     {% if page_access.get('invoice_dashboard', true) %}
     <a href="/invoice-dashboard" class="sidebar-item">
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 2h6a2 2 0 012 2v16l-3-2-2 2-2-2-2 2-3-2V4a2 2 0 012-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 7h6M9 11h6M9 15h4" stroke-width="1.5" stroke-linecap="round"/></svg>
       Invoice Dashboard
+    </a>
+    {% endif %}
+    {% if page_access.get('financials', true) %}
+    <a href="/financials" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M9 17V9m4 8V5m4 12v-7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Financial Statements
     </a>
     {% endif %}
     {% if is_admin or page_access.get('unit_economics', false) %}
@@ -136,8 +123,6 @@
       Community Sales
     </a>
     {% endif %}
-
-
     {% if page_access.get('verticals', true) %}
     <a href="/verticals" class="sidebar-item">
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" stroke-width="1.5" stroke-linejoin="round"/></svg>
@@ -148,7 +133,7 @@
     <a href="/bva" class="sidebar-item"><svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="7" y="10" width="3" height="7" rx="0.5"/><rect x="12" y="6" width="3" height="11" rx="0.5"/><rect x="17" y="13" width="3" height="4" rx="0.5"/></svg>Budget vs Actuals</a>
     {% endif %}
     {% if is_admin or page_access.get('acquisitions', false) %}
-    <a href="/acquisitions" class="sidebar-item">
+    <a href="/acquisitions" class="sidebar-item active">
       <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Acquisitions GIS
     </a>
@@ -158,122 +143,71 @@
   </nav>
 
   <div id="main-content">
-  {% if not ops %}
-    <div class="ops-empty">
-      <h2>No operating cashflow forecast uploaded yet</h2>
-      <p>Upload the Operating Cashflows JSON forecast (<code>report_type=operations</code>) and this view will populate. The redesigned page expects a per-project × per-category × 18-month forecast anchored to the current period.</p>
+    <div class="acqp-page">
+
+      <div style="display:flex;align-items:flex-start;gap:18px;flex-wrap:wrap">
+        <div style="flex:1;min-width:280px">
+          <div class="acq-eyebrow">LAND &middot; PROJECT ANALYSIS</div>
+          <h1 class="acq-title" id="acqp-name">Loading…</h1>
+          <p class="acq-sub" id="acqp-meta"></p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;padding-top:22px">
+          <a class="acq-btn" href="/acquisitions">&larr; Map</a>
+          <button class="acq-btn primary" id="acqp-run">Run analysis</button>
+        </div>
+      </div>
+
+      <div class="acqp-grid">
+
+        <div class="acqp-card">
+          <div class="acqp-card-title">Assumptions</div>
+
+          <div class="acqp-label">Net-outs
+            <span class="acqp-hint">untick to keep the acreage</span></div>
+          <div id="acqp-netouts">
+            <label class="acqp-check"><input type="checkbox" id="no-flood" checked> Floodplain (100-yr)</label>
+            <label class="acqp-check"><input type="checkbox" id="no-wetlands" checked> Wetlands (NWI)</label>
+            <label class="acqp-check"><input type="checkbox" id="no-transmission" checked> Transmission easement</label>
+            <label class="acqp-check"><input type="checkbox" id="no-streams" checked> Stream buffers</label>
+            <label class="acqp-check"><input type="checkbox" id="no-pipelines" checked> Pipeline easements</label>
+          </div>
+
+          <div class="acqp-label" style="margin-top:14px">Infrastructure &amp; landscaping
+            <span class="acqp-hint">roads, plans, detention, landscaping</span></div>
+          <div class="acq-control" style="margin-top:4px">
+            <input id="infra-pct" type="number" min="0" max="90" step="1" value="30">
+          </div>
+
+          <div class="acqp-label" style="margin-top:16px">Density
+            <span class="acqp-hint">lots per net saleable acre</span></div>
+          <div class="acq-control" style="margin-top:4px">
+            <input id="acqp-density" type="number" min="0.5" max="20" step="0.1" value="4.5">
+          </div>
+        </div>
+
+        <div class="acqp-card acqp-card--wide">
+          <div class="acqp-card-title">Gross to saleable</div>
+          <div id="acqp-ladder">
+            <div class="acq-empty">Run the analysis to build the ladder.</div>
+          </div>
+        </div>
+
+        <div class="acqp-card acqp-card--wide">
+          <div class="acqp-card-title">Tracts</div>
+          <div id="acqp-tracts"><div class="acq-empty">Loading…</div></div>
+        </div>
+
+      </div>
+
+      <div class="acq-status" id="acq-status" style="position:fixed"></div>
     </div>
-  {% else %}
-    <div class="ops-page" data-theme="paper">
-      <main class="ops-main">
-        <header class="ops-topbar">
-          <div class="ops-topbar-l">
-            <div class="ops-eyebrow">Cashflow Forecast</div>
-            <h1 class="ops-display">Operating Cashflows</h1>
-            <p class="ops-subtitle">
-              Forward forecast of operating revenue across Ember communities.
-              {{ ops.cats|length }} fee categories rolled up by month, anchored to {{ ops.period_label }}.
-            </p>
-          </div>
-          <div class="ops-topbar-r">
-            {# "Updated · TODAY" line removed — it was rendering the current
-               render-time date, not the data cutoff. Authoritative dates
-               now live in the data-dates footer at the bottom. #}
-            <div class="ops-meta">
-              <div>{{ ops.period_short }}</div>
-            </div>
-            <div class="ops-topbar-actions">
-              {% if page_access.get('reports', true) or is_admin %}
-              <a class="ops-btn ghost" href="/operations/excel">
-                <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" stroke-width="1.6"/><path d="M8 12h8M8 8h5M8 16h6" stroke-width="1.6" stroke-linecap="round"/></svg>
-                Excel
-              </a>
-              <a class="ops-btn primary" href="/operations/pdf" target="_blank" rel="noopener">
-                <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4 m4-5l5 5 5-5 m-5 5V3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                PDF
-              </a>
-              {% endif %}
-            </div>
-          </div>
-        </header>
+  </div>
 
-        <section class="ops-body">
-          <div class="ops-kpi-band">
-            {% for k in ops.kpis %}
-              <div class="ops-kpi {% if loop.last %}is-accent{% endif %}">
-                <div class="ops-kpi-label">{{ k.label }}</div>
-                <div class="ops-kpi-val num">{{ k.val }}</div>
-                <div class="ops-kpi-sub">{{ k.sub }}</div>
-              </div>
-            {% endfor %}
-          </div>
+</div>
 
-          <div class="ops-filterbar"
-               data-filter-bar
-               data-default-from="{{ ops.default_from_idx }}"
-               data-default-to="{{ ops.default_to_idx }}"
-               data-now-idx="{{ ops.now_idx }}">
-            <div class="ops-filter-label">Pivot by</div>
-            <div class="ops-pillgroup" data-pivot-group>
-              <button type="button" class="ops-pill is-active" data-pivot="project">Project</button>
-              <button type="button" class="ops-pill" data-pivot="category">Category</button>
-            </div>
-
-            <div class="ops-filter-divider"></div>
-
-            <div class="ops-filter-label">Window</div>
-            <select data-filter-from class="ops-select">
-              {% for m in ops.month_dates %}
-                <option value="{{ loop.index0 }}"
-                  {% if loop.index0 == ops.default_from_idx %}selected{% endif %}>
-                  {{ m.short }} {{ m.year }}
-                </option>
-              {% endfor %}
-            </select>
-            <span class="ops-filter-arrow">→</span>
-            <select data-filter-to class="ops-select">
-              {% for m in ops.month_dates %}
-                <option value="{{ loop.index0 }}"
-                  {% if loop.index0 == ops.default_to_idx %}selected{% endif %}>
-                  {{ m.short }} {{ m.year }}
-                </option>
-              {% endfor %}
-            </select>
-
-            <div class="ops-filter-spacer"></div>
-            <div class="ops-filter-meta mono" data-window-meta
-                 data-axis-span="{{ ops.axis_span }}">
-              Showing {{ ops.default_window_count }} months · file covers {{ ops.axis_span }}
-            </div>
-          </div>
-
-          <section class="ops-panel" data-pivot-panel>
-            <div class="ops-panel-head">
-              <div class="ops-panel-title" data-panel-title>Project × Month</div>
-              <div class="ops-panel-sub mono">$K · CLICK A PROJECT FOR ITS REVENUE SOURCES</div>
-            </div>
-            <div class="ops-panel-body">
-              <div class="ops-table-scroll" data-pivot-mount>
-                {% include "_partials/_operations_pivot.html" %}
-              </div>
-            </div>
-          </section>
-        </section>
-      </main>
-    </div>
-  {% endif %}
-  </div>{# /#main-content #}
-
-</div>{# /#app #}
-
-{% if ops %}
-<script id="ops-data" type="application/json">{{ ops.client_json|safe }}</script>
-<script src="/static/js/operations.js" defer></script>
-{% endif %}
-
-{# Account modal + theme handlers — Account button in sidebar foot calls openAcct(). #}
 {% include "_partials/_account_modal.html" %}
 
-{% include "_partials/_data_dates_footer.html" %}
+<script>window.ACQ_PROJECT_ID = {{ project_id | tojson }};</script>
+<script src="/static/js/acquisitions_project.js?v=1" defer></script>
 </body>
 </html>
