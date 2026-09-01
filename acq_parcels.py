@@ -80,12 +80,24 @@ def init_db():
     """Create tables + R-Tree index if they don't exist. Idempotent."""
     with _db_lock, _conn() as c:
         c.executescript("""
-            -- Identity is (county_fips, prop_id), never prop_id alone: StratMap
-            -- Prop_IDs are unique only within a county, and treating them as
-            -- globally unique made each county overwrite the last one's parcels.
+            -- Identity is (county_fips, prop_id, geom_key).
+            --
+            -- Prop_ID alone is not unique: it repeats across counties, which
+            -- made each county overwrite the last one's parcels. It also is not
+            -- unique WITHIN a county, which is subtler — Prop_ID is an appraisal
+            -- ACCOUNT number, and one account routinely covers several separate
+            -- tracts. Rancho La Laguna's Waller account 7282 is a 173-acre tract
+            -- and a 94-acre tract; Baldridge Enterprises has four under one id.
+            -- Keying on (county, prop_id) kept one tract per account and dropped
+            -- the rest: 771 of 5,330 parcels, 14.5%, in a single 3-mile search.
+            --
+            -- geom_key is a hash of the parcel geometry, so two tracts under one
+            -- account are distinct rows while the SAME parcel returned by two
+            -- overlapping tiles still collapses to one.
             CREATE TABLE IF NOT EXISTS parcels (
                 rowid       INTEGER PRIMARY KEY AUTOINCREMENT,
                 prop_id     TEXT NOT NULL,
+                geom_key    TEXT,
                 county_fips TEXT,
                 county_name TEXT,
                 owner_name  TEXT,
@@ -96,7 +108,7 @@ def init_db():
                 legal_area  REAL,
                 shape_wkb   BLOB,
                 updated_at  INTEGER,
-                UNIQUE (county_fips, prop_id)
+                UNIQUE (county_fips, prop_id, geom_key)
             );
             CREATE INDEX IF NOT EXISTS ix_parcels_county ON parcels(county_fips);
             CREATE INDEX IF NOT EXISTS ix_parcels_propid ON parcels(prop_id);
@@ -142,6 +154,13 @@ def init_db():
     except Exception as _e:
         print(f"[cache] parcels migration skipped: {_e}", flush=True)
 
+    # Identity widened from (county, prop_id) to include geometry.
+    try:
+        with _db_lock, _conn() as _c:
+            _migrate_geom_key(_c)
+    except Exception as _e:
+        print(f"[cache] geom_key migration skipped: {_e}", flush=True)
+
     # Once per process: a county still marked 'loading' was killed, not failed.
     global _loading_healed
     if not _loading_healed:
@@ -160,6 +179,17 @@ _loading_healed = False
 # single Harris tile can take minutes, and wrongly declaring a live load dead
 # is worse than leaving a genuinely dead one marked 'loading' a while longer.
 STALE_LOADING_SEC = 900
+
+
+def _geom_key(wkb_bytes) -> str:
+    """Stable short hash of a parcel's geometry.
+
+    Distinguishes two different tracts sharing an appraisal account number from
+    the same tract returned twice by overlapping tiles — the first must be two
+    rows, the second must be one.
+    """
+    import hashlib
+    return hashlib.sha1(wkb_bytes).hexdigest()[:16]
 
 
 def _ensure_heartbeat_column(conn):
@@ -270,6 +300,88 @@ def _migrate_propid_unique(conn):
     print(f"[cache] migration done: {before:,} rows in, {after:,} rows out. "
           f"Re-bootstrap each county to recover parcels lost to the old constraint.",
           flush=True)
+    return True
+
+
+def _migrate_geom_key(conn):
+    """Rebuild `parcels` if identity is still (county_fips, prop_id).
+
+    Prop_ID is an appraisal ACCOUNT number and one account often covers several
+    separate tracts, so that constraint silently kept one tract per account —
+    771 of 5,330 parcels, 14.5%, in one 3-mile search. Identity is now
+    (county_fips, prop_id, geom_key).
+
+    Rowids are preserved so parcels_rtree stays valid. The rebuild backfills
+    geom_key from the stored geometry, which makes the constraint correct going
+    forward; it cannot invent the tracts already dropped, so each county still
+    needs a re-bootstrap to recover them. cache_meta is marked 'partial' to say
+    so rather than leaving counties looking complete.
+    """
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='parcels'").fetchone()
+    if not row or not row[0]:
+        return False
+    sql = row[0]
+    if "geom_key" in sql:
+        return False                       # already migrated
+
+    print("[cache] migrating parcels: identity now (county, prop_id, geometry)",
+          flush=True)
+    before = conn.execute("SELECT COUNT(*) FROM parcels").fetchone()[0]
+    conn.execute("BEGIN")
+    try:
+        conn.execute("""
+            CREATE TABLE parcels_migrated (
+                rowid       INTEGER PRIMARY KEY,
+                prop_id     TEXT NOT NULL,
+                geom_key    TEXT,
+                county_fips TEXT,
+                county_name TEXT,
+                owner_name  TEXT,
+                mail_addr   TEXT,
+                situs_addr  TEXT,
+                legal_desc  TEXT,
+                gis_area    REAL,
+                legal_area  REAL,
+                shape_wkb   BLOB,
+                updated_at  INTEGER,
+                UNIQUE (county_fips, prop_id, geom_key)
+            )
+        """)
+        rows = conn.execute("""
+            SELECT rowid, prop_id, county_fips, county_name, owner_name, mail_addr,
+                   situs_addr, legal_desc, gis_area, legal_area, shape_wkb, updated_at
+              FROM parcels
+        """).fetchall()
+        conn.executemany("""
+            INSERT INTO parcels_migrated
+                (rowid, prop_id, geom_key, county_fips, county_name, owner_name,
+                 mail_addr, situs_addr, legal_desc, gis_area, legal_area,
+                 shape_wkb, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, [(r[0], r[1], _geom_key(r[10]) if r[10] else None, r[2], r[3], r[4],
+               r[5], r[6], r[7], r[8], r[9], r[10], r[11]) for r in rows])
+        conn.execute("DROP TABLE parcels")
+        conn.execute("ALTER TABLE parcels_migrated RENAME TO parcels")
+        for ddl in (
+            "CREATE INDEX IF NOT EXISTS ix_parcels_county ON parcels(county_fips)",
+            "CREATE INDEX IF NOT EXISTS ix_parcels_propid ON parcels(prop_id)",
+            "CREATE INDEX IF NOT EXISTS ix_parcels_owner  ON parcels(owner_name)",
+            "CREATE INDEX IF NOT EXISTS ix_parcels_owner_nocase "
+            "  ON parcels(owner_name COLLATE NOCASE)",
+        ):
+            conn.execute(ddl)
+        # The data is now correctly keyed but still short the dropped tracts.
+        conn.execute("UPDATE cache_meta SET status='partial' WHERE status='fresh'")
+        conn.execute("DELETE FROM cache_tiles")     # force a full re-fetch
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    after = conn.execute("SELECT COUNT(*) FROM parcels").fetchone()[0]
+    print(f"[cache] migration done: {before:,} rows preserved ({after:,} after). "
+          f"Counties marked 'partial' — re-bootstrap to recover the tracts the "
+          f"old key dropped.", flush=True)
     return True
 
 
@@ -444,13 +556,20 @@ def _insert_tile_batch(c, feats, poly_test, seen, county_fips, county_name, now)
                 continue
             props = f["properties"] or {}
             pid = str(props.get("Prop_ID") or "").strip()
-            if not pid or pid in seen:
-                continue                    # tiles overlap; dedup on Prop_ID
+            if not pid:
+                continue
             try:
                 g = shp_shape(f["geometry"])
             except Exception:
                 continue
             if g.is_empty:
+                continue
+            wkb = wkb_dumps(g)
+            gkey = _geom_key(wkb)
+            # Dedup on the parcel, not the account. Overlapping tiles return the
+            # same geometry and collapse here; two tracts under one Prop_ID have
+            # different geometry and both survive.
+            if (pid, gkey) in seen:
                 continue
             # Drop parcels whose centroid is outside the actual county polygon --
             # cleanup of tile-edge artifacts from neighbouring counties
@@ -460,18 +579,18 @@ def _insert_tile_batch(c, feats, poly_test, seen, county_fips, county_name, now)
                     continue
             except Exception:
                 pass                        # if the test fails, keep it -- safer
-            seen.add(pid)
+            seen.add((pid, gkey))
             gminx, gminy, gmaxx, gmaxy = g.bounds
             cur = c.execute("""
                 INSERT OR REPLACE INTO parcels
-                (prop_id, county_fips, county_name, owner_name, mail_addr,
+                (prop_id, geom_key, county_fips, county_name, owner_name, mail_addr,
                  situs_addr, legal_desc, gis_area, legal_area, shape_wkb, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (pid, county_fips, county_name,
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (pid, gkey, county_fips, county_name,
                   props.get("OWNER_NAME"), props.get("MAIL_ADDR"),
                   props.get("SITUS_ADDR"), props.get("LEGAL_DESC"),
                   to_float(props.get("GIS_AREA")), to_float(props.get("LEGAL_AREA")),
-                  wkb_dumps(g), now))
+                  wkb, now))
             c.execute("""
                 INSERT OR REPLACE INTO parcels_rtree (id, minx, maxx, miny, maxy)
                 VALUES (?, ?, ?, ?, ?)
@@ -609,9 +728,10 @@ def bootstrap_county(county_fips: str, county_name: str, on_progress=None,
                 tile_failures += prior_failures
                 # Keep what is already loaded, and seed the dedup set from it so
                 # tile-edge overlaps are not counted twice.
-                for (pid,) in c.execute(
-                        "SELECT prop_id FROM parcels WHERE county_fips=?", (county_fips,)):
-                    seen.add(pid)
+                for pid, gkey in c.execute(
+                        "SELECT prop_id, geom_key FROM parcels WHERE county_fips=?",
+                        (county_fips,)):
+                    seen.add((pid, gkey))
                 inserted = len(seen)
             else:
                 # Clear any prior rows for this county before re-insert
