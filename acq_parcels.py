@@ -1090,17 +1090,62 @@ def vacuum_rtree_orphans(on_progress=None) -> dict:
             "parcels": parcels, "elapsed_sec": elapsed}
 
 
+_layer_edit_cache = {"at": 0, "value": None}
+
+
+def upstream_last_edit(max_age_sec=3600):
+    """Epoch seconds when StratMap last edited the parcel layer, or None.
+
+    The layer is an annual-ish snapshot -- Stratmap25_landparcels_48, last
+    edited 2026-06-04 as of this writing -- but the refresh loop re-downloaded
+    every county weekly regardless. Harris alone is roughly 1.4 GB of polygon
+    geometry pulled at about 0.4 MB/s, so that was hours of churn per county
+    per week to arrive at byte-identical data, and every re-run was another
+    chance to hit a partial load.
+
+    One metadata request answers whether there is anything to fetch. Cached
+    briefly so a sweep over 14 counties does not ask 14 times.
+    """
+    now = time.time()
+    if _layer_edit_cache["value"] is not None and             now - _layer_edit_cache["at"] < max_age_sec:
+        return _layer_edit_cache["value"]
+    try:
+        import requests
+        from acq_gis import ENDPOINTS
+        base = ENDPOINTS["parcels"].rsplit("/query", 1)[0]
+        d = requests.get(base + "?f=json", timeout=30).json()
+        ms = (d.get("editingInfo") or {}).get("dataLastEditDate")
+        val = (ms / 1000.0) if isinstance(ms, (int, float)) else None
+    except Exception as e:
+        print(f"[cache] could not read upstream edit date: {e}", flush=True)
+        val = None
+    _layer_edit_cache.update({"at": now, "value": val})
+    return val
+
+
 def refresh_stale_counties(max_age_days=REFRESH_INTERVAL_DAYS, on_progress=None):
     """Background-worthy: find counties whose cache is older than max_age_days
     and re-bootstrap them. Skips counties that have never been bootstrapped."""
     status = cache_status()
     now = int(time.time())
     refreshed = []
+
+    # Age alone is the wrong trigger. The upstream layer is an annual-ish
+    # snapshot, so a county older than max_age_days is usually still identical
+    # to the source -- re-downloading it costs hours and changes nothing. Ask
+    # the service when it last changed and skip anything already newer.
+    upstream = upstream_last_edit()
     for row in status:
         if row["last_refreshed_at"] is None:
             continue   # never bootstrapped — don't auto-bootstrap, leave to user
+        # A county whose last load did not finish is refreshed regardless of
+        # what upstream says: the gap is ours, not theirs.
+        incomplete = row.get("status") in ("partial", "error")
+        if upstream is not None and not incomplete                 and row["last_refreshed_at"] >= upstream:
+            continue
         age = (now - row["last_refreshed_at"]) / 86400
-        if age >= max_age_days:
+        if age >= max_age_days or incomplete:
+
             try:
                 r = bootstrap_county(row["county_fips"], row["county_name"], on_progress)
                 refreshed.append(r)
