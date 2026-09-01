@@ -140,21 +140,47 @@ def init_db():
 _loading_healed = False
 
 
+# A loader refreshes cache_meta.loading_heartbeat after every tile. Anything
+# older than this is a run that is no longer alive. Generous on purpose: a
+# single Harris tile can take minutes, and wrongly declaring a live load dead
+# is worse than leaving a genuinely dead one marked 'loading' a while longer.
+STALE_LOADING_SEC = 900
+
+
+def _ensure_heartbeat_column(conn):
+    """Add cache_meta.loading_heartbeat to databases created before it existed."""
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(cache_meta)")]
+    if "loading_heartbeat" not in cols:
+        conn.execute("ALTER TABLE cache_meta ADD COLUMN loading_heartbeat INTEGER")
+    return "loading_heartbeat" not in cols
+
+
 def _heal_stuck_loading(conn):
     """Clear 'loading' rows left behind by a process that died mid-bootstrap.
 
-    'loading' is only meaningful while a loader is alive, so any row still
-    carrying it when a process starts belongs to a run that was killed rather
-    than one that failed -- a kill raises nothing, so bootstrap_county's except
-    branch never sets 'error' and the county sits at 'loading' forever. The
-    admin page then shows it as work in progress, which is the same shape of
-    bug as a half-loaded county reporting 'fresh'.
+    A kill raises nothing, so bootstrap_county's except branch never sets
+    'error' and the county sits at 'loading' forever. The admin page then shows
+    it as work in progress, which is the same shape of bug as a half-loaded
+    county reporting 'fresh'.
+
+    Liveness comes from cache_meta.loading_heartbeat, which the loader refreshes
+    after each tile -- a row is only healed once that has gone stale. Presence
+    of 'loading' alone is not enough: this runs from init_db, so every other
+    process that opens the cache would otherwise declare a healthy in-flight
+    bootstrap dead. That is not hypothetical; it downgraded a live Harris load
+    the first time a second process started while one was running, and on
+    Railway every gunicorn worker start would do the same.
 
     A county with rows is marked 'partial' (it has data, but an unknown amount
     is missing); one with none is marked 'error'.
     """
+    _ensure_heartbeat_column(conn)
+    cutoff = int(time.time()) - STALE_LOADING_SEC
     rows = conn.execute(
-        "SELECT county_fips, county_name FROM cache_meta WHERE status='loading'").fetchall()
+        "SELECT county_fips, county_name FROM cache_meta "
+        " WHERE status='loading' "
+        "   AND (loading_heartbeat IS NULL OR loading_heartbeat < ?)",
+        (cutoff,)).fetchall()
     for fips, name in rows:
         n = conn.execute("SELECT COUNT(*) FROM parcels WHERE county_fips=?",
                          (fips,)).fetchone()[0]
@@ -314,11 +340,13 @@ def bootstrap_county(county_fips: str, county_name: str, on_progress=None) -> di
 
     # Mark the county as 'loading' so the status UI shows it
     with _db_lock, _conn() as c:
+        _ensure_heartbeat_column(c)
         c.execute("""
-            INSERT INTO cache_meta (county_fips, county_name, status)
-            VALUES (?, ?, 'loading')
-            ON CONFLICT(county_fips) DO UPDATE SET status='loading'
-        """, (county_fips, county_name))
+            INSERT INTO cache_meta (county_fips, county_name, status, loading_heartbeat)
+            VALUES (?, ?, 'loading', ?)
+            ON CONFLICT(county_fips) DO UPDATE SET
+                status='loading', loading_heartbeat=excluded.loading_heartbeat
+        """, (county_fips, county_name, int(time.time())))
 
     try:
         if on_progress: on_progress(2, f"Fetching {county_name} County boundary…")
@@ -436,6 +464,11 @@ def bootstrap_county(county_fips: str, county_name: str, on_progress=None) -> di
                     raise
                 feats = fc = None    # release the tile before fetching the next
 
+                # Prove liveness so another process starting up does not mistake
+                # this run for one that died.
+                c.execute("UPDATE cache_meta SET loading_heartbeat=? WHERE county_fips=?",
+                          (int(time.time()), county_fips))
+
                 if on_progress:
                     pct = 5 + int(90 * (i + 1) / max(1, len(tiles)))
                     on_progress(pct, f"Tile {i+1}/{len(tiles)} - {inserted:,} parcels loaded...")
@@ -459,7 +492,8 @@ def bootstrap_county(county_fips: str, county_name: str, on_progress=None) -> di
                     county_name=excluded.county_name,
                     last_refreshed_at=excluded.last_refreshed_at,
                     parcel_count=excluded.parcel_count,
-                    status=excluded.status
+                    status=excluded.status,
+                    loading_heartbeat=NULL
             """, (county_fips, county_name, county_fips, now, now, inserted, final_status))
 
         elapsed = round(time.time() - t0, 1)
@@ -475,8 +509,8 @@ def bootstrap_county(county_fips: str, county_name: str, on_progress=None) -> di
                 "complete": tile_failures == 0}
     except Exception as e:
         with _db_lock, _conn() as c:
-            c.execute("UPDATE cache_meta SET status='error' WHERE county_fips=?",
-                      (county_fips,))
+            c.execute("UPDATE cache_meta SET status='error', loading_heartbeat=NULL "
+                      " WHERE county_fips=?", (county_fips,))
         raise
 
 
@@ -887,6 +921,68 @@ def find_parcels_by_owner(owner_query: str, exact: bool = False, limit: int = 50
         "variants": variant_list,
         "truncated": len(parcels) >= limit,
     }
+
+
+def rtree_orphan_count(conn=None) -> int:
+    """R-Tree entries pointing at parcels that no longer exist.
+
+    Cheap approximation: every live parcel has exactly one R-Tree row, so the
+    difference between the two counts is the orphan count. Exact enough to
+    report, and it avoids the anti-join scan over millions of rows.
+    """
+    def _q(c):
+        rt = c.execute("SELECT COUNT(*) FROM parcels_rtree").fetchone()[0]
+        p  = c.execute("SELECT COUNT(*) FROM parcels").fetchone()[0]
+        return max(0, rt - p)
+    if conn is not None:
+        return _q(conn)
+    with _db_lock, _conn() as c:
+        return _q(c)
+
+
+def vacuum_rtree_orphans(on_progress=None) -> dict:
+    """Delete R-Tree entries whose parcel row is gone.
+
+    INSERT OR REPLACE on a table whose rowid is INTEGER PRIMARY KEY AUTOINCREMENT
+    does not reuse the replaced row's rowid: the old row is deleted and a new one
+    is inserted further up the sequence. The R-Tree row keyed to the old rowid is
+    left behind, and nothing ever removed it.
+
+    Under the pre-composite-unique schema, every cross-county Prop_ID collision
+    took that path -- 445,758 of them -- so the index grew to roughly three
+    times the number of parcels it indexed. Searches stayed correct, because
+    query_parcels_in_polygon inner-joins parcels to the R-Tree and orphans match
+    nothing, but every spatial query walked the dead entries first.
+
+    Safe to run at any time; it only removes rows that can never match.
+    """
+    t0 = time.time()
+    with _db_lock, _conn() as c:
+        before = c.execute("SELECT COUNT(*) FROM parcels_rtree").fetchone()[0]
+        parcels = c.execute("SELECT COUNT(*) FROM parcels").fetchone()[0]
+        if on_progress:
+            on_progress(5, f"Scanning {before:,} index entries against {parcels:,} parcels...")
+        c.execute("BEGIN")
+        try:
+            c.execute("""
+                DELETE FROM parcels_rtree
+                 WHERE id NOT IN (SELECT rowid FROM parcels)
+            """)
+            c.execute("COMMIT")
+        except Exception:
+            c.execute("ROLLBACK")
+            raise
+        after = c.execute("SELECT COUNT(*) FROM parcels_rtree").fetchone()[0]
+
+    removed = before - after
+    elapsed = round(time.time() - t0, 1)
+    msg = (f"R-Tree vacuum: removed {removed:,} orphaned entries "
+           f"({before:,} -> {after:,}) in {elapsed}s")
+    if on_progress:
+        on_progress(100, msg)
+    print(f"[cache] {msg}", flush=True)
+    return {"before": before, "after": after, "removed": removed,
+            "parcels": parcels, "elapsed_sec": elapsed}
 
 
 def refresh_stale_counties(max_age_days=REFRESH_INTERVAL_DAYS, on_progress=None):
