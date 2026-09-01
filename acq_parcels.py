@@ -319,6 +319,125 @@ def _get_county_polygon(county_fips: str):
 TILE_SIZE_DEG = 0.15   # ~10-mile squares; small enough for Esri to accept
 
 
+def _iter_tile_features(bbox, out_fields, attempts=3, depth=0, max_depth=3, label=""):
+    """Yield (features, failures) batches for one bbox tile.
+
+    A tile that fails is not a tile that is empty, and the loader used to treat
+    them the same: count the failure, move on, leave a hole. Harris lost 11 of
+    32 tiles that way in a single run and came back with 602,126 parcels
+    instead of roughly 1.5M.
+
+    The two failure modes want different handling, so this does both:
+
+      transient   'All strategies failed' -- the service was briefly unreachable
+                  or throttling. Six consecutive tiles failed this way in one
+                  run, which is a window in time, not a property of those tiles.
+                  Retried with backoff.
+
+      refused     HTTP 400 'Unable to perform query' on the densest urban tiles,
+                  reproducible run to run. The same envelope split into
+                  quadrants succeeds, so a tile that still fails after its
+                  retries is subdivided rather than dropped.
+
+    Yields rather than returns so a tile that subdivides several levels deep
+    costs one quadrant of memory, not the whole subtree.
+    """
+    from acq_gis import arcgis_query, ENDPOINTS
+
+    err = None
+    tried = 0
+    for attempt in range(attempts):
+        tried += 1
+        try:
+            fc = arcgis_query(ENDPOINTS["parcels"], bbox=bbox, out_fields=out_fields,
+                              page_size=2000, max_pages=200)
+            yield (fc.get("features", []) or [], 0)
+            return
+        except Exception as e:
+            err = e
+            # A real ArcGIS error is deterministic -- _post_query does not retry
+            # these either. Re-issuing the identical query only burns time; the
+            # tile needs to be smaller, not attempted again.
+            if "ArcGIS error" in str(e):
+                break
+            if attempt < attempts - 1:
+                time.sleep(2 * (2 ** attempt))      # 2s, then 4s
+
+    if depth >= max_depth:
+        print(f"  [cache] {label}: giving up at depth {depth} after "
+              f"{tried} attempt{'s' if tried != 1 else ''}: {str(err)[:90]}",
+              flush=True)
+        yield ([], 1)
+        return
+
+    minx, miny, maxx, maxy = bbox
+    mx, my = (minx + maxx) / 2.0, (miny + maxy) / 2.0
+    print(f"  [cache] {label}: {str(err)[:60]} -- splitting into quadrants",
+          flush=True)
+    for qi, quad in enumerate(((minx, miny, mx, my), (mx, miny, maxx, my),
+                               (minx, my, mx, maxy), (mx, my, maxx, maxy))):
+        yield from _iter_tile_features(quad, out_fields, attempts, depth + 1,
+                                       max_depth, f"{label}.{qi + 1}")
+
+
+def _insert_tile_batch(c, feats, poly_test, seen, county_fips, county_name, now):
+    """Insert one batch of StratMap features. Returns (inserted, skipped_outside).
+
+    Runs inside its own transaction so a load that dies keeps the tiles it has
+    already committed.
+    """
+    from shapely.geometry import shape as shp_shape
+    from shapely.wkb import dumps as wkb_dumps
+    from acq_gis import to_float
+
+    inserted = skipped_outside = 0
+    c.execute("BEGIN")
+    try:
+        for f in feats:
+            if not f.get("geometry"):
+                continue
+            props = f["properties"] or {}
+            pid = str(props.get("Prop_ID") or "").strip()
+            if not pid or pid in seen:
+                continue                    # tiles overlap; dedup on Prop_ID
+            try:
+                g = shp_shape(f["geometry"])
+            except Exception:
+                continue
+            if g.is_empty:
+                continue
+            # Drop parcels whose centroid is outside the actual county polygon --
+            # cleanup of tile-edge artifacts from neighbouring counties
+            try:
+                if not poly_test.contains(g.centroid):
+                    skipped_outside += 1
+                    continue
+            except Exception:
+                pass                        # if the test fails, keep it -- safer
+            seen.add(pid)
+            gminx, gminy, gmaxx, gmaxy = g.bounds
+            cur = c.execute("""
+                INSERT OR REPLACE INTO parcels
+                (prop_id, county_fips, county_name, owner_name, mail_addr,
+                 situs_addr, legal_desc, gis_area, legal_area, shape_wkb, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (pid, county_fips, county_name,
+                  props.get("OWNER_NAME"), props.get("MAIL_ADDR"),
+                  props.get("SITUS_ADDR"), props.get("LEGAL_DESC"),
+                  to_float(props.get("GIS_AREA")), to_float(props.get("LEGAL_AREA")),
+                  wkb_dumps(g), now))
+            c.execute("""
+                INSERT OR REPLACE INTO parcels_rtree (id, minx, maxx, miny, maxy)
+                VALUES (?, ?, ?, ?, ?)
+            """, (cur.lastrowid, gminx, gmaxx, gminy, gmaxy))
+            inserted += 1
+        c.execute("COMMIT")
+    except Exception:
+        c.execute("ROLLBACK")
+        raise
+    return inserted, skipped_outside
+
+
 def bootstrap_county(county_fips: str, county_name: str, on_progress=None) -> dict:
     """Pull all StratMap parcels for one county and load them into SQLite.
 
@@ -331,9 +450,9 @@ def bootstrap_county(county_fips: str, county_name: str, on_progress=None) -> di
 
     on_progress(pct, msg) is called as the load runs, for status display.
     """
-    from shapely.geometry import shape as shp_shape, box as shp_box
-    from shapely.wkb import dumps as wkb_dumps
-    from acq_gis import arcgis_query, ENDPOINTS, to_float
+    # The per-tile fetch and insert now live in _iter_tile_features and
+    # _insert_tile_batch, which carry their own imports.
+    from shapely.geometry import box as shp_box
 
     init_db()
     t0 = time.time()
@@ -401,68 +520,18 @@ def bootstrap_county(county_fips: str, county_name: str, on_progress=None) -> di
             """, (county_fips,))
             c.execute("DELETE FROM parcels WHERE county_fips = ?", (county_fips,))
 
+            FIELDS = ("Prop_ID,OWNER_NAME,LEGAL_DESC,SITUS_ADDR,MAIL_ADDR,"
+                      "LEGAL_AREA,GIS_AREA")
             for i, tile_bbox in enumerate(tiles):
-                try:
-                    fc = arcgis_query(
-                        ENDPOINTS["parcels"],
-                        bbox=tile_bbox,
-                        out_fields="Prop_ID,OWNER_NAME,LEGAL_DESC,SITUS_ADDR,MAIL_ADDR,LEGAL_AREA,GIS_AREA",
-                        page_size=2000, max_pages=200,
-                    )
-                    feats = fc.get("features", []) or []
-                except Exception as e:
-                    tile_failures += 1
-                    print(f"  [cache] {county_name} tile {i+1}/{len(tiles)} failed: {e}",
-                          flush=True)
-                    feats = []
-
-                fetched += len(feats)
-                c.execute("BEGIN")
-                try:
-                    for f in feats:
-                        if not f.get("geometry"):
-                            continue
-                        props = f["properties"] or {}
-                        pid = str(props.get("Prop_ID") or "").strip()
-                        if not pid or pid in seen:
-                            continue   # tiles overlap; dedup on Prop_ID
-                        try:
-                            g = shp_shape(f["geometry"])
-                        except Exception:
-                            continue
-                        if g.is_empty:
-                            continue
-                        # Drop parcels whose centroid is outside the actual county
-                        # polygon -- cleanup of tile-edge artifacts from neighbors
-                        try:
-                            if not poly_test.contains(g.centroid):
-                                skipped_outside += 1
-                                continue
-                        except Exception:
-                            pass   # if centroid test fails, keep the parcel -- safer
-                        seen.add(pid)
-                        wkb = wkb_dumps(g)
-                        gminx, gminy, gmaxx, gmaxy = g.bounds
-                        cur = c.execute("""
-                            INSERT OR REPLACE INTO parcels
-                            (prop_id, county_fips, county_name, owner_name, mail_addr,
-                             situs_addr, legal_desc, gis_area, legal_area, shape_wkb, updated_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (pid, county_fips, county_name,
-                              props.get("OWNER_NAME"), props.get("MAIL_ADDR"),
-                              props.get("SITUS_ADDR"), props.get("LEGAL_DESC"),
-                              to_float(props.get("GIS_AREA")), to_float(props.get("LEGAL_AREA")),
-                              wkb, now))
-                        c.execute("""
-                            INSERT OR REPLACE INTO parcels_rtree (id, minx, maxx, miny, maxy)
-                            VALUES (?, ?, ?, ?, ?)
-                        """, (cur.lastrowid, gminx, gmaxx, gminy, gmaxy))
-                        inserted += 1
-                    c.execute("COMMIT")
-                except Exception:
-                    c.execute("ROLLBACK")
-                    raise
-                feats = fc = None    # release the tile before fetching the next
+                label = f"{county_name} tile {i+1}/{len(tiles)}"
+                for feats, failed in _iter_tile_features(tile_bbox, FIELDS, label=label):
+                    tile_failures += failed
+                    fetched += len(feats)
+                    ins, skip = _insert_tile_batch(c, feats, poly_test, seen,
+                                                   county_fips, county_name, now)
+                    inserted += ins
+                    skipped_outside += skip
+                    feats = None        # release the batch before fetching the next
 
                 # Prove liveness so another process starting up does not mistake
                 # this run for one that died.
@@ -471,7 +540,8 @@ def bootstrap_county(county_fips: str, county_name: str, on_progress=None) -> di
 
                 if on_progress:
                     pct = 5 + int(90 * (i + 1) / max(1, len(tiles)))
-                    on_progress(pct, f"Tile {i+1}/{len(tiles)} - {inserted:,} parcels loaded...")
+                    on_progress(pct,
+                                f"Tile {i+1}/{len(tiles)} - {inserted:,} parcels loaded...")
 
             if not inserted:
                 raise RuntimeError(f"No parcels returned across {len(tiles)} tiles")
