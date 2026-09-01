@@ -115,7 +115,22 @@ def init_db():
                 bootstrapped_at    INTEGER,    -- first-ever load
                 last_refreshed_at  INTEGER,    -- most recent refresh
                 parcel_count       INTEGER,
-                status             TEXT        -- 'pending', 'loading', 'fresh', 'stale', 'error'
+                status             TEXT        -- 'pending', 'loading', 'fresh', 'partial', 'stale', 'error'
+            );
+
+            -- Which tiles of a county are already loaded, so an interrupted
+            -- bootstrap can pick up where it stopped instead of re-downloading
+            -- the county. Harris is ~1.4 GB fetched at ~0.4 MB/s; losing an
+            -- hour of that to a restart is the difference between a background
+            -- chore and one nobody is willing to start.
+            CREATE TABLE IF NOT EXISTS cache_tiles (
+                county_fips  TEXT NOT NULL,
+                grid_sig     TEXT NOT NULL,   -- invalidates if the grid changes
+                tile_index   INTEGER NOT NULL,
+                parcels      INTEGER,
+                failures     INTEGER,
+                done_at      INTEGER,
+                PRIMARY KEY (county_fips, grid_sig, tile_index)
             );
         """)
 
@@ -469,7 +484,8 @@ def _insert_tile_batch(c, feats, poly_test, seen, county_fips, county_name, now)
     return inserted, skipped_outside
 
 
-def bootstrap_county(county_fips: str, county_name: str, on_progress=None) -> dict:
+def bootstrap_county(county_fips: str, county_name: str, on_progress=None,
+                     resume: bool = True) -> dict:
     """Pull all StratMap parcels for one county and load them into SQLite.
 
     Strategy: split the county's bounding box into ~10-mile bbox tiles and query
@@ -480,6 +496,12 @@ def bootstrap_county(county_fips: str, county_name: str, on_progress=None) -> di
     (cleanup for tile-edge artifacts from neighbor counties).
 
     on_progress(pct, msg) is called as the load runs, for status display.
+
+    resume=True picks up an interrupted load: if the county's last attempt did
+    not finish and the tile grid is unchanged, tiles already recorded as done
+    are skipped and the county's existing rows are kept. A county that is
+    already 'fresh' always reloads from scratch, so a deliberate refresh still
+    drops parcels that have disappeared upstream.
     """
     # The per-tile fetch and insert now live in _iter_tile_features and
     # _insert_tile_batch, which carry their own imports.
@@ -514,7 +536,47 @@ def bootstrap_county(county_fips: str, county_name: str, on_progress=None) -> di
                     tiles.append(tile)
                 y += TILE_SIZE_DEG
             x += TILE_SIZE_DEG
-        if on_progress: on_progress(5, f"Querying {len(tiles)} bbox tiles for {county_name}…")
+        # A grid signature so a resume can only reuse tiles cut the same way.
+        # Change TILE_SIZE_DEG or the county boundary and every prior tile is
+        # discarded rather than silently mismatched.
+        grid_sig = f"{TILE_SIZE_DEG}:{len(tiles)}:" + ",".join(
+            f"{v:.4f}" for v in (minx, miny, maxx, maxy))
+
+        prior = None
+        with _db_lock, _conn() as c0:
+            row = c0.execute("SELECT status FROM cache_meta WHERE county_fips=?",
+                             (county_fips,)).fetchone()
+            prior = row[0] if row else None
+            done_tiles = set()
+            if resume and prior in ("partial", "error", "loading"):
+                done_tiles = {r[0] for r in c0.execute(
+                    "SELECT tile_index FROM cache_tiles "
+                    " WHERE county_fips=? AND grid_sig=?", (county_fips, grid_sig))}
+            if not done_tiles:
+                # Not resuming: drop any stale tile record for this county.
+                c0.execute("DELETE FROM cache_tiles WHERE county_fips=?", (county_fips,))
+
+        resuming = bool(done_tiles)
+        prior_failures = 0
+        if resuming:
+            have = 0
+            with _db_lock, _conn() as c0:
+                have = c0.execute("SELECT COUNT(*) FROM parcels WHERE county_fips=?",
+                                  (county_fips,)).fetchone()[0]
+                # Failures from the tiles being skipped still count against this
+                # county. Without this a resumed run reports 'fresh' while the
+                # holes an earlier attempt left are still there.
+                prior_failures = c0.execute(
+                    "SELECT COALESCE(SUM(failures), 0) FROM cache_tiles "
+                    " WHERE county_fips=? AND grid_sig=?",
+                    (county_fips, grid_sig)).fetchone()[0] or 0
+            print(f"[cache] {county_name}: resuming — {len(done_tiles)}/{len(tiles)} "
+                  f"tiles already loaded, {have:,} parcels kept", flush=True)
+            if on_progress:
+                on_progress(5, f"Resuming {county_name}: {len(done_tiles)}/{len(tiles)} "
+                               f"tiles already done…")
+        elif on_progress:
+            on_progress(5, f"Querying {len(tiles)} bbox tiles for {county_name}…")
 
         # Fetch AND insert one tile at a time. Each tile uses a clean envelope
         # query (no polygon complexity issues); pages within a tile run in
@@ -543,24 +605,38 @@ def bootstrap_county(county_fips: str, county_name: str, on_progress=None) -> di
             poly_test = poly
 
         with _db_lock, _conn() as c:
-            # Clear any prior rows for this county before re-insert
-            c.execute("""
-                DELETE FROM parcels_rtree WHERE id IN (
-                    SELECT rowid FROM parcels WHERE county_fips = ?
-                )
-            """, (county_fips,))
-            c.execute("DELETE FROM parcels WHERE county_fips = ?", (county_fips,))
+            if resuming:
+                tile_failures += prior_failures
+                # Keep what is already loaded, and seed the dedup set from it so
+                # tile-edge overlaps are not counted twice.
+                for (pid,) in c.execute(
+                        "SELECT prop_id FROM parcels WHERE county_fips=?", (county_fips,)):
+                    seen.add(pid)
+                inserted = len(seen)
+            else:
+                # Clear any prior rows for this county before re-insert
+                c.execute("""
+                    DELETE FROM parcels_rtree WHERE id IN (
+                        SELECT rowid FROM parcels WHERE county_fips = ?
+                    )
+                """, (county_fips,))
+                c.execute("DELETE FROM parcels WHERE county_fips = ?", (county_fips,))
 
             FIELDS = ("Prop_ID,OWNER_NAME,LEGAL_DESC,SITUS_ADDR,MAIL_ADDR,"
                       "LEGAL_AREA,GIS_AREA")
             for i, tile_bbox in enumerate(tiles):
+                if i in done_tiles:
+                    continue
                 label = f"{county_name} tile {i+1}/{len(tiles)}"
+                tile_ins = tile_fail = 0
                 for feats, failed in _iter_tile_features(tile_bbox, FIELDS, label=label):
                     tile_failures += failed
                     fetched += len(feats)
                     ins, skip = _insert_tile_batch(c, feats, poly_test, seen,
                                                    county_fips, county_name, now)
                     inserted += ins
+                    tile_ins += ins
+                    tile_fail += failed
                     skipped_outside += skip
                     feats = None        # release the batch before fetching the next
 
@@ -572,6 +648,15 @@ def bootstrap_county(county_fips: str, county_name: str, on_progress=None) -> di
                     # 520s between beats on Harris before this moved inside.
                     c.execute("UPDATE cache_meta SET loading_heartbeat=? "
                               " WHERE county_fips=?", (int(time.time()), county_fips))
+
+                # Record the tile as done only once its batches are committed,
+                # so an interruption mid-tile re-fetches that tile rather than
+                # skipping a partial one.
+                c.execute("""
+                    INSERT OR REPLACE INTO cache_tiles
+                    (county_fips, grid_sig, tile_index, parcels, failures, done_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (county_fips, grid_sig, i, tile_ins, tile_fail, int(time.time())))
 
                 if on_progress:
                     pct = 5 + int(90 * (i + 1) / max(1, len(tiles)))
