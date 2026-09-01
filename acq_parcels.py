@@ -319,6 +319,13 @@ def _get_county_polygon(county_fips: str):
 TILE_SIZE_DEG = 0.15   # ~10-mile squares; small enough for Esri to accept
 
 
+# Tiles at or above this parcel count are split before they are fetched.
+# Between the largest tile that succeeded (64,921) and the smallest that was
+# refused (84,375), so it splits every tile that would 400 without splitting
+# any that would have worked.
+DENSE_TILE_PARCELS = 75_000
+
+
 def _iter_tile_features(bbox, out_fields, attempts=3, depth=0, max_depth=3, label=""):
     """Yield (features, failures) batches for one bbox tile.
 
@@ -342,7 +349,31 @@ def _iter_tile_features(bbox, out_fields, attempts=3, depth=0, max_depth=3, labe
     Yields rather than returns so a tile that subdivides several levels deep
     costs one quadrant of memory, not the whole subtree.
     """
-    from acq_gis import arcgis_query, ENDPOINTS
+    from acq_gis import arcgis_query, ENDPOINTS, _count_query
+
+    # Split a tile the service is going to refuse BEFORE spending ~290s finding
+    # out. Measured across the Harris grid: every tile that returned HTTP 400
+    # held at least 84,375 parcels, and every tile that succeeded held at most
+    # 64,921. A count query costs seconds and separates the two cleanly.
+    #
+    # A count that fails tells us nothing, so fall through and try the fetch --
+    # this is an optimisation, not a gate.
+    if depth < max_depth:
+        try:
+            n = _count_query(ENDPOINTS["parcels"], None, bbox, "1=1", 60)
+            if isinstance(n, int) and n > DENSE_TILE_PARCELS:
+                minx, miny, maxx, maxy = bbox
+                mx, my = (minx + maxx) / 2.0, (miny + maxy) / 2.0
+                print(f"  [cache] {label}: {n:,} parcels -- splitting before fetch",
+                      flush=True)
+                for qi, quad in enumerate(((minx, miny, mx, my), (mx, miny, maxx, my),
+                                           (minx, my, mx, maxy), (mx, my, maxx, maxy))):
+                    yield from _iter_tile_features(quad, out_fields, attempts,
+                                                   depth + 1, max_depth,
+                                                   f"{label}.{qi + 1}")
+                return
+        except Exception:
+            pass
 
     err = None
     tried = 0
