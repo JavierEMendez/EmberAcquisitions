@@ -57,10 +57,11 @@ HOUSTON_METRO_COUNTIES = [
 
 REFRESH_INTERVAL_DAYS = 7   # auto-refresh each county weekly
 
-# The statewide parcel cache is ~1.3 GB of SQLite + R-Tree, far too large to
+# DB lives in the same storage directory as searches.json
+# The statewide parcel cache is a few GB of SQLite + R-Tree, far too large to
 # live in the image or in Postgres. On Railway it belongs on a mounted volume;
 # ACQ_DATA_DIR points at that mount. Locally it falls back to ./storage, which
-# is gitignored, so a dev checkout behaves the same as the standalone app did.
+# is gitignored, so a dev checkout behaves like the standalone app.
 import os as _os
 
 _DATA_DIR = Path(_os.environ.get("ACQ_DATA_DIR") or (Path(__file__).parent / "storage"))
@@ -76,43 +77,67 @@ def _conn():
     return c
 
 
-def init_db():
-    """Create tables + R-Tree index if they don't exist. Idempotent."""
-    with _db_lock, _conn() as c:
-        c.executescript("""
-            -- Identity is (county_fips, prop_id, geom_key).
-            --
-            -- Prop_ID alone is not unique: it repeats across counties, which
-            -- made each county overwrite the last one's parcels. It also is not
-            -- unique WITHIN a county, which is subtler — Prop_ID is an appraisal
-            -- ACCOUNT number, and one account routinely covers several separate
-            -- tracts. Rancho La Laguna's Waller account 7282 is a 173-acre tract
-            -- and a 94-acre tract; Baldridge Enterprises has four under one id.
-            -- Keying on (county, prop_id) kept one tract per account and dropped
-            -- the rest: 771 of 5,330 parcels, 14.5%, in a single 3-mile search.
-            --
-            -- geom_key is a hash of the parcel geometry, so two tracts under one
-            -- account are distinct rows while the SAME parcel returned by two
-            -- overlapping tiles still collapses to one.
-            CREATE TABLE IF NOT EXISTS parcels (
-                rowid       INTEGER PRIMARY KEY AUTOINCREMENT,
-                prop_id     TEXT NOT NULL,
-                geom_key    TEXT,
-                county_fips TEXT,
-                county_name TEXT,
-                owner_name  TEXT,
-                mail_addr   TEXT,
-                situs_addr  TEXT,
-                legal_desc  TEXT,
-                gis_area    REAL,
-                legal_area  REAL,
-                shape_wkb   BLOB,
-                updated_at  INTEGER,
-                UNIQUE (county_fips, prop_id, geom_key)
-            );
-            CREATE INDEX IF NOT EXISTS ix_parcels_county ON parcels(county_fips);
-            CREATE INDEX IF NOT EXISTS ix_parcels_propid ON parcels(prop_id);
+# The parcels table and its indexes, in one place: init_db creates them and
+# _migrate_geom_key recreates them after dropping the old table. Two copies of
+# this DDL would drift, and the drift would be a silently different schema.
+_PARCELS_DDL = """
+-- Identity is (county_fips, prop_id, geom_key).
+--
+-- Prop_ID alone is not unique: it repeats across counties, which
+-- made each county overwrite the last one's parcels. It also is not
+-- unique WITHIN a county, which is subtler — Prop_ID is an appraisal
+-- ACCOUNT number, and one account routinely covers several separate
+-- tracts. Rancho La Laguna's Waller account 7282 is a 173-acre tract
+-- and a 94-acre tract; Baldridge Enterprises has four under one id.
+-- Keying on (county, prop_id) kept one tract per account and dropped
+-- the rest: 771 of 5,330 parcels, 14.5%, in a single 3-mile search.
+--
+-- geom_key is a hash of the parcel geometry, so two tracts under one
+-- account are distinct rows while the SAME parcel returned by two
+-- overlapping tiles still collapses to one.
+CREATE TABLE IF NOT EXISTS parcels (
+    rowid       INTEGER PRIMARY KEY AUTOINCREMENT,
+    prop_id     TEXT NOT NULL,
+    geom_key    TEXT,
+    county_fips TEXT,
+    county_name TEXT,
+    owner_name  TEXT,
+    mail_addr   TEXT,
+    situs_addr  TEXT,
+    legal_desc  TEXT,
+    gis_area    REAL,
+    legal_area  REAL,
+    shape_wkb   BLOB,
+    updated_at  INTEGER,
+    UNIQUE (county_fips, prop_id, geom_key)
+);
+CREATE INDEX IF NOT EXISTS ix_parcels_county ON parcels(county_fips);
+CREATE INDEX IF NOT EXISTS ix_parcels_propid ON parcels(prop_id);
+CREATE INDEX IF NOT EXISTS ix_parcels_owner  ON parcels(owner_name);
+CREATE INDEX IF NOT EXISTS ix_parcels_owner_nocase
+    ON parcels(owner_name COLLATE NOCASE);
+"""
 
+def init_db():
+    """Create tables + R-Tree index if they don't exist. Idempotent.
+
+    Never raises. The parcel cache is an optimisation over live StratMap, and
+    the search path already falls back when a county is uncached — so a cache
+    that cannot be opened, migrated or written should make the app slower, not
+    take it down. Losing a whole deploy to a full volume is a worse outcome
+    than serving live queries until someone reclaims the space.
+    """
+    try:
+        _init_db_inner()
+    except Exception as e:
+        print(f"[cache] UNAVAILABLE — {type(e).__name__}: {e}. "
+              f"Falling back to live StratMap for every search.", flush=True)
+
+
+def _init_db_inner():
+    with _db_lock, _conn() as c:
+        c.executescript(_PARCELS_DDL)
+        c.executescript("""
             -- R-Tree spatial index. Query by bbox first (sublinear), then exact
             -- intersection in shapely. Keyed by parcels.rowid for fast joins.
             CREATE VIRTUAL TABLE IF NOT EXISTS parcels_rtree USING rtree(
@@ -146,7 +171,6 @@ def init_db():
             );
         """)
 
-
     # Heal a database created before parcel identity became (county, prop_id).
     try:
         with _db_lock, _conn() as _c:
@@ -170,6 +194,7 @@ def init_db():
                 _heal_stuck_loading(_c)
         except Exception as _e:
             print(f"[cache] stuck-loading heal skipped: {_e}", flush=True)
+
 
 _loading_healed = False
 
@@ -303,90 +328,95 @@ def _migrate_propid_unique(conn):
     return True
 
 
+
 def _migrate_geom_key(conn):
     """Rebuild `parcels` if identity is still (county_fips, prop_id).
 
     Prop_ID is an appraisal ACCOUNT number and one account often covers several
-    separate tracts, so that constraint silently kept one tract per account —
-    771 of 5,330 parcels, 14.5%, in one 3-mile search. Identity is now
-    (county_fips, prop_id, geom_key).
+    separate tracts, so that constraint kept one tract per account and dropped
+    the rest — 771 of 5,330 parcels, 14.5%, in one measured 3-mile search.
+    Identity is now (county_fips, prop_id, geom_key).
 
-    Rowids are preserved so parcels_rtree stays valid. The rebuild backfills
-    geom_key from the stored geometry, which makes the constraint correct going
-    forward; it cannot invent the tracts already dropped, so each county still
-    needs a re-bootstrap to recover them. cache_meta is marked 'partial' to say
-    so rather than leaving counties looking complete.
+    This DISCARDS the existing rows rather than copying them forward. Two
+    reasons, and the second is why the first version of this crashed a deploy:
+
+      - The rows are known-incomplete and every county is marked 'partial' here
+        anyway, so each one is deleted and re-fetched by the bootstrap that has
+        to follow. Copying them forward preserves data with a hole in it for the
+        duration of that reload, and nothing beyond it.
+      - Copying costs more than twice the cache on disk, because both tables
+        exist at once. On a 3 GB cache that is ~6 GB plus WAL. A Railway volume
+        sized for the cache does not have that headroom, SQLITE_FULL aborts the
+        migration mid-boot, and the container never comes up.
+
+    Search falls back to live StratMap for uncached counties, so the app stays
+    correct while the reload runs — slower, not broken.
     """
     row = conn.execute(
         "SELECT sql FROM sqlite_master WHERE type='table' AND name='parcels'").fetchone()
     if not row or not row[0]:
         return False
-    sql = row[0]
-    if "geom_key" in sql:
+    if "geom_key" in row[0]:
         return False                       # already migrated
 
-    print("[cache] migrating parcels: identity now (county, prop_id, geometry)",
+    n = conn.execute("SELECT COUNT(*) FROM parcels").fetchone()[0]
+    print(f"[cache] migrating parcels: identity now (county, prop_id, geometry). "
+          f"Discarding {n:,} rows keyed the old way — re-bootstrap to reload them.",
           flush=True)
-    before = conn.execute("SELECT COUNT(*) FROM parcels").fetchone()[0]
-    conn.execute("BEGIN")
+    # No explicit transaction: sqlite3's executescript() commits any open one
+    # before it runs, so wrapping this in BEGIN/COMMIT makes the COMMIT fail and
+    # sends the handler into a ROLLBACK with no transaction to roll back. Each
+    # statement is atomic on its own, and the sequence is safe to interrupt —
+    # init_db runs _PARCELS_DDL before this, so a crash between the DROP and the
+    # CREATE leaves the next startup to recreate the table with the new schema.
+    # An earlier version of this migration copied rows into parcels_migrated
+    # before dropping the original. If that died partway — and it did, on a full
+    # volume — the leftover table is still holding most of the cache. Drop it
+    # first, or the disk stays full and this migration cannot write either.
+    conn.execute("DROP TABLE IF EXISTS parcels_migrated")
+    conn.execute("DROP TABLE parcels")
+    conn.execute("DELETE FROM parcels_rtree")
+    conn.executescript(_PARCELS_DDL)
+    conn.execute("UPDATE cache_meta SET status='partial', parcel_count=0, "
+                 "                       loading_heartbeat=NULL")
+    conn.execute("DELETE FROM cache_tiles")
+
+    # Reclaim the space on disk, not just inside the file. DROP TABLE frees
+    # pages to SQLite's free list and leaves the file the same size, so on the
+    # full volume that caused this migration to be rewritten, dropping alone
+    # changes nothing and the next write still fails. VACUUM normally needs a
+    # temp copy of the live data, which is why it is a bad idea on a full disk —
+    # but everything large has just been dropped, so there is almost nothing to
+    # copy and it shrinks the file to near empty.
     try:
-        conn.execute("""
-            CREATE TABLE parcels_migrated (
-                rowid       INTEGER PRIMARY KEY,
-                prop_id     TEXT NOT NULL,
-                geom_key    TEXT,
-                county_fips TEXT,
-                county_name TEXT,
-                owner_name  TEXT,
-                mail_addr   TEXT,
-                situs_addr  TEXT,
-                legal_desc  TEXT,
-                gis_area    REAL,
-                legal_area  REAL,
-                shape_wkb   BLOB,
-                updated_at  INTEGER,
-                UNIQUE (county_fips, prop_id, geom_key)
-            )
-        """)
-        rows = conn.execute("""
-            SELECT rowid, prop_id, county_fips, county_name, owner_name, mail_addr,
-                   situs_addr, legal_desc, gis_area, legal_area, shape_wkb, updated_at
-              FROM parcels
-        """).fetchall()
-        conn.executemany("""
-            INSERT INTO parcels_migrated
-                (rowid, prop_id, geom_key, county_fips, county_name, owner_name,
-                 mail_addr, situs_addr, legal_desc, gis_area, legal_area,
-                 shape_wkb, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, [(r[0], r[1], _geom_key(r[10]) if r[10] else None, r[2], r[3], r[4],
-               r[5], r[6], r[7], r[8], r[9], r[10], r[11]) for r in rows])
-        conn.execute("DROP TABLE parcels")
-        conn.execute("ALTER TABLE parcels_migrated RENAME TO parcels")
-        for ddl in (
-            "CREATE INDEX IF NOT EXISTS ix_parcels_county ON parcels(county_fips)",
-            "CREATE INDEX IF NOT EXISTS ix_parcels_propid ON parcels(prop_id)",
-            "CREATE INDEX IF NOT EXISTS ix_parcels_owner  ON parcels(owner_name)",
-            "CREATE INDEX IF NOT EXISTS ix_parcels_owner_nocase "
-            "  ON parcels(owner_name COLLATE NOCASE)",
-        ):
-            conn.execute(ddl)
-        # The data is now correctly keyed but still short the dropped tracts.
-        conn.execute("UPDATE cache_meta SET status='partial' WHERE status='fresh'")
-        conn.execute("DELETE FROM cache_tiles")     # force a full re-fetch
-        conn.execute("COMMIT")
-    except Exception:
-        conn.execute("ROLLBACK")
-        raise
-    after = conn.execute("SELECT COUNT(*) FROM parcels").fetchone()[0]
-    print(f"[cache] migration done: {before:,} rows preserved ({after:,} after). "
-          f"Counties marked 'partial' — re-bootstrap to recover the tracts the "
-          f"old key dropped.", flush=True)
+        conn.execute("VACUUM")
+        # In WAL mode the vacuum's writes land in the -wal file, so without a
+        # truncating checkpoint the total on disk GROWS instead of shrinking —
+        # measured 273 MB to 301 MB. The checkpoint is what actually returns the
+        # space to the volume.
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    except Exception as e:
+        print(f"[cache] VACUUM after migration failed ({e}); space is freed inside "
+              f"the file but not returned to the volume", flush=True)
+    print("[cache] migration done. Every county is 'partial' until re-bootstrapped.",
+          flush=True)
     return True
 
 
 def cache_status():
-    """Return per-county cache state for the admin UI / status checks."""
+    """Per-county cache state for the admin UI / status checks.
+
+    `parcel_count` is the number of rows actually in the table. It used to be
+    cache_meta's stored figure, which is what a bootstrap reported INSERTING —
+    and those diverge whenever rows are lost after the fact. That is precisely
+    how the prop_id collision stayed invisible: this function reported Waller at
+    41,590 while the table held 22,984, so the admin page showed a healthy cache
+    with 45% of the county missing.
+
+    The bootstrap's own figure is still returned as `reported_inserted`, and
+    `missing` carries the difference when one exists — a non-zero value there
+    means that county needs re-bootstrapping.
+    """
     init_db()
     with _db_lock, _conn() as c:
         rows = c.execute("""
@@ -394,6 +424,17 @@ def cache_status():
                    parcel_count, status
               FROM cache_meta
         """).fetchall()
+        actual = dict(c.execute(
+            "SELECT county_fips, COUNT(*) FROM parcels GROUP BY county_fips").fetchall())
+        # Tile progress comes from the table, not from the loader's in-memory
+        # status. Under gunicorn the poll usually lands on a worker that is not
+        # the one bootstrapping and therefore knows nothing about it, which is
+        # why a running load could sit at 'loading' with no visible progress.
+        tiles_done = dict(c.execute(
+            "SELECT county_fips, COUNT(*) FROM cache_tiles GROUP BY county_fips").fetchall())
+        tiles_beat = dict(c.execute(
+            "SELECT county_fips, MAX(done_at) FROM cache_tiles GROUP BY county_fips"
+        ).fetchall())
     seen = {r[0]: r for r in rows}
     out = []
     now = int(time.time())
@@ -401,17 +442,29 @@ def cache_status():
         r = seen.get(fips)
         if r:
             age_days = (now - (r[3] or 0)) / 86400 if r[3] else None
+            inserted = r[4] or 0
+            rows_now = actual.get(fips, 0)
             out.append({
                 "county_fips": fips, "county_name": name,
                 "bootstrapped_at": r[2], "last_refreshed_at": r[3],
-                "parcel_count": r[4] or 0, "status": r[5] or "unknown",
+                "parcel_count": rows_now, "reported_inserted": inserted,
+                # A load in flight has deleted the county and is refilling it,
+                # so the previous run's total minus the current row count is not
+                # a shortfall -- it is just how far along this load is. Reporting
+                # it as 'missing' turns normal progress into an alarm.
+                "missing": (0 if r[5] == "loading"
+                            else max(0, inserted - rows_now) if inserted else 0),
+                "status": r[5] or "unknown",
                 "age_days": round(age_days, 1) if age_days is not None else None,
+                "tiles_done": tiles_done.get(fips, 0),
+                "last_tile_at": tiles_beat.get(fips),
             })
         else:
             out.append({
                 "county_fips": fips, "county_name": name,
                 "bootstrapped_at": None, "last_refreshed_at": None,
-                "parcel_count": 0, "status": "pending", "age_days": None,
+                "parcel_count": 0, "reported_inserted": 0, "missing": 0,
+                "status": "pending", "age_days": None,
             })
     return out
 
@@ -444,6 +497,7 @@ def _get_county_polygon(county_fips: str):
 
 
 TILE_SIZE_DEG = 0.15   # ~10-mile squares; small enough for Esri to accept
+
 
 
 # Tiles at or above this parcel count are split before they are fetched.
@@ -914,7 +968,12 @@ def coverage_for_polygon(buffer_wgs) -> list:
 
 
 def is_fully_cached(coverage_list) -> bool:
-    """True when every county in coverage is 'fresh'."""
+    """True when every county in coverage is 'fresh'.
+
+    'partial' deliberately does not count: a county whose bootstrap lost tiles
+    has holes, and serving a search from it silently returns fewer tracts than
+    exist. Falling back to the live query is slower and correct.
+    """
     return bool(coverage_list) and all(c["cached"] for c in coverage_list)
 
 
@@ -1048,7 +1107,7 @@ def _owner_similarity(a, b):
 
 
 def find_parcels_by_owner(owner_query: str, exact: bool = False, limit: int = 500,
-                          min_score: float = 0.72):
+                          min_score: float = 0.72, include_geometry: bool = False):
     """Find every cached parcel owned by an entity matching `owner_query`.
 
     Matching runs in widening passes so a name that is merely *close* still
@@ -1066,6 +1125,7 @@ def find_parcels_by_owner(owner_query: str, exact: bool = False, limit: int = 50
     the caller can show why a row matched. exact=True stops after pass 1.
     """
     from shapely.wkb import loads as wkb_loads
+    from shapely.geometry import mapping as shp_mapping
     init_db()
     if not owner_query or not owner_query.strip():
         return {"parcels": [], "total_count": 0, "total_acres": 0, "by_county": []}
@@ -1186,21 +1246,30 @@ def find_parcels_by_owner(owner_query: str, exact: bool = False, limit: int = 50
         prop_id, county, owner, mail, situs, legal, gis_area, legal_area, wkb = r
         acres = round((gis_area or legal_area or 0), 1)
         # Compute centroid from WKB for "go to map" action
+        geom = None
         try:
             g = wkb_loads(wkb)
             cent = g.centroid
             lat, lon = cent.y, cent.x
             bounds = g.bounds   # minx, miny, maxx, maxy for fitBounds
+            if include_geometry:
+                geom = shp_mapping(g)
         except Exception:
             lat = lon = None
             bounds = None
         _sc, _pass = score_by_pid.get(prop_id, (None, None))
-        parcels.append({
+        rec = {
             "prop_id": prop_id, "county": county, "owner_name": owner,
             "mail_addr": mail, "situs_addr": situs, "legal_desc": legal,
             "acres": acres, "lat": lat, "lon": lon, "bounds": list(bounds) if bounds else None,
             "match_score": _sc, "match_pass": _pass,
-        })
+        }
+        # Boundaries are opt-in. A 500-parcel holding carries megabytes of rings
+        # and the panel only needs centroids to draw and zoom — but anything
+        # building a project from these needs the real shapes.
+        if include_geometry:
+            rec["geometry"] = geom
+        parcels.append(rec)
         cn = county or "?"
         by_county.setdefault(cn, {"count": 0, "acres": 0})
         by_county[cn]["count"] += 1
@@ -1231,6 +1300,7 @@ def find_parcels_by_owner(owner_query: str, exact: bool = False, limit: int = 50
         "variants": variant_list,
         "truncated": len(parcels) >= limit,
     }
+
 
 
 def rtree_orphan_count(conn=None) -> int:
@@ -1295,6 +1365,7 @@ def vacuum_rtree_orphans(on_progress=None) -> dict:
             "parcels": parcels, "elapsed_sec": elapsed}
 
 
+
 _layer_edit_cache = {"at": 0, "value": None}
 
 
@@ -1350,7 +1421,6 @@ def refresh_stale_counties(max_age_days=REFRESH_INTERVAL_DAYS, on_progress=None)
             continue
         age = (now - row["last_refreshed_at"]) / 86400
         if age >= max_age_days or incomplete:
-
             try:
                 r = bootstrap_county(row["county_fips"], row["county_name"], on_progress)
                 refreshed.append(r)
