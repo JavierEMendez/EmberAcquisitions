@@ -533,10 +533,14 @@ def bootstrap_county(county_fips: str, county_name: str, on_progress=None) -> di
                     skipped_outside += skip
                     feats = None        # release the batch before fetching the next
 
-                # Prove liveness so another process starting up does not mistake
-                # this run for one that died.
-                c.execute("UPDATE cache_meta SET loading_heartbeat=? WHERE county_fips=?",
-                          (int(time.time()), county_fips))
+                    # Beat per batch, not per tile. A tile that fails after ~290s
+                    # and then subdivides into quadrants can run many minutes,
+                    # and beating only at the tile boundary let the gap approach
+                    # STALE_LOADING_SEC -- at which point another process opening
+                    # the cache would declare this live load dead. Measured at
+                    # 520s between beats on Harris before this moved inside.
+                    c.execute("UPDATE cache_meta SET loading_heartbeat=? "
+                              " WHERE county_fips=?", (int(time.time()), county_fips))
 
                 if on_progress:
                     pct = 5 + int(90 * (i + 1) / max(1, len(tiles)))
