@@ -1243,7 +1243,7 @@ window.quickAnalyzeTract = async function (propId, ownerName, acres, county, geo
     if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
     setStatus(`Opening analysis for <b>${escapeHtml(defaultName)}</b>…`);
     if (typeof loadProjectHistory === 'function') loadProjectHistory();
-    window.open(`/acquisitions/project/${d.id}`, '_blank');
+    window.location.href = `/acquisitions/project/${d.id}`;
   } catch (e) {
     setStatus(`Acq Analysis failed: ${escapeHtml(e.message)}`, true);
   }
@@ -1273,7 +1273,7 @@ window.createSingleTractProject = async function (propId, ownerName, acres, coun
     if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
     setStatus(`Project "<b>${escapeHtml(d.project.name)}</b>" created with 1 tract.`);
     if (typeof loadProjects === 'function') loadProjects();
-    window.open(`/acquisitions/project/${d.id}`, '_blank');
+    window.location.href = `/acquisitions/project/${d.id}`;
   } catch (e) {
     setStatus(`Project create failed: ${escapeHtml(e.message)}`, true);
   }
@@ -1337,7 +1337,7 @@ async function loadProjects() {
     badge.style.display = 'inline-block';
     list.innerHTML = items.map(p => `
       <div class="saved-search">
-        <div class="name" style="flex:1;cursor:pointer" onclick='window.open("/acquisitions/project/${p.id}", "_blank")' title="Open project">
+        <div class="name" style="flex:1;cursor:pointer" onclick='window.location.href="/acquisitions/project/${p.id}"' title="Open project">
           ${escapeHtml(p.name)}
           <div class="meta">${p.tract_count} tract${p.tract_count === 1 ? '' : 's'} · ${(p.total_acres||0).toLocaleString('en-US', { maximumFractionDigits: 0 })} ac</div>
         </div>
@@ -1351,7 +1351,7 @@ async function loadProjects() {
       e.stopPropagation();
       const id = b.dataset.id;
       if (b.dataset.act === 'project-open') {
-        window.open(`/acquisitions/project/${id}`, '_blank');
+        window.location.href = `/acquisitions/project/${id}`;
       } else if (b.dataset.act === 'project-del') {
         if (!confirm('Delete this project? Tracts remain in your search results.')) return;
         await fetch(`/api/acq/projects/${id}`, { method: 'DELETE' });
@@ -1379,7 +1379,7 @@ async function loadProjectHistory() {
     badge.style.display = 'inline-block';
     list.innerHTML = items.map(p => `
       <div class="saved-search">
-        <div class="name" style="flex:1;cursor:pointer" onclick='window.open("/acquisitions/project/${p.id}", "_blank")' title="Open analysis">
+        <div class="name" style="flex:1;cursor:pointer" onclick='window.location.href="/acquisitions/project/${p.id}"' title="Open analysis">
           ${escapeHtml(p.name)}
           <div class="meta">${p.tract_count} tract${p.tract_count === 1 ? '' : 's'} · ${(p.total_acres||0).toLocaleString('en-US', { maximumFractionDigits: 0 })} ac</div>
         </div>
@@ -1396,7 +1396,7 @@ async function loadProjectHistory() {
       e.stopPropagation();
       const id = b.dataset.id;
       if (b.dataset.act === 'history-open') {
-        window.open(`/acquisitions/project/${id}`, '_blank');
+        window.location.href = `/acquisitions/project/${id}`;
       } else if (b.dataset.act === 'history-save') {
         const hit = (d.projects || []).find(p => p.id === id);
         const currentName = hit ? hit.name : 'Project';
@@ -3009,7 +3009,7 @@ window.analyzeOwnerHolding = async function () {
     if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
     const pid = (j.project || j).id;
     if (!pid) throw new Error('no project id returned');
-    window.open(`/acquisitions/project/${encodeURIComponent(pid)}`, '_blank');
+    window.location.href = `/acquisitions/project/${encodeURIComponent(pid)}`;
     setStatus(`Project created — ${parcels.length} tracts, ${Math.round(acres)} ac.`);
   } catch (e) {
     setStatus(`Could not build the project: ${escapeHtml(e.message)}`, true);
@@ -5106,7 +5106,7 @@ async function _loadLayersAroundFocusTract(geometry, ownerLabel) {
       `<br>Site: ${escapeHtml(site) || '<i>(no street address)</i>'}` +
       `<br>Prop ID: ${escapeHtml(pid)}` +
       `<div class="popup-actions" style="margin-top:8px">` +
-        `<button onclick='window.open("/acquisitions/tract/${encodeURIComponent(pid)}", "_blank")'>Full tract page</button>` +
+        `<button onclick='window.location.href="/acquisitions/tract/"+encodeURIComponent(${JSON.stringify(pid)})'>Full tract page</button>` +
         `<button onclick='showOutreach(${JSON.stringify(pid)}, ${JSON.stringify(owner)}, ${acres || 0}, ${JSON.stringify(county || "")})'>Outreach</button>` +
         `<button onclick='window.open("/api/acq/tract-sheet/${encodeURIComponent(pid)}", "_blank")'>Tract sheet</button>` +
       `</div>`;
