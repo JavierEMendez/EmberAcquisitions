@@ -5973,8 +5973,22 @@ def acq_outreach_pipeline():
         rows = [r for r in rows
                 if r.get("status") not in OUTREACH_OUT_OF_SCOPE and not r.get("archived")]
     rows.sort(key=lambda r: r.get("updated_at") or r.get("created_at") or "", reverse=True)
-    return jsonify({"pipeline": rows, "statuses": OUTREACH_STATUSES,
-                    "methods": OUTREACH_METHODS})
+
+    # The pipeline board renders columns per status, so it reads by_status,
+    # statuses and total — not a flat list. Returning {pipeline: [...]} left
+    # every column empty with no error to show for it. statuses is expanded
+    # from the (value, label, colour) tuples the board needs to draw headings.
+    by_status = {}
+    for r in rows:
+        by_status.setdefault(r.get("status") or "lead", []).append(r)
+    return jsonify({
+        "by_status": by_status,
+        "statuses": [{"value": v, "label": l, "color": c}
+                     for v, l, c in OUTREACH_STATUSES],
+        "total": len(rows),
+        "methods": OUTREACH_METHODS,
+        "pipeline": rows,          # kept: some callers still read the flat list
+    })
 
 
 # ── Favourites ────────────────────────────────────────────────────────────
