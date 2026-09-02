@@ -1,13 +1,8 @@
 {# ============================================================
-   Ember · Acquisitions — Analyses
-
-   Everything that has been analysed, in one place. The map page keeps a
-   Projects section in its sidebar, but once you leave that page there was no
-   way back to a saved analysis short of the browser history.
-
-   Two lists, because they are different things: projects you deliberately
-   built and named, and the one-off "Acq Analysis" runs fired from a tract
-   popup. Both are stored the same way; only is_quick_analysis separates them.
+   Ember · Acquisitions GIS — Folders
+   Ported from the standalone app. The page body and its JS come across as
+   they were; the shell, sidebar, theme tokens and account modal are the
+   portal's. API calls are repointed to /api/acq/.
    ============================================================ #}
 <!DOCTYPE html>
 <html lang="en" data-theme="light">
@@ -18,27 +13,149 @@
 <link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+
 <link rel="stylesheet" href="/static/theme.css?v=5"/>
+<link rel="stylesheet" href="/static/css/acquisitions.css?v=1"/>
 <script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 <style>
+  /* App shell — copied from financials.html so /acquisitions nests in the
+     canonical sidebar chrome. */
   *{box-sizing:border-box;margin:0;padding:0}
-  html,body{height:100%}
-  body{background:var(--eax-bg);color:var(--eax-ink);font-family:'DM Sans','Plus Jakarta Sans',system-ui,sans-serif;overflow:hidden}
-  #app{display:flex;height:100vh;overflow:hidden}
-  #sidebar{width:240px;background:var(--eax-bg-2);border-right:1px solid var(--eax-line);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;position:relative}
+  html,body{height:100%;}
+  body{background:var(--eax-bg);color:var(--eax-ink);font-family:'DM Sans','Plus Jakarta Sans',system-ui,sans-serif;overflow:hidden;}
+  #app{display:flex;height:100vh;overflow:hidden;}
+  #sidebar{width:240px;background:var(--eax-bg-2);border-right:1px solid var(--eax-line);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;}
   .sidebar-logo{padding:16px 18px 14px;border-bottom:1px solid var(--eax-line)}
   .logo-img{width:100%;max-width:160px;height:auto;display:block;margin:0 auto}
-  img.logo-light{display:none}
-  [data-theme="light"] img.logo-dark{display:none}
-  [data-theme="light"] img.logo-light{display:block;margin:0 auto}
-  .logo-sub{font-size:10px;color:var(--eax-subtle);letter-spacing:.2em;text-transform:uppercase;margin-top:8px;text-align:center;font-weight:700}
-  .sidebar-section{padding:8px 16px 4px;font-size:9px;line-height:1.2;color:var(--eax-subtle);letter-spacing:.22em;text-transform:uppercase;margin-top:8px;font-weight:700}
+  img.logo-light{display:none;}
+  [data-theme="light"] img.logo-dark{display:none;}
+  [data-theme="light"] img.logo-light{display:block;margin:0 auto;}
+  .logo-sub{font-size:10px;color:var(--eax-subtle);letter-spacing:0.2em;text-transform:uppercase;margin-top:8px;text-align:center;font-weight:700}
+  .sidebar-section{padding:8px 16px 4px;font-size:9px;line-height:1.2;color:var(--eax-subtle);letter-spacing:0.22em;text-transform:uppercase;margin-top:8px;font-weight:700}
   .sidebar-item{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;border-radius:8px;margin:1px 8px;transition:all .15s;color:var(--eax-muted);font-size:13px;line-height:1.2;text-decoration:none;font-weight:500}
   .sidebar-item:hover{background:var(--eax-accent-soft);color:var(--eax-ink);text-decoration:none}
-  .sidebar-item.active{background:var(--eax-surface);color:var(--eax-ink);font-weight:600;border:1px solid var(--eax-line)}
-  .sidebar-item .icon{width:16px;height:16px;flex-shrink:0}
-  #main-content{flex:1;overflow-y:auto;min-width:0;padding:18px 24px 40px}
+  .sidebar-item.active{background:var(--eax-surface);color:var(--eax-ink);font-weight:600;border:1px solid var(--eax-line);position:relative}
+  .sidebar-item.active::before{content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:2px;background:var(--eax-accent);border-radius:2px}
+  .sidebar-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0}
+  .sidebar-item.active .icon{opacity:1;color:var(--eax-accent)}
+  #main-content{flex:1;overflow:hidden;min-width:0;display:flex;}
 
+  .acq-legacy { flex:1; min-width:0; overflow:auto; padding:0 0 60px; }
+  /* The ported page's own styles. Rules targeting body, html, * or the old
+     nav were dropped at build time - they would have fought the shell. */
+
+
+  /* Top nav — shared header */
+  .top-nav { display: flex; align-items: center; height: 52px; background: #0A1825; color: #E8EBED;
+    padding: 0 20px; gap: 28px; border-bottom: 1px solid rgba(255,255,255,0.05); flex-shrink: 0; z-index: 100; }
+
+  .top-nav .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+
+  .top-nav .brand img { height: 22px; }
+
+  .top-nav .brand-name { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; color: #FFF; }
+
+  .top-nav .brand-name .accent-dot { color: var(--ember-orange); margin-left: 2px; }
+
+  .top-nav nav.primary { display: flex; gap: 2px; flex: 1; margin-left: 12px; }
+
+  .top-nav nav.primary a { color: #8993A1; text-decoration: none; padding: 7px 12px;
+    font-size: 13px; font-weight: 500; border-radius: var(--r-md); transition: all 120ms; }
+
+  .top-nav nav.primary a:hover { color: #FFF; background: rgba(255,255,255,0.05); }
+
+  .top-nav nav.primary a.active { color: #FFF; background: rgba(242,89,41,0.16); box-shadow: inset 0 -2px 0 var(--ember-orange); }
+
+  .top-nav .user-meta { display: flex; align-items: center; gap: 14px; font-size: 12px; color: #8993A1; }
+
+  .top-nav .user-meta .user-pill { color: #E8EBED; font-weight: 500; }
+
+  .top-nav .user-meta .role-tag { background: var(--ember-orange); color: #FFF; font-size: 9px; padding: 2px 6px; border-radius: var(--r-sm); font-weight: 700; margin-left: 4px; }
+
+  .top-nav .user-meta a { color: #8993A1; text-decoration: none; font-weight: 500; transition: color 120ms; }
+
+  .top-nav .user-meta a:hover { color: var(--ember-orange); }
+
+
+  /* Page header pattern */
+  .page-header { background: #FFF; border-bottom: 1px solid var(--gray-200); padding: 20px 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+
+  .page-header h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+
+  .page-header .meta { color: var(--gray-500); font-size: 13px; }
+
+  .page-header .breadcrumb { color: var(--gray-500); font-size: 12px; margin-bottom: 4px; }
+
+  .page-header .breadcrumb a { color: var(--gray-500); text-decoration: none; transition: color 120ms; }
+
+  .page-header .breadcrumb a:hover { color: var(--ember-orange); }
+
+  .page-header .breadcrumb .sep { color: var(--gray-300); margin: 0 6px; }
+
+
+  /* Generic buttons (light surface) */
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: var(--r-md);
+    font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 120ms;
+    border: 1px solid var(--gray-300); background: #FFF; color: var(--gray-700); text-decoration: none; }
+
+  .btn:hover { border-color: var(--gray-400); background: var(--gray-50); color: var(--gray-900); }
+
+  .btn-primary { background: var(--ember-orange); border-color: var(--ember-orange); color: #FFF; }
+
+  .btn-primary:hover { background: var(--ember-orange-hover); border-color: var(--ember-orange-hover); color: #FFF; }
+
+  .btn-danger { color: var(--red-600); border-color: var(--gray-300); }
+
+  .btn-danger:hover { background: #FEE2E2; border-color: #FCA5A5; color: var(--red-600); }
+
+  .btn.active { background: rgba(242,89,41,0.10); border-color: var(--ember-orange); color: var(--ember-orange); }
+
+
+  /* Cards */
+  .card { background: #FFF; border-radius: var(--r-lg); border: 1px solid var(--gray-200); box-shadow: var(--shadow-sm); padding: 20px; }
+
+  .card h2 { margin: 0 0 14px; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: var(--gray-900);
+    display: flex; align-items: center; gap: 6px; }
+
+  .card .row-label { font-size: 10px; font-weight: 600; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.08em; }
+
+
+  /* Status pill — used in tract + pipeline */
+  .status-pill { display: inline-block; padding: 2px 8px; border-radius: var(--r-sm); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #FFF; }
+
+
+
+  .folders-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; padding: 24px 28px 32px; }
+
+  .folder-card { background: #FFF; border-radius: var(--r-lg); border: 1px solid var(--gray-200); padding: 18px 20px; box-shadow: var(--shadow-sm); transition: box-shadow 120ms; }
+
+  .folder-card:hover { box-shadow: var(--shadow-md); border-color: var(--gray-300); }
+
+  .folder-card .head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+
+  .folder-card .swatch { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+
+  .folder-card .name { font-size: 15px; font-weight: 600; color: var(--gray-900); flex: 1; word-break: break-word; }
+
+  .folder-card .count { color: var(--gray-500); font-size: 12px; font-weight: 500; }
+
+  .folder-card .meta { color: var(--gray-500); font-size: 11px; margin-bottom: 12px; }
+
+  .folder-card .body { font-size: 12px; color: var(--gray-700); }
+
+  .folder-card .body .item { padding: 6px 0; border-top: 1px solid var(--gray-100); display: flex; align-items: center; gap: 8px; }
+
+  .folder-card .body .item .ico { width: 16px; color: var(--gray-400); flex-shrink: 0; }
+
+  .folder-card .body .item .label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--gray-900); }
+
+  .folder-card .body .item a { color: var(--ember-orange); text-decoration: none; }
+
+  .folder-card .body .item a:hover { text-decoration: underline; }
+
+  .folder-card .actions { display: flex; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--gray-100); }
+
+  /* Analyses index */
   .an-head{margin:6px 0 14px}
   .an-eyebrow{font-size:9.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--eax-accent);font-weight:700}
   .an-title{font-family:'Plus Jakarta Sans',sans-serif;font-size:22px;font-weight:700;margin-top:4px}
@@ -64,23 +181,108 @@
 </head>
 <body>
 <div id="app">
+
   <nav id="sidebar">
     <div class="sidebar-logo">
-      <img src="/static/img/ember-wordmark-dark.svg" alt="Ember" class="logo-img logo-dark"/>
-      <img src="/static/img/ember-wordmark-light.svg" alt="Ember" class="logo-img logo-light"/>
+      <img src="/static/img/ember_logo.png"        alt="Ember" class="logo-img logo-dark">
+      <img src="/static/img/ember_logo_light.png"  alt="Ember" class="logo-img logo-light">
       <div class="logo-sub">Acquisitions</div>
     </div>
     <div class="sidebar-section">Apps &amp; Dashboards</div>
+    {% if page_access.get('mpc_underwriting', true) %}
+    <a href="/" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+      MPC Underwriting
+    </a>
+    {% endif %}
+    {% if page_access.get('returns', true) %}
+    <a href="/returns" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Project Returns
+    </a>
+    {% endif %}
+    {% if page_access.get('loans', true) %}
+    <a href="/loans" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Loans &amp; Debt
+    </a>
+    {% endif %}
+    {% if is_admin or page_access.get('budget', false) %}
+    <a href="/budget" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 13l3 3 3-5 4 4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Operating Budget
+    </a>
+    {% endif %}
+    {% if page_access.get('operations', true) %}
+    <a href="/operations" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Operating Revenues
+    </a>
+    {% endif %}
+    {% if page_access.get('invoice_dashboard', true) %}
+    <a href="/invoice-dashboard" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 2h6a2 2 0 012 2v16l-3-2-2 2-2-2-2 2-3-2V4a2 2 0 012-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 7h6M9 11h6M9 15h4" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Invoice Dashboard
+    </a>
+    {% endif %}
+    {% if page_access.get('financials', true) %}
+    <a href="/financials" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M9 17V9m4 8V5m4 12v-7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Financial Statements
+    </a>
+    {% endif %}
+    {% if is_admin or page_access.get('unit_economics', false) %}
+    <a href="/unit-economics" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 2l9 5-9 5-9-5 9-5z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 12l9 5 9-5M3 17l9 5 9-5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Unit Economics
+    </a>
+    {% endif %}
+    {% if is_admin or page_access.get('partners_cf', false) %}
+    <a href="/partners-cf" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M7 10h10m0 0l-3-3m3 3l-3 3M17 17H7m0 0l3-3m-3 3l3 3" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Partners Cash Flow
+    </a>
+    {% endif %}
+    {% if page_access.get('macro', true) %}
+    <a href="/macro" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="1.5"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Macro Dashboard
+    </a>
+    {% endif %}
+    {% if page_access.get('portfolio', true) %}
+    <a href="/ember-capital" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 3.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Ember Capital
+    </a>
+    {% endif %}
+    {% if page_access.get('sales', true) %}
+    <a href="/sales" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l3-3 4 4 5-6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Community Sales
+    </a>
+    {% endif %}
+    {% if page_access.get('verticals', true) %}
+    <a href="/verticals" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      Vertical Dashboard
+    </a>
+    {% endif %}
+    {% if is_admin or page_access.get('bva', false) %}
+    <a href="/bva" class="sidebar-item"><svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3v18h18" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="7" y="10" width="3" height="7" rx="0.5"/><rect x="12" y="6" width="3" height="11" rx="0.5"/><rect x="17" y="13" width="3" height="4" rx="0.5"/></svg>Budget vs Actuals</a>
+    {% endif %}
+    {% if is_admin or page_access.get('acquisitions', false) %}
     <a href="/acquisitions" class="sidebar-item active">
-      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Acquisitions GIS
     </a>
+    {% endif %}
     <div style="flex:1"></div>
     {% include "_partials/_sidebar_foot.html" %}
   </nav>
 
   <div id="main-content">
-    <div class="acq-subnav">
+    <div class="acq-legacy">
+<div class="acq-subnav">
       <a href="/acquisitions">Map &amp; search</a>
       <a href="/acquisitions/analyses" class="on">Analyses</a>
       <a href="/acquisitions/pipeline">Pipeline</a>
@@ -89,7 +291,7 @@
       {% if is_admin %}<a href="/acquisitions/admin">Parcel cache</a>{% endif %}
     </div>
 
-    <div class="an-head">
+<div class="an-head">
       <div class="an-eyebrow">Land &middot; Underwriting</div>
       <h1 class="an-title">Analyses</h1>
       <p class="an-sub">
@@ -112,6 +314,93 @@
 </div>
 
 {% include "_partials/_account_modal.html" %}
-<script src="/static/js/acquisitions_analyses.js?v=1" defer></script>
+
+
+<script>
+
+function escapeHtml(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+
+async function load() {
+  try {
+    const [foldersRes, searchesRes] = await Promise.all([
+      fetch('/api/acq/folders').then(r => r.json()),
+      fetch('/api/acq/searches').then(r => r.json()),
+    ]);
+    const folders = foldersRes.folders || [];
+    const searches = searchesRes.searches || [];
+
+    // Per-folder pin counts (load in parallel)
+    const pinsByFolder = {};
+    await Promise.all(folders.map(async f => {
+      try {
+        const r = await fetch(`/api/acq/tract-pins?folder_id=${f.id}`);
+        const d = await r.json();
+        pinsByFolder[f.id] = d.pins || [];
+      } catch { pinsByFolder[f.id] = []; }
+    }));
+    const searchesByFolder = {};
+    searches.forEach(s => {
+      if (s.folder_id) (searchesByFolder[s.folder_id] = searchesByFolder[s.folder_id] || []).push(s);
+    });
+
+    document.getElementById('folders-meta').textContent =
+      `${folders.length} ${folders.length === 1 ? 'folder' : 'folders'}`;
+
+    const grid = document.getElementById('folders-grid');
+    if (folders.length === 0) {
+      grid.innerHTML = '<div style="padding:40px;color:#A5ADB7;font-style:italic;grid-column:1/-1;text-align:center">No folders yet. Create one from the Map page sidebar.</div>';
+      return;
+    }
+    grid.innerHTML = folders.map(f => {
+      const pins = pinsByFolder[f.id] || [];
+      const fSearches = searchesByFolder[f.id] || [];
+      const sharedTag = f.is_owner ? '' : ' <span style="background:#F1F3F6;color:#7A828D;font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600">shared</span>';
+      const items = [
+        ...fSearches.slice(0, 6).map(s => `
+          <div class="item">
+            <span class="ico"></span>
+            <span class="label">${escapeHtml(s.label)}</span>
+            <span style="color:#A5ADB7;font-size:11px">${s.radius_mi}mi · ${s.min_acres}-${s.max_acres}ac</span>
+          </div>`),
+        ...pins.slice(0, 6).map(p => `
+          <div class="item">
+            <span class="ico"></span>
+            <span class="label">
+              <a href="/acquisitions/tract/${encodeURIComponent(p.prop_id || '')}">${escapeHtml(p.label || p.owner_name || p.prop_id || '?')}</a>
+            </span>
+            <span style="color:#A5ADB7;font-size:11px">${p.acres ? Math.round(p.acres) + ' ac' : ''}</span>
+          </div>`),
+      ].join('');
+      const remaining = (fSearches.length + pins.length) - Math.min(6, fSearches.length) - Math.min(6, pins.length);
+      return `
+        <div class="folder-card">
+          <div class="head">
+            <div class="swatch" style="background:${f.color || '#7A828D'}"></div>
+            <div class="name">${escapeHtml(f.name)}${sharedTag}</div>
+            <div class="count">${fSearches.length} · ${pins.length} </div>
+          </div>
+          ${f.owner_name && !f.is_owner ? `<div class="meta">Owned by ${escapeHtml(f.owner_name)}</div>` : ''}
+          <div class="body">
+            ${items || '<div style="padding:14px 0;color:#A5ADB7;font-style:italic;text-align:center;font-size:12px">Empty folder</div>'}
+            ${remaining > 0 ? `<div class="item" style="color:#A5ADB7;font-style:italic">+ ${remaining} more</div>` : ''}
+          </div>
+          ${pins.length > 0 ? `
+            <div class="actions">
+              <a class="btn"href="/api/acq/outreach-campaign/${encodeURIComponent(f.id)}"target="_blank"title="Multi-page PDF: one detailed dossier per tract (map + ownership + outreach + notes)">Campaign dossier PDF</a>
+            </div>
+          ` : ''}
+        </div>`;
+    }).join('');
+  } catch (e) {
+    document.getElementById('folders-grid').innerHTML =
+      `<div style="padding:40px;color:#c62828;grid-column:1/-1">Failed to load: ${escapeHtml(e.message)}</div>`;
+  }
+}
+load();
+
+</script>
+</body>
+</html>
+<script src="/static/js/acquisitions_analyses.js?v=2" defer></script>
 </body>
 </html>
