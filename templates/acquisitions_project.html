@@ -143,71 +143,998 @@
   </nav>
 
   <div id="main-content">
-    <div class="acqp-page">
-
-      <div style="display:flex;align-items:flex-start;gap:18px;flex-wrap:wrap">
-        <div style="flex:1;min-width:280px">
-          <div class="acq-eyebrow">LAND &middot; PROJECT ANALYSIS</div>
-          <h1 class="acq-title" id="acqp-name">Loading…</h1>
-          <p class="acq-sub" id="acqp-meta"></p>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;padding-top:22px">
-          <a class="acq-btn" href="/acquisitions">&larr; Map</a>
-          <button class="acq-btn primary" id="acqp-run">Run analysis</button>
-        </div>
+    
+<!-- ==== the standalone project page, ported verbatim ==== -->
+<!-- The original carried this in a <header> the portal shell replaces, but the
+     page script writes the project name into it, so the hook has to stay. -->
+<h1 class="acq-page-title"><span id="proj-name">Project</span></h1>
+<div class="wrap">
+  <div>
+    <div class="card">
+      <h2>Project</h2>
+      <label>Name</label>
+      <input id="proj-name-input" type="text">
+      <div style="margin-top:8px;display:flex;gap:6px">
+        <button class="ghost" id="btn-rename" style="flex:1">Save name</button>
+        <button class="ghost" id="btn-delete" style="color:#C62828;border-color:#C62828">Delete project</button>
       </div>
 
-      <div class="acqp-grid">
+      <h3>Tracts <button class="ghost" id="btn-add-tracts" style="float:right;font-size:10px;padding:3px 8px">+ Add more from map</button></h3>
+      <div id="tract-list" class="tract-list"></div>
 
-        <div class="acqp-card">
-          <div class="acqp-card-title">Assumptions</div>
-
-          <div class="acqp-label">Net-outs
-            <span class="acqp-hint">untick to keep the acreage</span></div>
-          <div id="acqp-netouts">
-            <label class="acqp-check"><input type="checkbox" id="no-flood" checked> Floodplain (100-yr)</label>
-            <label class="acqp-check"><input type="checkbox" id="no-wetlands" checked> Wetlands (NWI)</label>
-            <label class="acqp-check"><input type="checkbox" id="no-transmission" checked> Transmission easement</label>
-            <label class="acqp-check"><input type="checkbox" id="no-streams" checked> Stream buffers</label>
-            <label class="acqp-check"><input type="checkbox" id="no-pipelines" checked> Pipeline easements</label>
-          </div>
-
-          <div class="acqp-label" style="margin-top:14px">Infrastructure &amp; landscaping
-            <span class="acqp-hint">roads, plans, detention, landscaping</span></div>
-          <div class="acq-control" style="margin-top:4px">
-            <input id="infra-pct" type="number" min="0" max="90" step="1" value="30">
-          </div>
-
-          <div class="acqp-label" style="margin-top:16px">Density
-            <span class="acqp-hint">lots per net saleable acre</span></div>
-          <div class="acq-control" style="margin-top:4px">
-            <input id="acqp-density" type="number" min="0.5" max="20" step="0.1" value="4.5">
-          </div>
+      <h3>Yield mix <span style="color:#6B7B8B;font-weight:400;font-size:11px">(product types + allocation)</span></h3>
+      <div id="lot-types-table" style="font-size:11px">
+        <div style="display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:4px;font-size:10px;color:#6B7B8B;font-weight:600;text-transform:uppercase">
+          <div>Product</div><div style="text-align:right">Density (u/ac)</div><div style="text-align:right">Allocation %</div>
         </div>
-
-        <div class="acqp-card acqp-card--wide">
-          <div class="acqp-card-title">Gross to saleable</div>
-          <div id="acqp-ladder">
-            <div class="acq-empty">Run the analysis to build the ladder.</div>
-          </div>
+        <div id="lot-types-rows"></div>
+        <div style="display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:4px;margin-top:4px;padding-top:4px;border-top:1px solid #DDE3E8;font-weight:600">
+          <div>Total allocation</div><div></div><div id="lot-alloc-total" style="text-align:right">100%</div>
         </div>
+      </div>
+      <div id="yield-implied" style="font-size:11px;color:#6B7B8B;margin-top:6px"></div>
 
-        <div class="acqp-card acqp-card--wide">
-          <div class="acqp-card-title">Tracts</div>
-          <div id="acqp-tracts"><div class="acq-empty">Loading…</div></div>
-        </div>
-
+      <h3>Net-outs <span style="color:#6B7B8B;font-weight:400;font-size:11px">(untick to keep the acreage)</span></h3>
+      <div id="netout-toggles" style="font-size:11px">
+        <label style="display:flex;align-items:center;gap:7px;padding:3px 0;cursor:pointer">
+          <input type="checkbox" id="no-flood" checked style="width:auto;margin:0"> Floodplain (100-yr)</label>
+        <label style="display:flex;align-items:center;gap:7px;padding:3px 0;cursor:pointer">
+          <input type="checkbox" id="no-wetlands" checked style="width:auto;margin:0"> Wetlands (NWI)</label>
+        <label style="display:flex;align-items:center;gap:7px;padding:3px 0;cursor:pointer">
+          <input type="checkbox" id="no-transmission" checked style="width:auto;margin:0"> Transmission easement</label>
+        <label style="display:flex;align-items:center;gap:7px;padding:3px 0;cursor:pointer">
+          <input type="checkbox" id="no-streams" checked style="width:auto;margin:0"> Stream buffers</label>
+        <label style="display:flex;align-items:center;gap:7px;padding:3px 0;cursor:pointer">
+          <input type="checkbox" id="no-pipelines" checked style="width:auto;margin:0"> Pipeline easements</label>
+      </div>
+      <div class="field" style="margin-top:8px">
+        <label>Infrastructure &amp; landscaping %
+          <span style="color:#6B7B8B;font-weight:400;text-transform:none;letter-spacing:0;margin-left:4px"
+                title="Roads, plans, detention and landscaping come out of what survives the physical constraints. Applied after the net-outs above to give net saleable acreage.">&#9432;</span>
+        </label>
+        <input id="infra-pct" type="number" step="1" min="0" max="90" value="30">
       </div>
 
-      <div class="acq-status" id="acq-status" style="position:fixed"></div>
+      <div style="margin-top:8px">
+        <button class="primary"id="btn-analyze"style="width:100%">Run Acquisition Analysis</button>
+        <div id="analyze-status" class="status-msg"></div>
+      </div>
     </div>
   </div>
 
+  <div>
+    <div class="card" style="padding:0;position:relative">
+      <div id="map"></div>
+      <div id="map-legend" style="position:absolute;bottom:12px;right:12px;background:rgba(255,255,255,0.95);border:1px solid #DDE3E8;border-radius:6px;padding:8px 10px;font-size:11px;display:none;z-index:1000;box-shadow:0 2px 8px rgba(0,0,0,0.08)">
+        <div style="font-weight:600;margin-bottom:4px;color:#13344E">Constraint overlay</div>
+        <div id="map-legend-rows"></div>
+      </div>
+    </div>
+
+    <div class="card" id="analysis-card">
+      <h2>Acquisition Analysis</h2>
+      <div id="analysis-body" class="placeholder">Click <b>Run Acquisition Analysis</b> to compute constraints, net developable acreage, and yield estimates for this project.</div>
+    </div>
+
+    <div class="card" id="elev-card" style="display:none">
+      <h2>Elevation profile (combined tracts)</h2>
+      <div id="elev-body" class="placeholder">Loading elevation analysis…</div>
+    </div>
+
+    <div class="card" id="schools-card" style="display:none">
+      <h2>School district profile <span style="font-weight:400;font-size:11px;color:#6B7B8B">(NCES + TEA ratings)</span></h2>
+      <div id="schools-body" class="placeholder">Loading district profile…</div>
+    </div>
+
+    <div class="card" id="cbas-card" style="display:none">
+      <h2>Competition — new-home market <span style="font-weight:400;font-size:11px;color:#6B7B8B">(CBAS survey)</span></h2>
+      <div id="cbas-body" class="placeholder">Loading CBAS competitor data…</div>
+    </div>
+
+    <div class="card" id="amenities-card" style="display:none">
+      <h2>Nearby amenities</h2>
+      <div id="amenities-body" class="placeholder">Loading amenities from OpenStreetMap…</div>
+    </div>
+
+    <div class="card" id="roads-card" style="display:none">
+      <h2>Planned road projects</h2>
+      <div id="roads-body" class="placeholder">Loading TxDOT project data…</div>
+    </div>
+
+    <div class="card" id="news-card" style="display:none">
+      <h2>News & market intel <span style="font-weight:400;font-size:11px;color:#6B7B8B">(economic development, jobs, expansions)</span></h2>
+      <div id="news-body" class="placeholder">Pulling recent stories from Google News…</div>
+    </div>
+
+    <div class="card" id="market-card" style="display:none">
+      <h2>County demographics <span style="font-weight:400;font-size:11px;color:#6B7B8B">(Census ACS, broader area)</span></h2>
+      <div id="market-body" class="placeholder">Loading demographics…</div>
+    </div>
+
+    <div class="card" id="fred-card" style="display:none">
+      <h2>Economic indicators <span style="font-weight:400;font-size:11px;color:#6B7B8B">(FRED — Houston MSA + Texas + national)</span></h2>
+      <div id="fred-body" class="placeholder">Loading FRED data…</div>
+    </div>
+
+    <div class="card" id="memo-card" style="display:none;border:2px solid #13344E">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <h2 style="margin:0">Acquisition memo</h2>
+        <button class="ghost" onclick="printMemo()" style="padding:6px 14px;font-size:12px;white-space:nowrap">
+          Print / Save as PDF
+        </button>
+      </div>
+      <div id="memo-body" class="placeholder">Assembling…</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const PROJECT_ID = ;
+function esc(s){return String(s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function fmt(n, d){d=d==null?1:d;return (+n||0).toLocaleString('en-US',{maximumFractionDigits:d});}
+
+// Centroid of the project's tracts — the origin for every directions link.
+// Computed once and cached; `projectData` is a module-level let assigned in
+// loadProject(), so guard against being called before that resolves.
+let _projCentroid = null;
+function projectCentroid() {
+  if (_projCentroid) return _projCentroid;
+  const p = (typeof projectData !== 'undefined' && projectData) ? projectData : null;
+  if (!p || !p.tracts || !p.tracts.length) return null;
+  try {
+    const b = L.latLngBounds([]);
+    for (const t of p.tracts) {
+      if (t.geometry) b.extend(L.geoJSON(t.geometry).getBounds());
+    }
+    if (!b.isValid()) return null;
+    const c = b.getCenter();
+    _projCentroid = { lat: c.lat, lon: c.lng };
+    return _projCentroid;
+  } catch { return null; }
+}
+
+// Clickable distance → Google Maps driving directions from the project.
+// Degrades to a plain figure when the target has no coordinates.
+function distLink(miles, dir, lat, lon, label) {
+  if (miles == null) return '<span style="color:#A5ADB7">—</span>';
+  const txt = `${(+miles).toFixed(2)} mi${dir ? ' ' + esc(dir) : ''}`;
+  const from = projectCentroid();
+  if (lat == null || lon == null || !from) {
+    return `<span style="color:#F25929;font-weight:600">${txt}</span>`;
+  }
+  const url = `https://www.google.com/maps/dir/?api=1&origin=${from.lat},${from.lon}`
+            + `&destination=${lat},${lon}&travelmode=driving`;
+  return `<a href="${url}" target="_blank" rel="noopener"
+             title="Driving directions from the project${label ? ' to ' + esc(label) : ''}"
+             style="color:#F25929;font-weight:600;text-decoration:none;border-bottom:1px dotted #F25929">${txt} ↗</a>`;
+}
+
+const map = L.map('map').setView([30.0, -95.8], 10);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  { maxZoom: 19, attribution: 'Imagery © Esri' }).addTo(map);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+  { maxZoom: 19 }).addTo(map);
+
+let projectData = null;
+let tractsLayer = L.layerGroup().addTo(map);
+let constraintLayerGroup = L.layerGroup().addTo(map);   // floodplain, wetlands, streams, etc
+
+const CONSTRAINT_STYLES = {
+  floodplain:   { color: '#0040aa', fillColor: '#3380ff', fillOpacity: 0.40, weight: 1,  label: 'Floodplain (100-yr)' },
+  wetlands:     { color: '#005c2e', fillColor: '#33a06f', fillOpacity: 0.45, weight: 1,  label: 'Wetlands (NWI)' },
+  transmission: { color: '#9c27b0', weight: 3, opacity: 0.85, dashArray: '4,3',         label: 'Transmission' },
+  streams:      { color: '#1976d2', weight: 2, opacity: 0.85,                            label: 'Streams' },
+  pipelines:    { color: '#F25929', weight: 2, opacity: 0.85,                            label: 'Pipelines' },
+};
+
+function renderConstraintGeoms(constraintGeoms) {
+  constraintLayerGroup.clearLayers();
+  const legend = [];
+  for (const [key, fc] of Object.entries(constraintGeoms || {})) {
+    if (!fc) continue;
+    const style = CONSTRAINT_STYLES[key] || { color: '#333', weight: 1 };
+    L.geoJSON(fc, { style }).addTo(constraintLayerGroup);
+    legend.push(`<div style="display:flex;align-items:center;gap:6px;margin:2px 0"><span style="display:inline-block;width:12px;height:12px;background:${style.fillColor || style.color};border:1px solid ${style.color}"></span><span>${style.label}</span></div>`);
+  }
+  // Show/hide legend
+  const legendEl = document.getElementById('map-legend');
+  if (legend.length) {
+    document.getElementById('map-legend-rows').innerHTML = legend.join('');
+    legendEl.style.display = 'block';
+  } else {
+    legendEl.style.display = 'none';
+  }
+}
+
+async function loadProject() {
+  const r = await fetch(`/api/acq/projects/${PROJECT_ID}`);
+  const d = await r.json();
+  if (d.error) { alert('Failed to load: ' + d.error); return; }
+  projectData = d.project;
+  render();
+}
+
+function render() {
+  const p = projectData;
+  document.getElementById('proj-name').textContent = p.name;
+  document.getElementById('proj-name-input').value = p.name;
+  document.title = p.name + ' — Acquisitions GIS';
+
+  // Restore saved net-out switches so a re-analysis repeats the same basis.
+  const na = p.netout_assumptions || {};
+  for (const [id, key] of [['no-flood', 'flood'], ['no-wetlands', 'wetlands'],
+                           ['no-transmission', 'transmission'], ['no-streams', 'streams'],
+                           ['no-pipelines', 'pipelines']]) {
+    const el = document.getElementById(id);
+    if (el && na[key] !== undefined) el.checked = na[key] !== false;
+  }
+  const _ip = document.getElementById('infra-pct');
+  if (_ip && na.infrastructure_pct !== undefined) _ip.value = na.infrastructure_pct;
+
+  // Yield mix — 4 product types with density + allocation %
+  const ya = p.yield_assumptions || {};
+  let lotTypes = (ya.lot_types && ya.lot_types.length) ? ya.lot_types : [
+    {label: "40 FF", units_per_acre: 6.0, allocation_pct: 25},
+    {label: "50 FF", units_per_acre: 5.0, allocation_pct: 25},
+    {label: "60 FF", units_per_acre: 4.0, allocation_pct: 25},
+    {label: "70 FF", units_per_acre: 3.5, allocation_pct: 25},
+  ];
+  // Auto-clean legacy labels from older projects — strip the trailing
+  // "Small/Standard/Premium/Estate" descriptors that were in earlier defaults.
+  lotTypes = lotTypes.map(lt => ({
+    ...lt,
+    label: (lt.label || '').replace(/^(\d+\s*FF)\s*(Small|Standard|Premium|Estate)\b.*$/i, '$1').trim(),
+  }));
+  renderLotTypeRows(lotTypes);
+  window._lotTypes = lotTypes;
+  updateImpliedLot();
+
+  // Tract list
+  const tlist = document.getElementById('tract-list');
+  tlist.innerHTML = (p.tracts||[]).map(t => `
+    <div class="tract-row">
+      <span><b>${esc(t.owner_name || '(no owner)')}</b><br><span style="color:#6B7B8B">${esc(t.county||'')} · Prop ${esc(t.prop_id)}</span></span>
+      <span style="white-space:nowrap">${fmt(t.acres)} ac</span>
+    </div>
+  `).join('') || '<div class="placeholder">No tracts in this project.</div>';
+
+  // Map: draw tracts
+  tractsLayer.clearLayers();
+  const bounds = L.latLngBounds([]);
+  for (const t of (p.tracts||[])) {
+    if (!t.geometry) continue;
+    const layer = L.geoJSON(t.geometry, {
+      style: { color: '#F25929', weight: 2, fillColor: '#F25929', fillOpacity: 0.20 }
+    }).addTo(tractsLayer);
+    layer.bindPopup(`<b>${esc(t.owner_name)}</b><br>${fmt(t.acres)} ac · ${esc(t.county)}`);
+    bounds.extend(layer.getBounds());
+  }
+  if (bounds.isValid()) map.fitBounds(bounds.pad(0.2));
+
+  // Render cached analysis if present
+  if (p.analysis_cache) {
+    renderAnalysis(p.analysis_cache);
+    if (p.analysis_cache.constraint_geoms) renderConstraintGeoms(p.analysis_cache.constraint_geoms);
+
+    // Then load the context cards. Opening a saved project used to show the
+    // acreage ladder and nothing else — schools, CBAS, amenities, roads, news,
+    // market and FRED only ever loaded as a side effect of pressing Run
+    // Acquisition Analysis. So a project you had already analysed came back
+    // looking half-empty, and the fix was to re-run a minute of GIS queries you
+    // had already paid for.
+    //
+    // These are the same calls the analyse handler makes; each updates its own
+    // card independently and handles its own failure.
+    if (p.analysis_cache.union_geometry) loadElevation(p.analysis_cache.union_geometry);
+    loadSchools();
+    loadCbas();
+    loadAmenities();
+    loadRoads();
+    loadNews();
+    loadMarket();
+    loadFred();
+  }
+}
+
+// Add-more-tracts button: pulls latest results from the main map's last
+// search via /api/last-search and lets user pick which tracts to add.
+document.getElementById('btn-add-tracts').addEventListener('click', async () => {
+  try {
+    const r = await fetch('/api/acq/last-search');
+    const d = await r.json();
+    if (!d.ok || !d.layers || !d.layers.tracts || !d.layers.tracts.features) {
+      alert("No recent search results found.\\n\\nGo to the Map page, run a search, " +
+            "select tracts (shift+click on map or checkboxes), then come back and click 'Add more from map' " +
+            "— OR use the bulk-bar '+ Add to existing project' from the search results page.");
+      return;
+    }
+    const tracts = d.layers.tracts.features;
+    const existing = new Set((projectData.tracts || []).map(t => t.prop_id));
+    const available = tracts.filter(f => !existing.has(String((f.properties||{}).Prop_ID||'')));
+    if (!available.length) {
+      alert('All current search-result tracts are already in this project.');
+      return;
+    }
+    // Build a checkbox list in a prompt-style modal (simple)
+    const html = '<div style="max-height:50vh;overflow-y:auto;border:1px solid #DDE3E8;padding:8px;border-radius:6px">' +
+      available.map((f, i) => {
+        const x = f.properties || {};
+        return `<label style="display:block;padding:4px 0;font-size:12px;border-bottom:1px solid #F0F0F0"><input type="checkbox" data-idx="${i}" checked style="margin-right:6px">${esc(x.OWNER_NAME || '?')} · ${fmt(x.Acres,1)} ac · ${esc(x._county || '?')} · Prop ${esc(x.Prop_ID)}</label>`;
+      }).join('') + '</div>';
+    // Quick modal
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:10000;display:flex;align-items:center;justify-content:center';
+    overlay.innerHTML = `<div style="background:#FFF;border-radius:8px;padding:20px;max-width:600px;width:90%;max-height:80vh;overflow:auto">
+      <h3 style="margin:0 0 12px">Add tracts to "${esc(projectData.name)}"</h3>
+      <p style="margin:0 0 8px;font-size:13px;color:#6B7B8B">${available.length} tracts available from the last search. Uncheck any you don't want to add.</p>
+      ${html}
+      <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+        <button id="modal-cancel" class="ghost">Cancel</button>
+        <button id="modal-add" class="primary">Add selected</button>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+    document.getElementById('modal-cancel').onclick = () => overlay.remove();
+    document.getElementById('modal-add').onclick = async () => {
+      const checked = Array.from(overlay.querySelectorAll('input[type=checkbox]:checked'))
+                          .map(cb => available[parseInt(cb.dataset.idx)]);
+      if (!checked.length) { overlay.remove(); return; }
+      const payload = {
+        tracts: checked.map(f => ({
+          prop_id:    String(f.properties.Prop_ID || ''),
+          owner_name: f.properties.OWNER_NAME || '',
+          acres:      f.properties.Acres || 0,
+          county:     f.properties._county || '',
+          geometry:   f.geometry,
+        })),
+      };
+      overlay.remove();
+      const r2 = await fetch(`/api/acq/projects/${PROJECT_ID}/add-tracts`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const d2 = await r2.json();
+      if (!r2.ok || d2.error) { alert('Add failed: ' + (d2.error || r2.status)); return; }
+      alert(`Added ${d2.added} tract${d2.added===1?'':'s'} (${d2.skipped} duplicates skipped).\\nRe-running analysis…`);
+      projectData = d2.project;
+      render();
+      // Auto re-run analysis since geometry changed
+      document.getElementById('btn-analyze').click();
+    };
+  } catch (e) {
+    alert('Could not load last-search results: ' + e.message);
+  }
+});
+
+function renderAnalysis(a) {
+  const c = a.constraints || {};
+  const body = document.getElementById('analysis-body');
+  memoPut('analysis', a);
+
+  let constraintsHtml = '';
+  const rows = [
+    ['Floodplain (100-yr)', c.floodplain],
+    ['Wetlands (NWI)',      c.wetlands],
+    ['Transmission ROW',    c.transmission_row],
+    ['Stream buffers (50ft)', c.stream_buffers],
+    ['Pipeline easements (50ft)', c.pipeline_easements],
+  ];
+  let anyConstraintFailed = false;
+  for (const [name, x] of rows) {
+    if (!x) continue;
+    if (x.error) {
+      anyConstraintFailed = true;
+      // Make a failed layer unmistakable — a silent 0 would read as "no
+      // floodplain here" and quietly inflate net developable acreage.
+      constraintsHtml += `<div class="constraint-row" style="background:#FEF2F2">
+          <span>${esc(name)} <span style="background:#C62828;color:#FFF;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:700">DATA UNAVAILABLE</span></span>
+          <span class="err" style="font-size:10px" title="${esc(x.error)}">not counted in net developable</span>
+        </div>`;
+      continue;
+    }
+    constraintsHtml += `<div class="constraint-row"><span>${esc(name)}</span><span class="acres">${fmt(x.acres)} ac · ${fmt(x.pct,1)}%</span></div>`;
+  }
+  if (anyConstraintFailed) {
+    constraintsHtml += `<div style="background:#FEF2F2;border-left:3px solid #C62828;padding:8px 10px;margin-top:8px;font-size:11px;border-radius:4px">
+        <b>One or more constraint layers failed to load.</b>Net developable acreage is
+        <b>overstated</b> — the missing layers were not deducted. Re-run the analysis; these
+        public services (FEMA NFHL especially) intermittently drop connections under load.
+      </div>`;
+  }
+
+  // Gross -> constraints -> infrastructure -> saleable, shown as a ladder so the
+  // number the yield is built on is traceable rather than asserted.
+  // A layer that failed to load and a layer you deliberately kept both show as
+  // "not deducted", but they mean opposite things - one overstates the acreage
+  // without you knowing. Call the failure out in red.
+  const ladder = (a.netout_detail || []).map(n => {
+    const note = n.error
+      ? ` <span style="font-size:10px;color:#C62828;font-weight:700" title="${esc(n.reason || 'the service did not respond')}">layer unavailable — not deducted</span>`
+      : (n.applied ? '' : ' <span style="font-size:10px;color:#6B7B8B">(kept by override)</span>');
+    return `
+      <div class="constraint-row" style="${n.applied ? '' : 'opacity:.65'}">
+        <span>${esc(n.label)}${note}</span>
+        <span class="acres">${n.applied ? '-' : ''}${n.error ? '?' : fmt(n.acres)} ac</span>
+      </div>`;
+  }).join('');
+
+  body.innerHTML = `
+    <div class="kpi-grid">
+      <div class="kpi big"><div class="label">Gross</div><div class="value">${fmt(a.gross_acres)} ac</div></div>
+      <div class="kpi big"><div class="label">Net developable</div><div class="value">${fmt(a.net_developable_acres)} ac</div></div>
+      <div class="kpi big" style="background:#FFF4ED;border:1px solid #F25929">
+        <div class="label">Net saleable</div>
+        <div class="value" style="color:#F25929">${fmt(a.net_saleable_acres)} ac</div>
+      </div>
+      <div class="kpi"><div class="label">Saleable %</div><div class="value">${fmt(a.net_saleable_pct,1)}%</div></div>
+    </div>
+
+    <h3>Gross to saleable</h3>
+    <div class="constraint-row" style="font-weight:600"><span>Gross acreage</span><span class="acres">${fmt(a.gross_acres)} ac</span></div>
+    ${ladder}
+    <div class="constraint-row" style="font-weight:600;border-top:1px solid #DDE3E8">
+      <span>Net developable</span><span class="acres">${fmt(a.net_developable_acres)} ac</span></div>
+    <div class="constraint-row">
+      <span>Infrastructure &amp; landscaping (${fmt(a.infrastructure_pct,0)}%)
+        <span style="font-size:10px;color:#6B7B8B">roads, plans, detention, landscaping</span></span>
+      <span class="acres">-${fmt(a.infrastructure_acres)} ac</span></div>
+    <div class="constraint-row" style="font-weight:700;border-top:2px solid #F25929;color:#F25929">
+      <span>Net saleable</span><span class="acres">${fmt(a.net_saleable_acres)} ac</span></div>
+    <div style="font-size:11px;color:#6B7B8B;margin-top:6px">
+      Constraints are subtracted as a union, so overlapping layers are not double-counted.
+      Yield below runs off net saleable acreage.
+    </div>
+
+    <h3>Constraint breakdown</h3>
+    ${constraintsHtml}
+
+    <h3>Yield (pro-forma)</h3>
+    <div class="kpi-grid" style="grid-template-columns:2fr 1fr 1fr">
+      <div class="kpi" style="background:#FFF4ED;border:1px solid #F25929">
+        <div class="label">TOTAL LOTS</div>
+        <div class="value" style="font-size:32px;color:#F25929">${fmt(a.yield_estimates.total_lots, 0)}</div>
+        <div class="label" style="margin-top:2px">${fmt(a.net_developable_acres)} net dev ac · weighted ${a.yield_estimates.weighted_density} u/ac</div>
+      </div>
+      <div class="kpi"><div class="label">Net developable</div><div class="value">${fmt(a.net_developable_acres)} ac</div></div>
+      <div class="kpi"><div class="label">Weighted density</div><div class="value">${a.yield_estimates.weighted_density} u/ac</div></div>
+    </div>
+
+    <h3>Mix breakdown</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead>
+        <tr style="background:#13344E;color:#FFF">
+          <th style="text-align:left;padding:6px 8px">Product</th>
+          <th style="text-align:right;padding:6px 8px">Density</th>
+          <th style="text-align:right;padding:6px 8px">Allocation</th>
+          <th style="text-align:right;padding:6px 8px">Acres</th>
+          <th style="text-align:right;padding:6px 8px">Lots</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${(a.yield_estimates.breakdown || []).map(b => `
+          <tr style="border-bottom:1px solid #DDE3E8">
+            <td style="padding:5px 8px">${esc(b.label)}</td>
+            <td style="padding:5px 8px;text-align:right">${b.units_per_acre} u/ac</td>
+            <td style="padding:5px 8px;text-align:right">${fmt(b.allocation_pct,0)}%</td>
+            <td style="padding:5px 8px;text-align:right">${fmt(b.acres,1)}</td>
+            <td style="padding:5px 8px;text-align:right"><b>${fmt(b.lots,0)}</b></td>
+          </tr>
+        `).join('')}
+        <tr style="background:#FFF4ED;font-weight:600">
+          <td style="padding:6px 8px">Total</td>
+          <td style="padding:6px 8px"></td>
+          <td style="padding:6px 8px;text-align:right">${fmt(a.yield_estimates.total_allocation_pct, 0)}%</td>
+          <td style="padding:6px 8px;text-align:right">${fmt(a.net_developable_acres)}</td>
+          <td style="padding:6px 8px;text-align:right">${fmt(a.yield_estimates.total_lots, 0)}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="font-size:11px;color:#6B7B8B;margin-top:8px">Computed ${esc(a.computed_at)}. Re-run if you change tract list or assumptions.</div>
+  `;
+
+}
+
+document.getElementById('btn-rename').addEventListener('click', async () => {
+  const name = document.getElementById('proj-name-input').value.trim();
+  if (!name) return;
+  const r = await fetch(`/api/acq/projects/${PROJECT_ID}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  const d = await r.json();
+  if (d.ok) { projectData = d.project; render(); }
+});
+
+document.getElementById('btn-delete').addEventListener('click', async () => {
+  if (!confirm('Delete this project? The underlying tracts remain.')) return;
+  const r = await fetch(`/api/acq/projects/${PROJECT_ID}`, { method: 'DELETE' });
+  if (r.ok) { window.location.href = '/'; }
+});
+
+function renderLotTypeRows(lotTypes) {
+  const rowsEl = document.getElementById('lot-types-rows');
+  rowsEl.innerHTML = lotTypes.map((lt, i) => `
+    <div style="display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:4px;margin:2px 0">
+      <input type="text" data-lt-idx="${i}" data-lt-field="label" value="${(lt.label||'').replace(/"/g,'&quot;')}" style="padding:3px 6px">
+      <input type="number" data-lt-idx="${i}" data-lt-field="units_per_acre" value="${lt.units_per_acre||0}" step="0.1" min="0" max="50" style="padding:3px 6px;text-align:right">
+      <input type="number" data-lt-idx="${i}" data-lt-field="allocation_pct" value="${lt.allocation_pct||0}" step="5" min="0" max="100" style="padding:3px 6px;text-align:right">
+    </div>
+  `).join('');
+  rowsEl.querySelectorAll('input').forEach(inp => {
+    inp.addEventListener('input', (e) => {
+      const i = parseInt(e.target.dataset.ltIdx, 10);
+      const field = e.target.dataset.ltField;
+      const v = field === 'label' ? e.target.value : (parseFloat(e.target.value) || 0);
+      window._lotTypes[i][field] = v;
+      updateImpliedLot();
+    });
+  });
+  updateImpliedLot();
+}
+
+function updateImpliedLot() {
+  const lots = window._lotTypes || [];
+  const totalAlloc = lots.reduce((s, x) => s + (x.allocation_pct || 0), 0);
+  const weighted = lots.reduce((s, x) => s + ((x.allocation_pct || 0) / 100) * (x.units_per_acre || 0), 0);
+  document.getElementById('lot-alloc-total').textContent = totalAlloc.toFixed(0) + '%';
+  document.getElementById('lot-alloc-total').style.color = (totalAlloc === 100) ? '#2E7D32' : '#C62828';
+  document.getElementById('yield-implied').innerHTML =
+    `Weighted density: <b>${weighted.toFixed(2)} u/ac</b> across the mix. ` +
+    (totalAlloc !== 100 ? `<span style="color:#C62828">Allocation totals ${totalAlloc.toFixed(0)}% — should equal 100%</span>` : '');
+}
+
+function _readNetouts() {
+  const g = (id, d) => { const el = document.getElementById(id); return el ? el.checked : d; };
+  const pctEl = document.getElementById('infra-pct');
+  let pct = pctEl ? parseFloat(pctEl.value) : 30;
+  if (!isFinite(pct)) pct = 30;
+  return {
+    flood:        g('no-flood', true),
+    wetlands:     g('no-wetlands', true),
+    transmission: g('no-transmission', true),
+    streams:      g('no-streams', true),
+    pipelines:    g('no-pipelines', true),
+    infrastructure_pct: Math.max(0, Math.min(pct, 90)),
+  };
+}
+
+document.getElementById('btn-analyze').addEventListener('click', async () => {
+  await fetch(`/api/acq/projects/${PROJECT_ID}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ yield_assumptions: { lot_types: window._lotTypes },
+                           netout_assumptions: _readNetouts() }),
+  });
+  const statusEl = document.getElementById('analyze-status');
+  const btn = document.getElementById('btn-analyze');
+  btn.disabled = true; btn.textContent = '⏳ Analyzing…';
+  statusEl.textContent = 'Computing constraints + yield estimates (~10-30 sec)…';
+  try {
+    const r = await fetch(`/api/acq/projects/${PROJECT_ID}/analyze`, { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    renderAnalysis(d.analysis);
+    if (d.analysis.constraint_geoms) renderConstraintGeoms(d.analysis.constraint_geoms);
+    statusEl.textContent = 'Done. Loading elevation + submarket + communities + amenities + builders + news + market…';
+    // Kick off all data loads in parallel — they update their cards independently
+    // CBAS supplies communities + builders (real market data), so the old
+    // parcel-derived versions of those cards are gone.
+    loadElevation(d.analysis.union_geometry);
+    loadSchools();
+    loadCbas();
+    loadAmenities();
+    loadRoads();
+    loadNews();
+    loadMarket();
+    loadFred();
+  } catch (e) {
+    statusEl.innerHTML = `<span class="err">Analysis failed: ${esc(e.message)}</span>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Re-run Analysis';
+  }
+});
+
+let elevContourLayer = null;   // drawn contour lines on the map
+async function loadElevation(geom) {
+  const card = document.getElementById('elev-card');
+  const body = document.getElementById('elev-body');
+  card.style.display = 'block';
+  body.innerHTML = '<div class="placeholder">Sampling USGS 3DEP elevation across the project (~30 sec)…</div>';
+  try {
+    const r = await fetch('/api/acq/elevation-profile', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ geometry: geom }),
+    });
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+
+    // Render contour lines on the project map (semi-transparent gray, varying by level)
+    if (elevContourLayer) { try { map.removeLayer(elevContourLayer); } catch {} }
+    elevContourLayer = L.layerGroup().addTo(map);
+    if (d.contours && Array.isArray(d.contours)) {
+      const minE = d.min_ft, maxE = d.max_ft, range = maxE - minE || 1;
+      for (const c of d.contours) {
+        // Color: shade from light blue (low) to bright red (high)
+        const t = (c.level_ft - minE) / range;
+        const r2 = Math.round(60 + t * 195), g = Math.round(120 - t * 80), b = Math.round(200 - t * 180);
+        const color = `rgb(${r2},${g},${b})`;
+        const lines = c.lines || [];
+        for (const line of lines) {
+          L.polyline(line.map(([x, y]) => [y, x]), {
+            color, weight: 1.2, opacity: 0.75, interactive: false
+          }).addTo(elevContourLayer);
+        }
+      }
+    }
+
+    // Mark highest + lowest points
+    if (d.highest_latlon) {
+      L.marker(d.highest_latlon, {
+        icon: L.divIcon({ className: '', html: `<div style="background:#C62828;color:#FFF;font-size:10px;padding:2px 5px;border-radius:3px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.3)">▲ HIGH ${fmt(d.highest_ft,0)}ft</div>`, iconAnchor: [0, 10] })
+      }).addTo(elevContourLayer);
+    }
+    if (d.lowest_latlon) {
+      L.marker(d.lowest_latlon, {
+        icon: L.divIcon({ className: '', html: `<div style="background:#1976D2;color:#FFF;font-size:10px;padding:2px 5px;border-radius:3px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.3)">▼ LOW ${fmt(d.lowest_ft,0)}ft</div>`, iconAnchor: [0, 10] })
+      }).addTo(elevContourLayer);
+    }
+
+    const slope = d.slope_mean_pct ?? 0;
+    const slopeLabel = slope < 0.5 ? 'very flat (engineered grading needed)'
+                      : slope < 2.0 ? 'gentle (standard grading)'
+                      : slope < 5.0 ? 'moderate (engineered grading)'
+                      : 'significant relief';
+    body.innerHTML = `
+      <div class="kpi-grid">
+        <div class="kpi"><div class="label">Elevation range</div><div class="value">${fmt(d.range_ft)} ft</div></div>
+        <div class="kpi"><div class="label">Min / Max</div><div class="value" style="font-size:14px">${fmt(d.min_ft)} – ${fmt(d.max_ft)} ft</div></div>
+        <div class="kpi"><div class="label">Mean slope</div><div class="value">${fmt(slope, 2)}%</div></div>
+        <div class="kpi"><div class="label">Max slope</div><div class="value">${fmt(d.slope_max_pct ?? 0, 2)}%</div></div>
+        <div class="kpi"><div class="label">Drainage</div><div class="value" style="font-size:13px">${esc(d.drainage_dir || '—')}</div></div>
+        <div class="kpi"><div class="label">Median elev</div><div class="value">${fmt(d.median_ft)} ft</div></div>
+      </div>
+      <div style="background:#FFF4ED;border-left:3px solid #F25929;padding:8px 12px;margin-top:8px;border-radius:4px;font-size:13px">
+        <b>Site character:</b> ${esc(slopeLabel)}. Contour interval ${d.contour_interval_ft}ft.
+      </div>
+      <div style="font-size:11px;color:#6B7B8B;margin-top:8px">Sampled ${d.sample_count || '?'} points via USGS 3DEP. Contours + high/low markers now visible on the project map above. Toggle them off by reloading the analysis.</div>
+    `;
+  } catch (e) {
+    body.innerHTML = `<div class="placeholder err">Elevation failed: ${esc(e.message)}</div>`;
+  }
+}
+
+async function loadMarket() {
+  const card = document.getElementById('market-card');
+  const body = document.getElementById('market-body');
+  card.style.display = 'block';
+  body.innerHTML = '<div class="placeholder">Pulling Census ACS county-level demographics…</div>';
+  try {
+    const r = await fetch(`/api/acq/projects/${PROJECT_ID}/market`);
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    const cur = d.current || {};
+    const gro = d.growth || {};
+    function dollar(v) { return v != null ? '$' + fmt(v, 0) : '—'; }
+    function num(v) { return v != null ? fmt(v, 0) : '—'; }
+    function pct(v) { return v != null ? fmt(v, 1) + '%' : '—'; }
+    function trend(t) { return t != null ? ` <span style="color:${t>=0?'#2E7D32':'#C62828'};font-size:10px">${t>=0?'▲':'▼'} ${Math.abs(t).toFixed(1)}% 5yr</span>` : ''; }
+    body.innerHTML = `
+      <div style="font-size:12px;color:#6B7B8B;margin-bottom:8px">${esc(d.county_name)} County · Census ACS ${cur.year}</div>
+
+      <h3>Population & households</h3>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="label">Population</div><div class="value">${num(cur.population)}</div><div class="label" style="margin-top:2px">${trend(gro.population_total_pct)} ${gro.population_cagr_pct!=null?'('+fmt(gro.population_cagr_pct,1)+'% CAGR)':''}</div></div>
+        <div class="kpi"><div class="label">Median age</div><div class="value">${cur.median_age != null ? cur.median_age.toFixed(1) : '—'}</div></div>
+        <div class="kpi"><div class="label">Households</div><div class="value">${num(cur.households)}</div></div>
+        <div class="kpi"><div class="label">Avg household size</div><div class="value">${cur.avg_household_size != null ? cur.avg_household_size.toFixed(2) : '—'}</div></div>
+      </div>
+
+      <h3>Income</h3>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="label">Median household income</div><div class="value">${dollar(cur.median_household_income)}</div></div>
+        <div class="kpi"><div class="label">Per capita income</div><div class="value">${dollar(cur.per_capita_income)}</div></div>
+      </div>
+
+      <h3>Housing</h3>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="label">Median home value</div><div class="value">${dollar(cur.median_home_value)}</div><div class="label" style="margin-top:2px">${trend(gro.home_value_total_pct)} ${gro.home_value_cagr_pct!=null?'('+fmt(gro.home_value_cagr_pct,1)+'% CAGR)':''}</div></div>
+        <div class="kpi"><div class="label">Median rent</div><div class="value">${dollar(cur.median_rent)}</div></div>
+        <div class="kpi"><div class="label">Housing units</div><div class="value">${num(cur.housing_units)}</div></div>
+        <div class="kpi"><div class="label">Owner-occupancy</div><div class="value">${pct(cur.owner_occupancy_pct)}</div></div>
+        <div class="kpi"><div class="label">Vacancy rate</div><div class="value">${pct(cur.vacancy_pct)}</div></div>
+        <div class="kpi"><div class="label">Owner-occupied units</div><div class="value">${num(cur.owner_occupied)}</div></div>
+      </div>
+
+      <h3>Workforce & education</h3>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="label">Employed</div><div class="value">${num(cur.employed)}</div><div class="label" style="margin-top:2px">${trend(gro.employed_total_pct)}</div></div>
+        <div class="kpi"><div class="label">% Bachelor's or higher (25+)</div><div class="value">${pct(cur.pct_bachelors_or_higher)}</div></div>
+      </div>
+
+      <div style="font-size:11px;color:#6B7B8B;margin-top:8px">Sources: ${esc((d.sources || []).join(' · '))}.</div>
+    `;
+  } catch (e) {
+    body.innerHTML = `<div class="placeholder err">Market data failed: ${esc(e.message)}</div>`;
+  }
+}
+
+
+// Unfinished sections stay off until their assumptions are settled.
+const SHOW_DEMAND_SECTIONS = false;
+const SHOW_ACQUISITION_MEMO = false;
+
+async function loadAmenities() {
+  const card = document.getElementById('amenities-card');
+  const body = document.getElementById('amenities-body');
+  card.style.display = 'block';
+  body.innerHTML = '<div class="placeholder">Querying OpenStreetMap for nearby grocery, schools, hospitals, parks…</div>';
+  try {
+    const r = await fetch(`/api/acq/projects/${PROJECT_ID}/amenities?radius_mi=5`);
+    const d = await r.json();
+    if (!r.ok || d.error) {
+      body.innerHTML = `<div class="placeholder err">Amenities lookup failed: ${esc(d.error || ('HTTP ' + r.status))}</div>`;
+      return;
+    }
+    function renderList(title, items) {
+      items = (items || []).filter(x => {
+        const nm = String(x.name || '').trim().toLowerCase();
+        return nm && nm !== '(unnamed)' && nm !== 'unnamed' && nm !== 'unknown';
+      });
+      if (!items || !items.length) {
+        return `<div style="margin-bottom:12px"><h3>${esc(title)}</h3>
+                <div style="font-size:11px;color:#A5ADB7">None found.</div></div>`;
+      }
+      return `
+        <div style="margin-bottom:14px">
+          <h3>${esc(title)}</h3>
+          <div style="font-size:11px;max-height:200px;overflow-y:auto;border:1px solid #DDE3E8;border-radius:4px">
+            ${items.map(x => {
+              const nm = esc(String(x.name || '').trim());
+              // OSM tags brand alongside name and they're usually identical
+              // ("H-E-B (H-E-B)"); only show brand when it says something new.
+              const b = (x.brand || '').trim();
+              const brandLine = (b && b.toLowerCase() !== (x.name || '').toLowerCase())
+                ? ` <span style="color:#6B7B8B">${esc(b)}</span>` : '';
+              return `
+                <div style="padding:5px 8px;border-bottom:1px solid #F0F0F0;display:flex;justify-content:space-between;align-items:center">
+                  <span><b>${nm}</b>${brandLine}</span>
+                  <span>${distLink(x.distance_mi, x.direction, x.lat, x.lon, x.name)}</span>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }
+    // Commute & access leads the card: for an outer-ring tract, distance to the
+    // freeway moves lot pricing more than any store does, so it shouldn't sit
+    // below a list of parks.
+    function accessStrip() {
+      const hw = d.highways || [];
+      if (!hw.length && d.nearest_ramp_mi == null) return '';
+      const primary = hw[0];
+      const tile = (label, value, sub) => `
+        <div class="kpi">
+          <div class="label">${label}</div>
+          <div class="value" style="font-size:18px">${value}</div>
+          ${sub ? `<div class="label" style="margin-top:2px">${sub}</div>` : ''}
+        </div>`;
+      return `
+        <div style="margin-bottom:14px">
+          <h3>Commute &amp; access</h3>
+          <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
+            ${primary ? tile('Nearest freeway',
+                `<span style="color:#F25929">${esc(primary.ref)}</span>`,
+                `${primary.distance_mi} mi ${esc(primary.direction)}${primary.name ? ' · ' + esc(primary.name) : ''}`) : ''}
+            ${d.nearest_ramp_mi != null ? tile('Nearest on-ramp', d.nearest_ramp_mi + ' mi', 'closest interchange') : ''}
+            ${(d.airports && d.airports.length) ? tile('Airport',
+                esc(d.airports[0].iata || '—'),
+                `${d.airports[0].distance_mi} mi · ${esc(d.airports[0].name)}`) : ''}
+          </div>
+          ${hw.length ? `
+            <div style="font-size:11px;max-height:150px;overflow-y:auto;border:1px solid #DDE3E8;border-radius:4px;margin-top:8px">
+              ${hw.map(h => `
+                <div style="padding:5px 8px;border-bottom:1px solid #F0F0F0;display:flex;justify-content:space-between;align-items:center">
+                  <span><b>${esc(h.ref)}</b>${h.name ? ` <span style="color:#6B7B8B">${esc(h.name)}</span>` : ''}
+                    ${h.toll ? '<span style="background:#F59E0B;color:#FFF;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;margin-left:4px">TOLL</span>' : ''}</span>
+                  <span>${distLink(h.distance_mi, h.direction, h.lat, h.lon, h.ref)}</span>
+                </div>`).join('')}
+            </div>` : ''}
+          ${(d.park_ride && d.park_ride.length) ? `
+            <div style="font-size:11px;color:#6B7B8B;margin-top:4px">
+              Nearest park &amp; ride: <b>${esc(d.park_ride[0].name)}</b> ${distLink(d.park_ride[0].distance_mi, d.park_ride[0].direction, d.park_ride[0].lat, d.park_ride[0].lon, d.park_ride[0].name)}
+            </div>` : ''}
+        </div>`;
+    }
+
+    // At full buildout: what the trade area becomes, and which commercial uses
+    // that population would support that aren't here yet.
+    function buildoutStrip() {
+      const b = d.buildout || {};
+      if (!b.population_now && !b.rooftops_at_buildout) return '';
+      const dm = b.demographics || {};
+      return `
+        <div style="margin-bottom:14px">
+          <h3>At full buildout</h3>
+          <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+            <div class="kpi" style="background:#FFF4ED;border:1px solid #F25929">
+              <div class="label">Population at buildout</div>
+              <div class="value" style="color:#F25929">${fmt(b.population_at_buildout,0)}</div>
+              <div class="label" style="margin-top:2px">${fmt(b.population_now,0)} today${b.growth_pct != null ? ` · +${b.growth_pct}%` : ''}</div>
+            </div>
+            <div class="kpi">
+              <div class="label">Rooftops at buildout</div>
+              <div class="value">${fmt(b.rooftops_at_buildout,0)}</div>
+              <div class="label" style="margin-top:2px">${fmt(b.rooftops_now,0)} today · ${fmt(b.lots_remaining,0)} to build</div>
+            </div>
+            <div class="kpi">
+              <div class="label">Years to buildout</div>
+              <div class="value">${b.years_to_buildout != null ? b.years_to_buildout : '—'}</div>
+              <div class="label" style="margin-top:2px">at ${fmt(b.annual_closings,0)} closings/yr</div>
+            </div>
+            <div class="kpi">
+              <div class="label">Avg household</div>
+              <div class="value">${b.avg_household_size != null ? b.avg_household_size : '—'}</div>
+              <div class="label" style="margin-top:2px">${esc(b.household_size_source || '')}</div>
+            </div>
+          </div>
+          ${(dm.median_household_income || dm.median_home_value) ? `
+            <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-top:6px">
+              <div class="kpi"><div class="label">Median HH income</div><div class="value">$${fmt(dm.median_household_income,0)}</div></div>
+              <div class="kpi"><div class="label">Median home value</div><div class="value">$${fmt(dm.median_home_value,0)}</div></div>
+              <div class="kpi"><div class="label">Median age</div><div class="value">${dm.median_age != null ? dm.median_age : '—'}</div></div>
+              <div class="kpi"><div class="label">Households today</div><div class="value">${fmt(dm.households,0)}</div></div>
+            </div>` : ''}
+          <div style="font-size:11px;color:#6B7B8B;margin-top:6px">
+            Rooftops today are ${esc(b.rooftops_source || 'n/a')} within ${d.radius_mi} mi
+            ${b.cbas_occupied ? `(CBAS tracks ${fmt(b.cbas_occupied,0)} of these in actively-selling communities)` : ''};
+            growth is the remaining CBAS lot pipeline. Population from ${esc(b.population_basis || 'n/a')}${dm.tracts ? ` across ${dm.tracts} tracts, ACS ${dm.year}` : ''}
+            at ${b.avg_household_size} per home.
+          </div>
+        </div>`;
+    }
+
+    // Commercial gap: what this population supports vs what exists.
+    function opportunityBlock() {
+      const ops = d.opportunities || [];
+      if (!ops.length) return '';
+      const real = ops.filter(o => o.opportunity && !o.unknown);
+      return `
+        <div style="margin-bottom:14px;border:1px solid #13344E;border-radius:6px;padding:12px">
+          <h3 style="margin-top:0">Commercial gaps &amp; opportunities</h3>
+          ${real.length ? `
+            <div style="font-size:12px;margin-bottom:10px;line-height:1.6">
+              At full buildout this trade area is short:
+              ${real.slice(0,4).map(o =>
+                `<b>${esc(o.use.toLowerCase())}</b> (supports ${o.supported_at_buildout}, has ${o.existing})`).join(' · ')}.
+            </div>` : `
+            <div style="font-size:12px;margin-bottom:10px">
+              No material retail shortfall at buildout — the existing commercial base covers projected demand.
+            </div>`}
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead>
+              <tr style="background:#13344E;color:#FFF">
+                <th style="text-align:left;padding:6px 8px">Use</th>
+                <th style="text-align:right;padding:6px 8px">Within ${d.radius_mi} mi</th>
+                <th style="text-align:right;padding:6px 8px">Supported today</th>
+                <th style="text-align:right;padding:6px 8px">Supported at buildout</th>
+                <th style="text-align:right;padding:6px 8px">Gap</th>
+                <th style="text-align:center;padding:6px 8px" title="How consistent the ratio was across the six reference areas">Consistency</th>
+                <th style="text-align:left;padding:6px 8px">Measured benchmark</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${ops.map(o => {
+                const cc = o.confidence === 'high' ? '#2E7D32'
+                         : o.confidence === 'medium' ? '#F59E0B' : '#A5ADB7';
+                return `
+                <tr style="border-bottom:1px solid #DDE3E8;${o.opportunity && !o.unknown ? 'background:#FFF9F5' : ''}">
+                  <td style="padding:5px 8px"><b>${esc(o.use)}</b></td>
+                  <td style="padding:5px 8px;text-align:right">${o.unknown ? '<span style="color:#A5ADB7">partial</span>' : fmt(o.existing,0)}</td>
+                  <td style="padding:5px 8px;text-align:right">${o.supported_now}</td>
+                  <td style="padding:5px 8px;text-align:right"><b>${o.supported_at_buildout}</b></td>
+                  <td style="padding:5px 8px;text-align:right">
+                    ${o.gap_at_buildout > 0
+                      ? `<b style="color:${o.confidence === 'low' ? '#A5ADB7' : '#F25929'}">+${o.gap_at_buildout}</b>`
+                      : `<span style="color:#2E7D32">${o.gap_at_buildout}</span>`}
+                  </td>
+                  <td style="padding:5px 8px;text-align:center">
+                    <span style="color:${cc};font-size:10px;font-weight:700">${esc(String(o.confidence).toUpperCase())}</span>
+                  </td>
+                  <td style="padding:5px 8px;font-size:11px;color:#6B7B8B">
+                    1 per ${fmt(o.rooftops_per_facility,0)} rooftops · ${o.spread}× spread · ${esc(o.note)}
+                  </td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+          <div style="font-size:11px;color:#6B7B8B;margin-top:6px">
+            Benchmarks are measured, not assumed: six built-out Houston suburbs (Cinco Ranch, Bridgeland, Riverstone,
+            Spring/Klein, Shadow Creek, Aliana), counting the same OSM categories within 5 mi against the OSM building
+            footprint count in that submarket, taking the median. <b>Spread</b> is max ÷ min across those six — low spread
+            means the ratio is a real requirement, high spread means it varies too much to act on, which is why
+            hospitals carry no gap flag. Rooftops here are building footprints, the same denominator used above.
+          </div>
+        </div>`;
+    }
+
+    // NOTE: schools intentionally omitted here — the School District Profile
+    // card covers them properly (district roster + distance + TEA ratings).
+    body.innerHTML =
+      accessStrip() +
+      // At-full-buildout and Commercial-gaps are built but not shown: the
+      // population and retail-ratio assumptions behind them still need work and
+      // would invite questions in a presentation. Flip SHOW_DEMAND_SECTIONS to
+      // bring them back - the code and the API fields are untouched.
+      (SHOW_DEMAND_SECTIONS ? buildoutStrip() + opportunityBlock() : '') +
+      renderList('Grocery stores', d.grocery_stores) +
+      renderList('Retail anchors', d.retail_anchors) +
+      renderList('Hospitals', d.hospitals) +
+      renderList('Pharmacies', d.pharmacies) +
+      renderList('Parks', d.parks) +
+      renderList('Fuel', d.fuel) +
+      `<div style="font-size:11px;color:#6B7B8B;margin-top:6px">Source: ${esc(d.source)}</div>`;
+    memoPut('amenities', d);
+  } catch (e) {
+    body.innerHTML = `<div class="placeholder err">Amenities load failed: ${esc(e.message)}</div>`;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Acquisition memo
+// ---------------------------------------------------------------------------
+// Every card fetches its own slice; the memo synthesises them. Each loader
+// stashes its payload here on success and asks for a re-render, so the memo
+// fills in progressively and never blocks on the slowest source.
+const MEMO = {};
+let _memoTimer = null;
+function memoPut(key, data) {
+  MEMO[key] = data;
+  clearTimeout(_memoTimer);
+  _memoTimer = setTimeout(renderMemo, 400);
+}
+
+// Print the memo as its own document rather than window.print() on the page —
+// the project page carries maps, nav and a dozen other cards that would either
+// need print-hiding rules or come out as noise. This writes just the memo into
+// a new window with print styling, so "Save as PDF" produces a clean deliverable.
+window.printMemo = function () {
+  const body = document.getElementById('memo-body');
+  if (!body) return;
+  const p = projectData || {};
+  const stamp = new Date().toLocaleDateString('en-US',
+    { year: 'numeric', month: 'long', day: 'numeric' });
+  const w = window.open('', '_blank');
+  if (!w) { alert('Allow pop-ups for this site to print the memo.'); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8">
+    <title>Acquisition Memo — ${esc(p.name || 'Project')}</title>
+    </head><body>
+    <div class="doc-head">
+      <div>
+        <div class="brand">Ember Group — Acquisitions</div>
+        <h1>${esc(p.name || 'Project')}</h1>
+      </div>
+      <div class="meta">Acquisition memo<br>${esc(stamp)}</div>
+    </div>
+    ${body.innerHTML}
+    <div class="doc-foot">
+      Generated from the Acquisitions GIS platform. Figures derive from CBAS, Census ACS, TxDOT,
+      NCES/TEA, OpenStreetMap and FEMA/USGS as cited above.
+    </div>
+</div>
 </div>
 
 {% include "_partials/_account_modal.html" %}
 
 <script>window.ACQ_PROJECT_ID = {{ project_id | tojson }};</script>
-<script src="/static/js/acquisitions_project.js?v=1" defer></script>
+<script>
+  // Hoisted out of the page script so the JS can stay a static file.
+  window.ACQ_PROJECT_ID = {{ project_id|tojson }};
+  window.ACQ_USER_NAME  = {{ (user.name if user else '') | tojson }};
+</script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/static/js/acquisitions_project.js?v=2" defer></script>
 </body>
 </html>
