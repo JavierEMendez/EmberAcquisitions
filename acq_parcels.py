@@ -792,7 +792,13 @@ def bootstrap_county(county_fips: str, county_name: str, on_progress=None,
         except Exception:
             poly_test = poly
 
-        with _db_lock, _conn() as c:
+    # The connection stays open for the run, but the LOCK is taken only around
+    # each write. It used to wrap this whole loop: _db_lock is a plain
+    # threading.Lock and every other cache operation takes it, so for the hours
+    # a county takes to load, every search and status check blocked on it and
+    # the app stopped answering. Serialising writers is a per-batch concern.
+        c = _conn()
+        try:
             if resuming:
                 tile_failures += prior_failures
                 # Keep what is already loaded, and seed the dedup set from it so
@@ -821,8 +827,9 @@ def bootstrap_county(county_fips: str, county_name: str, on_progress=None,
                 for feats, failed in _iter_tile_features(tile_bbox, FIELDS, label=label):
                     tile_failures += failed
                     fetched += len(feats)
-                    ins, skip = _insert_tile_batch(c, feats, poly_test, seen,
-                                                   county_fips, county_name, now)
+                    with _db_lock:
+                        ins, skip = _insert_tile_batch(c, feats, poly_test, seen,
+                                                       county_fips, county_name, now)
                     inserted += ins
                     tile_ins += ins
                     tile_fail += failed
@@ -835,17 +842,21 @@ def bootstrap_county(county_fips: str, county_name: str, on_progress=None,
                     # STALE_LOADING_SEC -- at which point another process opening
                     # the cache would declare this live load dead. Measured at
                     # 520s between beats on Harris before this moved inside.
-                    c.execute("UPDATE cache_meta SET loading_heartbeat=? "
-                              " WHERE county_fips=?", (int(time.time()), county_fips))
+                    with _db_lock:
+                        c.execute("UPDATE cache_meta SET loading_heartbeat=? "
+                                  " WHERE county_fips=?",
+                                  (int(time.time()), county_fips))
 
                 # Record the tile as done only once its batches are committed,
                 # so an interruption mid-tile re-fetches that tile rather than
                 # skipping a partial one.
-                c.execute("""
-                    INSERT OR REPLACE INTO cache_tiles
-                    (county_fips, grid_sig, tile_index, parcels, failures, done_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (county_fips, grid_sig, i, tile_ins, tile_fail, int(time.time())))
+                with _db_lock:
+                    c.execute("""
+                        INSERT OR REPLACE INTO cache_tiles
+                        (county_fips, grid_sig, tile_index, parcels, failures, done_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (county_fips, grid_sig, i, tile_ins, tile_fail,
+                          int(time.time())))
 
                 if on_progress:
                     pct = 5 + int(90 * (i + 1) / max(1, len(tiles)))
@@ -874,6 +885,11 @@ def bootstrap_county(county_fips: str, county_name: str, on_progress=None,
                     status=excluded.status,
                     loading_heartbeat=NULL
             """, (county_fips, county_name, county_fips, now, now, inserted, final_status))
+        finally:
+            try:
+                c.close()
+            except Exception:
+                pass
 
         elapsed = round(time.time() - t0, 1)
         msg = (f"{county_name}: {inserted:,} parcels in {elapsed}s "
