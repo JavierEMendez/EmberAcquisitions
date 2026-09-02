@@ -500,12 +500,18 @@ a.acq-btn:hover { text-decoration: none; }
 #acq-root{
   --ember-orange:       var(--eax-accent);
   --ember-orange-hover: #D94414;
-  /* These are panel FILLS, not text — eleven of their twelve uses are a
-     `background`. Mapping them to ink painted the tract-results list navy with
-     navy text on it. On paper they become recessed surfaces instead. */
-  --ember-blue:         var(--eax-surface);
-  --ember-blue-700:     var(--eax-bg-2);
-  --ember-blue-900:     var(--eax-bg);
+  /* These are dark fills carrying white text — popup buttons, owner-row
+     actions, the address bar, panel headers. Seven rules pair them with
+     `color:#FFF`, so they must stay dark or the label disappears into the
+     fill; mapping them to surfaces made every popup button white on white.
+
+     Two places use them as a container background instead, where a dark fill
+     would be wrong: the tract-results list and .folder-item. Those are
+     overridden explicitly below rather than by bending the variable, which is
+     what caused the flip-flop. */
+  --ember-blue:         var(--eax-ink-2);
+  --ember-blue-700:     var(--eax-ink);
+  --ember-blue-900:     var(--eax-ink);
   --gray-50:            var(--eax-bg);
   --gray-100:           var(--eax-bg-2);
   --gray-200:           #E7DFD3;
@@ -993,3 +999,29 @@ body.sidebar-collapsed #acq-root #sidebar-toggle{
   border: 1px solid var(--eax-line) !important;
 }
 #acq-root #tract-results-list .tract-row{ color: var(--eax-ink); }
+
+/* The two container uses of the blue variables, which need paper rather than
+   the dark fill the buttons need. */
+#acq-root #tract-results-list{
+  background: var(--eax-bg-2) !important;
+  border: 1px solid var(--eax-line) !important;
+}
+#acq-root .folder-item{
+  background: var(--eax-surface) !important;
+  border: 1px solid var(--eax-line);
+  color: var(--eax-ink);
+}
+/* Popup and owner-row buttons: dark chip, white label, Ember orange on hover —
+   the same affordance they had on the original rail. */
+#acq-root .popup-actions button,
+#acq-root .owner-row-actions button,
+#acq-root .owner-row-actions a{
+  background: var(--eax-ink-2) !important;
+  color: #FFF !important;
+}
+#acq-root .popup-actions button:hover,
+#acq-root .owner-row-actions button:hover,
+#acq-root .owner-row-actions a:hover{
+  background: var(--eax-accent) !important;
+  color: var(--eax-accent-fg) !important;
+}
