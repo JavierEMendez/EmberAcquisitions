@@ -14,6 +14,8 @@ callables it needs so this module never imports app.py, which would be circular.
 from flask import (Blueprint, request, jsonify, session, redirect,
                    render_template, url_for, send_file)
 import datetime
+import time                    # explicit: `from acq_gis import *` below
+                               # must not be what supplies this name
 import io as _io
 
 from acq_gis import *            # noqa: F401,F403 - see the docstring
@@ -761,6 +763,13 @@ def acquisitions_project_page(pid):
     )
 
 
+# Status is polled every 5s by the admin page and costs a multi-second scan of
+# a 3M-row table, so overlapping polls share one result. Bootstraps run for
+# hours; a figure a few seconds old is not misleading. `?fresh=1` bypasses it.
+_STATUS_TTL = 15.0
+_CACHE_STATUS_MEMO = {"at": 0.0, "payload": None}
+
+
 @acq_bp.route("/api/acq/cache/status")
 @_login_required
 def api_acq_cache_status():
@@ -773,6 +782,30 @@ def api_acq_cache_status():
     # app it came from — expect it under `counties`, alongside the orphan count
     # and any bootstrap in flight. Returning the raw list made the panel render
     # an empty table against a fully populated cache.
+    # The page polls this every 5s while a bootstrap runs, so it has to be
+    # cheap. It was not: cache_status() already runs a per-county anti-join for
+    # its `unindexed` figure, and this handler then called rtree_missing_count()
+    # which runs the SAME anti-join across the whole table -- 47s on its own
+    # against 3M parcels, on top of cache_status()'s own 8s. At ~58s a response
+    # and a poll every 5s, a dozen of these were in flight at once against two
+    # workers of four threads, which starved every other request in the app and
+    # eventually took longer than gunicorn's timeout: the worker was killed and
+    # Railway answered "upstream error", which is not JSON and so surfaced as a
+    # parse error rather than as a timeout.
+    #
+    # The total is just the sum of the per-county numbers already computed, so
+    # the second scan bought nothing. The memo below then keeps overlapping
+    # polls off the database entirely; a bootstrap takes hours, so a status
+    # figure up to STATUS_TTL seconds old is not misleading.
+    now = time.time()
+    fresh = request.args.get("fresh") in ("1", "true", "yes")
+    memo = _CACHE_STATUS_MEMO
+    if not fresh and memo["payload"] is not None and now - memo["at"] < _STATUS_TTL:
+        out = dict(memo["payload"])
+        out["in_progress"] = dict(_cache_bootstrap_status)   # always live
+        out["cached_for"] = round(now - memo["at"], 1)
+        return jsonify(out)
+
     try:
         counties = parcel_cache.cache_status()
     except Exception as e:
@@ -782,16 +815,18 @@ def api_acq_cache_status():
         orphans = parcel_cache.rtree_orphan_count()
     except Exception:
         orphans = 0
-    try:
-        unindexed = parcel_cache.rtree_missing_count()
-    except Exception:
-        unindexed = 0
-    return jsonify({
+    unindexed = sum(int(c.get("unindexed") or 0) for c in counties)
+
+    payload = {
         "counties": counties,
         "rtree_orphans": orphans,
         "rtree_unindexed": unindexed,
-        "in_progress": dict(_cache_bootstrap_status),
-    })
+    }
+    memo["at"], memo["payload"] = now, payload
+    out = dict(payload)
+    out["in_progress"] = dict(_cache_bootstrap_status)
+    out["cached_for"] = 0
+    return jsonify(out)
 
 
 # ══════════════════════════════════════════════════════════════════════════
