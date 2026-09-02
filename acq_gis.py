@@ -976,7 +976,22 @@ def run_search(lat, lon, radius_mi, min_acres, max_acres, use_hcad_overlay=True,
             # Wells & pipelines from RRC change with permit filings — keep live
             "wells":        lambda: arcgis_query(ENDPOINTS["rrc_wells"],     geometry_polygon=buffer_wgs),
             "pipelines":    lambda: arcgis_query(ENDPOINTS["rrc_pipelines"], geometry_polygon=buffer_wgs),
-            "wetlands":     lambda: cached_wetlands(buffer_wgs, lat, lon, radius_mi),
+            # Deferred, as in the standalone. USFWS is the slowest and least
+            # reliable service in the stack — measured at 17s just to answer a
+            # metadata request today, 31s for a 3-mile buffer, and it 503s
+            # under load — and a search waits on its slowest job.
+            #
+            # Nothing in the search needs it. The layer is not auto-enabled, so
+            # this was pre-filling an overlay most searches never display, and
+            # the project analysis calls cached_wetlands directly on its own
+            # path. Toggling the layer on fetches it through
+            # /api/acq/load-layer/wetlands — the same call, paid for only when
+            # someone actually wants to see it.
+            #
+            # Measured in the standalone on the same buffer: 46s with it, 16s
+            # without.
+            "wetlands":     lambda: {"type": "FeatureCollection", "features": [],
+                                     "_deferred": True},
             # Static — cached
             "streams":      lambda: cached_layer_query("streams",     buffer_wgs),
             "transmission": lambda: cached_layer_query("transmission", buffer_wgs),
