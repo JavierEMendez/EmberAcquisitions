@@ -969,35 +969,6 @@ def query_parcels_in_polygon(buffer_wgs, min_acres=0, max_acres=1e12):
     return {"type": "FeatureCollection", "features": features}
 
 
-def coverage_for_polygon(buffer_wgs) -> list:
-    """Return which counties this buffer touches and their cache status.
-    Used by the search path to decide cache-vs-live."""
-    from acq_gis import arcgis_query, ENDPOINTS
-
-    # arcgis_query expects a shapely polygon (NOT a GeoJSON dict)
-    fc = arcgis_query(
-        ENDPOINTS["counties"],
-        geometry_polygon=buffer_wgs,
-        out_fields="STATE,COUNTY,BASENAME,NAME",
-        page_size=20, max_pages=2, parallel_pagination=False,
-    )
-    out = []
-    status = {row["county_fips"]: row for row in cache_status()}
-    for f in fc.get("features", []):
-        p = f.get("properties") or {}
-        fips = (p.get("STATE") or "") + (p.get("COUNTY") or "")
-        name = p.get("BASENAME") or p.get("NAME") or ""
-        st = status.get(fips)
-        out.append({
-            "county_fips": fips,
-            "county_name": name,
-            "cached":   bool(st and st["status"] == "fresh"),
-            "status":   st["status"] if st else "not-tracked",
-            "age_days": st["age_days"] if st else None,
-        })
-    return out
-
-
 def is_fully_cached(coverage_list) -> bool:
     """True when every county in coverage is 'fresh'.
 
@@ -1333,18 +1304,23 @@ def find_parcels_by_owner(owner_query: str, exact: bool = False, limit: int = 50
     q = q_raw.upper()
     qn = _norm_owner(owner_query)
     COLS = ("prop_id, county_name, owner_name, mail_addr, situs_addr, "
-            "legal_desc, gis_area, legal_area, shape_wkb")
+            "legal_desc, gis_area, legal_area, shape_wkb, geom_key")
 
     seen, rows, passes = set(), [], {}
     owner_seen = set()
 
     def _add(fetched, label):
         for r in fetched:
-            if r[0] in seen:
+            # Key on the parcel, not the account. Prop_ID is an appraisal
+            # account number and one account routinely covers several tracts —
+            # deduping on it alone returned Rancho La Laguna's 173-acre tract
+            # and silently dropped the 94-acre one under the same id.
+            key = (r[0], r[9])
+            if key in seen:
                 continue
-            seen.add(r[0])
+            seen.add(key)
             rows.append(r)
-            passes[r[0]] = label
+            passes[key] = label
 
     import re as _re
     _boundary = _re.compile(r"(?:^| )" + _re.escape(qn) + r"(?: |$)") if qn else None
@@ -1438,12 +1414,13 @@ def find_parcels_by_owner(owner_query: str, exact: bool = False, limit: int = 50
     scored.sort(key=lambda x: (-x[0], -(x[2][6] or x[2][7] or 0)))
     scored = scored[:limit]
     rows = [x[2] for x in scored]
-    score_by_pid = {x[2][0]: (round(x[0], 3), x[1]) for x in scored}
+    # Keyed per parcel, matching the dedup above.
+    score_by_pid = {(x[2][0], x[2][9]): (round(x[0], 3), x[1]) for x in scored}
 
     parcels = []
     by_county = {}
     for r in rows:
-        prop_id, county, owner, mail, situs, legal, gis_area, legal_area, wkb = r
+        prop_id, county, owner, mail, situs, legal, gis_area, legal_area, wkb, gkey = r
         acres = round((gis_area or legal_area or 0), 1)
         # Compute centroid from WKB for "go to map" action
         geom = None
@@ -1457,7 +1434,8 @@ def find_parcels_by_owner(owner_query: str, exact: bool = False, limit: int = 50
         except Exception:
             lat = lon = None
             bounds = None
-        _sc, _pass = score_by_pid.get(prop_id, (None, None))
+        _sc, _pass = score_by_pid.get((prop_id, gkey),
+                                     score_by_pid.get(prop_id, (None, None)))
         rec = {
             "prop_id": prop_id, "county": county, "owner_name": owner,
             "mail_addr": mail, "situs_addr": situs, "legal_desc": legal,

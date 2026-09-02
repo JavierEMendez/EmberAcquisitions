@@ -393,12 +393,21 @@ def api_acq_owner_dossier():
     if not name:
         return jsonify({"error": "name required"}), 400
     exact_only = request.args.get("exact", "0") == "1"
+    # The owner panel asks for geometry=1 because it draws the holding on the
+    # map and analyses it. This endpoint ignored the flag, so every parcel came
+    # back without a boundary and "Analyse all" reported "no tracts with
+    # boundaries to analyse" for an owner whose tracts are all perfectly well
+    # defined. Boundaries stay opt-in: a 500-parcel holding is megabytes of
+    # rings and the list itself only needs centroids.
+    want_geom = request.args.get("geometry", "0") == "1"
     tokens = parcel_cache._owner_tokens(name)
     used_fuzzy = False
     if exact_only or len(tokens) < 2:
-        result = parcel_cache.find_parcels_by_owner(name, exact=True, limit=500)
+        result = parcel_cache.find_parcels_by_owner(
+            name, exact=True, limit=500, include_geometry=want_geom)
     else:
-        result = parcel_cache.find_parcels_by_owner(name, exact=False, limit=500)
+        result = parcel_cache.find_parcels_by_owner(
+            name, exact=False, limit=500, include_geometry=want_geom)
         used_fuzzy = True
     passes = {p.get("match_pass") for p in result.get("parcels") or []}
     result["match_mode"] = ("fuzzy" if used_fuzzy and not (passes and passes <= {"exact"})
