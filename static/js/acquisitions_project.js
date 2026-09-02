@@ -279,14 +279,27 @@ function renderAnalysis(a) {
   // A layer that failed to load and a layer you deliberately kept both show as
   // "not deducted", but they mean opposite things - one overstates the acreage
   // without you knowing. Call the failure out in red.
+  // The deducted figure is what the layer removes BEYOND the layers above it,
+  // not its own footprint. A wetland inside the floodplain is real acreage on
+  // both layers, but it only leaves the site once. Showing both footprints
+  // under a minus sign made the column read as double-dipping and it never
+  // summed to the net developable figure underneath it. Net developable itself
+  // was always right -- the constraints are unioned before the difference.
   const ladder = (a.netout_detail || []).map(n => {
+    const marg = (n.acres_marginal == null) ? n.acres : n.acres_marginal;
+    const overlap = (+n.acres || 0) - (+marg || 0);
+    const shown = n.applied ? marg : n.acres;
     const note = n.error
       ? ` <span style="font-size:10px;color:#C62828;font-weight:700" title="${esc(n.reason || 'the service did not respond')}">layer unavailable — not deducted</span>`
-      : (n.applied ? '' : ' <span style="font-size:10px;color:#6B7B8B">(kept by override)</span>');
+      : (n.applied
+          ? (overlap > 0.05
+              ? ` <span style="font-size:10px;color:#6B7B8B">${fmt(n.acres)} ac on site · ${fmt(overlap)} ac already deducted above</span>`
+              : '')
+          : ' <span style="font-size:10px;color:#6B7B8B">(kept by override)</span>');
     return `
       <div class="constraint-row" style="${n.applied ? '' : 'opacity:.65'}">
         <span>${esc(n.label)}${note}</span>
-        <span class="acres">${n.applied ? '-' : ''}${n.error ? '?' : fmt(n.acres)} ac</span>
+        <span class="acres">${n.applied ? '-' : ''}${n.error ? '?' : fmt(shown)} ac</span>
       </div>`;
   }).join('');
 
@@ -313,7 +326,10 @@ function renderAnalysis(a) {
     <div class="constraint-row" style="font-weight:700;border-top:2px solid #F25929;color:#F25929">
       <span>Net saleable</span><span class="acres">${fmt(a.net_saleable_acres)} ac</span></div>
     <div style="font-size:11px;color:#6B7B8B;margin-top:6px">
-      Constraints are subtracted as a union, so overlapping layers are not double-counted.
+      Each layer shows what it removes beyond the layers above it, so the column adds up
+      to net developable. Where layers overlap — a wetland inside the floodplain — the
+      shared acreage is deducted once and charged to the layer listed first; the note on
+      each row gives that layer's full footprint on the site.
       Yield below runs off net saleable acreage.
     </div>
 

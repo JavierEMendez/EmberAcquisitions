@@ -2192,16 +2192,49 @@ def run_analysis(proj):
     all_constraints_utm = []
     netout_detail = []          # per-constraint acreage, so the UI can show the ladder
 
+    applied_union = [None]      # running union of the constraints actually applied
+
     def _record(key, label, geom_utm, enabled):
-        """Measure a constraint's own footprint, then include it only if enabled."""
+        """Measure a constraint's footprint AND what it actually removes.
+
+        Two different numbers, and the ladder needs the second one. A wetland
+        sitting inside the floodplain is real acreage on both layers, so both
+        footprints legitimately include it -- but it only comes out of the site
+        once. Net developable has always been right (the constraints are
+        unioned before the difference); the ladder was the thing that read as
+        double-dipping, because it showed both full footprints under a minus
+        sign and so did not reconcile with the total beneath it.
+
+        `acres` stays the layer's own footprint. `acres_marginal` is what this
+        layer takes off beyond everything already deducted above it, so the
+        column sums to gross - net developable exactly.
+
+        Marginal acreage is order-dependent by nature: the overlap is charged
+        to whichever layer is listed first. The order here is fixed and runs
+        most-constraining first (floodplain, then wetlands, then easements),
+        so the attribution is at least stable between runs.
+        """
         try:
             ac = geom_utm.area / 4046.8564224 if geom_utm else 0.0
         except Exception:
             ac = 0.0
-        netout_detail.append({"key": key, "label": label,
-                              "acres": round(ac, 2), "applied": bool(enabled and ac > 0)})
+        marginal = 0.0
         if enabled and geom_utm is not None and not geom_utm.is_empty:
+            prev = applied_union[0]
+            try:
+                fresh = geom_utm if prev is None else geom_utm.difference(prev)
+                marginal = fresh.area / 4046.8564224
+            except Exception:
+                marginal = ac          # if the difference fails, do not under-report
+            try:
+                applied_union[0] = geom_utm if prev is None                     else unary_union([prev, geom_utm])
+            except Exception:
+                pass
             all_constraints_utm.append(geom_utm)
+        netout_detail.append({"key": key, "label": label,
+                              "acres": round(ac, 2),
+                              "acres_marginal": round(marginal, 2),
+                              "applied": bool(enabled and ac > 0)})
 
     # Reuse the unions built above rather than repeating the work - on a large
     # tract against a dense NWI area that union is the expensive part.
