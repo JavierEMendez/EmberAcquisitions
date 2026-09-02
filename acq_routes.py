@@ -117,6 +117,15 @@ def _acq_guard():
     return None
 
 
+def _acq_activity(action, detail=None):
+    """Log through the portal's activity log, if it wired one in."""
+    try:
+        if _log_activity:
+            _log_activity(action, detail or {})
+    except Exception as e:
+        print(f"[acq] activity log failed: {e}", flush=True)
+
+
 def _acq_owner():
     return session.get("user_id")
 
@@ -579,100 +588,47 @@ def api_acq_note_delete(note_id):
 @acq_bp.route("/api/acq/search", methods=["POST"])
 @_login_required
 def api_acq_search():
-    """Parcels within a radius of a point, filtered by acreage.
+    """Run a parcel search. Thin wrapper over the engine, as in the standalone.
 
-    Serves from the local parcel cache when it covers the area - an R-Tree
-    bbox pre-filter plus an exact shapely intersect answers in well under a
-    second. Falls back to a live StratMap query for counties that have not
-    been bootstrapped, which is slower but means an uncached county returns
-    results rather than an empty map.
+    This used to reimplement the search — its own buffering, coverage check and
+    parcel query — and returned a flat {count, total_acres, tracts} instead of
+    the engine's {layers, summary}. The ported front end reads
+    data.summary.tracts, so every search failed with "Cannot read properties of
+    undefined". Reimplementing an engine the module already imports is how the
+    contract drifted; calling run_search is what keeps it from drifting again.
     """
     guard = _acq_guard()
     if guard:
         return guard
-    body = request.get_json(silent=True) or {}
+    p = request.get_json(force=True) or {}
+    polygon_geojson = p.get("polygon")
     try:
-        lat = float(body["lat"]); lon = float(body["lon"])
-    except (KeyError, TypeError, ValueError):
-        return jsonify({"error": "lat and lon required"}), 400
-    radius_mi = max(0.1, min(float(body.get("radius_mi") or 5), 50))
-    min_acres = max(0.0, float(body.get("min_acres") or 0))
-    max_acres = float(body.get("max_acres") or 1e12)
-    if max_acres <= min_acres:
-        return jsonify({"error": "max_acres must exceed min_acres"}), 400
+        # With a polygon, lat/lon are optional — the centroid is derived.
+        lat = float(p.get("lat") or 0) if polygon_geojson else float(p["lat"])
+        lon = float(p.get("lon") or 0) if polygon_geojson else float(p["lon"])
+        radius_mi = float(p.get("radius_mi", 10))
+        min_acres = float(p.get("min_acres", 300))
+        max_acres = float(p.get("max_acres", 100000))
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify({"error": f"Bad input: {e}"}), 400
 
-    from shapely.geometry import Point as _Pt
-    # Degrees of latitude are ~69 miles everywhere; longitude shrinks with
-    # latitude. Buffering in degrees would give an ellipse that is too wide in
-    # east-west, so buffer in metres and project back.
-    import pyproj as _pyproj
-    from shapely.ops import transform as _shp_transform
-    utm_epsg = 32614 if lon < -96 else 32615
-    to_utm = _pyproj.Transformer.from_crs("EPSG:4326", f"EPSG:{utm_epsg}", always_xy=True).transform
-    to_wgs = _pyproj.Transformer.from_crs(f"EPSG:{utm_epsg}", "EPSG:4326", always_xy=True).transform
-    buf = _shp_transform(to_wgs, _shp_transform(to_utm, _Pt(lon, lat)).buffer(radius_mi * 1609.344))
-
-    source = "cache"
     try:
-        coverage = parcel_cache.coverage_for_polygon(buf)
-        cached = parcel_cache.is_fully_cached(coverage)
+        result = run_search(lat, lon, radius_mi, min_acres, max_acres,
+                            polygon_geojson=polygon_geojson)
+        annotate_tracts_with_enrichment(result["layers"])
+        _last_search_cache["data"] = result["layers"]
+        _last_search_cache["saved_at"] = time.time()
+        _last_search_cache["meta"] = {"center": [lat, lon], "radius_mi": radius_mi,
+                                      "min_acres": min_acres, "max_acres": max_acres,
+                                      "polygon": polygon_geojson,
+                                      "label": p.get("label") or "search"}
+        _acq_activity("acq_search", {"center": [lat, lon], "radius_mi": radius_mi,
+                                     "min_acres": min_acres, "max_acres": max_acres,
+                                     "tracts": result["summary"]["tracts"],
+                                     "polygon": bool(polygon_geojson)})
+        return jsonify(result)
     except Exception as e:
-        print(f"[acq-search] coverage check failed: {e}", flush=True)
-        coverage, cached = [], False
-
-    try:
-        if cached:
-            # Returns a FeatureCollection, not a bare list of features.
-            features = (parcel_cache.query_parcels_in_polygon(
-                buf, min_acres, max_acres) or {}).get("features") or []
-        else:
-            source = "live"
-            fc = arcgis_query(
-                ENDPOINTS["parcels"], geometry_polygon=buf,
-                out_fields="Prop_ID,OWNER_NAME,SITUS_ADDR,MAIL_ADDR,LEGAL_AREA,GIS_AREA,LEGAL_DESC",
-                page_size=2000, max_pages=6)
-            features = []
-            for f in fc.get("features") or []:
-                p = f.get("properties") or {}
-                ac = p.get("GIS_AREA") or p.get("LEGAL_AREA") or 0
-                try:
-                    ac = float(ac)
-                except (TypeError, ValueError):
-                    ac = 0.0
-                if min_acres <= ac <= max_acres:
-                    p["Acres"] = round(ac, 2)
-                    features.append(f)
-    except Exception as e:
-        return jsonify({"error": f"parcel search failed: {type(e).__name__}: {e}"}), 500
-
-    # Live owner refresh for the two counties whose appraisal districts publish
-    # one - StratMap is a yearly snapshot and ownership is the field most
-    # likely to have moved since.
-    fc = {"type": "FeatureCollection", "features": features}
-    for fn, label in ((hcad_live_overlay, "hcad"),
-                      (mcad_live_overlay, "mcad")):
-        try:
-            fn(fc)
-        except Exception as e:
-            print(f"[acq-search] {label} overlay failed: {e}", flush=True)
-
-    total_acres = 0.0
-    for f in fc["features"]:
-        p = f.get("properties") or {}
-        try:
-            total_acres += float(p.get("Acres") or p.get("GIS_AREA") or 0)
-        except (TypeError, ValueError):
-            pass
-
-    return jsonify({
-        "tracts": fc,
-        "count": len(fc["features"]),
-        "total_acres": round(total_acres, 1),
-        "source": source,
-        "coverage": coverage,
-        "center": {"lat": lat, "lon": lon},
-        "radius_mi": radius_mi,
-    })
+        return jsonify({"error": str(e)}), 500
 
 
 @acq_bp.route("/api/acq/projects/<pid>/analyze", methods=["POST"])

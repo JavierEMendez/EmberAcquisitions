@@ -3511,7 +3511,7 @@ const elevationOverlayGroup = L.layerGroup().addTo(map);
 // preference sticks across reloads.
 // -----------------------------------------------------------------------
 (function () {
-  const sidebar = document.getElementById('sidebar');
+  const sidebar = document.getElementById('acq-sidebar');
   const toggle  = document.getElementById('sidebar-toggle');
   function applyState(collapsed) {
     // Clear focus-mode classes defensively: if anything ever leaves them set,
@@ -4572,10 +4572,10 @@ map.on(L.Draw.Event.DELETED, async (e) => {
 const mobileBtn = document.getElementById('mobile-menu-btn');
 if (mobileBtn) {
   mobileBtn.addEventListener('click', () => {
-    document.getElementById('sidebar').classList.toggle('open');
+    document.getElementById('acq-sidebar').classList.toggle('open');
   });
   // Close sidebar when user taps the map on mobile
-  map.on('click', () => document.getElementById('sidebar').classList.remove('open'));
+  map.on('click', () => document.getElementById('acq-sidebar').classList.remove('open'));
 }
 
 // -----------------------------------------------------------------------
