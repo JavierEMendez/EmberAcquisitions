@@ -125,6 +125,7 @@
     max-width:1400px;margin:0 auto 40px;
     padding:0 8px;
   }
+  .featured-stack{display:grid;gap:14px;}
   .featured-card{
     display:flex;align-items:center;gap:24px;
     background:var(--eax-bg-2);
@@ -450,13 +451,23 @@
   </div>
 </section>
 
-{# ───────── Applications ───────── #}
-{% if page_access.get('mpc_underwriting', true) %}
+{# ───────── Applications ─────────
+   Acquisitions GIS sits here rather than under Dashboards because it is a
+   tool you work in, like MPC Underwriting -- you search, select and assemble
+   in it -- not a report you read. Its access still defaults to False, so the
+   card is gated exactly the way its sidebar entry and its route already are,
+   and the section as a whole appears if either app is visible. #}
+{% set show_mpc = page_access.get('mpc_underwriting', true) %}
+{% set show_acq = is_admin or page_access.get('acquisitions', false) %}
+{% set app_count = (1 if show_mpc else 0) + (1 if show_acq else 0) %}
+{% if app_count %}
 <section class="section">
   <div class="section-head">
     <div class="section-eyebrow">Applications</div>
-    <div class="section-counter">01 / 01</div>
+    <div class="section-counter">{{ '%02d'|format(app_count) }} / {{ '%02d'|format(app_count) }}</div>
   </div>
+  <div class="featured-stack">
+{% if show_mpc %}
   <a class="featured-card" href="/">
     <div class="featured-icon">
       {{ motion.bars(width=28, height=14) }}
@@ -473,6 +484,26 @@
       <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </span>
   </a>
+{% endif %}
+{% if show_acq %}
+  <a class="featured-card" href="/acquisitions">
+    <div class="featured-icon">
+      <svg width="26" height="26" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <div class="featured-body">
+      <div class="featured-eyebrow">Application</div>
+      <div class="featured-title">Acquisitions GIS</div>
+      <div class="featured-desc">Screen Texas land: search parcels by acreage and radius, review floodplain, wetlands, easements and ownership, then assemble tracts into a project to underwrite.</div>
+    </div>
+    <div class="featured-deco">
+      {{ motion.bars(width=120, height=44) }}
+    </div>
+    <span class="featured-cta">Open
+      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </span>
+  </a>
+{% endif %}
+  </div>
 </section>
 {% endif %}
 
@@ -504,17 +535,17 @@
   ('Market Intelligence', [
     ('macro',            '/macro',             'Macroeconomic Data',               'Population, income, GDP, employment, real estate for Houston metro.'),
   ]),
-  ('Land & Acquisitions', [
-    ('acquisitions',     '/acquisitions',      'Acquisitions GIS',                 'Screen Texas land: search parcels by acreage and radius, review floodplain, wetlands, easements and ownership, then assemble tracts into a project to underwrite.'),
-  ]),
 ] %}
 {# Cards default to visible, which is wrong for a page whose permission
    defaults to False - the card would show and then bounce the user back
-   here. Keys listed here are gated the other way round. Only `acquisitions`
-   is listed: the other default-False pages (bva, budget, unit_economics,
+   here. Keys listed here are gated the other way round.
+
+   Empty now that `acquisitions` has moved up to Applications, where it is
+   gated directly. The other default-False pages (bva, budget, unit_economics,
    partners_cf) have shown their cards to everyone since they shipped, and
-   quietly changing that is not this change's business. #}
-{% set default_false_pages = ['acquisitions'] %}
+   quietly changing that is not this change's business - so the mechanism
+   stays for the next one that needs it. #}
+{% set default_false_pages = [] %}
 {% for group_name, cards in dashboard_groups %}
   {# Build the list of cards visible to this user in this group. #}
   {% set visible = namespace(list=[]) %}
