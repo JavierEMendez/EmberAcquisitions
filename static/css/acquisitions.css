@@ -619,7 +619,9 @@ a.acq-btn:hover { text-decoration: none; }
   #sidebar-toggle{ position: fixed; top: 50%; left: 340px; transform: translateY(-50%); width: 20px; height: 56px; background: var(--eax-bg-2); color: rgba(255,255,255,0.55); border: 0; border-left: 1px solid var(--eax-line); border-radius: 0 var(--r-md) var(--r-md) 0; cursor: pointer; z-index: 1500; box-shadow: 2px 0 8px rgba(0,0,0,0.10); font-size: 11px; line-height: 1; padding: 0; transition: left 220ms cubic-bezier(0.16, 1, 0.3, 1), background 120ms, color 120ms, width 120ms; display: flex; align-items: center; justify-content: center; }
   #acq-root #sidebar-toggle:hover{ color: #FFF; background: #14283A; width: 24px; }
   body.sidebar-collapsed #sidebar-toggle{ left: 0; }
-  body.expanded-mode #sidebar-toggle{ display: none; }
+  /* Removed: this hid the only control that can bring the panel back, and
+   the handler that clears `expanded-mode` runs on that control's click —
+   so setting the class was a one-way door. */
 
   #acq-root .sidebar-header{ padding: 20px 20px 16px; border-bottom: 1px solid rgba(255,255,255,0.05); }
   #acq-root .sidebar-header img{ height: 26px; width: auto; display: block; }
@@ -951,33 +953,30 @@ a.acq-btn:hover { text-decoration: none; }
 #acq-root #acq-sidebar.collapsed{flex-basis:0 !important;width:0 !important;
                                  border-right:none;}
 
-/* The panel's collapse control.
+/* The panel's collapse control lives OUTSIDE the panel.
 
-   The standalone pinned this at `left:340px` because its rail started at x=0
-   and was 340 wide, so that was its edge. Here the rail sits after the Ember
-   nav, so a fixed 340px landed it in the middle of the panel. It is now a
-   small chevron in the panel's own top-right corner, matching the nav rail's
-   control rather than protruding over the map as a tab.
-
-   Its colours were white-on-navy from the dark rail, which on paper made it
-   invisible. */
+   It used to be a child of #acq-sidebar, which collapses to width:0 with
+   overflow:hidden — so hiding the panel clipped the button that brings it
+   back, and there was no way to recover without clearing localStorage. It is
+   now anchored to #acq-root and simply moves. */
 #acq-root #sidebar-toggle{
-  position:absolute !important; top:8px !important; left:auto !important;
-  right:8px !important; transform:none !important;
+  position:absolute !important; top:8px !important;
+  left:272px !important; right:auto !important; transform:none !important;
   width:22px !important; height:22px !important;
+  display:flex !important; align-items:center; justify-content:center;
   background:transparent !important; color:var(--eax-subtle) !important;
   border:none !important; border-radius:5px !important; box-shadow:none !important;
-  font-size:12px; z-index:600;
+  font-size:12px; z-index:1200; cursor:pointer;
+  transition:left 200ms cubic-bezier(0.16,1,0.3,1), background .12s, color .12s;
 }
 #acq-root #sidebar-toggle:hover{
   background:var(--eax-accent-soft) !important; color:var(--eax-accent) !important;
-  width:22px !important;
 }
-/* Collapsed, the panel is gone, so the control moves to the map's edge to
-   remain reachable. */
+/* Collapsed: sit just inside the map, on a surface so it reads as a control
+   rather than disappearing into the imagery. */
 body.sidebar-collapsed #acq-root #sidebar-toggle{
-  left:6px !important; right:auto !important; top:8px !important;
+  left:8px !important;
   background:var(--eax-surface) !important;
   border:1px solid var(--eax-line-2) !important;
+  box-shadow:0 1px 4px rgba(8,35,59,0.15) !important;
 }
-#acq-root #acq-sidebar{position:relative;}
