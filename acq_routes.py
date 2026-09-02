@@ -40,6 +40,26 @@ _log_activity = None
 
 def init_app(app):
     """Wire the blueprint to the host app's auth, DB and logging."""
+    # Any unhandled exception under /api/acq/ must come back as JSON.
+    #
+    # Flask's default is an HTML error page, so a failure here reached the
+    # front end as: Unexpected token '<', "<!doctype "... is not valid JSON.
+    # That message says only "something broke" — it hides the traceback, the
+    # status code, and which call failed. I spent several rounds guessing at a
+    # cause I could have simply read.
+    @app.errorhandler(Exception)
+    def _acq_json_errors(e):
+        from werkzeug.exceptions import HTTPException
+        import traceback
+        path = request.path or ""
+        if not path.startswith("/api/acq/"):
+            raise e
+        if isinstance(e, HTTPException):
+            return jsonify({"error": f"{e.code} {e.name}", "detail": e.description,
+                            "path": path}), e.code
+        traceback.print_exc()
+        return jsonify({"error": f"{type(e).__name__}: {e}", "path": path}), 500
+
     global get_db, login_required, admin_required
     global _refresh_page_access_from_db, _log_activity
     get_db = app.config["ACQ_GET_DB"]
@@ -115,6 +135,24 @@ def _acq_guard():
     if not _can_view_acquisitions():
         return jsonify({"error": "forbidden"}), 403
     return None
+
+
+
+def _utcnow():
+    """UTC now, immune to the star import above.
+
+    acq_gis does `from datetime import datetime`, so `from acq_gis import *`
+    rebinds the name `datetime` in this module from the MODULE to the CLASS —
+    and every `datetime.datetime.utcnow()` here raised AttributeError. That is
+    what surfaced in the browser as "Unexpected token '<'": Flask returned its
+    HTML error page, and the front end reported only that the JSON would not
+    parse. Creating a project, saving a note, logging outreach — all of it.
+
+    Importing the module inside the function sidesteps the shadowed global
+    entirely, so it cannot break again if the imports are reordered.
+    """
+    import datetime as _dt
+    return _dt.datetime.utcnow().isoformat()
 
 
 def _acq_activity(action, detail=None):
@@ -422,7 +460,7 @@ def api_acq_projects_create():
             body.get("is_quick_analysis")
             or body.get("project_kind") == "quick_analysis"
             or body.get("is_user_project") is False),
-        "created_at": datetime.datetime.utcnow().isoformat(),
+        "created_at": _utcnow(),
     }
     proj["total_acres"] = round(
         sum(float(t.get("acres") or 0) for t in proj["tracts"]), 2)
@@ -573,7 +611,7 @@ def api_acq_notes(prop_id):
             "prop_id": str(prop_id),
             "text": text,
             "author": session.get("username"),
-            "created_at": datetime.datetime.utcnow().isoformat(),
+            "created_at": _utcnow(),
         }, _acq_owner())
     finally:
         conn.close()
@@ -5706,7 +5744,7 @@ def _crud_create(kind, body, required=()):
         if not str(body.get(f) or "").strip():
             return None, (jsonify({"error": f"{f} required"}), 400)
     body = dict(body)
-    body.setdefault("created_at", datetime.datetime.utcnow().isoformat())
+    body.setdefault("created_at", _utcnow())
     body.setdefault("created_by", session.get("username"))
     conn = get_db()
     try:
@@ -5724,7 +5762,7 @@ def _crud_patch(kind, oid, body, fields):
         for f in fields:
             if f in body:
                 obj[f] = body[f]
-        obj["updated_at"] = datetime.datetime.utcnow().isoformat()
+        obj["updated_at"] = _utcnow()
         return acq_store.put_object(conn, kind, obj,
                                     obj.get("_owner_id") or _acq_owner()), None
     finally:
@@ -5838,13 +5876,13 @@ def acq_outreach(prop_id):
             return jsonify({"deleted": ok})
         body = request.get_json(silent=True) or {}
         rec = rec or {"prop_id": str(prop_id), "log": [],
-                      "created_at": datetime.datetime.utcnow().isoformat()}
+                      "created_at": _utcnow()}
         for f in ("status", "broker_name", "broker_phone", "broker_email",
                   "next_action", "next_action_date", "asking_price", "notes",
                   "archived"):
             if f in body:
                 rec[f] = body[f]
-        rec["updated_at"] = datetime.datetime.utcnow().isoformat()
+        rec["updated_at"] = _utcnow()
         saved = acq_store.put_object(conn, "outreach", rec,
                                      rec.get("_owner_id") or _acq_owner())
     finally:
@@ -5865,10 +5903,10 @@ def acq_outreach_log(prop_id):
                                        _acq_owner(), _acq_is_admin())
         rec = (found.get(str(prop_id)) or [None])[0] or {
             "prop_id": str(prop_id), "log": [],
-            "created_at": datetime.datetime.utcnow().isoformat()}
+            "created_at": _utcnow()}
         entry = {
             "id": acq_store.new_id("e"),
-            "at": body.get("at") or datetime.datetime.utcnow().isoformat(),
+            "at": body.get("at") or _utcnow(),
             "method": body.get("method") or "other",
             "notes": body.get("notes") or "",
             "by": session.get("username"),
@@ -5910,7 +5948,7 @@ def acq_outreach_log_entry(prop_id, entry_id):
             for f in ("method", "notes", "at"):
                 if f in body:
                     hit[f] = body[f]
-        rec["updated_at"] = datetime.datetime.utcnow().isoformat()
+        rec["updated_at"] = _utcnow()
         saved = acq_store.put_object(conn, "outreach", rec,
                                      rec.get("_owner_id") or _acq_owner())
     finally:
@@ -5932,7 +5970,7 @@ def acq_outreach_archive(prop_id):
         if not rec:
             return jsonify({"error": "not found"}), 404
         rec["archived"] = bool((request.get_json(silent=True) or {}).get("archived", True))
-        rec["updated_at"] = datetime.datetime.utcnow().isoformat()
+        rec["updated_at"] = _utcnow()
         saved = acq_store.put_object(conn, "outreach", rec,
                                      rec.get("_owner_id") or _acq_owner())
     finally:
@@ -6140,7 +6178,7 @@ def acq_bulk_folder():
                 "prop_id": pid_str, "folder_id": folder_id,
                 "owner_name": t.get("owner_name"), "acres": t.get("acres"),
                 "county": t.get("county"), "geometry": t.get("geometry"),
-                "created_at": datetime.datetime.utcnow().isoformat(),
+                "created_at": _utcnow(),
             }, _acq_owner())
             made += 1
     finally:
@@ -6180,7 +6218,7 @@ def acq_bulk_pipeline():
                 "prop_id": pid_str, "status": status, "log": [],
                 "owner_name": t.get("owner_name"), "acres": t.get("acres"),
                 "county": t.get("county"),
-                "created_at": datetime.datetime.utcnow().isoformat(),
+                "created_at": _utcnow(),
             }, _acq_owner())
             made += 1
     finally:
