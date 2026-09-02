@@ -2224,7 +2224,18 @@ def acq_api_school_district_profile(geoid):
     # Extend the series with TEA's current count so the chart ends on the newest
     # real number rather than a two-year-old one. Flagged as a different source.
     if tea_current and tea_as_of:
-        _tea_yr = int(tea_as_of[:4])
+        # AskTED is a live directory snapshot, so update_date is a file
+        # timestamp, not the year the count describes. A May 2026 refresh is
+        # the 2025-26 school year. NCES labels its series by starting year --
+        # its 2024 figure is the 2024-25 count, matching TEA's own 2024-25
+        # report -- so stamping this point with the calendar year put it a year
+        # ahead of where it belonged and left a visible hole in the chart at
+        # the year it should have filled.
+        try:
+            _y, _m = int(tea_as_of[:4]), int(tea_as_of[5:7])
+        except (TypeError, ValueError):
+            _y, _m = int(tea_as_of[:4]), 1
+        _tea_yr = _y if _m >= 8 else _y - 1      # school year starts in August
         if not trend or _tea_yr > trend[-1]["year"]:
             trend.append({"year": _tea_yr, "enrollment": tea_current, "source": "TEA"})
         cur_enroll = tea_current
