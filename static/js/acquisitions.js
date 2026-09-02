@@ -73,6 +73,10 @@ window._groupTotals = new Map();
 // -----------------------------------------------------------------------
 // Map: keep zoom controls out of the top-left so they don't fight the address bar
 const map = L.map('map', { zoomControl: false }).setView([30.0258, -95.8452], 11);
+// The page shell's nav toggle needs to tell Leaflet the viewport changed.
+// In the standalone this file was inline so `map` was already global; as a
+// static module-scope const it is not.
+window.map = map;
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 
 // "Satellite" = imagery + city/water labels only. (Road-shield overlay was too busy on freeways.)

@@ -359,6 +359,13 @@ def _migrate_geom_key(conn):
     if "geom_key" in row[0]:
         return False                       # already migrated
 
+    # cache_meta.loading_heartbeat is added by a separate migration, and this
+    # one writes to it. On a database where that has not run yet the UPDATE
+    # fails with "no such column", the whole identity migration aborts, and the
+    # cache silently stays on the old key — which is the failure this migration
+    # exists to fix. Make sure the column is there first.
+    _ensure_heartbeat_column(conn)
+
     n = conn.execute("SELECT COUNT(*) FROM parcels").fetchone()[0]
     print(f"[cache] migrating parcels: identity now (county, prop_id, geometry). "
           f"Discarding {n:,} rows keyed the old way — re-bootstrap to reload them.",

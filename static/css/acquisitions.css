@@ -616,10 +616,10 @@ a.acq-btn:hover { text-decoration: none; }
   #acq-root /* Sidebar collapse-toggle — vertical-center tab on the sidebar/map seam
      (Notion / VS Code style). Off the top-left corner so it doesn't overlap
      Leaflet.draw's toolbar. */
-  #acq-sidebar-toggle{ position: fixed; top: 50%; left: 340px; transform: translateY(-50%); width: 20px; height: 56px; background: var(--eax-bg-2); color: rgba(255,255,255,0.55); border: 0; border-left: 1px solid var(--eax-line); border-radius: 0 var(--r-md) var(--r-md) 0; cursor: pointer; z-index: 1500; box-shadow: 2px 0 8px rgba(0,0,0,0.10); font-size: 11px; line-height: 1; padding: 0; transition: left 220ms cubic-bezier(0.16, 1, 0.3, 1), background 120ms, color 120ms, width 120ms; display: flex; align-items: center; justify-content: center; }
-  #acq-root #acq-sidebar-toggle:hover{ color: #FFF; background: #14283A; width: 24px; }
-  #acq-root body.sidebar-collapsed #acq-sidebar-toggle{ left: 0; }
-  #acq-root body.expanded-mode #acq-sidebar-toggle{ display: none; }
+  #sidebar-toggle{ position: fixed; top: 50%; left: 340px; transform: translateY(-50%); width: 20px; height: 56px; background: var(--eax-bg-2); color: rgba(255,255,255,0.55); border: 0; border-left: 1px solid var(--eax-line); border-radius: 0 var(--r-md) var(--r-md) 0; cursor: pointer; z-index: 1500; box-shadow: 2px 0 8px rgba(0,0,0,0.10); font-size: 11px; line-height: 1; padding: 0; transition: left 220ms cubic-bezier(0.16, 1, 0.3, 1), background 120ms, color 120ms, width 120ms; display: flex; align-items: center; justify-content: center; }
+  #acq-root #sidebar-toggle:hover{ color: #FFF; background: #14283A; width: 24px; }
+  body.sidebar-collapsed #sidebar-toggle{ left: 0; }
+  body.expanded-mode #sidebar-toggle{ display: none; }
 
   #acq-root .sidebar-header{ padding: 20px 20px 16px; border-bottom: 1px solid rgba(255,255,255,0.05); }
   #acq-root .sidebar-header img{ height: 26px; width: auto; display: block; }
@@ -940,3 +940,33 @@ a.acq-btn:hover { text-decoration: none; }
   color: var(--eax-ink);
   border: 1px solid var(--eax-line-2);
 }
+
+/* Collapse for both rails.
+
+   The acquisitions panel is laid out with flex-basis, so `width:0` alone does
+   not collapse it — flex wins. The Ember nav had no toggle at all; on a map
+   screen the two rails together take 540px of a 1600px window, so both need to
+   get out of the way, and the map is the reason to.  */
+#acq-root #acq-sidebar{transition:flex-basis 200ms cubic-bezier(0.16,1,0.3,1);}
+#acq-root #acq-sidebar.collapsed{flex-basis:0 !important;width:0 !important;
+                                 border-right:none;}
+
+/* Ember nav rail */
+#app{transition:none}
+#sidebar{transition:width 200ms cubic-bezier(0.16,1,0.3,1);}
+/* !important because the shell's own #sidebar{width:240px} lives in an inline
+   <style> on the page; this rule is more specific and still lost the
+   cascade, and a collapse the user cannot see is worse than a blunt
+   override. */
+body.nav-collapsed #sidebar{width:0 !important;min-width:0 !important;
+                            overflow:hidden !important;border-right:none !important;}
+#nav-toggle{position:fixed;top:12px;left:240px;z-index:1200;width:22px;height:44px;
+            display:flex;align-items:center;justify-content:center;cursor:pointer;
+            border:1px solid var(--eax-line-2);border-left:none;
+            border-radius:0 6px 6px 0;background:var(--eax-surface);
+            color:var(--eax-muted);font-size:11px;line-height:1;padding:0;
+            box-shadow:0 1px 4px rgba(8,35,59,0.08);
+            transition:left 200ms cubic-bezier(0.16,1,0.3,1);}
+#nav-toggle:hover{background:var(--eax-accent-soft);color:var(--eax-accent);
+                  border-color:var(--eax-accent);}
+body.nav-collapsed #nav-toggle{left:0;}
