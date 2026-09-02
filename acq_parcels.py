@@ -941,7 +941,10 @@ def query_parcels_in_polygon(buffer_wgs, min_acres=0, max_acres=1e12):
             continue
         gis_area = row[6] or 0
         legal_area = row[7] or 0
-        acres = gis_area or legal_area or 0
+        # Measured from the polygon, not taken from StratMap: an inflated
+        # figure here pushed real tracts outside the user's acreage range
+        # and they silently never appeared in results.
+        acres = trusted_acres(g, gis_area, legal_area)
         # Server-side acreage filter is done by Shape_Area in the live path;
         # here we have the StratMap acres directly so we can pre-filter against
         # the user's wide guesstimate range. But StratMap is unreliable for
@@ -967,146 +970,6 @@ def query_parcels_in_polygon(buffer_wgs, min_acres=0, max_acres=1e12):
         })
 
     return {"type": "FeatureCollection", "features": features}
-
-
-def is_fully_cached(coverage_list) -> bool:
-    """True when every county in coverage is 'fresh'.
-
-    'partial' deliberately does not count: a county whose bootstrap lost tiles
-    has holes, and serving a search from it silently returns fewer tracts than
-    exist. Falling back to the live query is slower and correct.
-    """
-    return bool(coverage_list) and all(c["cached"] for c in coverage_list)
-
-
-def find_parcel_by_pid(pid: str, county: str = None, strict: bool = False):
-    """Direct lookup of a single parcel by Prop_ID. Returns a GeoJSON Feature
-    (with shape geometry) or None.
-
-    Prop_IDs are NOT globally unique — the same numeric ID can exist in
-    different counties' StratMap data (e.g. 188287 is a 2,362-ac ranch in
-    Fort Bend AND a 0.1-ac residential lot in Galveston). Always pass the
-    `county` hint when you have it so we disambiguate to the right parcel.
-    Without it, we return whatever sqlite happens to find first — that's the
-    bug pattern that sent "Full tract page" to the wrong tract.
-
-    When `strict=True` AND a county hint is given, return None if no parcel
-    matches the county — do NOT fall back to a wrong-county match. This is
-    critical because some outreach records reference counties that aren't in
-    the cache at all (Grimes, Walker, etc.) — silently returning a different
-    county's parcel for the same prop_id produces the "wrong tract" bug."""
-    from shapely.wkb import loads as wkb_loads
-    from shapely.geometry import mapping as shp_mapping
-    init_db()
-    if not pid:
-        return None
-    with _db_lock, _conn() as c:
-        row = None
-        if county:
-            row = c.execute("""
-                SELECT prop_id, county_name, owner_name, mail_addr, situs_addr,
-                       legal_desc, gis_area, legal_area, shape_wkb
-                  FROM parcels
-                 WHERE prop_id = ? AND LOWER(county_name) = LOWER(?) LIMIT 1
-            """, (pid, county.strip())).fetchone()
-            if not row and strict:
-                # Caller insists on this county — refuse to return a different one.
-                return None
-        if not row:
-            # Fallback: no county hint, or hint didn't match — return any match
-            # (better to surface SOMETHING than 404 on a known-good prop_id).
-            row = c.execute("""
-                SELECT prop_id, county_name, owner_name, mail_addr, situs_addr,
-                       legal_desc, gis_area, legal_area, shape_wkb
-                  FROM parcels WHERE prop_id = ? LIMIT 1
-            """, (pid,)).fetchone()
-    if not row:
-        return None
-    try:
-        g = wkb_loads(row[8])
-    except Exception:
-        return None
-    return {
-        "type": "Feature",
-        "properties": {
-            "Prop_ID":    row[0],
-            "_county":    row[1],
-            "OWNER_NAME": row[2],
-            "MAIL_ADDR":  row[3],
-            "SITUS_ADDR": row[4],
-            "LEGAL_DESC": row[5],
-            "GIS_AREA":   row[6],
-            "LEGAL_AREA": row[7],
-            "Acres":      round((row[6] or row[7] or 0), 1),
-        },
-        "geometry": shp_mapping(g),
-    }
-
-
-# Corporate suffixes and filler that carry no identifying signal. Stripped before
-# comparing names so "GRAND PRAIRIE DEV LLC" and "GRAND PRAIRIE DEVELOPMENT, L.L.C."
-# reduce to the same distinctive tokens.
-_OWNER_NOISE = {
-    "LLC", "LC", "INC", "INCORPORATED", "CORP", "CORPORATION", "CO",
-    "COMPANY", "LP", "LLP", "LTD", "LIMITED", "PARTNERSHIP", "PARTNERS",
-    "TRUST", "TRUSTEE", "TRUSTEES", "ETAL", "ET", "AL", "THE", "OF", "AND",
-    "FAMILY", "REVOCABLE", "LIVING", "ESTATE", "PROPERTIES", "PROPERTY",
-    "HOLDINGS", "HOLDING", "INVESTMENTS", "INVESTMENT", "GROUP", "ENTERPRISES",
-}
-
-
-def _norm_owner(name):
-    """Uppercase, drop punctuation, collapse whitespace.
-
-    This is what stops an extra space or a stray comma from mattering:
-    "SMITH , JOHN  A" and "SMITH JOHN A" both normalise to "SMITH JOHN A".
-    """
-    import re as _re
-    t = (name or "").upper()
-    t = _re.sub(r"[^A-Z0-9 ]+", " ", t)
-    return _re.sub(r" +", " ", t).strip()
-
-
-def _owner_tokens(name):
-    """Distinctive tokens - normalised, minus corporate filler."""
-    return [t for t in _norm_owner(name).split() if t not in _OWNER_NOISE and len(t) > 1]
-
-
-def _owner_similarity(a, b):
-    """0..1 similarity between two owner names.
-
-    Blends whole-string ratio with token overlap, so a one-letter typo still
-    scores high while a shared corporate suffix alone does not - "SMITH LLC" and
-    "JONES LLC" have no distinctive token in common.
-    """
-    from difflib import SequenceMatcher
-    na, nb = _norm_owner(a), _norm_owner(b)
-    if not na or not nb:
-        return 0.0
-    if na == nb:
-        return 1.0
-    whole = SequenceMatcher(None, na, nb).ratio()
-    ta, tb = set(_owner_tokens(a)), set(_owner_tokens(b))
-    if not ta or not tb:
-        return whole
-    # Count a token as shared if it matches exactly or near-exactly, so a typo
-    # inside one word still lands.
-    inter = 0
-    for x in ta:
-        if x in tb:
-            inter += 1
-            continue
-        if any(SequenceMatcher(None, x, y).ratio() >= 0.86 for y in tb):
-            inter += 1
-    tok = inter / max(len(ta), len(tb))
-    # No distinctive token in common means it is not the same entity, however
-    # similar the raw strings look. Without this cap a substring match dragged in
-    # "SHADY PEMBERTON" for a search on "EMBER", and "KATY FARMS LP" scored 0.76
-    # against "HOCKLEY FARMS LP" purely on the shared word FARMS.
-    if inter == 0:
-        return min(whole, 0.60)
-    return 0.5 * whole + 0.5 * tok
-
 
 
 def coverage_for_polygon(buffer_wgs) -> list:
@@ -1277,6 +1140,52 @@ def _owner_similarity(a, b):
     return 0.5 * whole + 0.5 * tok
 
 
+# Texas Centric Albers Equal Area -- the right projection for measuring acreage
+# statewide. Built once; building a Transformer per parcel is slow.
+_TO_ALBERS = None
+
+
+def _albers():
+    global _TO_ALBERS
+    if _TO_ALBERS is None:
+        import pyproj
+        _TO_ALBERS = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:3083",
+                                                 always_xy=True).transform
+    return _TO_ALBERS
+
+
+def measured_acres(g):
+    """Acres from the polygon itself, in an equal-area projection."""
+    from shapely.ops import transform as _tf
+    try:
+        return _tf(_albers(), g).area / 4046.8564224
+    except Exception:
+        return 0.0
+
+
+def trusted_acres(g, gis_area, legal_area):
+    """Acreage for a cached parcel, preferring the geometry over StratMap.
+
+    StratMap's GIS_AREA is not merely noisy, it is wrong by a constant factor
+    for entire counties: every Harris parcel reads 10.76x true area (their
+    pipeline divided square feet by 4046.86, the square-metres-per-acre
+    constant, instead of 43,560), and Chambers reads 1.33x. Harris alone is
+    half the cache, so a 450-acre tract reported as 4,843 acres was routine.
+
+    Deed acres settle which side is wrong: across Harris parcels carrying a
+    LEGAL_AREA, deed/measured is 1.000 and deed/GIS_AREA is 0.093 -- the
+    geometry is right and the stored figure is not.
+
+    Only a gross disagreement is overridden. Small differences are ordinary
+    projection variance, and there the appraisal district's own number is the
+    one people recognise and should keep seeing.
+    """
+    stored = round((gis_area or legal_area or 0), 1)
+    m = measured_acres(g)
+    if m > 0 and (not stored or abs(stored - m) > max(1.0, m * 0.25)):
+        return round(m, 1)
+    return stored
+
 def find_parcels_by_owner(owner_query: str, exact: bool = False, limit: int = 500,
                           min_score: float = 0.72, include_geometry: bool = False):
     """Find every cached parcel owned by an entity matching `owner_query`.
@@ -1431,6 +1340,10 @@ def find_parcels_by_owner(owner_query: str, exact: bool = False, limit: int = 50
             bounds = g.bounds   # minx, miny, maxx, maxy for fitBounds
             if include_geometry:
                 geom = shp_mapping(g)
+            # The polygon is already parsed for the centroid, so measuring it
+            # costs one transform. StratMap's stored figure is wrong by a
+            # constant factor for whole counties -- see trusted_acres().
+            acres = trusted_acres(g, gis_area, legal_area)
         except Exception:
             lat = lon = None
             bounds = None
