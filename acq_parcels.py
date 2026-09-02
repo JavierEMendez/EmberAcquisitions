@@ -1113,6 +1113,175 @@ def _owner_similarity(a, b):
     return 0.5 * whole + 0.5 * tok
 
 
+
+def coverage_for_polygon(buffer_wgs) -> list:
+    """Return which counties this buffer touches and their cache status.
+    Used by the search path to decide cache-vs-live."""
+    from acq_gis import arcgis_query, ENDPOINTS
+
+    # arcgis_query expects a shapely polygon (NOT a GeoJSON dict)
+    fc = arcgis_query(
+        ENDPOINTS["counties"],
+        geometry_polygon=buffer_wgs,
+        out_fields="STATE,COUNTY,BASENAME,NAME",
+        page_size=20, max_pages=2, parallel_pagination=False,
+    )
+    out = []
+    status = {row["county_fips"]: row for row in cache_status()}
+    for f in fc.get("features", []):
+        p = f.get("properties") or {}
+        fips = (p.get("STATE") or "") + (p.get("COUNTY") or "")
+        name = p.get("BASENAME") or p.get("NAME") or ""
+        st = status.get(fips)
+        out.append({
+            "county_fips": fips,
+            "county_name": name,
+            "cached":   bool(st and st["status"] == "fresh"),
+            "status":   st["status"] if st else "not-tracked",
+            "age_days": st["age_days"] if st else None,
+        })
+    return out
+
+
+def is_fully_cached(coverage_list) -> bool:
+    """True when every county in coverage is 'fresh'.
+
+    'partial' deliberately does not count: a county whose bootstrap lost tiles
+    has holes, and serving a search from it silently returns fewer tracts than
+    exist. Falling back to the live query is slower and correct.
+    """
+    return bool(coverage_list) and all(c["cached"] for c in coverage_list)
+
+
+def find_parcel_by_pid(pid: str, county: str = None, strict: bool = False):
+    """Direct lookup of a single parcel by Prop_ID. Returns a GeoJSON Feature
+    (with shape geometry) or None.
+
+    Prop_IDs are NOT globally unique — the same numeric ID can exist in
+    different counties' StratMap data (e.g. 188287 is a 2,362-ac ranch in
+    Fort Bend AND a 0.1-ac residential lot in Galveston). Always pass the
+    `county` hint when you have it so we disambiguate to the right parcel.
+    Without it, we return whatever sqlite happens to find first — that's the
+    bug pattern that sent "Full tract page" to the wrong tract.
+
+    When `strict=True` AND a county hint is given, return None if no parcel
+    matches the county — do NOT fall back to a wrong-county match. This is
+    critical because some outreach records reference counties that aren't in
+    the cache at all (Grimes, Walker, etc.) — silently returning a different
+    county's parcel for the same prop_id produces the "wrong tract" bug."""
+    from shapely.wkb import loads as wkb_loads
+    from shapely.geometry import mapping as shp_mapping
+    init_db()
+    if not pid:
+        return None
+    with _db_lock, _conn() as c:
+        row = None
+        if county:
+            row = c.execute("""
+                SELECT prop_id, county_name, owner_name, mail_addr, situs_addr,
+                       legal_desc, gis_area, legal_area, shape_wkb
+                  FROM parcels
+                 WHERE prop_id = ? AND LOWER(county_name) = LOWER(?) LIMIT 1
+            """, (pid, county.strip())).fetchone()
+            if not row and strict:
+                # Caller insists on this county — refuse to return a different one.
+                return None
+        if not row:
+            # Fallback: no county hint, or hint didn't match — return any match
+            # (better to surface SOMETHING than 404 on a known-good prop_id).
+            row = c.execute("""
+                SELECT prop_id, county_name, owner_name, mail_addr, situs_addr,
+                       legal_desc, gis_area, legal_area, shape_wkb
+                  FROM parcels WHERE prop_id = ? LIMIT 1
+            """, (pid,)).fetchone()
+    if not row:
+        return None
+    try:
+        g = wkb_loads(row[8])
+    except Exception:
+        return None
+    return {
+        "type": "Feature",
+        "properties": {
+            "Prop_ID":    row[0],
+            "_county":    row[1],
+            "OWNER_NAME": row[2],
+            "MAIL_ADDR":  row[3],
+            "SITUS_ADDR": row[4],
+            "LEGAL_DESC": row[5],
+            "GIS_AREA":   row[6],
+            "LEGAL_AREA": row[7],
+            "Acres":      round((row[6] or row[7] or 0), 1),
+        },
+        "geometry": shp_mapping(g),
+    }
+
+
+# Corporate suffixes and filler that carry no identifying signal. Stripped before
+# comparing names so "GRAND PRAIRIE DEV LLC" and "GRAND PRAIRIE DEVELOPMENT, L.L.C."
+# reduce to the same distinctive tokens.
+_OWNER_NOISE = {
+    "LLC", "LC", "INC", "INCORPORATED", "CORP", "CORPORATION", "CO",
+    "COMPANY", "LP", "LLP", "LTD", "LIMITED", "PARTNERSHIP", "PARTNERS",
+    "TRUST", "TRUSTEE", "TRUSTEES", "ETAL", "ET", "AL", "THE", "OF", "AND",
+    "FAMILY", "REVOCABLE", "LIVING", "ESTATE", "PROPERTIES", "PROPERTY",
+    "HOLDINGS", "HOLDING", "INVESTMENTS", "INVESTMENT", "GROUP", "ENTERPRISES",
+}
+
+
+def _norm_owner(name):
+    """Uppercase, drop punctuation, collapse whitespace.
+
+    This is what stops an extra space or a stray comma from mattering:
+    "SMITH , JOHN  A" and "SMITH JOHN A" both normalise to "SMITH JOHN A".
+    """
+    import re as _re
+    t = (name or "").upper()
+    t = _re.sub(r"[^A-Z0-9 ]+", " ", t)
+    return _re.sub(r" +", " ", t).strip()
+
+
+def _owner_tokens(name):
+    """Distinctive tokens - normalised, minus corporate filler."""
+    return [t for t in _norm_owner(name).split() if t not in _OWNER_NOISE and len(t) > 1]
+
+
+def _owner_similarity(a, b):
+    """0..1 similarity between two owner names.
+
+    Blends whole-string ratio with token overlap, so a one-letter typo still
+    scores high while a shared corporate suffix alone does not - "SMITH LLC" and
+    "JONES LLC" have no distinctive token in common.
+    """
+    from difflib import SequenceMatcher
+    na, nb = _norm_owner(a), _norm_owner(b)
+    if not na or not nb:
+        return 0.0
+    if na == nb:
+        return 1.0
+    whole = SequenceMatcher(None, na, nb).ratio()
+    ta, tb = set(_owner_tokens(a)), set(_owner_tokens(b))
+    if not ta or not tb:
+        return whole
+    # Count a token as shared if it matches exactly or near-exactly, so a typo
+    # inside one word still lands.
+    inter = 0
+    for x in ta:
+        if x in tb:
+            inter += 1
+            continue
+        if any(SequenceMatcher(None, x, y).ratio() >= 0.86 for y in tb):
+            inter += 1
+    tok = inter / max(len(ta), len(tb))
+    # No distinctive token in common means it is not the same entity, however
+    # similar the raw strings look. Without this cap a substring match dragged in
+    # "SHADY PEMBERTON" for a search on "EMBER", and "KATY FARMS LP" scored 0.76
+    # against "HOCKLEY FARMS LP" purely on the shared word FARMS.
+    if inter == 0:
+        return min(whole, 0.60)
+    return 0.5 * whole + 0.5 * tok
+
+
 def find_parcels_by_owner(owner_query: str, exact: bool = False, limit: int = 500,
                           min_score: float = 0.72, include_geometry: bool = False):
     """Find every cached parcel owned by an entity matching `owner_query`.

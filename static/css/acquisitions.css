@@ -500,9 +500,12 @@ a.acq-btn:hover { text-decoration: none; }
 #acq-root{
   --ember-orange:       var(--eax-accent);
   --ember-orange-hover: #D94414;
-  --ember-blue:         var(--eax-ink-2);
-  --ember-blue-700:     var(--eax-ink);
-  --ember-blue-900:     var(--eax-ink);
+  /* These are panel FILLS, not text — eleven of their twelve uses are a
+     `background`. Mapping them to ink painted the tract-results list navy with
+     navy text on it. On paper they become recessed surfaces instead. */
+  --ember-blue:         var(--eax-surface);
+  --ember-blue-700:     var(--eax-bg-2);
+  --ember-blue-900:     var(--eax-bg);
   --gray-50:            var(--eax-bg);
   --gray-100:           var(--eax-bg-2);
   --gray-200:           #E7DFD3;
@@ -882,7 +885,8 @@ a.acq-btn:hover { text-decoration: none; }
   #acq-root /* Map */
   #map{ flex: 1; position: relative; }
   #acq-root .leaflet-popup-content{ font: 12px/1.5 "Helvetica Neue", system-ui, sans-serif; }
-  #acq-root .leaflet-popup-content b{ color: var(--ember-blue); }
+  /* --ember-blue is now a surface, so this needs the ink token directly. */
+  #acq-root .leaflet-popup-content b{ color: var(--eax-ink); }
   #acq-root .leaflet-popup-content a{ color: var(--ember-orange); text-decoration: none; }
   #acq-root .leaflet-popup-content a:hover{ text-decoration: underline; }
   #acq-root .leaflet-popup-content-wrapper{ border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.18); }
@@ -980,3 +984,12 @@ body.sidebar-collapsed #acq-root #sidebar-toggle{
   border:1px solid var(--eax-line-2) !important;
   box-shadow:0 1px 4px rgba(8,35,59,0.15) !important;
 }
+
+/* The one place --ember-blue is a text colour rather than a fill; it would be
+   white-on-white now that the variable is a surface. */
+#acq-root .tract-row .tr-acres{ color: var(--eax-ink) !important; }
+#acq-root #tract-results-list{
+  background: var(--eax-bg-2) !important;
+  border: 1px solid var(--eax-line) !important;
+}
+#acq-root #tract-results-list .tract-row{ color: var(--eax-ink); }
