@@ -47,17 +47,30 @@ def init_app(app):
     # That message says only "something broke" — it hides the traceback, the
     # status code, and which call failed. I spent several rounds guessing at a
     # cause I could have simply read.
-    @app.errorhandler(Exception)
+    # Registered on the BLUEPRINT, not the app.
+    #
+    # This was an @app.errorhandler(Exception), which intercepted every
+    # exception on every page of the portal — financials, loans, operations —
+    # and re-raised from inside the handler for anything outside /api/acq/.
+    # An acquisitions concern has no business sitting in front of the rest of
+    # the portal's error handling, and re-raising inside a handler is not a
+    # safe way to say "not mine".
+    #
+    # Scoped here it only sees exceptions raised by this blueprint's own views,
+    # which is all it ever needed.
+    @acq_bp.errorhandler(Exception)
     def _acq_json_errors(e):
         from werkzeug.exceptions import HTTPException
         import traceback
         path = request.path or ""
-        if not path.startswith("/api/acq/"):
-            raise e
         if isinstance(e, HTTPException):
+            if not path.startswith("/api/acq/"):
+                return e            # let pages render the normal error page
             return jsonify({"error": f"{e.code} {e.name}", "detail": e.description,
                             "path": path}), e.code
         traceback.print_exc()
+        if not path.startswith("/api/acq/"):
+            raise e
         return jsonify({"error": f"{type(e).__name__}: {e}", "path": path}), 500
 
     global get_db, login_required, admin_required
@@ -760,9 +773,14 @@ def api_acq_cache_status():
         orphans = parcel_cache.rtree_orphan_count()
     except Exception:
         orphans = 0
+    try:
+        unindexed = parcel_cache.rtree_missing_count()
+    except Exception:
+        unindexed = 0
     return jsonify({
         "counties": counties,
         "rtree_orphans": orphans,
+        "rtree_unindexed": unindexed,
         "in_progress": dict(_cache_bootstrap_status),
     })
 
@@ -6722,6 +6740,25 @@ def acq_api_corridor_tracts(sid):
         for k, _ in oldest:
             _CORRIDOR_TRACTS_CACHE.pop(k, None)
     return jsonify(response)
+
+
+@acq_bp.route("/api/acq/cache/reindex", methods=["POST"])
+@_admin_required
+def api_acq_cache_reindex():
+    """Rebuild spatial-index entries for parcels that have none.
+
+    A parcel with no R-Tree row is in the table, counts toward the county
+    total, and can never be returned by a search — so the cache reads healthy
+    while every result is quietly short. This repairs from the geometry already
+    stored; nothing is re-downloaded.
+    """
+    guard = _acq_guard()
+    if guard:
+        return guard
+    try:
+        return jsonify(parcel_cache.reindex_missing_rtree())
+    except Exception as e:
+        return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
 
 
 @acq_bp.route("/api/acq/cache/vacuum", methods=["POST"])
