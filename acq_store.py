@@ -81,8 +81,41 @@ def _rows_to_dicts(rows):
     return out
 
 
+
+_schema_ready = False
+
+
+def ensure_schema(conn):
+    """Create acq_objects if it is not there yet. Idempotent, once per process.
+
+    The portal creates this table inside its own init_db(), which runs on the
+    first request wrapped in a bare `except` that only prints. Anything that
+    fails earlier in that function skips this table silently, and then every
+    save here 500s — the front end shows "Unexpected token '<'" because Flask's
+    HTML error page is not JSON.
+
+    A subsystem should not depend on an unrelated init succeeding, so it
+    ensures its own table.
+    """
+    global _schema_ready
+    if _schema_ready:
+        return
+    try:
+        cur = conn.cursor()
+        cur.execute(SCHEMA)
+        conn.commit()
+        _schema_ready = True
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"[acq-store] could not ensure schema: {e}", flush=True)
+
+
 def list_objects(conn, kind, owner_id=None, include_all=False):
     """Records of one kind. ``include_all`` is the admin view."""
+    ensure_schema(conn)
     cur = conn.cursor()
     try:
         if include_all or owner_id is None:
@@ -103,6 +136,7 @@ def get_object(conn, kind, obj_id, owner_id=None, include_all=False):
     """One record, or None. Passing ``owner_id`` without ``include_all`` makes
     someone else's record read as missing rather than forbidden - the caller
     then 404s, which leaks less than a 403."""
+    ensure_schema(conn)
     cur = conn.cursor()
     try:
         cur.execute(
@@ -120,6 +154,7 @@ def get_object(conn, kind, obj_id, owner_id=None, include_all=False):
 
 def put_object(conn, kind, obj, owner_id):
     """Insert or replace. Returns the stored record with its id filled in."""
+    ensure_schema(conn)
     obj = dict(obj)
     obj.pop("_owner_id", None)
     obj_id = str(obj.get("id") or new_id())

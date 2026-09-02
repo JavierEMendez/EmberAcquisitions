@@ -1815,35 +1815,87 @@ def geocode(q, lat_bias=None, lon_bias=None):
 
 
 def parcel_detail(prop_id):
-    """Every field on one parcel, refreshed live.
+    """Every field on one parcel, from HCAD, MCAD and StratMap.
 
-    Local cache first - it answers instantly by Prop_ID - then an HCAD/MCAD
-    overlay so the owner and appraisal values are current rather than as of the
-    last statewide StratMap refresh.
+    Returns the shape the tract-detail modal reads:
+
+        {prop_id, sources: [...], hcad?: {...}, mcad?: {...}, stratmap?: {...}}
+
+    This previously returned {geometry, prop_id, properties} — a different
+    contract entirely — so the modal, which branches on d.hcad / d.mcad /
+    d.stratmap, matched none of them and rendered "No fields returned" for
+    every parcel.
+
+    All three sources run in parallel, so the modal opens in the time of the
+    slowest single call rather than the sum. StratMap is only used when neither
+    appraisal district has the parcel: it is an annual snapshot, and where a CAD
+    has the record it is fresher.
     """
+    from concurrent.futures import ThreadPoolExecutor
     import acq_parcels as _pc
 
     pid = str(prop_id or "").strip()
     if not pid:
-        return {"error": "prop_id required"}
+        return {"error": "missing prop_id"}
 
-    feat = _pc.find_parcel_by_pid(pid)
-    if not feat:
-        return {"error": f"No parcel found for Prop_ID {pid}"}
+    def fetch_hcad():
+        try:
+            fc = arcgis_query(ENDPOINTS["hcad"], where=f"HCAD_NUM='{pid}'",
+                              out_fields="*", page_size=1, max_pages=1,
+                              return_geometry=False, parallel_pagination=False)
+            return fc["features"][0].get("properties") if fc.get("features") else None
+        except Exception as e:
+            return {"_error": str(e)}
 
-    fc = {"type": "FeatureCollection", "features": [feat]}
-    try:
-        hcad_live_overlay(fc)
-    except Exception as e:
-        print(f"[acq-detail] hcad overlay failed for {pid}: {e}", flush=True)
-    try:
-        mcad_live_overlay(fc)
-    except Exception as e:
-        print(f"[acq-detail] mcad overlay failed for {pid}: {e}", flush=True)
+    def fetch_mcad():
+        if not pid.isdigit():
+            return None
+        try:
+            fc = arcgis_query(ENDPOINTS["mcad"], where=f"PIN={int(pid)}",
+                              out_fields="*", page_size=1, max_pages=1,
+                              return_geometry=False, parallel_pagination=False)
+            return fc["features"][0].get("properties") if fc.get("features") else None
+        except Exception as e:
+            return {"_error": str(e)}
 
-    props = dict(feat.get("properties") or {})
-    props["_source"] = _tract_source_label(props)
-    return {"prop_id": pid, "properties": props, "geometry": feat.get("geometry")}
+    def fetch_stratmap():
+        # The local cache holds the same StratMap data and answers in
+        # sub-milliseconds; the live service rejects no-geometry queries with
+        # HTTP 400 and then spends 30s on retries.
+        try:
+            f = _pc.find_parcel_by_pid(pid)
+            return f["properties"] if f else None
+        except Exception as e:
+            return {"_error": str(e)}
+
+    out = {"prop_id": pid, "sources": []}
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        f_h, f_m, f_s = (pool.submit(fetch_hcad), pool.submit(fetch_mcad),
+                         pool.submit(fetch_stratmap))
+        h, m, s_ = f_h.result(), f_m.result(), f_s.result()
+
+    if h and not h.get("_error"):
+        out["hcad"] = h
+        out["sources"].append("HCAD live (Harris)")
+    elif h and h.get("_error"):
+        out["hcad_error"] = h["_error"]
+
+    if m and not m.get("_error"):
+        out["mcad"] = m
+        out["sources"].append("MCAD live (Montgomery)")
+    elif m and m.get("_error"):
+        out["mcad_error"] = m["_error"]
+
+    if "hcad" not in out and "mcad" not in out and s_ and not s_.get("_error"):
+        out["stratmap"] = s_
+        out["sources"].append("TxGIO StratMap (annual)")
+    elif s_ and s_.get("_error") and "hcad" not in out and "mcad" not in out:
+        out["stratmap_error"] = s_["_error"]
+
+    if not (out.get("hcad") or out.get("mcad") or out.get("stratmap")):
+        out["error"] = ("No record found for that Prop ID across "
+                        "HCAD/MCAD/StratMap.")
+    return out
 
 
 # --------------------------------------------------------------------------

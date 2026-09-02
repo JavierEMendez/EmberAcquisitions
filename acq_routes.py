@@ -415,12 +415,25 @@ def api_acq_projects_create():
     proj = {
         "name": name,
         "tracts": body.get("tracts") or [],
-        "is_quick_analysis": bool(body.get("is_quick_analysis")),
+        # The page sends project_kind:'quick_analysis' for a one-off run and
+        # is_user_project:false alongside it; accept either rather than
+        # silently filing every quick analysis as a real project.
+        "is_quick_analysis": bool(
+            body.get("is_quick_analysis")
+            or body.get("project_kind") == "quick_analysis"
+            or body.get("is_user_project") is False),
         "created_at": datetime.datetime.utcnow().isoformat(),
     }
     proj["total_acres"] = round(
         sum(float(t.get("acres") or 0) for t in proj["tracts"]), 2)
-    return jsonify({"project": _acq_save("project", proj)}), 201
+    saved = _acq_save("project", proj)
+    # Return the project both nested and flat: quickAnalyzeTract reads d.id
+    # while analyzeOwnerHolding reads (j.project || j).id, and a project that
+    # saves fine but opens /acquisitions/project/undefined is indistinguishable
+    # from one that failed.
+    out = dict(saved)
+    out["project"] = saved
+    return jsonify(out), 201
 
 
 @acq_bp.route("/api/acq/projects/<pid>", methods=["GET"])
