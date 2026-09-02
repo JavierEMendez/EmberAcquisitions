@@ -16,7 +16,7 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
       integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
 <link rel="stylesheet" href="/static/theme.css?v=4"/>
-<link rel="stylesheet" href="/static/css/acquisitions_project.css?v=1"/>
+<link rel="stylesheet" href="/static/css/acquisitions_project.css?v=2"/>
 <script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
@@ -144,6 +144,7 @@
 
   <div id="main-content">
     
+<div id="acq-root">
 <!-- ==== the standalone project page, ported verbatim ==== -->
 <!-- The original carried this in a <header> the portal shell replaces, but the
      page script writes the project name into it, so the hook has to stay. -->
@@ -1123,6 +1124,7 @@ window.printMemo = function () {
       Generated from the Acquisitions GIS platform. Figures derive from CBAS, Census ACS, TxDOT,
       NCES/TEA, OpenStreetMap and FEMA/USGS as cited above.
     </div>
+</div>
 </div>
 </div>
 
