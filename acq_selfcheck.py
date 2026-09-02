@@ -147,7 +147,43 @@ try:
 except Exception as e:
     check("blueprint registers", False, f"{type(e).__name__}: {e}")
 
-# --- 4. every rendered template exists ---------------------------------------
+# --- 4. every endpoint the front end calls actually exists -------------------
+# The map page was once a from-scratch rewrite rather than a port: it had 21 of
+# the real page's 128 functions and called none of its 41 endpoints. Nothing
+# caught that, because every module imported and every route registered — the
+# page simply never asked for any of it. This compares the two directions.
+def _normalise(url):
+    u = url.split("?")[0]
+    u = re.sub(r"\$\{[^}]*\}", "<x>", u)
+    return u.rstrip("/") or "/"
+
+
+def _matches(call, rule):
+    a = [p for p in _normalise(call).strip("/").split("/") if p]
+    b = [p for p in rule.strip("/").split("/") if p]
+    if len(a) != len(b):
+        return False
+    return all(y.startswith("<") or x == "<x>" or x == y for x, y in zip(a, b))
+
+
+try:
+    front = ""
+    for f in ("static/js/acquisitions.js", "static/js/acquisitions_project.js"):
+        if os.path.exists(f):
+            front += io.open(f, encoding="utf-8").read()
+    for t in os.listdir("templates"):
+        if t.startswith("acquisitions"):
+            front += io.open(os.path.join("templates", t), encoding="utf-8").read()
+    calls = sorted(set(re.findall(r"""fetch\(\s*[`'"]([^`'"]+)""", front)))
+    rules = [str(r) for r in app.url_map.iter_rules()]
+    unreachable = [c for c in calls
+                   if c.startswith("/") and not any(_matches(c, r) for r in rules)]
+    check(f"all {len(calls)} endpoints the front end calls exist",
+          not unreachable, ", ".join(unreachable[:4]))
+except Exception as e:
+    check("all endpoints the front end calls exist", False, f"{type(e).__name__}: {e}")
+
+# --- 5. every rendered template exists ---------------------------------------
 src = io.open("acq_routes.py", encoding="utf-8").read()
 missing = [t for t in set(re.findall(r'render_template\(\s*["\']([^"\']+)["\']', src))
            if not os.path.exists(os.path.join("templates", t))]

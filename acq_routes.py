@@ -130,12 +130,19 @@ def _acq_is_admin():
 def acquisitions_page():
     if not _can_view_acquisitions():
         return redirect(url_for("home"))
+    # The map page's script needs the tax-rate table and the current user's
+    # name. In the standalone app those were Jinja expressions inside the
+    # script itself; here the script is a static file, so they are handed over
+    # on window.ACQ_* and have to be passed in.
     return render_template(
         "acquisitions.html",
         username=session.get("username"),
         display_name=session.get("display_name", session.get("username")),
         is_admin=session.get("is_admin", False),
         page_access=session.get("page_access") or {},
+        tax_rates=_all_tax_rates(),
+        tax_year=acq_gis.TAX_YEAR,
+        user={"name": session.get("display_name") or session.get("username") or ""},
     )
 
 
@@ -268,6 +275,46 @@ def api_acq_parcels():
 
 
 # ── Owner search ──────────────────────────────────────────────────────────
+
+@acq_bp.route("/api/acq/me")
+def api_acq_me():
+    """The signed-in user, for the folder-sharing dialog.
+
+    The standalone app had its own /api/me and /api/users. The portal has
+    neither — it identifies users through the session and its own users table —
+    so the two the ported page needs are provided here rather than reaching
+    into app.py, which this module deliberately never imports.
+    """
+    guard = _acq_guard()
+    if guard:
+        return guard
+    return jsonify({"id": _acq_owner(), "is_admin": bool(_acq_is_admin())})
+
+
+@acq_bp.route("/api/acq/users")
+def api_acq_users():
+    """Teammates a folder can be shared with.
+
+    Username only. This list exists to populate a share dialog, so it carries
+    nothing about access levels or contact details.
+    """
+    guard = _acq_guard()
+    if guard:
+        return guard
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id, username FROM users ORDER BY username")
+        rows = cur.fetchall()
+        users = [{"id": r["id"], "name": r["username"]} if isinstance(r, dict)
+                 else {"id": r[0], "name": r[1]} for r in rows]
+        return jsonify({"users": users})
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
 
 @acq_bp.route("/api/acq/owner-dossier")
 @_login_required

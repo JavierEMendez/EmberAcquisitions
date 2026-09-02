@@ -484,3 +484,363 @@ a.acq-btn:hover { text-decoration: none; }
   .acqp-grid { grid-template-columns: 1fr; }
   .acqp-card--wide { grid-column: 1; }
 }
+
+/* ==== ported from the standalone app's map page ==== */
+:root {
+    --ember-orange: #F25929;
+    --ember-orange-hover: #D94414;
+    --ember-blue: #13344E;
+    --ember-blue-700: #0D2B44;
+    --ember-blue-900: #051827;
+    /* Updated neutral palette — professional, less yellow-tinted than the prior #FAF7F2 paper */
+    --gray-50:  #F8F9FB;
+    --gray-100: #F1F3F6;
+    --gray-200: #E5E8EC;
+    --gray-300: #CFD4DB;
+    --gray-400: #A5ADB7;
+    --gray-500: #7A828D;
+    --gray-700: #4A535D;
+    --gray-900: #1A2330;
+    --paper: #FFFFFF;
+    --bg-subtle: #F8F9FB;
+    /* Semantic status colors — used sparingly */
+    --green-600: #10B981;
+    --amber-600: #F59E0B;
+    --red-600:   #EF4444;
+    --blue-600:  #3B82F6;
+    --focus-ring: 0 0 0 3px rgba(242, 89, 41, 0.25);
+    /* Spacing scale (4 / 8 / 12 / 16 / 24 / 32 / 48) */
+    --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px; --s-6: 32px; --s-7: 48px;
+    /* Radii */
+    --r-sm: 4px; --r-md: 6px; --r-lg: 10px; --r-full: 999px;
+    /* Soft shadows for elevation cues — replaces heavier shadow noise */
+    --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+    --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08);
+    --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.12);
+  }
+  * { box-sizing: border-box; }
+  body, html { margin: 0; padding: 0; height: 100%;
+                font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+                font-size: 13px; line-height: 1.5; color: var(--gray-900); background: var(--paper);
+                -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11'; }
+  body { display: flex; flex-direction: column; }
+  #app { display: flex; flex: 1; min-height: 0; }
+
+  /* Top navigation bar — shared across Map / Pipeline / Folders / Admin */
+  .top-nav { display: flex; align-items: center; height: 52px; background: #0A1825; color: #E8EBED;
+    padding: 0 20px; gap: 28px; border-bottom: 1px solid rgba(255,255,255,0.05); flex-shrink: 0; z-index: 100; }
+  .top-nav .brand { display: flex; align-items: center; gap: 10px; }
+  .top-nav .brand img { height: 22px; }
+  .top-nav .brand-name { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; color: #FFF; }
+  .top-nav .brand-name .accent-dot { color: var(--ember-orange); margin-left: 2px; }
+  .top-nav nav.primary { display: flex; gap: 2px; flex: 1; margin-left: 12px; }
+  .top-nav nav.primary a { color: #8993A1; text-decoration: none; padding: 7px 12px;
+    font-size: 13px; font-weight: 500; border-radius: var(--r-md); transition: all 120ms;
+    display: inline-flex; align-items: center; gap: 6px; }
+  .top-nav nav.primary a:hover { color: #FFF; background: rgba(255,255,255,0.05); }
+  .top-nav nav.primary a.active { color: #FFF; background: rgba(242, 89, 41, 0.16);
+    box-shadow: inset 0 -2px 0 var(--ember-orange); }
+  .top-nav .user-meta { display: flex; align-items: center; gap: 14px; font-size: 12px; color: #8993A1; }
+  .top-nav .user-meta .user-pill { color: #E8EBED; font-weight: 500; }
+  .top-nav .user-meta .role-tag { background: var(--ember-orange); color: #FFF; font-size: 9px; padding: 2px 6px; border-radius: var(--r-sm); font-weight: 700; letter-spacing: 0.02em; margin-left: 4px; }
+  .top-nav .user-meta a { color: #8993A1; text-decoration: none; font-weight: 500; transition: color 120ms; }
+  .top-nav .user-meta a:hover { color: var(--ember-orange); }
+
+  /* Sidebar — deeper navy, refined spacing, larger by ~20px for better legibility */
+  #sidebar { width: 340px; background: #0A1825; color: #D8DEE5; display: flex; flex-direction: column; overflow: hidden; transition: width 220ms cubic-bezier(0.16, 1, 0.3, 1); position: relative; border-right: 1px solid rgba(255,255,255,0.04); }
+  #sidebar.collapsed { width: 0; }
+  #sidebar.collapsed .sidebar-header, #sidebar.collapsed .sidebar-body { display: none; }
+  /* expanded-hidden is retained only so the defensive clear in applyState has
+     something to remove; nothing sets it any more. */
+  #sidebar.expanded-hidden { width: 0; }
+  #sidebar.expanded-hidden .sidebar-header, #sidebar.expanded-hidden .sidebar-body { display: none; }
+  /* Sidebar collapse-toggle — vertical-center tab on the sidebar/map seam
+     (Notion / VS Code style). Off the top-left corner so it doesn't overlap
+     Leaflet.draw's toolbar. */
+  #sidebar-toggle { position: fixed; top: 50%; left: 340px; transform: translateY(-50%); width: 20px; height: 56px; background: #0A1825; color: rgba(255,255,255,0.55); border: 0; border-left: 1px solid rgba(255,255,255,0.04); border-radius: 0 var(--r-md) var(--r-md) 0; cursor: pointer; z-index: 1500; box-shadow: 2px 0 8px rgba(0,0,0,0.10); font-size: 11px; line-height: 1; padding: 0; transition: left 220ms cubic-bezier(0.16, 1, 0.3, 1), background 120ms, color 120ms, width 120ms; display: flex; align-items: center; justify-content: center; }
+  #sidebar-toggle:hover { color: #FFF; background: #14283A; width: 24px; }
+  body.sidebar-collapsed #sidebar-toggle { left: 0; }
+  body.expanded-mode #sidebar-toggle { display: none; }
+
+  .sidebar-header { padding: 20px 20px 16px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  .sidebar-header img { height: 26px; width: auto; display: block; }
+  .sidebar-header .subtitle { color: #7A8593; font-size: 10px; margin-top: 6px; letter-spacing: 0.10em; text-transform: uppercase; font-weight: 600; }
+  .sidebar-body { padding: 16px 20px 32px; overflow-y: auto; flex: 1; }
+  .sidebar-body::-webkit-scrollbar { width: 6px; }
+  .sidebar-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.10); border-radius: var(--r-full); }
+  .sidebar-body::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
+  /* Section headings — uppercase + tracking, tighter, less Ember-orange */
+  .sidebar-body h3 { font-size: 10px; text-transform: uppercase; letter-spacing: 0.10em; color: #7A8593; margin: 24px 0 10px; font-weight: 700; }
+  .sidebar-body h3:first-child { margin-top: 0; }
+  /* Subtle horizontal rule between major sections to add breathing room */
+  .sidebar-body hr { border: 0; border-top: 1px solid rgba(255,255,255,0.05); margin: 20px 0; }
+
+  /* Inputs — cleaner, less heavy, consistent focus state */
+  .field { margin-bottom: var(--s-3); }
+  .field label { display: block; font-size: 10px; font-weight: 600; color: #8993A1; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: var(--s-1); }
+  .field input, .field select, .field textarea {
+    width: 100%; padding: 8px 10px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+    color: #FFF; font: inherit; font-size: 13px; border-radius: var(--r-md); transition: border-color 120ms, background 120ms, box-shadow 120ms;
+  }
+  .field input::placeholder, .field textarea::placeholder { color: #5C6877; }
+  .field input:hover, .field select:hover, .field textarea:hover { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.14); }
+  .field input:focus, .field select:focus, .field textarea:focus { outline: none; box-shadow: var(--focus-ring); border-color: var(--ember-orange); background: rgba(255,255,255,0.06); }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-2); }
+
+  /* Buttons — 4 variants, consistent sizing */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    width: 100%; padding: 9px 14px; border: 1px solid transparent; border-radius: var(--r-md);
+    font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: background 120ms, border-color 120ms, transform 80ms, box-shadow 120ms;
+    text-align: center; letter-spacing: 0; line-height: 1.25;
+  }
+  .btn:active:not(:disabled) { transform: translateY(0.5px); }
+  .btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+  /* Primary — solid orange. Reserved for the main action of the section. */
+  .btn-primary { background: var(--ember-orange); color: #FFF; padding: 11px 16px; }
+  .btn-primary:hover:not(:disabled) { background: var(--ember-orange-hover); box-shadow: var(--shadow-sm); }
+  .btn-primary:disabled { background: rgba(255,255,255,0.10); color: #5C6877; cursor: not-allowed; }
+  /* Secondary — subtle on dark sidebar */
+  .btn-secondary { background: rgba(255,255,255,0.06); color: #E8EBED; border-color: rgba(255,255,255,0.10); }
+  .btn-secondary:hover:not(:disabled) { background: rgba(255,255,255,0.10); border-color: rgba(255,255,255,0.16); }
+  .btn-secondary:disabled { color: #5C6877; cursor: not-allowed; }
+  .btn-secondary.active { background: var(--ember-orange); color: #FFF; border-color: var(--ember-orange); }
+  /* Ghost — minimal, used for inline actions */
+  .btn-ghost { background: transparent; color: #8993A1; font-size: 11px; padding: 4px 8px; border-color: transparent; }
+  .btn-ghost:hover { color: #FFF; background: rgba(255,255,255,0.06); }
+
+  /* Status card — quieter look, status-aware colors */
+  .status {
+    background: rgba(255,255,255,0.04); border-radius: var(--r-md); padding: 10px 12px;
+    font-size: 12px; line-height: 1.55; margin-top: var(--s-3);
+    border: 1px solid rgba(255,255,255,0.06); border-left: 3px solid var(--ember-orange);
+    color: #D8DEE5;
+  }
+  .status.error { border-left-color: var(--red-600); background: rgba(239, 68, 68, 0.06); }
+  .status .accent { color: var(--ember-orange); font-weight: 600; }
+
+  /* Layer toggles */
+  .layer-toggle { display: flex; align-items: center; padding: 4px 0; font-size: 12px; }
+  .layer-toggle input[type=checkbox] { margin-right: 8px; accent-color: var(--ember-orange); }
+  .layer-toggle .count { color: #6B7B8B; margin-left: 4px; font-size: 11px; }
+  .swatch { display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: middle; border: 1px solid rgba(0,0,0,0.2); border-radius: 2px; }
+
+  /* Saved searches */
+  .saved-search { display: flex; align-items: center; padding: 8px 10px; border-radius: var(--r-md); margin: 2px 0; font-size: 13px; cursor: pointer; transition: background 100ms; gap: 4px; }
+  .saved-search:hover { background: rgba(255,255,255,0.04); }
+  .saved-search .star { background: transparent; border: 0; color: #5C6877; font-size: 13px; cursor: pointer; padding: 0 4px 0 0; line-height: 1; transition: color 120ms; }
+  .saved-search .star.on { color: var(--ember-orange); }
+  .saved-search .star:hover { color: var(--ember-orange); }
+  .saved-search .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #E8EBED; font-weight: 500; }
+  .saved-search .meta { font-size: 11px; color: #6E7884; font-weight: 400; }
+  .saved-search .actions { opacity: 0; display: flex; gap: 2px; transition: opacity 100ms; }
+  .saved-search:hover .actions { opacity: 1; }
+  .saved-search .icon-btn { background: transparent; border: 0; color: #8993A1; cursor: pointer; font-size: 12px; padding: 4px 6px; border-radius: var(--r-sm); transition: all 100ms; }
+  .saved-search .icon-btn:hover { color: #FFF; background: rgba(255,255,255,0.08); }
+  /* Corridor buffer pill — always visible (not hover-revealed) so the user
+     sees the current buffer width at a glance on every corridor row. */
+  .saved-search .corridor-pill { background: rgba(242,89,41,0.14); border: 1px solid rgba(242,89,41,0.35); color: #FFB997; padding: 2px 7px; font-size: 10px; font-weight: 600; border-radius: 999px; cursor: pointer; transition: all 120ms; white-space: nowrap; line-height: 1.4; }
+  .saved-search .corridor-pill:hover { background: rgba(242,89,41,0.28); color: #FFF; border-color: var(--ember-orange); }
+  .saved-search .corridor-pill.disabled { opacity: 0.55; cursor: not-allowed; font-style: italic; }
+  .saved-search .actions { display: flex; align-items: center; gap: 4px; }
+  .saved-search:not(:hover) .corridor-pill { opacity: 0.85; }
+  .saved-search .actions .corridor-pill ~ .icon-btn { /* keep nav buttons on hover-only */ }
+
+  /* Sidebar empty-state text */
+  .changes-empty { font-size: 12px; color: #6E7884; padding: 8px 0; line-height: 1.55; }
+
+  /* Tract results list — tighter, more refined */
+  .tract-row { display: flex; align-items: center; padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 12px; cursor: pointer; transition: background 100ms; gap: 4px; }
+  .tract-row:hover { background: rgba(255,255,255,0.04); }
+  .tract-row.selected { background: rgba(242,89,41,0.10); border-left: 2px solid var(--ember-orange); padding-left: 8px; }
+  .tract-row input[type=checkbox] { margin-right: 6px; accent-color: var(--ember-orange); flex-shrink: 0; cursor: pointer; }
+  .tract-row .tr-num { color: #5C6877; min-width: 24px; font-variant-numeric: tabular-nums; font-weight: 500; }
+  .tract-row .tr-main { flex: 1; min-width: 0; overflow: hidden; }
+  .tract-row .tr-owner { color: #E8EBED; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.35; }
+  .tract-row .tr-meta { color: #6E7884; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
+  .tract-row .tr-acres { color: #E8A87C; font-weight: 600; font-size: 12px; min-width: 54px; text-align: right; font-variant-numeric: tabular-nums; }
+  .tract-row .tr-tag { display: inline-block; background: rgba(242,89,41,0.85); color: #FFF; padding: 1px 5px; border-radius: var(--r-sm); font-size: 9px; font-weight: 600; margin-left: 4px; vertical-align: middle; letter-spacing: 0.02em; }
+
+  /* User header row */
+  .user-row { display: flex; align-items: center; justify-content: space-between; margin-top: var(--s-3); padding-top: var(--s-2); border-top: 1px solid rgba(255,255,255,0.05); font-size: 11px; color: #8993A1; }
+  .user-row .user-name { color: #E8EBED; font-weight: 500; }
+  .user-row .logout { color: #8993A1; text-decoration: none; font-weight: 500; transition: color 120ms; }
+  .user-row .logout:hover { color: var(--ember-orange); }
+
+  /* Folders */
+  .folder-item { background: var(--ember-blue-700); border-radius: 6px; padding: 6px 10px; margin: 4px 0; font-size: 12px; }
+  .folder-item .head { display: flex; align-items: center; cursor: pointer; }
+  .folder-item .swatch-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-right: 8px; }
+  .folder-item .name { flex: 1; font-weight: 600; color: #FFF; }
+  .folder-item .count { color: #ABB4BD; font-size: 11px; margin-left: 6px; }
+  .folder-item .actions { display: flex; gap: 4px; opacity: 0; transition: opacity 80ms; }
+  .folder-item:hover .actions { opacity: 1; }
+  .folder-item .icon-btn { background: transparent; border: 0; color: #ABB4BD; cursor: pointer; padding: 2px 4px; font-size: 12px; }
+  .folder-item .icon-btn:hover { color: var(--ember-orange); }
+  .folder-item .contents { display: none; margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.08); }
+  .folder-item.open .contents { display: block; }
+  .folder-contents-row { display: flex; align-items: center; padding: 3px 4px; font-size: 11px; color: #E8EBED; border-radius: 4px; }
+  .folder-contents-row:hover { background: rgba(255,255,255,0.06); }
+  .folder-contents-row .icon { width: 14px; margin-right: 6px; opacity: 0.7; font-size: 11px; }
+  .folder-contents-row .label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  .folder-contents-row .row-actions { opacity: 0; }
+  .folder-contents-row:hover .row-actions { opacity: 1; }
+
+  /* Notes modal */
+  /* Modals — refined: lighter overlay, calmer shadow, better hierarchy */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.55); backdrop-filter: blur(2px); display: none; align-items: center; justify-content: center; z-index: 2000; animation: fadeIn 160ms ease-out; }
+  .modal-overlay.show { display: flex; }
+  .modal { background: #FFF; border-radius: var(--r-lg); padding: var(--s-5); width: 100%; max-width: 480px; box-shadow: var(--shadow-lg); animation: slideUp 200ms cubic-bezier(0.16, 1, 0.3, 1); }
+  .modal h3 { margin: 0 0 var(--s-1); font-size: 18px; font-weight: 600; color: var(--gray-900); letter-spacing: -0.01em; }
+  .modal .modal-sub { font-size: 12px; color: var(--gray-500); margin-bottom: var(--s-4); }
+  .modal textarea { width: 100%; min-height: 140px; padding: 10px 12px; border: 1px solid var(--gray-300); border-radius: var(--r-md); font: inherit; font-size: 13px; line-height: 1.5; resize: vertical; transition: border-color 120ms, box-shadow 120ms; color: var(--gray-900); }
+  .modal textarea:focus { outline: none; border-color: var(--ember-orange); box-shadow: var(--focus-ring); }
+  .modal .modal-actions { display: flex; gap: var(--s-2); margin-top: var(--s-4); justify-content: flex-end; }
+  .modal .modal-actions button { padding: 8px 16px; border-radius: var(--r-md); border: 1px solid transparent; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 120ms, border-color 120ms; }
+  .modal .btn-cancel { background: #FFF; color: var(--gray-700); border-color: var(--gray-300); }
+  .modal .btn-cancel:hover { background: var(--gray-50); border-color: var(--gray-400); }
+  .modal .btn-save { background: var(--ember-orange); color: #FFF; border-color: var(--ember-orange); }
+  .modal .btn-save:hover { background: var(--ember-orange-hover); border-color: var(--ember-orange-hover); }
+  .modal label { display: block; font-size: 10px; font-weight: 600; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.08em; margin: var(--s-3) 0 var(--s-1); }
+  .modal select, .modal input { width: 100%; padding: 8px 10px; border: 1px solid var(--gray-300); border-radius: var(--r-md); font: inherit; font-size: 13px; color: var(--gray-900); transition: border-color 120ms, box-shadow 120ms; background: #FFF; }
+  .modal select:hover, .modal input:hover { border-color: var(--gray-400); }
+  .modal select:focus, .modal input:focus { outline: none; border-color: var(--ember-orange); box-shadow: var(--focus-ring); }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* Leaflet popup action buttons — quieter, consistent with rest of design */
+  .popup-actions { margin-top: var(--s-2); display: flex; gap: 4px; flex-wrap: wrap; }
+  .popup-actions button { background: var(--ember-blue); color: #FFF; border: 0; padding: 5px 9px; border-radius: var(--r-sm); font-size: 11px; font-weight: 500; cursor: pointer; transition: background 120ms; font-family: inherit; }
+  .popup-actions button:hover { background: var(--ember-orange); }
+  .popup-actions .has-note { background: var(--green-600); }
+  .popup-actions .fav-on { background: #F59E0B; color: #FFF; }
+  .popup-actions .fav-on:hover { background: #D97706; }
+
+  /* Leaflet layer control: cap height so it doesn't dominate the map with many overlays */
+  /* Owner/elevation work docks sit along the bottom so the layer control and
+     focused overlays stay visible and usable. */
+  /* Right-hand panel, not a bottom dock. The dock existed because a side panel
+     covered the layer control; the control now lives on the left, so the panel
+     can go back to the side, where a long list of matching tracts is far easier
+     to read than in a 42vh strip. */
+  #dossier-panel { position: fixed; top: 60px; right: 14px; bottom: 14px; width: min(440px, 42vw); max-height: none;
+                   background: #FFF; border: 1px solid var(--gray-200); border-radius: 10px;
+                   box-shadow: 0 10px 32px rgba(15,23,42,0.18);
+                   z-index: 900; display: none; flex-direction: column; overflow: hidden; }
+  #dossier-panel.show { display: flex; }
+  #dossier-panel .dossier-head { display: flex; align-items: flex-start; gap: 8px; padding: 12px 14px;
+                                 border-bottom: 1px solid var(--gray-200); background: var(--ember-blue-900); color: #FFF; }
+  #dossier-title { font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+  #dossier-sub { font-size: 11px; color: rgba(255,255,255,0.66); margin-top: 3px; }
+  #dossier-panel .dossier-head button { background: rgba(255,255,255,0.12); border: 0; color: #FFF;
+                                        border-radius: 4px; cursor: pointer; font-size: 11px; padding: 4px 8px; white-space: nowrap; }
+  #dossier-panel .dossier-head button:hover { background: rgba(255,255,255,0.24); }
+  #dossier-close { font-size: 18px !important; line-height: 1; padding: 2px 8px !important; }
+  #dossier-body { flex: 1; overflow-y: auto; padding: 12px 14px; }
+  #dossier-body .owner-row { padding: 7px 8px; border-bottom: 1px solid var(--gray-100); cursor: pointer; border-radius: 4px; }
+  #dossier-body .owner-row:hover { background: var(--gray-50); }
+  #dossier-body .owner-row.active { background: rgba(242,89,41,0.10); }
+  .owner-row-actions { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+  .owner-row-actions button,
+  .owner-row-actions a { background: var(--ember-blue); color: #FFF; border: 0; padding: 4px 7px; border-radius: 4px; font-size: 10px; font-weight: 600; cursor: pointer; text-decoration: none; font-family: inherit; }
+  .owner-row-actions button:hover,
+  .owner-row-actions a:hover { background: var(--ember-orange); }
+  #elev-dock { z-index: 900 !important; border-radius: 10px !important; }
+  #elev-line-panel { top: 60px !important; bottom: 14px !important; width: min(440px, 42vw) !important;
+                     max-height: none !important; z-index: 900 !important; }
+  .focus-mini-btn { background: rgba(255,255,255,0.12); border: 0; color: #FFF;
+                    border-radius: 4px; cursor: pointer; font-size: 11px; padding: 4px 8px; white-space: nowrap; }
+  .focus-mini-btn:hover { background: rgba(255,255,255,0.24); }
+  #elev-dock .focus-mini-btn { background: #13344E; color: #FFF; }
+  #elev-dock .focus-mini-btn:hover { background: #F25929; }
+  @media (max-width: 900px) {
+    #dossier-panel, #elev-dock, #elev-line-panel { left: 8px !important; right: 8px !important; bottom: 8px !important; max-height: 50vh; }
+  }
+
+  /* Pinned layer panel stays expanded regardless of hover. */
+  .leaflet-control-layers.layers-pinned { display: block !important; }
+  .leaflet-control-layers.layers-pinned .leaflet-control-layers-toggle { display: none; }
+  .leaflet-control-layers.layers-pinned .leaflet-control-layers-list { display: block !important; }
+  .leaflet-control-layers-expanded { padding-top: 22px !important; }
+  .layers-pin:hover { opacity: 1 !important; background: rgba(242,89,41,0.10) !important; }
+  /* Leaflet layer-control panel — refined typography + softer shadow */
+  .leaflet-control-layers { background: #FFF; border-radius: var(--r-md) !important; border: 1px solid var(--gray-200) !important; box-shadow: var(--shadow-md) !important; font-family: 'Inter', system-ui, sans-serif !important; }
+  .leaflet-control-layers-expanded { max-height: calc(100vh - 80px); overflow-y: auto; padding: 10px 14px; font-size: 12px; min-width: 200px; }
+  .leaflet-control-layers-expanded label { display: flex; align-items: center; padding: 3px 0; color: var(--gray-900); }
+  .leaflet-control-layers-expanded label input { margin-right: 6px; accent-color: var(--ember-orange); }
+  .leaflet-control-layers-base label { font-weight: 600; }
+  .leaflet-control-layers-separator { margin: 8px 0; border-top: 1px solid var(--gray-200); }
+  /* Leaflet popup tweaks — softer corners, less harsh shadow */
+  .leaflet-popup-content-wrapper { border-radius: var(--r-md) !important; box-shadow: var(--shadow-md) !important; }
+  .leaflet-popup-content { font-family: 'Inter', system-ui, sans-serif !important; font-size: 12px !important; line-height: 1.5 !important; color: var(--gray-900); margin: 12px 14px !important; }
+  .leaflet-popup-content b { color: var(--gray-900); font-weight: 600; }
+  .leaflet-popup-content a { color: var(--ember-orange); }
+  /* Leaflet zoom and attribution buttons.
+     NOTE: use `background-color` (not the `background` shorthand) so we don't
+     wipe out Leaflet.draw's toolbar sprite `background-image` — that's what
+     produces the polygon / polyline / circle / rectangle / edit / delete icons. */
+  .leaflet-bar a { background-color: #FFF !important; color: var(--gray-700) !important; border-bottom-color: var(--gray-200) !important; font-weight: 500 !important; }
+  .leaflet-bar a:hover { background-color: var(--gray-50) !important; color: var(--gray-900) !important; }
+  .leaflet-control-attribution { background: rgba(255,255,255,0.85) !important; font-size: 10px !important; color: var(--gray-500); font-family: 'Inter', system-ui, sans-serif !important; }
+
+  /* Mobile: sidebar becomes a slide-out drawer */
+  .mobile-menu-btn { display: none; }
+  @media (max-width: 900px) {
+    #app { flex-direction: column; }
+    #sidebar {
+      position: fixed; top: 0; left: 0; bottom: 0;
+      transform: translateX(-100%); transition: transform 200ms ease;
+      z-index: 1500; width: min(85vw, 320px);
+      box-shadow: 0 0 30px rgba(0,0,0,0.30);
+    }
+    #sidebar.open { transform: translateX(0); }
+    #map { width: 100%; height: 100vh; }
+    .mobile-menu-btn {
+      display: flex; position: absolute; top: 10px; left: 10px;
+      z-index: 1100; width: 42px; height: 42px; align-items: center; justify-content: center;
+      background: var(--ember-blue-900); color: #FFF; border: 0; border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.20); cursor: pointer; font-size: 20px;
+    }
+    .address-wrap { left: 64px; }
+    .toast { top: 64px; left: 64px; right: 8px; }
+    /* Bigger tap targets */
+    .btn, .btn-primary, .btn-secondary { padding: 12px 14px; font-size: 14px; }
+    .field input, .field select { padding: 10px 12px; font-size: 14px; }
+  }
+
+  /* Browser print — clean layout when user does File → Print / Save as PDF */
+  @media print {
+    body, html { background: #FFF !important; }
+    #sidebar { display: none !important; }
+    #map { width: 100% !important; height: 100vh !important; }
+    .address-wrap, .toast, .leaflet-control-zoom, .leaflet-control-layers,
+    .leaflet-control-attribution { display: none !important; }
+    .leaflet-popup { display: none !important; }
+    @page { size: landscape; margin: 0.3in; }
+  }
+
+  /* Map */
+  #map { flex: 1; position: relative; }
+  .leaflet-popup-content { font: 12px/1.5 "Helvetica Neue", system-ui, sans-serif; }
+  .leaflet-popup-content b { color: var(--ember-blue); }
+  .leaflet-popup-content a { color: var(--ember-orange); text-decoration: none; }
+  .leaflet-popup-content a:hover { text-decoration: underline; }
+  .leaflet-popup-content-wrapper { border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.18); }
+  .ember-verified { display: inline-block; font-size: 10px; background: var(--ember-orange); color: #FFF; padding: 1px 6px; border-radius: 3px; margin-left: 4px; font-weight: 700; }
+
+  /* Address search bar (top floating) */
+  .address-wrap { position: absolute; top: 14px; left: 60px; right: 14px; max-width: 520px; z-index: 1000; }
+  .address-bar { display: flex; gap: 6px; background: #FFF; padding: 8px; border-radius: 10px; box-shadow: 0 4px 14px rgba(0,0,0,0.14); }
+  .address-bar input { flex: 1; padding: 8px 10px; border: 1px solid var(--gray-300); border-radius: 6px; font: inherit; }
+  .address-bar input:focus { outline: none; box-shadow: var(--focus-ring); border-color: var(--ember-orange); }
+  .address-bar button { padding: 8px 14px; background: var(--ember-blue); color: #FFF; border: 0; border-radius: 6px; font: inherit; font-weight: 600; cursor: pointer; }
+  .address-bar button:hover { background: var(--ember-blue-700); }
+  /* Autocomplete dropdown */
+  .ac-dropdown { background: #FFF; margin-top: 4px; border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,0.14); overflow: hidden; display: none; }
+  .ac-dropdown.open { display: block; }
+  .ac-item { padding: 8px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid var(--gray-100); display: flex; align-items: center; }
+  .ac-item:last-child { border-bottom: 0; }
+  .ac-item:hover, .ac-item.active { background: #FFF4EF; }
+  .ac-item .icon { width: 18px; height: 18px; margin-right: 10px; color: var(--ember-orange); flex-shrink: 0; }
+  .ac-item .label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--gray-900); }

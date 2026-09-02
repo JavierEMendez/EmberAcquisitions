@@ -154,9 +154,18 @@ def _load_special_district_rates():
     """
     from openpyxl import load_workbook
     rates = {}
-    xlsx = STORAGE_DIR / f"{TAX_YEAR}-special-district-rates.xlsx"
+    # Look on the data volume first so the file can be replaced at runtime,
+    # then fall back to the copy that ships with the repo. STORAGE_DIR is the
+    # Railway volume, which starts empty — without the fallback every MUD, ESD
+    # and WCID rate would simply be missing on a fresh deploy, and silently:
+    # the page still renders, the districts just have no rate against them.
+    name = f"{TAX_YEAR}-special-district-rates.xlsx"
+    xlsx = STORAGE_DIR / name
     if not xlsx.exists():
-        print(f"[tax-rates] {xlsx.name} not found — special-district rates unavailable", flush=True)
+        xlsx = Path(__file__).parent / "data" / "acquisitions" / name
+    if not xlsx.exists():
+        print(f"[tax-rates] {name} not found on the volume or in the repo — "
+              f"special-district rates unavailable", flush=True)
         return rates
     try:
         wb = load_workbook(xlsx, read_only=True, data_only=True)
