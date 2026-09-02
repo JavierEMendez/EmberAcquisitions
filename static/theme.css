@@ -519,3 +519,11 @@ body.nav-collapsed #nav-collapse{right:0;left:0;margin:0 auto}
 .acq-subnav a:hover{background:var(--eax-accent-soft);color:var(--eax-accent)}
 .acq-subnav a.on{background:var(--eax-surface);color:var(--eax-ink);
   border:1px solid var(--eax-line)}
+
+/* A page carrying the acquisitions sub-nav stacks it above the content.
+   #main-content is a flex ROW, so a sub-nav added as a direct child sits
+   beside the page instead of above it — which is what pushed the project page
+   sideways and gave it a horizontal scrollbar. */
+#main-content:has(> .acq-subnav){flex-direction:column;overflow:hidden}
+#main-content > .acq-subnav{flex:0 0 auto}
+#main-content:has(> .acq-subnav) > #acq-root{flex:1;min-height:0}

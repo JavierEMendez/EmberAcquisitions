@@ -7575,6 +7575,25 @@ def acq_folders_page():
     return _acq_render("acquisitions_folders.html")
 
 
+@acq_bp.route("/acquisitions/analyses")
+@_login_required
+def acquisitions_analyses_page():
+    """Index of every project and quick analysis.
+
+    The map page keeps a Projects list in its sidebar, but once you navigate
+    away there was no route back to a saved analysis except browser history.
+    """
+    if not _can_view_acquisitions():
+        return redirect(url_for("home"))
+    return render_template(
+        "acquisitions_analyses.html",
+        username=session.get("username"),
+        display_name=session.get("display_name", session.get("username")),
+        is_admin=session.get("is_admin", False),
+        page_access=session.get("page_access") or {},
+    )
+
+
 @acq_bp.route("/acquisitions/pipeline")
 @_login_required
 def acq_pipeline_page():
