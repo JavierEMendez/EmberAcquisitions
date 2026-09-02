@@ -108,6 +108,26 @@ async function loadCacheStatus() {
     } else {
       orph.style.display = 'none';
     }
+
+    // Parcels the spatial index cannot SEE — the opposite problem, and the
+    // damaging one. An orphan makes searches slower; an unindexed parcel makes
+    // them wrong: the county count reads correct and every result is short.
+    // Any number above zero is worth acting on, so this has no threshold.
+    const un = document.getElementById('cache-unindexed');
+    const u = d.rtree_unindexed || 0;
+    if (un) {
+      if (u > 0) {
+        un.style.display = 'block';
+        un.innerHTML =
+          '<b>' + u.toLocaleString() + ' parcels are missing from the spatial index</b> — ' +
+          'they are in the cache and count toward the totals below, but no search ' +
+          'can return them. Rebuilt from stored geometry; nothing is re-downloaded. ' +
+          '<button class="ghost" id="btn-cache-reindex" style="margin-left:8px">Rebuild index</button>';
+        document.getElementById('btn-cache-reindex').addEventListener('click', reindexParcels);
+      } else {
+        un.style.display = 'none';
+      }
+    }
   } catch (e) {
     document.getElementById('cache-body').innerHTML = `<tr><td colspan="5" style="color:#c62828">Failed to load cache status: ${e.message}</td></tr>`;
   }
@@ -141,6 +161,21 @@ function on(id, ev, fn) {
   var el = document.getElementById(id);
   if (el) el.addEventListener(ev, fn);
 }
+async function reindexParcels() {
+  const el = document.getElementById('cache-unindexed');
+  if (el) el.innerHTML = 'Rebuilding index entries…';
+  try {
+    const r = await fetch('/api/acq/cache/reindex', { method: 'POST' });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    if (el) el.innerHTML = 'Restored <b>' + (d.reindexed || 0).toLocaleString() +
+      '</b> index entries. Searches will return them now.';
+    setTimeout(loadCacheStatus, 800);
+  } catch (e) {
+    if (el) el.innerHTML = 'Rebuild failed: ' + e.message;
+  }
+}
+
 on('btn-cache-refresh-status', 'click', loadCacheStatus);
 on('btn-cache-bootstrap-all', 'click', function () { triggerBootstrap('all'); });
 loadCacheStatus();

@@ -442,6 +442,13 @@ def cache_status():
         tiles_beat = dict(c.execute(
             "SELECT county_fips, MAX(done_at) FROM cache_tiles GROUP BY county_fips"
         ).fetchall())
+        # Per county, how many rows the spatial index cannot see. A county can
+        # report a healthy parcel_count and still be short in every search.
+        unindexed = dict(c.execute("""
+            SELECT p.county_fips, COUNT(*) FROM parcels p
+             WHERE NOT EXISTS (SELECT 1 FROM parcels_rtree r WHERE r.id = p.rowid)
+             GROUP BY p.county_fips
+        """).fetchall())
     seen = {r[0]: r for r in rows}
     out = []
     now = int(time.time())
@@ -465,6 +472,7 @@ def cache_status():
                 "age_days": round(age_days, 1) if age_days is not None else None,
                 "tiles_done": tiles_done.get(fips, 0),
                 "last_tile_at": tiles_beat.get(fips),
+                "unindexed": unindexed.get(fips, 0),
             })
         else:
             out.append({
@@ -1494,6 +1502,82 @@ def rtree_orphan_count(conn=None) -> int:
         return _q(conn)
     with _db_lock, _conn() as c:
         return _q(c)
+
+
+def rtree_missing_count(conn=None) -> int:
+    """Parcels with NO R-Tree entry — rows a spatial search can never return.
+
+    The counterpart to rtree_orphan_count, and the one that actually hides.
+    That function reports max(0, rtree - parcels), so when parcels OUTNUMBER
+    index rows the difference goes negative and it reports zero: a cache short
+    of index entries looks perfectly healthy while every search silently
+    returns fewer parcels than the county holds.
+
+    This is a real anti-join rather than a difference, so it costs a scan. It
+    is only called from the admin page and after a bootstrap, not per search.
+    """
+    def _q(c):
+        return c.execute("""
+            SELECT COUNT(*) FROM parcels p
+             WHERE NOT EXISTS (SELECT 1 FROM parcels_rtree r WHERE r.id = p.rowid)
+        """).fetchone()[0]
+    if conn is not None:
+        return _q(conn)
+    init_db()
+    with _db_lock, _conn() as c:
+        return _q(c)
+
+
+def reindex_missing_rtree(on_progress=None) -> dict:
+    """Give every unindexed parcel its R-Tree entry back.
+
+    Rebuilds only the missing rows from the geometry already stored, so it is a
+    repair rather than a re-download: the parcels are present, they were simply
+    invisible to spatial queries.
+    """
+    from shapely.wkb import loads as wkb_loads
+    init_db()
+    t0 = time.time()
+    fixed = failed = 0
+    with _db_lock, _conn() as c:
+        before = rtree_missing_count(c)
+        if not before:
+            return {"missing": 0, "reindexed": 0, "failed": 0, "elapsed_sec": 0.0}
+        print(f"[cache] reindexing {before:,} parcels with no R-Tree entry", flush=True)
+        while True:
+            batch = c.execute("""
+                SELECT p.rowid, p.shape_wkb FROM parcels p
+                 WHERE NOT EXISTS (SELECT 1 FROM parcels_rtree r WHERE r.id = p.rowid)
+                 LIMIT 20000
+            """).fetchall()
+            if not batch:
+                break
+            c.execute("BEGIN")
+            try:
+                for rowid, wkb in batch:
+                    try:
+                        minx, miny, maxx, maxy = wkb_loads(wkb).bounds
+                    except Exception:
+                        failed += 1
+                        continue
+                    c.execute("INSERT OR REPLACE INTO parcels_rtree "
+                              "(id, minx, maxx, miny, maxy) VALUES (?, ?, ?, ?, ?)",
+                              (rowid, minx, maxx, miny, maxy))
+                    fixed += 1
+                c.execute("COMMIT")
+            except Exception:
+                c.execute("ROLLBACK")
+                raise
+            if on_progress:
+                on_progress(fixed, before)
+            if failed and failed == len(batch):
+                break            # nothing in this batch could be read; stop
+        after = rtree_missing_count(c)
+    elapsed = round(time.time() - t0, 1)
+    print(f"[cache] reindex done: {fixed:,} restored, {failed:,} unreadable, "
+          f"{after:,} still missing, {elapsed}s", flush=True)
+    return {"missing": before, "reindexed": fixed, "failed": failed,
+            "still_missing": after, "elapsed_sec": elapsed}
 
 
 def vacuum_rtree_orphans(on_progress=None) -> dict:
