@@ -1,0 +1,25 @@
+/* Parcel-cache admin panel.
+
+   The card was ported out of the standalone's admin page, which had its own
+   stylesheet; these are the equivalents in Ember's tokens rather than a copy
+   of that page's look. */
+.acq-cache-card{background:var(--eax-surface);border:1px solid var(--eax-line);
+  border-radius:10px;padding:18px 20px;box-shadow:var(--eax-shadow-card);max-width:1100px}
+.acq-cache-card h3{font-family:var(--font-display);font-size:15px;font-weight:700;
+  color:var(--eax-ink);margin:0 0 6px}
+.acq-cache-card p{font-size:12.5px;line-height:1.55;color:var(--eax-muted);margin:0 0 14px}
+.acq-cache-card button,.acq-cache-card .ghost{font-family:var(--font-sans);font-size:12px;
+  font-weight:600;padding:8px 14px;border-radius:6px;cursor:pointer;
+  border:1px solid var(--eax-line-2);background:var(--eax-bg-2);color:var(--eax-ink);
+  margin:0 6px 10px 0;transition:background .12s,border-color .12s}
+.acq-cache-card button:hover,.acq-cache-card .ghost:hover{
+  background:var(--eax-accent-soft);border-color:var(--eax-accent);color:var(--eax-accent)}
+.acq-cache-card table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
+.acq-cache-card th{text-align:left;font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--eax-subtle);font-weight:700;padding:8px 10px;border-bottom:1px solid var(--eax-line)}
+.acq-cache-card td{padding:10px;border-bottom:1px solid var(--eax-line);color:var(--eax-ink);
+  vertical-align:top}
+.acq-cache-card tr:last-child td{border-bottom:none}
+.acq-cache-card td b{font-weight:600}
+.acq-page-title{font-family:var(--font-display);font-size:20px;font-weight:700;
+  color:var(--eax-ink);margin:0 0 16px}

@@ -476,3 +476,46 @@ body {
 /* Invoice Dashboard nests an Archive rail (248px) between the
    sidebar and the page content — push the footer past both. */
 body.page-invoice .data-dates-footer { left: 488px; }
+
+
+/* ---------- Collapsible nav rail ----------
+   Shared by every page. Collapsing narrows the rail to its icons rather than
+   hiding it: the toggle stays reachable, the nav stays usable, and nothing has
+   to protrude over the page content to bring it back. */
+#sidebar{transition:width 180ms cubic-bezier(0.16,1,0.3,1);}
+body.nav-collapsed #sidebar{width:58px !important;min-width:58px !important;}
+body.nav-collapsed #sidebar .sidebar-item{justify-content:center;padding:9px 0;margin:1px 6px;gap:0}
+/* Nav labels are bare text nodes beside the icon — `<a class="sidebar-item">
+   <svg/> MPC Underwriting</a>` — so there is no element to hide. font-size:0
+   collapses the text while the SVG, which carries its own width and height,
+   is unaffected. */
+body.nav-collapsed #sidebar .sidebar-item,
+body.nav-collapsed #sidebar .sb-foot-btn{font-size:0 !important;white-space:nowrap;overflow:hidden}
+body.nav-collapsed #sidebar .sidebar-section,
+body.nav-collapsed #sidebar .logo-sub{display:none !important}
+body.nav-collapsed #sidebar .sidebar-item svg,
+body.nav-collapsed #sidebar .sb-foot-btn svg{width:16px;height:16px;flex:0 0 16px}
+body.nav-collapsed #sidebar .sidebar-item svg{flex:0 0 auto}
+body.nav-collapsed #sidebar .sidebar-logo{padding:14px 6px}
+body.nav-collapsed #sidebar .logo-img{max-width:38px}
+body.nav-collapsed #sidebar .sb-foot-btn{justify-content:center;padding:8px 0;gap:0}
+
+#nav-collapse{position:absolute;top:10px;right:8px;width:22px;height:22px;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+  border:none;background:transparent;color:var(--eax-subtle);border-radius:5px;
+  font-size:12px;line-height:1;padding:0;z-index:5;transition:background .12s,color .12s}
+#nav-collapse:hover{background:var(--eax-accent-soft);color:var(--eax-accent)}
+body.nav-collapsed #nav-collapse{right:0;left:0;margin:0 auto}
+#sidebar{position:relative}
+
+/* Sub-navigation across the acquisitions pages. The standalone carried these
+   in a top bar that the portal shell replaces, so the links to Pipeline,
+   Folders, Corridors and the parcel cache had nowhere to live — the admin page
+   existed with no way to reach it. */
+.acq-subnav{display:flex;gap:2px;padding:8px 0 10px;flex-wrap:wrap}
+.acq-subnav a{font-family:var(--font-sans);font-size:12px;font-weight:600;
+  color:var(--eax-muted);text-decoration:none;padding:6px 11px;border-radius:6px;
+  transition:background .12s,color .12s}
+.acq-subnav a:hover{background:var(--eax-accent-soft);color:var(--eax-accent)}
+.acq-subnav a.on{background:var(--eax-surface);color:var(--eax-ink);
+  border:1px solid var(--eax-line)}

@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 
-<link rel="stylesheet" href="/static/theme.css?v=3"/>
+<link rel="stylesheet" href="/static/theme.css?v=4"/>
 <link rel="stylesheet" href="/static/css/acquisitions.css?v=1"/>
 <script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 <style>
@@ -482,6 +482,14 @@
 
   <div id="main-content">
     <div class="acq-legacy">
+<div class="acq-subnav">
+  <a href="/acquisitions">Map &amp; search</a>
+  <a href="/acquisitions/pipeline" class="on">Pipeline</a>
+  <a href="/acquisitions/folders">Folders</a>
+  <a href="/acquisitions/corridors">Corridors</a>
+  {% if is_admin %}<a href="/acquisitions/admin">Parcel cache</a>{% endif %}
+</div>
+
       <div style="padding:20px 28px 4px">
         <div class="acq-eyebrow">LAND · OUTREACH</div>
       </div>

@@ -17,9 +17,9 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
       integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-<link rel="stylesheet" href="/static/theme.css?v=3"/>
+<link rel="stylesheet" href="/static/theme.css?v=4"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
-<link rel="stylesheet" href="/static/css/acquisitions.css?v=3"/>
+<link rel="stylesheet" href="/static/css/acquisitions.css?v=4"/>
 <script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 <style>
   /* App shell — copied from financials.html so /acquisitions nests in the
@@ -46,8 +46,6 @@
 </style>
 </head>
 <body>
-<button id="nav-toggle" type="button" title="Hide / show the Ember menu"
-        aria-label="Hide or show the Ember menu">&#9664;</button>
 <div id="app">
 
   <nav id="sidebar">
@@ -150,13 +148,21 @@
 
   <div id="main-content">
     <div class="acq-page">
+<div class="acq-subnav">
+  <a href="/acquisitions" class="on">Map &amp; search</a>
+  <a href="/acquisitions/pipeline">Pipeline</a>
+  <a href="/acquisitions/folders">Folders</a>
+  <a href="/acquisitions/corridors">Corridors</a>
+  {% if is_admin %}<a href="/acquisitions/admin">Parcel cache</a>{% endif %}
+</div>
+
 
       
 <div id="acq-root">
 <!-- ==== the standalone app's map page, ported verbatim ==== -->
-<button id="sidebar-toggle" type="button" title="Hide / show sidebar">◀</button>
 <div id="acq-app">
   <div id="acq-sidebar">
+  <button id="sidebar-toggle" type="button" title="Hide / show sidebar">◀</button>
     <div class="sidebar-header" style="display:none">
       <img src="/static/logo-white.png" alt="Ember">
       <div class="subtitle">Acquisitions GIS</div>
@@ -346,11 +352,6 @@
                 style="flex:1;border:1px solid #DDE3E8;background:#FFF;color:#13344E;border-radius:4px;padding:4px 6px;font-size:10px;font-weight:700;cursor:pointer">
           Show all
         </button>
-      </div>
-      <div style="margin-top:6px;border-top:1px solid #DDE3E8;padding-top:6px;color:#6B7B8B;font-size:10px;line-height:1.35">
-        Unshaded land has no parcel record — road and highway right-of-way,
-        rail corridors and drainage. Roughly 11% of a typical search area.
-        Lowering the acre minimum cannot fill these in.
       </div>
       <div style="margin-top:4px;color:#6B7B8B;font-size:10px">
         <b>LIVE</b> tag = HCAD weekly data
@@ -546,30 +547,6 @@
 </script>
 <script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
-<script src="/static/js/acquisitions.js?v=3" defer></script>
-<script>
-  // Collapse for the Ember nav rail. The acquisitions panel has its own toggle
-  // from the standalone app; this is the other half of the request, and the
-  // choice persists so it is not re-made on every visit.
-  (function () {
-    var KEY = 'ember-nav-collapsed';
-    var btn = document.getElementById('nav-toggle');
-    function apply(collapsed) {
-      document.body.classList.toggle('nav-collapsed', collapsed);
-      btn.innerHTML = collapsed ? '&#9654;' : '&#9664;';
-      btn.title = (collapsed ? 'Show' : 'Hide') + ' the Ember menu';
-      // Leaflet caches the map size, so tell it the viewport moved.
-      setTimeout(function () {
-        try { if (window.map && window.map.invalidateSize) window.map.invalidateSize(); } catch (e) {}
-      }, 220);
-    }
-    try { apply(localStorage.getItem(KEY) === '1'); } catch (e) { apply(false); }
-    btn.addEventListener('click', function () {
-      var next = !document.body.classList.contains('nav-collapsed');
-      try { localStorage.setItem(KEY, next ? '1' : '0'); } catch (e) {}
-      apply(next);
-    });
-  })();
-</script>
+<script src="/static/js/acquisitions.js?v=4" defer></script>
 </body>
 </html>

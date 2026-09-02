@@ -1,5 +1,5 @@
 {# ============================================================
-   Ember · Acquisitions GIS — Folders
+   Ember · Acquisitions GIS — Parcel cache
    Ported from the standalone app. The page body and its JS come across as
    they were; the shell, sidebar, theme tokens and account modal are the
    portal's. API calls are repointed to /api/acq/.
@@ -9,13 +9,13 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Folders · Ember Acquisitions</title>
+<title>Parcel cache · Ember Acquisitions</title>
 <link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 
 <link rel="stylesheet" href="/static/theme.css?v=4"/>
-<link rel="stylesheet" href="/static/css/acquisitions.css?v=1"/>
+<link rel="stylesheet" href="/static/css/acquisitions_admin.css?v=1"/>
 <script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 <style>
   /* App shell — copied from financials.html so /acquisitions nests in the
@@ -262,120 +262,33 @@
 <div class="acq-subnav">
   <a href="/acquisitions">Map &amp; search</a>
   <a href="/acquisitions/pipeline">Pipeline</a>
-  <a href="/acquisitions/folders" class="on">Folders</a>
+  <a href="/acquisitions/folders">Folders</a>
   <a href="/acquisitions/corridors">Corridors</a>
-  {% if is_admin %}<a href="/acquisitions/admin">Parcel cache</a>{% endif %}
+  {% if is_admin %}<a href="/acquisitions/admin" class="on">Parcel cache</a>{% endif %}
 </div>
 
-      <div style="padding:20px 28px 4px">
-        <div class="acq-eyebrow">LAND · ORGANISATION</div>
+<h1 class="acq-page-title">Parcel cache</h1>
+<div class="acq-cache-card" class="card">
+      <h2>Parcel cache <span style="font-weight:400;font-size:13px;color:#6B7B8B">(speeds up searches)</span></h2>
+      <p style="color:#6B7B8B;margin-top:0">Pre-loads StratMap parcels for Houston-metro counties into a local DB so searches don't hit the live ArcGIS API every time. HCAD/MCAD overlays still run live for owner-name freshness. Counties are re-checked weekly but only re-downloaded when StratMap actually publishes a change, so a check is normally free. A load that is interrupted resumes where it stopped rather than starting over.</p>
+      <div style="margin:14px 0;display:flex;gap:10px;flex-wrap:wrap">
+        <button class="ghost" id="btn-cache-refresh-status">Refresh status</button>
+        <button class="ghost" id="btn-cache-bootstrap-all" style="background:#F25929;color:#FFF">Bootstrap all (1–3 hrs)</button>
       </div>
-
-
-
-<div class="page-header">
-  <div>
-    <h1>Folders</h1>
-    <div class="meta" id="folders-meta">Loading…</div>
-  </div>
-</div>
-
-<div class="folders-grid" id="folders-grid">
-  <div style="padding:40px;color:#A5ADB7;font-style:italic">Loading folders…</div>
-</div>
-
-
-
+      <div id="cache-progress" style="display:none;background:#FFF4ED;border-left:3px solid #F25929;padding:8px 12px;border-radius:4px;margin-bottom:10px;font-size:13px"></div>
+      <div id="cache-orphans" style="display:none;background:#FFF8E1;border-left:3px solid #E0A800;padding:8px 12px;border-radius:4px;margin-bottom:10px;font-size:13px"></div>
+      <table>
+        <thead>
+          <tr><th>County</th><th>Status</th><th>Parcels</th><th>Last refreshed</th><th></th></tr>
+        </thead>
+        <tbody id="cache-body"></tbody>
+      </table>
     </div>
-  </div>
-
+</div>
+</div>
 </div>
 
 {% include "_partials/_account_modal.html" %}
-
-
-<script>
-
-function escapeHtml(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
-
-async function load() {
-  try {
-    const [foldersRes, searchesRes] = await Promise.all([
-      fetch('/api/acq/folders').then(r => r.json()),
-      fetch('/api/acq/searches').then(r => r.json()),
-    ]);
-    const folders = foldersRes.folders || [];
-    const searches = searchesRes.searches || [];
-
-    // Per-folder pin counts (load in parallel)
-    const pinsByFolder = {};
-    await Promise.all(folders.map(async f => {
-      try {
-        const r = await fetch(`/api/acq/tract-pins?folder_id=${f.id}`);
-        const d = await r.json();
-        pinsByFolder[f.id] = d.pins || [];
-      } catch { pinsByFolder[f.id] = []; }
-    }));
-    const searchesByFolder = {};
-    searches.forEach(s => {
-      if (s.folder_id) (searchesByFolder[s.folder_id] = searchesByFolder[s.folder_id] || []).push(s);
-    });
-
-    document.getElementById('folders-meta').textContent =
-      `${folders.length} ${folders.length === 1 ? 'folder' : 'folders'}`;
-
-    const grid = document.getElementById('folders-grid');
-    if (folders.length === 0) {
-      grid.innerHTML = '<div style="padding:40px;color:#A5ADB7;font-style:italic;grid-column:1/-1;text-align:center">No folders yet. Create one from the Map page sidebar.</div>';
-      return;
-    }
-    grid.innerHTML = folders.map(f => {
-      const pins = pinsByFolder[f.id] || [];
-      const fSearches = searchesByFolder[f.id] || [];
-      const sharedTag = f.is_owner ? '' : ' <span style="background:#F1F3F6;color:#7A828D;font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600">shared</span>';
-      const items = [
-        ...fSearches.slice(0, 6).map(s => `
-          <div class="item">
-            <span class="ico"></span>
-            <span class="label">${escapeHtml(s.label)}</span>
-            <span style="color:#A5ADB7;font-size:11px">${s.radius_mi}mi · ${s.min_acres}-${s.max_acres}ac</span>
-          </div>`),
-        ...pins.slice(0, 6).map(p => `
-          <div class="item">
-            <span class="ico"></span>
-            <span class="label">
-              <a href="/acquisitions/tract/${encodeURIComponent(p.prop_id || '')}">${escapeHtml(p.label || p.owner_name || p.prop_id || '?')}</a>
-            </span>
-            <span style="color:#A5ADB7;font-size:11px">${p.acres ? Math.round(p.acres) + ' ac' : ''}</span>
-          </div>`),
-      ].join('');
-      const remaining = (fSearches.length + pins.length) - Math.min(6, fSearches.length) - Math.min(6, pins.length);
-      return `
-        <div class="folder-card">
-          <div class="head">
-            <div class="swatch" style="background:${f.color || '#7A828D'}"></div>
-            <div class="name">${escapeHtml(f.name)}${sharedTag}</div>
-            <div class="count">${fSearches.length} · ${pins.length} </div>
-          </div>
-          ${f.owner_name && !f.is_owner ? `<div class="meta">Owned by ${escapeHtml(f.owner_name)}</div>` : ''}
-          <div class="body">
-            ${items || '<div style="padding:14px 0;color:#A5ADB7;font-style:italic;text-align:center;font-size:12px">Empty folder</div>'}
-            ${remaining > 0 ? `<div class="item" style="color:#A5ADB7;font-style:italic">+ ${remaining} more</div>` : ''}
-          </div>
-          ${pins.length > 0 ? `
-            <div class="actions">
-              <a class="btn"href="/api/acq/outreach-campaign/${encodeURIComponent(f.id)}"target="_blank"title="Multi-page PDF: one detailed dossier per tract (map + ownership + outreach + notes)">Campaign dossier PDF</a>
-            </div>
-          ` : ''}
-        </div>`;
-    }).join('');
-  } catch (e) {
-    document.getElementById('folders-grid').innerHTML =
-      `<div style="padding:40px;color:#c62828;grid-column:1/-1">Failed to load: ${escapeHtml(e.message)}</div>`;
-  }
-}
-load();
-
-</script>
+<script src="/static/js/acquisitions_admin.js?v=3" defer></script>
 </body>
 </html>

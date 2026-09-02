@@ -696,10 +696,24 @@ def api_acq_cache_status():
     guard = _acq_guard()
     if guard:
         return guard
+    # cache_status() returns a bare list. The admin panel — and the standalone
+    # app it came from — expect it under `counties`, alongside the orphan count
+    # and any bootstrap in flight. Returning the raw list made the panel render
+    # an empty table against a fully populated cache.
     try:
-        return jsonify(parcel_cache.cache_status())
+        counties = parcel_cache.cache_status()
     except Exception as e:
         return jsonify({"error": str(e), "counties": []}), 200
+
+    try:
+        orphans = parcel_cache.rtree_orphan_count()
+    except Exception:
+        orphans = 0
+    return jsonify({
+        "counties": counties,
+        "rtree_orphans": orphans,
+        "in_progress": dict(_cache_bootstrap_status),
+    })
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -6645,6 +6659,26 @@ def acq_api_corridor_tracts(sid):
     return jsonify(response)
 
 
+@acq_bp.route("/api/acq/cache/vacuum", methods=["POST"])
+@_admin_required
+def api_acq_cache_vacuum():
+    """Drop R-Tree entries with no surviving parcel.
+
+    Re-bootstrapping a county leaves the old rows' index entries behind, and
+    they accumulate: the standalone's cache reached 4.6M entries against 1.9M
+    parcels, 2.4x oversized, and every spatial query walked the dead ones
+    first. Results stay correct either way — the query joins parcels to the
+    index — so this is a speed fix, not a correctness one.
+    """
+    guard = _acq_guard()
+    if guard:
+        return guard
+    try:
+        return jsonify(parcel_cache.vacuum_rtree_orphans())
+    except Exception as e:
+        return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
+
+
 @acq_bp.route("/api/acq/cache/bootstrap", methods=["POST"])
 @_login_required
 @_admin_required
@@ -7448,6 +7482,26 @@ def _acq_render(template, **extra):
 @_login_required
 def acq_corridors_page():
     return _acq_render("acquisitions_corridors.html")
+
+
+@acq_bp.route("/acquisitions/admin")
+@_login_required
+def acquisitions_admin_page():
+    """Parcel-cache admin: bootstrap counties, watch progress, vacuum the index.
+
+    Admin-only, and separate from the portal's own /admin — this manages the
+    acquisitions parcel cache, nothing else. Without it the cache API existed
+    with no way to reach it, so there was nowhere to bootstrap a county from.
+    """
+    if not session.get("is_admin"):
+        return redirect(url_for("acq.acquisitions_page"))
+    return render_template(
+        "acquisitions_admin.html",
+        username=session.get("username"),
+        display_name=session.get("display_name", session.get("username")),
+        is_admin=True,
+        page_access=session.get("page_access") or {},
+    )
 
 
 @acq_bp.route("/acquisitions/folders")

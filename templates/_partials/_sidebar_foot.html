@@ -21,3 +21,42 @@
     Home
   </a>
 </div>
+
+{# Collapse control for the nav rail. Injected from here because every page
+   includes this partial but each one carries its own copy of the sidebar
+   markup — this is the single shared point that reaches all of them. The
+   button is moved into the logo block so it sits at the top of the rail
+   rather than the bottom where this partial renders. #}
+<script>
+(function () {
+  var KEY = 'ember-nav-collapsed';
+  var nav = document.getElementById('sidebar');
+  if (!nav || document.getElementById('nav-collapse')) return;
+
+  var btn = document.createElement('button');
+  btn.id = 'nav-collapse';
+  btn.type = 'button';
+  var host = nav.querySelector('.sidebar-logo') || nav;
+  host.appendChild(btn);
+
+  function apply(collapsed) {
+    document.body.classList.toggle('nav-collapsed', collapsed);
+    btn.innerHTML = collapsed ? '&#9654;' : '&#9664;';
+    btn.title = (collapsed ? 'Expand' : 'Collapse') + ' the menu';
+    btn.setAttribute('aria-label', btn.title);
+    // Leaflet caches viewport size; the map pages need to be told it moved.
+    setTimeout(function () {
+      try { if (window.map && window.map.invalidateSize) window.map.invalidateSize(); } catch (e) {}
+    }, 200);
+  }
+  var saved = false;
+  try { saved = localStorage.getItem(KEY) === '1'; } catch (e) {}
+  apply(saved);
+
+  btn.addEventListener('click', function () {
+    var next = !document.body.classList.contains('nav-collapsed');
+    try { localStorage.setItem(KEY, next ? '1' : '0'); } catch (e) {}
+    apply(next);
+  });
+})();
+</script>
