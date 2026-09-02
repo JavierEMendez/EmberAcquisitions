@@ -19,3 +19,10 @@ Thumbs.db
 # Local tooling output
 *.log
 audit_output*.txt
+
+# Local parcel cache — several GB of SQLite, rebuilt by an admin bootstrap.
+# On Railway it lives on the mounted volume at ACQ_DATA_DIR, never in the repo.
+storage/parcels_cache.db
+storage/parcels_cache.db-wal
+storage/parcels_cache.db-shm
+preview.log
