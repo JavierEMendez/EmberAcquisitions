@@ -633,9 +633,9 @@ function renderTable() {
       <td>${fmtK(equity)}</td>
       <td>${fmtK(dist)}</td>
       <td>${fmtK(ytd)}</td>
-      <td><input type="number" min="0" max="100" step="5" value="${rec.lp}" class="recycle-input lp"  oninput="setRecycle('${key}','lp',this.value)"><span class="recycle-ro">${rec.lp}%</span></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" min="0" max="100" step="5" value="${rec.lp}" class="recycle-input lp"  oninput="setRecycle('${key}','lp',this.value)"><span class="recycle-ro">${rec.lp}%</span></td>
       <td>${fmtK(prom)}</td>
-      <td><input type="number" min="0" max="100" step="5" value="${rec.prom}" class="recycle-input prom" oninput="setRecycle('${key}','prom',this.value)"><span class="recycle-ro">${rec.prom}%</span></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" min="0" max="100" step="5" value="${rec.prom}" class="recycle-input prom" oninput="setRecycle('${key}','prom',this.value)"><span class="recycle-ro">${rec.prom}%</span></td>
       <td class="pos">${fmtK(lpRec)}</td>
       <td class="pos">${fmtK(promRec)}</td>
       <td class="neg">${fmtK(lpLeave)}</td>
@@ -846,11 +846,11 @@ function renderCommitments() {
     tMpcA += mpcA; tVertA += vrtA;
     const remaining = (mpc + vrt) - (mpcA + vrtA);
     html += `<div class="commit-row commit-grid">
-      <input type="text" value="${g.name.replace(/"/g,'&quot;')}" placeholder="Investor / Group name" oninput="editCommit(${i},'name',this.value)">
-      <input type="number" min="0" step="1000" value="${mpc || ''}"  placeholder="0" oninput="editCommit(${i},'mpc',this.value)">
-      <input type="number" min="0" step="1000" value="${mpcA || ''}" placeholder="0" oninput="editCommit(${i},'mpc_allocated',this.value)">
-      <input type="number" min="0" step="1000" value="${vrt || ''}"  placeholder="0" oninput="editCommit(${i},'vertical',this.value)">
-      <input type="number" min="0" step="1000" value="${vrtA || ''}" placeholder="0" oninput="editCommit(${i},'vertical_allocated',this.value)">
+      <input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" value="${g.name.replace(/"/g,'&quot;')}" placeholder="Investor / Group name" oninput="editCommit(${i},'name',this.value)">
+      <input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" min="0" step="1000" value="${mpc || ''}"  placeholder="0" oninput="editCommit(${i},'mpc',this.value)">
+      <input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" min="0" step="1000" value="${mpcA || ''}" placeholder="0" oninput="editCommit(${i},'mpc_allocated',this.value)">
+      <input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" min="0" step="1000" value="${vrt || ''}"  placeholder="0" oninput="editCommit(${i},'vertical',this.value)">
+      <input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" min="0" step="1000" value="${vrtA || ''}" placeholder="0" oninput="editCommit(${i},'vertical_allocated',this.value)">
       <div class="total-chip">${remaining ? fmtDollars(remaining) : '—'}</div>
       <button class="del-btn no-print" onclick="removeCommit(${i})" title="Remove group">&times;</button>
     </div>`;

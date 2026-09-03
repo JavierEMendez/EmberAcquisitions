@@ -334,7 +334,6 @@
   <a href="/acquisitions">Map &amp; search</a>
   <a href="/acquisitions/analyses">Analyses</a>
   <a href="/acquisitions/pipeline">Pipeline</a>
-  <a href="/acquisitions/folders">Folders</a>
   <a href="/acquisitions/corridors">Corridors</a>
   {% if is_admin %}<a href="/acquisitions/admin">Parcel cache</a>{% endif %}
 </div>
@@ -641,15 +640,15 @@ function renderOutreach() {
       </div>
       <div>
         <div class="row-label" style="margin-bottom:4px">Broker</div>
-        <input class="input" id="o-broker" type="text" value="${escapeHtml(rec.broker_name || '')}" placeholder="(none)">
+        <input autocomplete="off" data-lpignore="true" data-1p-ignore class="input" id="o-broker" type="text" value="${escapeHtml(rec.broker_name || '')}" placeholder="(none)">
       </div>
       <div>
         <div class="row-label" style="margin-bottom:4px">Next action</div>
-        <input class="input" id="o-next" type="text" value="${escapeHtml(rec.next_action || '')}" placeholder="e.g. Send LOI">
+        <input autocomplete="off" data-lpignore="true" data-1p-ignore class="input" id="o-next" type="text" value="${escapeHtml(rec.next_action || '')}" placeholder="e.g. Send LOI">
       </div>
       <div>
         <div class="row-label" style="margin-bottom:4px">By when</div>
-        <input class="input" id="o-next-date" type="date" value="${escapeHtml(rec.next_action_date || '')}">
+        <input autocomplete="off" data-lpignore="true" data-1p-ignore class="input" id="o-next-date" type="date" value="${escapeHtml(rec.next_action_date || '')}">
       </div>
     </div>
     <button class="btn btn-primary" id="o-save-fields" style="margin-bottom:18px">Save status &amp; fields</button>

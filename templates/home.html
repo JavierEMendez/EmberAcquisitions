@@ -802,8 +802,8 @@ function _renderProjectLibraryItem(p) {
       </div>
       <div class="pl-fields">
         <div class="pl-name">${_escAttr(p.name)}${orphanTag}</div>
-        <input class="pl-input pl-loc"  type="text" placeholder="Location (e.g. Grand Prairie, TX)" value="${_escAttr(p.location)}">
-        <input class="pl-input pl-role" type="text" placeholder="Role (e.g. Land · Common Equity)" value="${_escAttr(p.role)}">
+        <input autocomplete="off" data-lpignore="true" data-1p-ignore class="pl-input pl-loc"  type="text" placeholder="Location (e.g. Grand Prairie, TX)" value="${_escAttr(p.location)}">
+        <input autocomplete="off" data-lpignore="true" data-1p-ignore class="pl-input pl-role" type="text" placeholder="Role (e.g. Land · Common Equity)" value="${_escAttr(p.role)}">
         <div class="pl-actions">
           <button class="pl-save" onclick="saveProjectMeta(this)">Save</button>
           ${p.orphaned ? `<button class="pl-delete" onclick="deleteProjectMeta('${_escAttr(p.name).replace(/'/g, "\\'")}')">Remove</button>` : ''}

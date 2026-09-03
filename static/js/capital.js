@@ -471,11 +471,11 @@
       row.className = "commit-grid commit-row";
       row.dataset.groupId = "";
       row.innerHTML = `
-        <input type="text"   class="commit-input commit-name" name="name"               placeholder="Investor / Group name" />
-        <input type="number" class="commit-input commit-num"  name="mpc"                min="0" step="1000" placeholder="0" />
-        <input type="number" class="commit-input commit-num"  name="mpc_allocated"      min="0" step="1000" placeholder="0" />
-        <input type="number" class="commit-input commit-num"  name="vertical"           min="0" step="1000" placeholder="0" />
-        <input type="number" class="commit-input commit-num"  name="vertical_allocated" min="0" step="1000" placeholder="0" />
+        <input autocomplete="off" data-lpignore="true" data-1p-ignore type="text"   class="commit-input commit-name" name="name"               placeholder="Investor / Group name" />
+        <input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" class="commit-input commit-num"  name="mpc"                min="0" step="1000" placeholder="0" />
+        <input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" class="commit-input commit-num"  name="mpc_allocated"      min="0" step="1000" placeholder="0" />
+        <input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" class="commit-input commit-num"  name="vertical"           min="0" step="1000" placeholder="0" />
+        <input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" class="commit-input commit-num"  name="vertical_allocated" min="0" step="1000" placeholder="0" />
         <div class="commit-rem num">—</div>
         <button type="button" class="commit-remove" title="Remove group" aria-label="Remove">×</button>`;
       rowsWrap.appendChild(row);
@@ -565,14 +565,14 @@
       const row = document.createElement("div");
       row.className = "commit-grid captable-grid captable-row";
       row.innerHTML = `
-        <input type="text"   class="commit-input" name="project"      placeholder="Project name" />
-        <input type="text"   class="commit-input" name="vehicle"      placeholder="Vehicle / Entity" />
+        <input autocomplete="off" data-lpignore="true" data-1p-ignore type="text"   class="commit-input" name="project"      placeholder="Project name" />
+        <input autocomplete="off" data-lpignore="true" data-1p-ignore type="text"   class="commit-input" name="vehicle"      placeholder="Vehicle / Entity" />
         <select class="commit-input" name="equity_class">
           <option value="common" selected>Common</option>
           <option value="preferred">Preferred</option>
         </select>
-        <input type="number" class="commit-input commit-num" name="contribution" min="0" step="1000"   placeholder="0" />
-        <input type="number" class="commit-input commit-num" name="pct"          min="0" max="100" step="0.0001" placeholder="0" />
+        <input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" class="commit-input commit-num" name="contribution" min="0" step="1000"   placeholder="0" />
+        <input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" class="commit-input commit-num" name="pct"          min="0" max="100" step="0.0001" placeholder="0" />
         <button type="button" class="commit-remove" title="Remove position" aria-label="Remove">×</button>`;
       return row;
     };

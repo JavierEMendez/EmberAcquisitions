@@ -694,11 +694,11 @@ tr.pod-inactive input { pointer-events: none; }
               </div>
               <div class="sens-field">
                 <label>Steps each side (max 3)</label>
-                <input type="number" id="sens-steps" value="3" min="1" max="3">
+                <input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="sens-steps" value="3" min="1" max="3">
               </div>
               <div class="sens-field">
                 <label>Step Size (%)</label>
-                <input type="number" id="sens-step-pct" value="10" min="1" max="50">
+                <input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="sens-step-pct" value="10" min="1" max="50">
               </div>
               <div class="sens-field">
                 <label>Metric</label>
@@ -724,19 +724,19 @@ tr.pod-inactive input { pointer-events: none; }
           <div class="field-grid">
             <div class="field" style="grid-column:1/3">
               <label>Project Name</label>
-              <input type="text" id="ti-project_name" oninput="markDirty(); updateSidebarName(this.value)">
+              <input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="ti-project_name" oninput="markDirty(); updateSidebarName(this.value)">
             </div>
             <div class="field" style="grid-column:3/-1">
               <label>Tract Address</label>
-              <input type="text" id="ti-address" oninput="markDirty()">
+              <input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="ti-address" oninput="markDirty()">
             </div>
           </div>
           <div class="field-grid" style="margin-top:12px">
-            <div class="field"><label>Gross Acreage (ac)</label><input type="number" id="ti-gross_acreage" class="mono" oninput="markDirty();updateLandCostPreview()"></div>
-            <div class="field"><label>Purchase Price / Acre ($)</label><input type="number" id="ti-purchase_price_per_acre" class="mono" oninput="markDirty();updateLandCostPreview()"></div>
-            <div class="field"><label>Closing Costs (%)</label><div class="pct-wrap"><input type="number" step="0.1" id="ti-closing_costs_pct" class="mono" oninput="markDirty();updateLandCostPreview()" placeholder="4.5"></div></div>
-            <div class="field"><label>Land Escalator (% / yr)</label><div class="pct-wrap"><input type="number" step="0.5" id="ti-land_escalator" class="mono" oninput="markDirty();updateLandCostPreview()" placeholder="5"></div></div>
-            <div class="field"><label>Closing Date</label><input type="date" id="ti-closing_date" oninput="markDirty()"></div>
+            <div class="field"><label>Gross Acreage (ac)</label><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ti-gross_acreage" class="mono" oninput="markDirty();updateLandCostPreview()"></div>
+            <div class="field"><label>Purchase Price / Acre ($)</label><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ti-purchase_price_per_acre" class="mono" oninput="markDirty();updateLandCostPreview()"></div>
+            <div class="field"><label>Closing Costs (%)</label><div class="pct-wrap"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.1" id="ti-closing_costs_pct" class="mono" oninput="markDirty();updateLandCostPreview()" placeholder="4.5"></div></div>
+            <div class="field"><label>Land Escalator (% / yr)</label><div class="pct-wrap"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.5" id="ti-land_escalator" class="mono" oninput="markDirty();updateLandCostPreview()" placeholder="5"></div></div>
+            <div class="field"><label>Closing Date</label><input autocomplete="off" data-lpignore="true" data-1p-ignore type="date" id="ti-closing_date" oninput="markDirty()"></div>
           </div>
 
           <div class="section-header">Plant Facilities (up to 8)</div>
@@ -749,10 +749,10 @@ tr.pod-inactive input { pointer-events: none; }
 
           <div class="section-header">Detention</div>
           <div class="field-grid">
-            <div class="field"><label>Storage Rate</label><input type="number" step="0.1" id="ti-det_storage_rate" class="mono" oninput="markDirty()"></div>
-            <div class="field"><label>Depth (ft)</label><input type="number" id="ti-det_depth" class="mono" oninput="markDirty()"></div>
-            <div class="field"><label>Number of Projects</label><input type="number" id="ti-det_num_projects" class="mono" oninput="markDirty()"></div>
-            <div class="field"><label>Cost per CY ($)</label><input type="number" step="0.5" id="ti-det_cost_per_cy" class="mono" oninput="markDirty()"></div>
+            <div class="field"><label>Storage Rate</label><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.1" id="ti-det_storage_rate" class="mono" oninput="markDirty()"></div>
+            <div class="field"><label>Depth (ft)</label><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ti-det_depth" class="mono" oninput="markDirty()"></div>
+            <div class="field"><label>Number of Projects</label><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ti-det_num_projects" class="mono" oninput="markDirty()"></div>
+            <div class="field"><label>Cost per CY ($)</label><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.5" id="ti-det_cost_per_cy" class="mono" oninput="markDirty()"></div>
           </div>
 
           <div class="section-header">Amenities (up to 6)</div>
@@ -765,8 +765,8 @@ tr.pod-inactive input { pointer-events: none; }
 
           <div class="section-header">Parks, Drill Sites & Other Net Outs</div>
           <div class="field-grid">
-            <div class="field"><label>Parks & Green Space (% of Gross)</label><div class="pct-wrap"><input type="number" step="0.5" id="ti-parks_pct" class="mono" oninput="markDirty()" placeholder="3"></div></div>
-            <div class="field"><label>Drill Site Acres</label><input type="number" id="ti-drill_site_acres" class="mono" oninput="markDirty()"></div>
+            <div class="field"><label>Parks & Green Space (% of Gross)</label><div class="pct-wrap"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.5" id="ti-parks_pct" class="mono" oninput="markDirty()" placeholder="3"></div></div>
+            <div class="field"><label>Drill Site Acres</label><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ti-drill_site_acres" class="mono" oninput="markDirty()"></div>
           </div>
           <div class="overflow-x" style="margin-top:12px">
           <table class="data-table">
@@ -785,8 +785,8 @@ tr.pod-inactive input { pointer-events: none; }
 
           <div class="section-header">Pod Sales (Post Net-Outs)</div>
           <div class="field-grid">
-            <div class="field"><label>Commercial Pod Acres</label><input type="number" id="ti-commercial_pod_acres" class="mono" oninput="markDirty()"></div>
-            <div class="field"><label>Residential Pod Acres</label><input type="number" id="ti-residential_pod_acres" class="mono" oninput="markDirty()"></div>
+            <div class="field"><label>Commercial Pod Acres</label><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ti-commercial_pod_acres" class="mono" oninput="markDirty()"></div>
+            <div class="field"><label>Residential Pod Acres</label><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ti-residential_pod_acres" class="mono" oninput="markDirty()"></div>
           </div>
         </div>
 
@@ -798,15 +798,15 @@ tr.pod-inactive input { pointer-events: none; }
           <!-- GLOBAL SETTINGS -->
           <div class="section-header">Global Settings</div>
           <div class="field-grid" style="grid-template-columns:repeat(3,1fr)">
-            <div class="field"><label>Default Other Costs %</label><div class="pct-wrap"><input type="number" step="0.5" id="ci-default_other_pct" class="mono" oninput="markDirty()"></div></div>
-            <div class="field"><label>Sectional Other %</label><div class="pct-wrap"><input type="number" step="0.5" id="ci-default_sectional_other_pct" class="mono" oninput="markDirty()"></div></div>
-            <div class="field"><label>Landscaping Other %</label><div class="pct-wrap"><input type="number" step="0.5" id="ci-landscaping_other_pct" class="mono" oninput="markDirty()"></div></div>
-            <div class="field"><label>Project Contingency %</label><div class="pct-wrap"><input type="number" step="0.5" id="ci-contingency" class="mono" oninput="markDirty()"></div></div>
-            <div class="field"><label>Site Work (% of Revenues)</label><div class="pct-wrap"><input type="number" step="0.1" id="ci-site_work_pct" class="mono" oninput="markDirty()"></div></div>
-            <div class="field"><label>% of Lots Fenced</label><div class="pct-wrap"><input type="number" step="1" id="ci-fenced_pct" class="mono" oninput="markDirty()"></div></div>
-            <div class="field"><label>Cost per Mailbox ($)</label><input type="number" id="ci-cost_per_mailbox" class="mono" oninput="markDirty()"></div>
-            <div class="field"><label>Cost per Streetlight ($)</label><input type="number" id="ci-cost_per_streetlight" class="mono" oninput="markDirty()"></div>
-            <div class="field"><label>Default Start Month</label><input type="number" id="ci-default_start_month" class="mono" oninput="markDirty()"></div>
+            <div class="field"><label>Default Other Costs %</label><div class="pct-wrap"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.5" id="ci-default_other_pct" class="mono" oninput="markDirty()"></div></div>
+            <div class="field"><label>Sectional Other %</label><div class="pct-wrap"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.5" id="ci-default_sectional_other_pct" class="mono" oninput="markDirty()"></div></div>
+            <div class="field"><label>Landscaping Other %</label><div class="pct-wrap"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.5" id="ci-landscaping_other_pct" class="mono" oninput="markDirty()"></div></div>
+            <div class="field"><label>Project Contingency %</label><div class="pct-wrap"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.5" id="ci-contingency" class="mono" oninput="markDirty()"></div></div>
+            <div class="field"><label>Site Work (% of Revenues)</label><div class="pct-wrap"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.1" id="ci-site_work_pct" class="mono" oninput="markDirty()"></div></div>
+            <div class="field"><label>% of Lots Fenced</label><div class="pct-wrap"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="1" id="ci-fenced_pct" class="mono" oninput="markDirty()"></div></div>
+            <div class="field"><label>Cost per Mailbox ($)</label><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-cost_per_mailbox" class="mono" oninput="markDirty()"></div>
+            <div class="field"><label>Cost per Streetlight ($)</label><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-cost_per_streetlight" class="mono" oninput="markDirty()"></div>
+            <div class="field"><label>Default Start Month</label><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-default_start_month" class="mono" oninput="markDirty()"></div>
           </div>
 
           <!-- LAND COSTS -->
@@ -931,7 +931,7 @@ tr.pod-inactive input { pointer-events: none; }
             <thead><tr><th class="calc-th">Total Budget</th><th>% of Revenues</th><th class="calc-th">Per Month</th><th class="calc-th">Final Takedown Period</th></tr></thead>
             <tbody><tr>
               <td><span class="calc-cell" id="ci-ps-total">—</span></td>
-              <td><div class="pct-wrap" style="width:100px"><input type="number" step="0.1" id="ci-prof_services_pct" class="mono" oninput="markDirty()"></div></td>
+              <td><div class="pct-wrap" style="width:100px"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.1" id="ci-prof_services_pct" class="mono" oninput="markDirty()"></div></td>
               <td><span class="calc-cell" id="ci-ps-permonth">—</span></td>
               <td><span class="calc-cell" id="ci-ps-period">—</span></td>
             </tr></tbody>
@@ -945,7 +945,7 @@ tr.pod-inactive input { pointer-events: none; }
             <thead><tr><th class="calc-th">Total DMF</th><th>DMF % of Costs</th></tr></thead>
             <tbody><tr>
               <td><span class="calc-cell" id="ci-dmf-total">—</span></td>
-              <td><div class="pct-wrap" style="width:100px"><input type="number" step="0.1" id="ci-dmf_pct" class="mono" oninput="markDirty()"></div></td>
+              <td><div class="pct-wrap" style="width:100px"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.1" id="ci-dmf_pct" class="mono" oninput="markDirty()"></div></td>
             </tr></tbody>
           </table>
           </div>
@@ -959,13 +959,13 @@ tr.pod-inactive input { pointer-events: none; }
               <tr>
                 <td style="color:var(--text-dim)">General Personnel</td>
                 <td><span class="calc-cell" id="ci-gen-total">—</span></td>
-                <td><input type="number" id="ci-general_monthly" class="mono" oninput="markDirty()"></td>
+                <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-general_monthly" class="mono" oninput="markDirty()"></td>
                 <td><span class="calc-cell" id="ci-general_end">—</span></td>
               </tr>
               <tr>
                 <td style="color:var(--text-dim)">Marketing Personnel</td>
                 <td><span class="calc-cell" id="ci-mktpers-total">—</span></td>
-                <td><input type="number" id="ci-marketing_monthly" class="mono" oninput="markDirty()"></td>
+                <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-marketing_monthly" class="mono" oninput="markDirty()"></td>
                 <td><span class="calc-cell" id="ci-marketing_end">—</span></td>
               </tr>
             </tbody>
@@ -979,7 +979,7 @@ tr.pod-inactive input { pointer-events: none; }
             <thead><tr><th class="calc-th">Total Legal</th><th>Monthly ($)</th><th class="calc-th">Final Period</th></tr></thead>
             <tbody><tr>
               <td><span class="calc-cell" id="ci-legal-total">—</span></td>
-              <td><input type="number" id="ci-legal_monthly" class="mono" oninput="markDirty()"></td>
+              <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-legal_monthly" class="mono" oninput="markDirty()"></td>
               <td><span class="calc-cell" id="ci-legal_end">—</span></td>
             </tr></tbody>
           </table>
@@ -992,8 +992,8 @@ tr.pod-inactive input { pointer-events: none; }
             <thead><tr><th class="calc-th">Total Advances</th><th>Monthly ($)</th><th>% of Project</th><th class="calc-th">Final Period</th></tr></thead>
             <tbody><tr>
               <td><span class="calc-cell" id="ci-mud-total">—</span></td>
-              <td><input type="number" id="ci-mud_hoa_monthly" class="mono" oninput="markDirty()"></td>
-              <td><div class="pct-wrap" style="width:100px"><input type="number" step="1" id="ci-mud_hoa_pct" class="mono" oninput="markDirty()"></div></td>
+              <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-mud_hoa_monthly" class="mono" oninput="markDirty()"></td>
+              <td><div class="pct-wrap" style="width:100px"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="1" id="ci-mud_hoa_pct" class="mono" oninput="markDirty()"></div></td>
               <td><span class="calc-cell" id="ci-mud_hoa_end">—</span></td>
             </tr></tbody>
           </table>
@@ -1006,7 +1006,7 @@ tr.pod-inactive input { pointer-events: none; }
             <thead><tr><th class="calc-th">Total Insurance</th><th>Monthly ($)</th><th class="calc-th">Final Period</th></tr></thead>
             <tbody><tr>
               <td><span class="calc-cell" id="ci-ins-total">—</span></td>
-              <td><input type="number" id="ci-insurance_monthly" class="mono" oninput="markDirty()"></td>
+              <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-insurance_monthly" class="mono" oninput="markDirty()"></td>
               <td><span class="calc-cell" id="ci-insurance_end">—</span></td>
             </tr></tbody>
           </table>
@@ -1019,7 +1019,7 @@ tr.pod-inactive input { pointer-events: none; }
             <thead><tr><th class="calc-th">Total</th><th>Monthly ($)</th><th class="calc-th">Final Period</th></tr></thead>
             <tbody><tr>
               <td><span class="calc-cell" id="ci-bk-total">—</span></td>
-              <td><input type="number" id="ci-bookkeeping_monthly" class="mono" oninput="markDirty()"></td>
+              <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-bookkeeping_monthly" class="mono" oninput="markDirty()"></td>
               <td><span class="calc-cell" id="ci-bookkeeping_end">—</span></td>
             </tr></tbody>
           </table>
@@ -1044,10 +1044,10 @@ tr.pod-inactive input { pointer-events: none; }
                 <option value="25/25/25/25">25/25/25/25 — 25% at sale, 25% at +3, 25% at +6, 25% at +9</option>
               </select>
             </div>
-            <div class="field"><label>Builder Earnest Money Period (months)</label><input type="number" id="ri-bem_period" class="mono" oninput="markDirty()"></div>
-            <div class="field"><label>Builder Earnest Money %</label><div class="pct-wrap"><input type="number" step="0.5" id="ri-bem_pct" class="mono" oninput="markDirty()" placeholder="18"></div></div>
-            <div class="field"><label>Brokerage Fees %</label><div class="pct-wrap"><input type="number" step="0.5" id="ri-brokerage_fees" class="mono" oninput="markDirty()" placeholder="3"></div></div>
-            <div class="field"><label>Lot Closing Costs %</label><div class="pct-wrap"><input type="number" step="0.1" id="ri-lot_closing_costs" class="mono" oninput="markDirty()" placeholder="1.5"></div></div>
+            <div class="field"><label>Builder Earnest Money Period (months)</label><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ri-bem_period" class="mono" oninput="markDirty()"></div>
+            <div class="field"><label>Builder Earnest Money %</label><div class="pct-wrap"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.5" id="ri-bem_pct" class="mono" oninput="markDirty()" placeholder="18"></div></div>
+            <div class="field"><label>Brokerage Fees %</label><div class="pct-wrap"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.5" id="ri-brokerage_fees" class="mono" oninput="markDirty()" placeholder="3"></div></div>
+            <div class="field"><label>Lot Closing Costs %</label><div class="pct-wrap"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.1" id="ri-lot_closing_costs" class="mono" oninput="markDirty()" placeholder="1.5"></div></div>
           </div>
           <div class="take-weights-display" id="take-weights-display">
             <span class="take-weight-pill" id="tw-take1">Take 1: —%</span>
@@ -1228,7 +1228,7 @@ tr.pod-inactive input { pointer-events: none; }
     <div class="modal-sub">Create a new underwriting model from the base template.</div>
     <div class="field">
       <label>Project File Name</label>
-      <input type="text" id="new-proj-name" placeholder="e.g. Ember Ranch, Sunset MPC" oninput="this.value=this.value.replace(/[\/\\]/g,'')">
+      <input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="new-proj-name" placeholder="e.g. Ember Ranch, Sunset MPC" oninput="this.value=this.value.replace(/[\/\\]/g,'')">
     </div>
     <div class="modal-actions">
       <button class="btn" onclick="closeNewProject()">Cancel</button>
@@ -2501,7 +2501,7 @@ async function loadInputs(override = null) {
     <tr>
       <td class="row-num">${p.num||i+1}</td>
       <td><select id="ti-plant-type-${i}" onchange="markDirty(); syncPlantTypeToCosts(${i}, this.value)">${plantTypes.map(pt=>`<option value="${pt}" ${p.type===pt?'selected':''}>${pt}</option>`).join('')}</select></td>
-      <td><input type="text" id="ti-plant-notes-${i}" value="${p.notes||''}" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="ti-plant-notes-${i}" value="${p.notes||''}" oninput="markDirty()"></td>
     </tr>`).join('');
 
   // Amenities
@@ -2511,8 +2511,8 @@ async function loadInputs(override = null) {
     <tr>
       <td class="row-num">${a.num||i+1}</td>
       <td><select id="ti-am-type-${i}" onchange="markDirty(); syncAmenityTypeToCosts(${i}, this.value)">${amenityTypes.map(at=>`<option value="${at}" ${a.type===at?'selected':''}>${at}</option>`).join('')}</select></td>
-      <td><input type="number" id="ti-am-acres-${i}" value="${a.acres}" class="mono" oninput="markDirty()"></td>
-      <td><input type="text" id="ti-am-notes-${i}" value="${a.notes||''}" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ti-am-acres-${i}" value="${a.acres}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="ti-am-notes-${i}" value="${a.notes||''}" oninput="markDirty()"></td>
     </tr>`).join('');
 
   // Other netouts
@@ -2520,9 +2520,9 @@ async function loadInputs(override = null) {
   ob.innerHTML = (t.other_netouts||[]).map((o,i) => `
     <tr>
       <td class="row-num">${o.num||i+1}</td>
-      <td><input type="text" id="ti-ot-desc-${i}" value="${o.desc||o.description||''}" oninput="markDirty()"></td>
-      <td><input type="number" id="ti-ot-acres-${i}" value="${o.acres||0}" class="mono" oninput="markDirty()"></td>
-      <td><input type="text" id="ti-ot-notes-${i}" value="${o.notes||''}" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="ti-ot-desc-${i}" value="${o.desc||o.description||''}" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ti-ot-acres-${i}" value="${o.acres||0}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="ti-ot-notes-${i}" value="${o.notes||''}" oninput="markDirty()"></td>
     </tr>`).join('');
 
   // Roads
@@ -2534,11 +2534,11 @@ async function loadInputs(override = null) {
         <option value="">—</option>
         ${['2 Lane','4 Lane'].map(rt=>`<option value="${rt}" ${rd.type===rt?'selected':''}>${rt}</option>`).join('')}
       </select></td>
-      <td><input type="number" id="ti-rd-lf-${i}" value="${rd.linear_feet}" class="mono" oninput="markDirty()"></td>
-      <td><input type="number" id="ti-rd-w-${i}" value="${rd.width}" class="mono" oninput="markDirty()"></td>
-      <td><input type="number" id="ti-rd-rs-${i}" value="${rd.road_setback}" class="mono" oninput="markDirty()"></td>
-      <td><input type="number" id="ti-rd-ls-${i}" value="${rd.landscaping_setback}" class="mono" oninput="markDirty()"></td>
-      <td><input type="text" id="ti-rd-notes-${i}" value="${rd.notes||''}" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ti-rd-lf-${i}" value="${rd.linear_feet}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ti-rd-w-${i}" value="${rd.width}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ti-rd-rs-${i}" value="${rd.road_setback}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ti-rd-ls-${i}" value="${rd.landscaping_setback}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="ti-rd-notes-${i}" value="${rd.notes||''}" oninput="markDirty()"></td>
     </tr>`).join('');
 
   // ── COST INPUTS ─────────────────────────────────────────────────────
@@ -2593,7 +2593,7 @@ async function loadInputs(override = null) {
       const val = tds[ci]?.[key];
       if (isInput) {
         const displayVal = fmt==='pct' ? (val != null ? +(val*100).toPrecision(6) : '') : (val ?? '');
-        return `<td><input type="number" step="${fmt==='pct'?'1':'any'}" id="ci-td-${key}-${ci}" value="${displayVal}" class="mono" oninput="markDirty();updateLandCostPreview()"></td>`;
+        return `<td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="${fmt==='pct'?'1':'any'}" id="ci-td-${key}-${ci}" value="${displayVal}" class="mono" oninput="markDirty();updateLandCostPreview()"></td>`;
       } else {
         const disp = fmt==='$' ? fmtC(val) : fmt==='pct' ? fmtPct(val) : fmtN(val);
         return `<td class="calc-col"><span class="calc-cell">${disp}</span></td>`;
@@ -2651,16 +2651,16 @@ async function loadInputs(override = null) {
       <td class="row-num">${p.num||i+1}</td>
       <td id="ci-plant-type-${i}" style="color:var(--text-dim);font-size:12px;white-space:nowrap">${nm}</td>
       <td id="ci-plant-acres-${i}" class="calc-col"><span class="calc-cell">${p.acres||0}</span></td>
-      <td><input type="number" id="ci-pl-cost-${i}" value="${p.base_cost||''}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-pl-cost-${i}" value="${p.base_cost||''}" class="mono" oninput="markDirty()"></td>
       <td class="calc-col"><span class="calc-cell">${((t.default_other_pct??0.17)*100).toFixed(0)}%</span></td>
       <td class="calc-col"><span class="calc-cell">${fmtC(p.total_cost)}</span></td>
-      <td><input type="number" id="ci-pl-sm-${i}" value="${p.start_month||''}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-pl-sm-${i}" value="${p.start_month||''}" class="mono" oninput="markDirty()"></td>
       <td id="ci-plant-dur-${i}" class="calc-col"><span class="calc-cell">${p.duration||'—'}</span></td>
-      <td><input type="text" id="ci-pl-notes-${i}" value="${p.notes||''}" class="mono" oninput="markDirty()"></td>
-      <td style="${ph2border}"><input type="number" id="ci-pl2-cost-${i}" value="${p.ph2_base_cost||''}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="ci-pl-notes-${i}" value="${p.notes||''}" class="mono" oninput="markDirty()"></td>
+      <td style="${ph2border}"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-pl2-cost-${i}" value="${p.ph2_base_cost||''}" class="mono" oninput="markDirty()"></td>
       <td class="calc-col"><span class="calc-cell">${((t.default_other_pct??0.17)*100).toFixed(0)}%</span></td>
       <td class="calc-col"><span class="calc-cell">${fmtC(p.ph2_total_cost)}</span></td>
-      <td><input type="number" id="ci-pl2-sm-${i}" value="${p.ph2_start_month||''}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-pl2-sm-${i}" value="${p.ph2_start_month||''}" class="mono" oninput="markDirty()"></td>
       <td class="calc-col"><span class="calc-cell">${p.ph2_duration||'—'}</span></td>
     </tr>`;}).join('');
 
@@ -2694,12 +2694,12 @@ async function loadInputs(override = null) {
       <td class="row-num">${a.num||i+1}</td>
       <td id="ci-amenity-type-${i}" style="color:var(--text-dim);font-size:12px;white-space:nowrap">${a.type||'—'}</td>
       <td id="ci-amenity-acres-${i}" class="calc-col"><span class="calc-cell">${a.acres||0}</span></td>
-      <td><input type="number" id="ci-am-cost-${i}" value="${a.base_cost||''}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-am-cost-${i}" value="${a.base_cost||''}" class="mono" oninput="markDirty()"></td>
       <td class="calc-col"><span class="calc-cell">${((t.default_other_pct??0.17)*100).toFixed(0)}%</span></td>
       <td class="calc-col"><span class="calc-cell">${fmtC(a.total_cost)}</span></td>
-      <td><input type="number" id="ci-am-sm-${i}" value="${a.start_month||''}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-am-sm-${i}" value="${a.start_month||''}" class="mono" oninput="markDirty()"></td>
       <td class="calc-col"><span class="calc-cell">${a.duration||'—'}</span></td>
-      <td><input type="text" id="ci-am-notes-${i}" value="${a.notes||''}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="ci-am-notes-${i}" value="${a.notes||''}" class="mono" oninput="markDirty()"></td>
     </tr>`).join('');
 
   // Detention
@@ -2738,10 +2738,10 @@ async function loadInputs(override = null) {
       <td class="calc-col"><span class="calc-cell">${fmtC(d.base_cost)}</span></td>
       <td class="calc-col"><span class="calc-cell">${((t.default_other_pct??0.17)*100).toFixed(0)}%</span></td>
       <td class="calc-col"><span class="calc-cell">${fmtC(d.total_cost)}</span></td>
-      <td><input type="number" id="ci-det-sm-${i}" value="${d.start_month||''}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-det-sm-${i}" value="${d.start_month||''}" class="mono" oninput="markDirty()"></td>
       <td class="calc-col"><span class="calc-cell">${d.duration||'—'}</span></td>
       <td class="calc-col"><span class="calc-cell">${d.delivery_period||'—'}</span></td>
-      <td><input type="number" step="0.5" id="ci-det-lpf-${i}" value="${d.landscaping_per_foot||''}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.5" id="ci-det-lpf-${i}" value="${d.landscaping_per_foot||''}" class="mono" oninput="markDirty()"></td>
       <td class="calc-col"><span class="calc-cell">${fmtC(d.total_landscaping)}</span></td>
     </tr>`).join('');
 
@@ -2757,12 +2757,12 @@ async function loadInputs(override = null) {
       <td class="row-num">${o.num||i+1}</td>
       <td class="calc-col"><span class="calc-cell" style="text-align:left">${desc}</span></td>
       <td class="calc-col"><span class="calc-cell">${acres||'—'}</span></td>
-      <td><input type="number" id="ci-ot-cost-${i}" value="${o.base_cost||''}" class="mono" oninput="markDirty();recalcOtherCost(${i})"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-ot-cost-${i}" value="${o.base_cost||''}" class="mono" oninput="markDirty();recalcOtherCost(${i})"></td>
       <td class="calc-col"><span class="calc-cell">${((t.default_other_pct??0.17)*100).toFixed(0)}%</span></td>
       <td class="calc-col"><span class="calc-cell" id="ci-ot-total-${i}">${fmtC(o.total_cost)}</span></td>
-      <td><input type="number" id="ci-ot-sm-${i}" value="${o.start_month||''}" class="mono" oninput="markDirty()"></td>
-      <td><input type="number" id="ci-ot-dur-${i}" value="${o.duration||''}" class="mono" oninput="markDirty()"></td>
-      <td><input type="text" id="ci-ot-notes-${i}" value="${o.notes||''}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-ot-sm-${i}" value="${o.start_month||''}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-ot-dur-${i}" value="${o.duration||''}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="ci-ot-notes-${i}" value="${o.notes||''}" class="mono" oninput="markDirty()"></td>
     </tr>`;
   }).join('');
 
@@ -2786,12 +2786,12 @@ async function loadInputs(override = null) {
       <td class="calc-col"><span class="calc-cell">${fmtC(cr.base_cost)}</span></td>
       <td class="calc-col"><span class="calc-cell">${((t.default_other_pct??0.17)*100).toFixed(0)}%</span></td>
       <td class="calc-col"><span class="calc-cell">${fmtC(cr.total_cost)}</span></td>
-      <td><input type="number" id="ci-rd2-sm-${i}" value="${sm}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-rd2-sm-${i}" value="${sm}" class="mono" oninput="markDirty()"></td>
       <td class="calc-col"><span class="calc-cell">${cr.duration||'—'}</span></td>
       <td class="calc-col"><span class="calc-cell">${cr.delivery_period||'—'}</span></td>
-      <td><input type="number" step="0.5" id="ci-rd2-lpf-${i}" value="${lpf}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.5" id="ci-rd2-lpf-${i}" value="${lpf}" class="mono" oninput="markDirty()"></td>
       <td class="calc-col"><span class="calc-cell">${fmtC(cr.total_landscaping)}</span></td>
-      <td><input type="number" id="ci-rd2-lsp-${i}" value="${lsp}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-rd2-lsp-${i}" value="${lsp}" class="mono" oninput="markDirty()"></td>
       <td class="calc-col"><span class="calc-cell">${fmtN(cr.total_lights)}</span></td>
     </tr>`;
   }).join('');
@@ -2812,21 +2812,21 @@ async function loadInputs(override = null) {
         <option value="1" ${isOn?'selected':''}>On</option>
         <option value="0" ${isOn?'':'selected'}>Off</option>
       </select></td>
-      <td><div class="pct-wrap"><input type="number" step="1" id="ci-ls-mix-${i}" value="${isOn ? pctMix : ''}" data-saved="${pctMix}" class="mono" oninput="markDirty()" placeholder="equal" ${dis}></div></td>
-      <td><input type="number" step="0.01" id="ci-ls-yield-${i}" value="${sv2(ls.yield_per_ac)}" data-saved="${ds(ls.yield_per_ac)}" class="mono" oninput="markDirty();recalcLotRow(${i})" ${dis}></td>
-      <td><input type="number" step="0.25" id="ci-ls-pace-${i}" value="${sv2(ls.pace)}" data-saved="${ds(ls.pace)}" class="mono" oninput="markDirty();recalcLotRow(${i})" ${dis}></td>
+      <td><div class="pct-wrap"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="1" id="ci-ls-mix-${i}" value="${isOn ? pctMix : ''}" data-saved="${pctMix}" class="mono" oninput="markDirty()" placeholder="equal" ${dis}></div></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.01" id="ci-ls-yield-${i}" value="${sv2(ls.yield_per_ac)}" data-saved="${ds(ls.yield_per_ac)}" class="mono" oninput="markDirty();recalcLotRow(${i})" ${dis}></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.25" id="ci-ls-pace-${i}" value="${sv2(ls.pace)}" data-saved="${ds(ls.pace)}" class="mono" oninput="markDirty();recalcLotRow(${i})" ${dis}></td>
       <td class="calc-col"><span class="calc-cell" id="ci-ls-18mo-${i}">${isOn&&ls.lots_18mo?ls.lots_18mo.toFixed(0):'—'}</span></td>
       <td class="calc-col"><span class="calc-cell" id="ci-ls-tot-${i}">${isOn&&ls.total_lots?ls.total_lots.toFixed(0):'—'}</span></td>
       <td class="calc-col"><span class="calc-cell" id="ci-ls-ac18-${i}">${isOn&&ls.acres_18mo?ls.acres_18mo.toFixed(1):'—'}</span></td>
-      <td><input type="number" id="ci-ls-hp-${i}" value="${sv2(ls.home_price)}" data-saved="${ds(ls.home_price)}" class="mono" oninput="markDirty()" ${dis}></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-ls-hp-${i}" value="${sv2(ls.home_price)}" data-saved="${ds(ls.home_price)}" class="mono" oninput="markDirty()" ${dis}></td>
       <td class="calc-col"><span class="calc-cell">${isOn&&ls.wsd_per_ff?fmtC(ls.wsd_per_ff):'—'}</span></td>
       <td class="calc-col"><span class="calc-cell">${isOn&&ls.paving_per_ff?fmtC(ls.paving_per_ff):'—'}</span></td>
       <td class="calc-col"><span class="calc-cell">${isOn&&ls.ff?fmtC(((ls.wsd_per_ff||0)+(ls.paving_per_ff||0))*ls.ff):'—'}</span></td>
-      <td><input type="number" id="ci-ls-dsm-${i}" value="${sv2(ls.dev_start_month)}" data-saved="${ds(ls.dev_start_month)}" class="mono" oninput="markDirty()" ${dis}></td>
-      <td><input type="number" id="ci-ls-lpl-${i}" value="${sv2(ls.landscaping_per_lot)}" data-saved="${ds(ls.landscaping_per_lot)}" class="mono" oninput="markDirty()" ${dis}></td>
-      <td><input type="number" id="ci-ls-urd-${i}" value="${sv2(ls.urd_per_lot)}" data-saved="${ds(ls.urd_per_lot)}" class="mono" oninput="markDirty()" ${dis}></td>
-      <td><input type="number" id="ci-ls-lsl-${i}" value="${sv2(ls.lots_per_streetlight)}" data-saved="${ds(ls.lots_per_streetlight)}" class="mono" oninput="markDirty()" ${dis}></td>
-      <td><input type="number" id="ci-ls-fen-${i}" value="${sv2(ls.fence_cost_per_ff)}" data-saved="${ds(ls.fence_cost_per_ff)}" class="mono" oninput="markDirty()" ${dis}></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-ls-dsm-${i}" value="${sv2(ls.dev_start_month)}" data-saved="${ds(ls.dev_start_month)}" class="mono" oninput="markDirty()" ${dis}></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-ls-lpl-${i}" value="${sv2(ls.landscaping_per_lot)}" data-saved="${ds(ls.landscaping_per_lot)}" class="mono" oninput="markDirty()" ${dis}></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-ls-urd-${i}" value="${sv2(ls.urd_per_lot)}" data-saved="${ds(ls.urd_per_lot)}" class="mono" oninput="markDirty()" ${dis}></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-ls-lsl-${i}" value="${sv2(ls.lots_per_streetlight)}" data-saved="${ds(ls.lots_per_streetlight)}" class="mono" oninput="markDirty()" ${dis}></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ci-ls-fen-${i}" value="${sv2(ls.fence_cost_per_ff)}" data-saved="${ds(ls.fence_cost_per_ff)}" class="mono" oninput="markDirty()" ${dis}></td>
     </tr>`;}).join('');
 
   // Marketing section
@@ -2887,7 +2887,7 @@ async function loadInputs(override = null) {
   for (let yr = 0; yr <= 10; yr++) {
     ppffBody.innerHTML += `<tr>
       <td class="row-num">${yr}</td>
-      <td><input type="number" id="ri-ppff-${yr}" value="${t.price_per_ff?.[yr] ?? 1800}" class="mono" oninput="${yr===0?'updateLotTaxes();':''}markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ri-ppff-${yr}" value="${t.price_per_ff?.[yr] ?? 1800}" class="mono" oninput="${yr===0?'updateLotTaxes();':''}markDirty()"></td>
     </tr>`;
   }
 
@@ -2905,18 +2905,18 @@ async function loadInputs(override = null) {
     const lotTaxVal = ppff0_init * (ht.ff||0) * lotAvPct * lotTax;
     return `<tr data-ff="${ht.ff}">
       <td><span class="acre-badge">${ht.ff} FF</span></td>
-      <td><input type="number" id="ri-ht-bt-${i}" value="${ht.build_time||''}" class="mono" style="width:70px" oninput="markDirty()"></td>
-      <td><input type="number" id="ri-ht-hp-${i}" value="${ht.home_price||''}" class="mono" style="width:110px" oninput="markDirty()"></td>
-      <td><div class="pct-wrap" style="width:80px"><input type="number" step="1" id="ri-ht-av-${i}" value="${+(avPct*100).toPrecision(4)}" class="mono" oninput="markDirty()"></div></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ri-ht-bt-${i}" value="${ht.build_time||''}" class="mono" style="width:70px" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ri-ht-hp-${i}" value="${ht.home_price||''}" class="mono" style="width:110px" oninput="markDirty()"></td>
+      <td><div class="pct-wrap" style="width:80px"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="1" id="ri-ht-av-${i}" value="${+(avPct*100).toPrecision(4)}" class="mono" oninput="markDirty()"></div></td>
       <td style="background:rgba(123,143,212,.04)"><span class="calc-cell">${fmtCalc(ht.av || (ht.home_price||0)*(avPct))}</span></td>
-      <td><input type="number" id="ri-ht-prem-${i}" value="${ht.premium_per_ff||''}" class="mono" style="width:80px" oninput="markDirty()"></td>
-      <td><div class="pct-wrap" style="width:80px"><input type="number" step="0.5" id="ri-ht-esc-${i}" value="${+(esc*100).toPrecision(4)}" class="mono" oninput="markDirty()"></div></td>
-      <td><input type="number" id="ri-ht-fence-${i}" value="${ht.fence_per_ff||''}" class="mono" style="width:70px" oninput="markDirty()"></td>
-      <td><input type="number" id="ri-ht-mktg-${i}" value="${ht.marketing_fee||''}" class="mono" style="width:100px" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ri-ht-prem-${i}" value="${ht.premium_per_ff||''}" class="mono" style="width:80px" oninput="markDirty()"></td>
+      <td><div class="pct-wrap" style="width:80px"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.5" id="ri-ht-esc-${i}" value="${+(esc*100).toPrecision(4)}" class="mono" oninput="markDirty()"></div></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ri-ht-fence-${i}" value="${ht.fence_per_ff||''}" class="mono" style="width:70px" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ri-ht-mktg-${i}" value="${ht.marketing_fee||''}" class="mono" style="width:100px" oninput="markDirty()"></td>
       <td style="background:rgba(123,143,212,.04)"><span class="calc-cell">${fmtCalc(ht.implied_lot_price || 1800*(ht.ff||0))}</span></td>
-      <td><div class="pct-wrap" style="width:80px"><input type="number" step="1" id="ri-ht-lotav-${i}" value="${+(lotAvPct*100).toPrecision(4)}" class="mono" oninput="updateLotTaxes(); markDirty()"></div></td>
+      <td><div class="pct-wrap" style="width:80px"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="1" id="ri-ht-lotav-${i}" value="${+(lotAvPct*100).toPrecision(4)}" class="mono" oninput="updateLotTaxes(); markDirty()"></div></td>
       <td style="background:rgba(123,143,212,.04)"><span class="calc-cell">${fmtCalc(ht.lot_av || 1800*(ht.ff||0)*lotAvPct)}</span></td>
-      <td><div class="pct-wrap" style="width:80px"><input type="number" step="0.1" id="ri-ht-ltax-${i}" value="${+(lotTax*100).toPrecision(4)}" class="mono" oninput="updateLotTaxes(); markDirty()"></div></td>
+      <td><div class="pct-wrap" style="width:80px"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.1" id="ri-ht-ltax-${i}" value="${+(lotTax*100).toPrecision(4)}" class="mono" oninput="updateLotTaxes(); markDirty()"></div></td>
       <td style="background:rgba(123,143,212,.04)"><span class="calc-cell" id="ri-ht-lottax-${i}">${'$'+Math.round(lotTaxVal).toLocaleString('en-US')}</span></td>
     </tr>`;
   }).join('');
@@ -2931,12 +2931,12 @@ async function loadInputs(override = null) {
     const active = i < resCnt;
     return `<tr id="ri-rp-row-${i}" class="${active ? '' : 'pod-inactive'}">
       <td class="row-num" style="color:${active?'var(--accent2)':'var(--text-dim)'}">Pod ${rp.pod||i+1}</td>
-      <td><input type="number" id="ri-rp-price-${i}" value="${active ? (rp.price_per_acre||'') : 0}" class="mono" oninput="markDirty();recalcResPod(${i})" ${active?'':'tabindex="-1"'}></td>
-      <td><div class="pct-wrap"><input type="number" step="0.1" id="ri-rp-cc-${i}" value="${active ? +((rp.closing_costs_pct??rp.closing_costs??0.045)*100).toPrecision(4) : 0}" class="mono" oninput="markDirty();recalcResPod(${i})" ${active?'':'tabindex="-1"'}></div></td>
-      <td><input type="number" step="0.1" id="ri-rp-lpa-${i}" value="${active ? (rp.implied_lots_per_acre||'') : 0}" class="mono" oninput="markDirty();recalcResPod(${i})" ${active?'':'tabindex="-1"'}></td>
-      <td><input type="number" id="ri-rp-impact-${i}" value="${active ? (rp.impact_fee_per_lot||'') : 0}" class="mono" oninput="markDirty();recalcResPod(${i})" ${active?'':'tabindex="-1"'}></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ri-rp-price-${i}" value="${active ? (rp.price_per_acre||'') : 0}" class="mono" oninput="markDirty();recalcResPod(${i})" ${active?'':'tabindex="-1"'}></td>
+      <td><div class="pct-wrap"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.1" id="ri-rp-cc-${i}" value="${active ? +((rp.closing_costs_pct??rp.closing_costs??0.045)*100).toPrecision(4) : 0}" class="mono" oninput="markDirty();recalcResPod(${i})" ${active?'':'tabindex="-1"'}></div></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.1" id="ri-rp-lpa-${i}" value="${active ? (rp.implied_lots_per_acre||'') : 0}" class="mono" oninput="markDirty();recalcResPod(${i})" ${active?'':'tabindex="-1"'}></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ri-rp-impact-${i}" value="${active ? (rp.impact_fee_per_lot||'') : 0}" class="mono" oninput="markDirty();recalcResPod(${i})" ${active?'':'tabindex="-1"'}></td>
       <td style="background:rgba(123,143,212,.04)"><span class="calc-cell" id="ri-rp-net-${i}">${active && rp.net_proceeds ? '$'+Math.round(rp.net_proceeds).toLocaleString('en-US') : '—'}</span></td>
-      <td><input type="number" id="ri-rp-sp-${i}" value="${active ? (rp.sale_period||'') : 0}" class="mono" oninput="markDirty()" ${active?'':'tabindex="-1"'}></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ri-rp-sp-${i}" value="${active ? (rp.sale_period||'') : 0}" class="mono" oninput="markDirty()" ${active?'':'tabindex="-1"'}></td>
     </tr>`;}).join('');
 
   // Comm pods — acreage is read-only, linked from tract inputs
@@ -2949,12 +2949,12 @@ async function loadInputs(override = null) {
     const active = i < commCnt;
     return `<tr id="ri-cp-row-${i}" class="${active ? '' : 'pod-inactive'}">
       <td class="row-num" style="color:${active?'var(--accent2)':'var(--text-dim)'}">Pod ${cp.pod||i+1}</td>
-      <td><input type="number" step="0.01" id="ri-cp-price-${i}" value="${active ? (cp.price_per_sf||'') : 0}" class="mono" oninput="markDirty();recalcCommPod(${i})" ${active?'':'tabindex="-1"'}></td>
-      <td><div class="pct-wrap"><input type="number" step="0.1" id="ri-cp-cc-${i}" value="${active ? +((cp.closing_costs_pct??cp.closing_costs??0.045)*100).toPrecision(4) : 0}" class="mono" oninput="markDirty();recalcCommPod(${i})" ${active?'':'tabindex="-1"'}></div></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.01" id="ri-cp-price-${i}" value="${active ? (cp.price_per_sf||'') : 0}" class="mono" oninput="markDirty();recalcCommPod(${i})" ${active?'':'tabindex="-1"'}></td>
+      <td><div class="pct-wrap"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.1" id="ri-cp-cc-${i}" value="${active ? +((cp.closing_costs_pct??cp.closing_costs??0.045)*100).toPrecision(4) : 0}" class="mono" oninput="markDirty();recalcCommPod(${i})" ${active?'':'tabindex="-1"'}></div></td>
       <td style="background:rgba(123,143,212,.04)"><span class="calc-cell" id="ri-cp-net-${i}">${active && cp.net_proceeds ? '$'+Math.round(cp.net_proceeds).toLocaleString('en-US') : '—'}</span></td>
-      <td><input type="number" id="ri-cp-sp-${i}" value="${active ? (cp.sale_period||'') : 0}" class="mono" oninput="markDirty();recalcCommPod(${i})" ${active?'':'tabindex="-1"'}></td>
-      <td><input type="number" id="ri-cp-av-${i}" value="${active ? (cp.av_per_acre||'') : 0}" class="mono" oninput="markDirty();recalcCommPod(${i})" ${active?'':'tabindex="-1"'}></td>
-      <td><input type="number" id="ri-cp-avd-${i}" value="${active ? (cp.av_delay_months||'') : 0}" class="mono" oninput="markDirty();recalcCommPod(${i})" ${active?'':'tabindex="-1"'}></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ri-cp-sp-${i}" value="${active ? (cp.sale_period||'') : 0}" class="mono" oninput="markDirty();recalcCommPod(${i})" ${active?'':'tabindex="-1"'}></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ri-cp-av-${i}" value="${active ? (cp.av_per_acre||'') : 0}" class="mono" oninput="markDirty();recalcCommPod(${i})" ${active?'':'tabindex="-1"'}></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ri-cp-avd-${i}" value="${active ? (cp.av_delay_months||'') : 0}" class="mono" oninput="markDirty();recalcCommPod(${i})" ${active?'':'tabindex="-1"'}></td>
       <td style="background:rgba(123,143,212,.04)"><span class="calc-cell" id="ri-cp-avp-${i}">${active && cp.av_period != null ? 'Mo. '+cp.av_period : '—'}</span></td>
       <td style="background:rgba(123,143,212,.04)"><span class="calc-cell" id="ri-cp-tav-${i}">${active && cp.total_av ? '$'+Math.round(cp.total_av).toLocaleString('en-US') : '—'}</span></td>
     </tr>`;}).join('');
@@ -2968,11 +2968,11 @@ async function loadInputs(override = null) {
         <option value="1" ${d.toggle===1?'selected':''}>On (1)</option>
         <option value="0" ${d.toggle===0?'selected':''}>Off (0)</option>
       </select></td>
-      <td><div class="pct-wrap"><input type="number" step="0.1" id="ri-${name.toLowerCase()}-debt" value="${+(d.debt_ratio*100).toPrecision(4)||''}" class="mono" oninput="markDirty()"></div></td>
-      <td><input type="number" id="ri-${name.toLowerCase()}-fbp" value="${d.first_bond_period||''}" class="mono" oninput="markDirty()"></td>
-      <td><input type="number" id="ri-${name.toLowerCase()}-bi" value="${d.bond_interval||''}" class="mono" oninput="markDirty()"></td>
-      <td><div class="pct-wrap"><input type="number" step="1" id="ri-${name.toLowerCase()}-ptd" value="${+(d.pct_to_dev*100).toPrecision(4)||''}" class="mono" oninput="markDirty()"></div></td>
-      <td><div class="pct-wrap"><input type="number" step="0.1" id="ri-${name.toLowerCase()}-rf" value="${+(d.receivables_fee*100).toPrecision(4)||''}" class="mono" oninput="markDirty()"></div></td>
+      <td><div class="pct-wrap"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.1" id="ri-${name.toLowerCase()}-debt" value="${+(d.debt_ratio*100).toPrecision(4)||''}" class="mono" oninput="markDirty()"></div></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ri-${name.toLowerCase()}-fbp" value="${d.first_bond_period||''}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="ri-${name.toLowerCase()}-bi" value="${d.bond_interval||''}" class="mono" oninput="markDirty()"></td>
+      <td><div class="pct-wrap"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="1" id="ri-${name.toLowerCase()}-ptd" value="${+(d.pct_to_dev*100).toPrecision(4)||''}" class="mono" oninput="markDirty()"></div></td>
+      <td><div class="pct-wrap"><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.1" id="ri-${name.toLowerCase()}-rf" value="${+(d.receivables_fee*100).toPrecision(4)||''}" class="mono" oninput="markDirty()"></div></td>
     </tr>`;
   mudBody.innerHTML = mudRow('MUD', t.mud_bond||{}) + mudRow('WCID', t.wcid_bond||{});
 
@@ -2980,25 +2980,25 @@ async function loadInputs(override = null) {
   const lkp = document.getElementById('lk-plants-body');
   lkp.innerHTML = (t.lk_plants||[]).map((p,i) => `
     <tr>
-      <td><input type="text" id="lk-pl-type-${i}" value="${p.type||''}" oninput="markDirty()"></td>
-      <td><input type="number" step="0.01" id="lk-pl-acres-${i}" value="${p.acres}" class="mono" oninput="markDirty()"></td>
-      <td><input type="number" id="lk-pl-dur-${i}" value="${p.duration}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="lk-pl-type-${i}" value="${p.type||''}" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.01" id="lk-pl-acres-${i}" value="${p.acres}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="lk-pl-dur-${i}" value="${p.duration}" class="mono" oninput="markDirty()"></td>
     </tr>`).join('');
 
   const lka = document.getElementById('lk-amenities-body');
   lka.innerHTML = (t.lk_amenities||[]).map((a,i) => `
     <tr>
-      <td><input type="text" id="lk-am-type-${i}" value="${a.type||''}" oninput="markDirty()"></td>
-      <td><input type="number" step="0.01" id="lk-am-acres-${i}" value="${a.acres||0}" class="mono" oninput="markDirty()"></td>
-      <td><input type="number" id="lk-am-dur-${i}" value="${a.duration}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="lk-am-type-${i}" value="${a.type||''}" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.01" id="lk-am-acres-${i}" value="${a.acres||0}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="lk-am-dur-${i}" value="${a.duration}" class="mono" oninput="markDirty()"></td>
     </tr>`).join('');
 
   const lkr = document.getElementById('lk-roads-body');
   lkr.innerHTML = (t.lk_roads||[]).map((rd,i) => `
     <tr>
-      <td><input type="text" id="lk-rd-type-${i}" value="${rd.type||''}" oninput="markDirty()"></td>
-      <td><input type="number" step="0.01" id="lk-rd-wsd-${i}" value="${rd.wsd}" class="mono" oninput="markDirty()"></td>
-      <td><input type="number" step="0.01" id="lk-rd-paving-${i}" value="${rd.paving}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="lk-rd-type-${i}" value="${rd.type||''}" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.01" id="lk-rd-wsd-${i}" value="${rd.wsd}" class="mono" oninput="markDirty()"></td>
+      <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" step="0.01" id="lk-rd-paving-${i}" value="${rd.paving}" class="mono" oninput="markDirty()"></td>
     </tr>`).join('');
 
   // Section costs table (WSD & Paving $/FF per lot size → Dev Cost/Lot)
@@ -3012,8 +3012,8 @@ async function loadInputs(override = null) {
       const devCost = Math.round((wsd + pav) * ff);
       return `<tr>
         <td><span class="acre-badge">${ff} FF</span></td>
-        <td><input type="number" id="lk-sc-wsd-${i}" value="${wsd}" class="mono" style="width:90px" oninput="updateSectionDevCost(${i},${ff}); markDirty()"></td>
-        <td><input type="number" id="lk-sc-paving-${i}" value="${pav}" class="mono" style="width:90px" oninput="updateSectionDevCost(${i},${ff}); markDirty()"></td>
+        <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="lk-sc-wsd-${i}" value="${wsd}" class="mono" style="width:90px" oninput="updateSectionDevCost(${i},${ff}); markDirty()"></td>
+        <td><input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="lk-sc-paving-${i}" value="${pav}" class="mono" style="width:90px" oninput="updateSectionDevCost(${i},${ff}); markDirty()"></td>
         <td style="background:rgba(123,143,212,.04)"><span class="calc-cell" id="lk-sc-devcost-${i}">$${devCost.toLocaleString('en-US')}</span></td>
       </tr>`;
     }).join('');

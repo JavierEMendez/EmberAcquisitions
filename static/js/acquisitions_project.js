@@ -404,9 +404,9 @@ function renderLotTypeRows(lotTypes) {
   const rowsEl = document.getElementById('lot-types-rows');
   rowsEl.innerHTML = lotTypes.map((lt, i) => `
     <div style="display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:4px;margin:2px 0">
-      <input type="text" data-lt-idx="${i}" data-lt-field="label" value="${(lt.label||'').replace(/"/g,'&quot;')}" style="padding:3px 6px">
-      <input type="number" data-lt-idx="${i}" data-lt-field="units_per_acre" value="${lt.units_per_acre||0}" step="0.1" min="0" max="50" style="padding:3px 6px;text-align:right">
-      <input type="number" data-lt-idx="${i}" data-lt-field="allocation_pct" value="${lt.allocation_pct||0}" step="5" min="0" max="100" style="padding:3px 6px;text-align:right">
+      <input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" data-lt-idx="${i}" data-lt-field="label" value="${(lt.label||'').replace(/"/g,'&quot;')}" style="padding:3px 6px">
+      <input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" data-lt-idx="${i}" data-lt-field="units_per_acre" value="${lt.units_per_acre||0}" step="0.1" min="0" max="50" style="padding:3px 6px;text-align:right">
+      <input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" data-lt-idx="${i}" data-lt-field="allocation_pct" value="${lt.allocation_pct||0}" step="5" min="0" max="100" style="padding:3px 6px;text-align:right">
     </div>
   `).join('');
   rowsEl.querySelectorAll('input').forEach(inp => {
@@ -1667,7 +1667,7 @@ async function loadCbas() {
       </div>
 
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">
-        <input id="cbas-q" type="text" placeholder="Look up any community or builder — anywhere CBAS tracks"
+        <input autocomplete="off" data-lpignore="true" data-1p-ignore id="cbas-q" type="text" placeholder="Look up any community or builder — anywhere CBAS tracks"
                onkeydown="if(event.key==='Enter')searchCbas()"
                style="flex:1;padding:6px 9px;border:1px solid #DDE3E8;border-radius:4px;font-size:12px">
         <button class="ghost" onclick="searchCbas()" style="padding:6px 12px;font-size:12px">Search</button>
@@ -2209,7 +2209,7 @@ async function loadNews(customQuery) {
   body.innerHTML = '<div class="placeholder">Aggregating stories…</div>';
   const searchBar = (val, note) => `
     <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-      <input id="news-q" type="text" value="${esc(val)}" placeholder="Search news — an employer, corridor, competitor…"
+      <input autocomplete="off" data-lpignore="true" data-1p-ignore id="news-q" type="text" value="${esc(val)}" placeholder="Search news — an employer, corridor, competitor…"
              onkeydown="if(event.key==='Enter')searchNews()"
              style="flex:1;padding:6px 9px;border:1px solid #DDE3E8;border-radius:4px;font-size:12px">
       <button class="ghost" onclick="searchNews()" style="padding:6px 12px;font-size:12px">Search</button>

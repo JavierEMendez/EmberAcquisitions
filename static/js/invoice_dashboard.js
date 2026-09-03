@@ -30,7 +30,7 @@
   };
 
   // File-input change handler. Wired via inline `onchange` on the
-  // <input id="upload-file"> so it runs whether or not wire() ever
+  // <input autocomplete="off" data-lpignore="true" data-1p-ignore id="upload-file"> so it runs whether or not wire() ever
   // executes. Builds the same preview block handleFileSelection
   // builds later in the file, but standalone so this top section
   // has no forward dependency on anything below.

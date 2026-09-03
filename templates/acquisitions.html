@@ -152,7 +152,6 @@
   <a href="/acquisitions" class="on">Map &amp; search</a>
   <a href="/acquisitions/analyses">Analyses</a>
   <a href="/acquisitions/pipeline">Pipeline</a>
-  <a href="/acquisitions/folders">Folders</a>
   <a href="/acquisitions/corridors">Corridors</a>
   {% if is_admin %}<a href="/acquisitions/admin">Parcel cache</a>{% endif %}
 </div>
@@ -175,19 +174,19 @@
         <button class="btn-ghost" id="btn-clear-inputs" type="button" style="font-size:10px">Clear all</button>
       </h3>
       <div class="field row2">
-        <div><label>Lat</label><input id="lat" type="number" step="0.0001" value="30.0258"></div>
-        <div><label>Lon</label><input id="lon" type="number" step="0.0001" value="-95.8452"></div>
+        <div><label>Lat</label><input autocomplete="off" data-lpignore="true" data-1p-ignore id="lat" type="number" step="0.0001" value="30.0258"></div>
+        <div><label>Lon</label><input autocomplete="off" data-lpignore="true" data-1p-ignore id="lon" type="number" step="0.0001" value="-95.8452"></div>
       </div>
       <button class="btn btn-secondary" id="btn-pick">Click map to drop pin</button>
 
       <h3>Filters</h3>
       <div class="field">
         <label>Radius / corridor buffer (miles)<span style="color:#6B7B8B;font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px" title="Same number drives two things: the search radius for a single point search, AND the half-width of every corridor when you run 'Run search across N corridors' below.">ⓘ</span></label>
-        <input id="radius" type="number" step="0.5" value="3">
+        <input autocomplete="off" data-lpignore="true" data-1p-ignore id="radius" type="number" step="0.5" value="3">
       </div>
       <div class="field row2">
-        <div><label>Acres min</label><input id="min_acres" type="text" inputmode="numeric" value="50"></div>
-        <div><label>Acres max</label><input id="max_acres" type="text" inputmode="numeric" value="3,000"></div>
+        <div><label>Acres min</label><input autocomplete="off" data-lpignore="true" data-1p-ignore id="min_acres" type="text" inputmode="numeric" value="50"></div>
+        <div><label>Acres max</label><input autocomplete="off" data-lpignore="true" data-1p-ignore id="max_acres" type="text" inputmode="numeric" value="3,000"></div>
       </div>
       <div class="field">
         <label>Group adjacent tracts <span style="color:#6B7B8B;font-weight:400">(color-code on map)</span></label>
@@ -202,7 +201,7 @@
       </div>
       <div class="field">
         <label>Label (for saved/export)</label>
-        <input id="label" type="text" value="Hockley_10mi">
+        <input autocomplete="off" data-lpignore="true" data-1p-ignore id="label" type="text" value="Hockley_10mi">
       </div>
       <button class="btn btn-primary" id="btn-search">Run Search</button>
 
@@ -232,7 +231,7 @@
           </div>
         </div>
         <div style="display:flex;gap:4px;margin-bottom:6px">
-          <input id="tract-filter" type="text" placeholder="Filter by owner…" style="flex:1;padding:4px 8px;font-size:11px;background:var(--ember-blue-700);border:1px solid rgba(255,255,255,0.10);color:#FFF;border-radius:4px">
+          <input autocomplete="off" data-lpignore="true" data-1p-ignore id="tract-filter" type="text" placeholder="Filter by owner…" style="flex:1;padding:4px 8px;font-size:11px;background:var(--ember-blue-700);border:1px solid rgba(255,255,255,0.10);color:#FFF;border-radius:4px">
           <select id="tract-sort" style="padding:4px 6px;font-size:11px;background:var(--ember-blue-700);border:1px solid rgba(255,255,255,0.10);color:#FFF;border-radius:4px">
             <option value="acres-desc">Acres ↓</option>
             <option value="acres-asc">Acres ↑</option>
@@ -376,7 +375,7 @@
     <h3>Save tract to folder</h3>
     <div class="modal-sub" id="save-pin-sub"></div>
     <label>Label</label>
-    <input id="pin-label" type="text" placeholder="e.g. Hegar 1900 ac">
+    <input autocomplete="off" data-lpignore="true" data-1p-ignore id="pin-label" type="text" placeholder="e.g. Hegar 1900 ac">
     <label>Folder</label>
     <select id="pin-folder">
       <option value="">— No folder (loose pin) —</option>
@@ -414,6 +413,8 @@
     <button id="dossier-show-results" type="button" title="Show the full matching-tract search layer again">Show tracts</button>
     <button id="dossier-analyze" type="button"
             title="Run an acquisition analysis over every tract this owner holds, as one project">Analyse all</button>
+    <button id="dossier-related" type="button"
+            title="Other owners mailing to the same address -- stands in for a registered-agent search, which Texas does not publish">Related owners</button>
     <button id="dossier-zoom" type="button" title="Zoom the map to every matching owner tract">Zoom owner</button>
     <button id="dossier-close" type="button" title="Close">&times;</button>
   </div>
@@ -483,7 +484,7 @@
     <h3>Save shape</h3>
     <div class="modal-sub" id="shape-sub"></div>
     <label>Label</label>
-    <input id="shape-label" type="text" placeholder="e.g. Hockley target zone">
+    <input autocomplete="off" data-lpignore="true" data-1p-ignore id="shape-label" type="text" placeholder="e.g. Hockley target zone">
     <label>Folder (optional)</label>
     <select id="shape-folder">
       <option value="">— No folder —</option>
@@ -524,7 +525,7 @@
     <h3>New folder</h3>
     <div class="modal-sub">Group searches and tract pins together. Example: "Corridor X" or "I-45 N target list".</div>
     <label>Name</label>
-    <input id="folder-name" type="text" placeholder="e.g. Corridor X">
+    <input autocomplete="off" data-lpignore="true" data-1p-ignore id="folder-name" type="text" placeholder="e.g. Corridor X">
     <div class="modal-actions">
       <button class="btn-cancel" id="folder-cancel">Cancel</button>
       <button class="btn-save" id="folder-create">Create folder</button>

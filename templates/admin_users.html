@@ -150,10 +150,10 @@
         <div class="panel add-user-form">
           <h4>Add Team Member</h4>
           <div class="form-row">
-            <input type="text" id="new-username" placeholder="Username">
-            <input type="password" id="new-password" placeholder="Password">
+            <input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="new-username" placeholder="Username">
+            <input autocomplete="off" data-lpignore="true" data-1p-ignore type="password" id="new-password" placeholder="Password">
           </div>
-          <input type="email" id="new-email" placeholder="Email address (optional)" class="form-email">
+          <input autocomplete="off" data-lpignore="true" data-1p-ignore type="email" id="new-email" placeholder="Email address (optional)" class="form-email">
           <label class="form-admin">
             <input type="checkbox" id="new-is-admin"> Grant admin access
           </label>
@@ -244,14 +244,14 @@ async function refreshUserList() {
           <button class="btn-del-user" onclick="deleteUser(${u.id},'${u.username}')" title="Remove">&times;</button>
         </div>
         <div style="display:flex;gap:6px;width:100%;">
-          <input type="text" id="fname-${u.id}" value="${u.first_name || ''}" placeholder="First name"
+          <input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="fname-${u.id}" value="${u.first_name || ''}" placeholder="First name"
             style="flex:1;background:var(--eax-bg);border:1px solid var(--eax-line-2);color:var(--eax-ink);border-radius:6px;padding:6px 9px;font-size:12px;font-family:inherit;outline:none;">
-          <input type="text" id="lname-${u.id}" value="${u.last_name || ''}" placeholder="Last name"
+          <input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="lname-${u.id}" value="${u.last_name || ''}" placeholder="Last name"
             style="flex:1;background:var(--eax-bg);border:1px solid var(--eax-line-2);color:var(--eax-ink);border-radius:6px;padding:6px 9px;font-size:12px;font-family:inherit;outline:none;">
           <button onclick="saveName(${u.id})" style="${btnStyle}" onmouseover="this.style.borderColor='var(--eax-good)';this.style.color='var(--eax-good)';" onmouseout="this.style.borderColor='var(--eax-line-2)';this.style.color='var(--eax-muted)';">Name</button>
         </div>
         <div style="display:flex;gap:6px;width:100%;">
-          <input type="email" id="email-${u.id}" value="${u.email || ''}" placeholder="Email address"
+          <input autocomplete="off" data-lpignore="true" data-1p-ignore type="email" id="email-${u.id}" value="${u.email || ''}" placeholder="Email address"
             style="flex:1;background:var(--eax-bg);border:1px solid var(--eax-line-2);color:var(--eax-ink);border-radius:6px;padding:6px 9px;font-size:12px;font-family:inherit;outline:none;">
           <button onclick="saveEmail(${u.id})" style="${btnStyle}" onmouseover="this.style.borderColor='var(--eax-accent)';this.style.color='var(--eax-accent)';" onmouseout="this.style.borderColor='var(--eax-line-2)';this.style.color='var(--eax-muted)';">Email</button>
         </div>

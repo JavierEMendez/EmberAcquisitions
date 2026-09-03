@@ -467,7 +467,6 @@
   <a href="/acquisitions">Map &amp; search</a>
   <a href="/acquisitions/analyses">Analyses</a>
   <a href="/acquisitions/pipeline">Pipeline</a>
-  <a href="/acquisitions/folders">Folders</a>
   <a href="/acquisitions/corridors" class="on">Corridors</a>
   {% if is_admin %}<a href="/acquisitions/admin">Parcel cache</a>{% endif %}
 </div>
@@ -490,8 +489,8 @@
 <div class="kpi-strip" id="kpi-strip"></div>
 
 <div class="filter-bar">
-  <div class="group"><label>Buffer ±mi</label><input id="f-buffer" type="number" step="0.5" value="3" style="width:70px"></div>
-  <div class="group"><label>Acres</label><input id="f-min-ac" type="number" step="10" value="50" style="width:80px"> – <input id="f-max-ac" type="number" step="100" value="3000" style="width:90px"></div>
+  <div class="group"><label>Buffer ±mi</label><input autocomplete="off" data-lpignore="true" data-1p-ignore id="f-buffer" type="number" step="0.5" value="3" style="width:70px"></div>
+  <div class="group"><label>Acres</label><input autocomplete="off" data-lpignore="true" data-1p-ignore id="f-min-ac" type="number" step="10" value="50" style="width:80px"> – <input autocomplete="off" data-lpignore="true" data-1p-ignore id="f-max-ac" type="number" step="100" value="3000" style="width:90px"></div>
   <div class="group"><label>County</label><select id="f-county"><option value="">all</option></select></div>
   <div class="group"><label>Status</label><select id="f-status">
     <option value="">all</option>
@@ -508,7 +507,7 @@
   <div class="group" id="corridor-filter-group" style="display:none"><label>Corridor</label><select id="f-corridor"><option value="">all</option></select></div>
   <label class="toggle"><input type="checkbox"id="f-by-owner">Group by owner</label>
   <label class="toggle"id="by-corridor-toggle"style="display:none"><input type="checkbox"id="f-by-corridor">Group by corridor</label>
-  <input id="f-search" type="text" placeholder="Search owner / county…" style="flex:1;min-width:160px">
+  <input autocomplete="off" data-lpignore="true" data-1p-ignore id="f-search" type="text" placeholder="Search owner / county…" style="flex:1;min-width:160px">
   <button class="btn" id="btn-recompute" type="button" title="Re-run the search with current acres + buffer">⟳ Recompute</button>
 </div>
 

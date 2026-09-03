@@ -203,7 +203,7 @@
         </div>
         <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
           <select id="ue-assign-existing" style="display:none; background:var(--eax-surface); border:1px solid var(--eax-line); border-radius:8px; color:var(--eax-ink); padding:9px 12px; font-family:inherit; font-size:13px;"></select>
-          <input type="text" id="ue-assign-name" placeholder="Entity name (e.g. Data Center)" maxlength="80">
+          <input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="ue-assign-name" placeholder="Entity name (e.g. Data Center)" maxlength="80">
           <button class="ue-btn primary" id="ue-assign-confirm">Save Upload</button>
           <button class="ue-btn" id="ue-assign-cancel">Cancel</button>
         </div>
@@ -218,10 +218,10 @@
           Renaming keeps all uploaded data — only the display name changes.
         </div>
         <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-          <input type="text" id="ue-rename-input" maxlength="80" placeholder="Community name">
+          <input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="ue-rename-input" maxlength="80" placeholder="Community name">
           <button class="ue-btn primary" id="ue-rename-save">Rename Selected</button>
           <span style="color:var(--eax-line-2); padding:0 4px;">|</span>
-          <input type="text" id="ue-newcomm-input" maxlength="80" placeholder="New community name">
+          <input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="ue-newcomm-input" maxlength="80" placeholder="New community name">
           <button class="ue-btn" id="ue-newcomm-add">Add Community</button>
           <span style="color:var(--eax-line-2); padding:0 4px;">|</span>
           <button class="ue-btn" id="ue-comm-delete">Delete Selected</button>

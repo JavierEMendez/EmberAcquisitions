@@ -581,11 +581,11 @@
             {% for g in capital.commitments.groups %}
             {% set rem = (g.mpc + g.vertical) - (g.mpc_allocated + g.vertical_allocated) %}
             <div class="commit-grid commit-row" data-group-id="{{ g.id }}">
-              <input type="text"   class="commit-input commit-name" name="name"               value="{{ g.name }}"               placeholder="Investor / Group name" />
-              <input type="number" class="commit-input commit-num"  name="mpc"                value="{{ g.mpc or '' }}"                min="0" step="1000" placeholder="0" />
-              <input type="number" class="commit-input commit-num"  name="mpc_allocated"      value="{{ g.mpc_allocated or '' }}"      min="0" step="1000" placeholder="0" />
-              <input type="number" class="commit-input commit-num"  name="vertical"           value="{{ g.vertical or '' }}"           min="0" step="1000" placeholder="0" />
-              <input type="number" class="commit-input commit-num"  name="vertical_allocated" value="{{ g.vertical_allocated or '' }}" min="0" step="1000" placeholder="0" />
+              <input autocomplete="off" data-lpignore="true" data-1p-ignore type="text"   class="commit-input commit-name" name="name"               value="{{ g.name }}"               placeholder="Investor / Group name" />
+              <input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" class="commit-input commit-num"  name="mpc"                value="{{ g.mpc or '' }}"                min="0" step="1000" placeholder="0" />
+              <input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" class="commit-input commit-num"  name="mpc_allocated"      value="{{ g.mpc_allocated or '' }}"      min="0" step="1000" placeholder="0" />
+              <input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" class="commit-input commit-num"  name="vertical"           value="{{ g.vertical or '' }}"           min="0" step="1000" placeholder="0" />
+              <input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" class="commit-input commit-num"  name="vertical_allocated" value="{{ g.vertical_allocated or '' }}" min="0" step="1000" placeholder="0" />
               <div class="commit-rem num">{{ fmt_money_raw(rem) if rem else '—' }}</div>
               <button type="button" class="commit-remove" title="Remove group" aria-label="Remove">×</button>
             </div>
@@ -826,14 +826,14 @@
           <div class="captable-rows">
             {% for p in inv.positions %}
             <div class="commit-grid captable-grid captable-row">
-              <input type="text"   class="commit-input" name="project"      value="{{ p.project }}" placeholder="Project name" />
-              <input type="text"   class="commit-input" name="vehicle"      value="{{ p.vehicle }}" placeholder="Vehicle / Entity" />
+              <input autocomplete="off" data-lpignore="true" data-1p-ignore type="text"   class="commit-input" name="project"      value="{{ p.project }}" placeholder="Project name" />
+              <input autocomplete="off" data-lpignore="true" data-1p-ignore type="text"   class="commit-input" name="vehicle"      value="{{ p.vehicle }}" placeholder="Vehicle / Entity" />
               <select class="commit-input" name="equity_class">
                 <option value="common"    {{ 'selected' if p.equity_class != 'preferred' else '' }}>Common</option>
                 <option value="preferred" {{ 'selected' if p.equity_class == 'preferred' else '' }}>Preferred</option>
               </select>
-              <input type="number" class="commit-input commit-num" name="contribution" value="{{ '%.0f'|format(p.contribution) if p.contribution else '' }}" min="0" step="1000" placeholder="0" />
-              <input type="number" class="commit-input commit-num" name="pct" value="{{ '%.4f'|format(p.pct * 100) if p.pct else '' }}" min="0" max="100" step="0.0001" placeholder="0" />
+              <input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" class="commit-input commit-num" name="contribution" value="{{ '%.0f'|format(p.contribution) if p.contribution else '' }}" min="0" step="1000" placeholder="0" />
+              <input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" class="commit-input commit-num" name="pct" value="{{ '%.4f'|format(p.pct * 100) if p.pct else '' }}" min="0" max="100" step="0.0001" placeholder="0" />
               <button type="button" class="commit-remove" title="Remove position" aria-label="Remove">×</button>
             </div>
             {% endfor %}
@@ -898,13 +898,13 @@
 
         <div class="form-row">
           <label for="pf-name">Project Name</label>
-          <input type="text" id="pf-name" name="name" required placeholder="e.g. Falls Crossing"/>
+          <input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="pf-name" name="name" required placeholder="e.g. Falls Crossing"/>
         </div>
 
         <div class="form-row split">
           <div>
             <label for="pf-location">Location</label>
-            <input type="text" id="pf-location" name="location" placeholder="City, State"/>
+            <input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="pf-location" name="location" placeholder="City, State"/>
           </div>
           <div>
             <label for="pf-asset-class">Asset Class</label>
@@ -919,14 +919,14 @@
             {# step="0.01" so values imported from Excel (like 13.62) pass
                browser HTML5 validation. Without this, step defaulted to 0.1
                and any 2-decimal value got flagged "not a valid number". #}
-            <input type="number" id="pf-irr" name="irr" step="0.01" placeholder="0.0"/>
+            <input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="pf-irr" name="irr" step="0.01" placeholder="0.0"/>
           </div>
         </div>
 
         <div class="form-row split" style="grid-template-columns:1fr 1fr;max-width:50%;">
           <div>
             <label for="pf-em">Equity Multiple (×)</label>
-            <input type="number" id="pf-em" name="em" step="0.01" placeholder="0.00"/>
+            <input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" id="pf-em" name="em" step="0.01" placeholder="0.00"/>
           </div>
         </div>
 
@@ -945,8 +945,8 @@
           {# step="0.01" so Excel imports (e.g. $1,482,749.47) pass HTML5
              number validation. Manual typing still works — partners can
              type whole-thousand amounts; nothing is rounded for them. #}
-          <input type="number" name="contrib_{{ y }}" min="0" step="0.01" placeholder="0" data-year="{{ y }}" data-kind="contrib"/>
-          <input type="number" name="dist_{{ y }}"    min="0" step="0.01" placeholder="0" data-year="{{ y }}" data-kind="dist"/>
+          <input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" name="contrib_{{ y }}" min="0" step="0.01" placeholder="0" data-year="{{ y }}" data-kind="contrib"/>
+          <input autocomplete="off" data-lpignore="true" data-1p-ignore type="number" name="dist_{{ y }}"    min="0" step="0.01" placeholder="0" data-year="{{ y }}" data-kind="dist"/>
           {% endfor %}
         </div>
       </div>
