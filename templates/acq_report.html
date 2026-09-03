@@ -54,6 +54,12 @@
 
   .card { background: #FFFFFF; border: 1px solid #E6E9EC; border-radius: 8pt;
           padding: 12pt 13pt; margin-bottom: 11pt; break-inside: avoid; }
+  /* A card holding a table must be allowed to FLOW. With break-inside:avoid
+     the whole table jumps to the next sheet the moment it does not fit,
+     leaving the page it came from half empty and starting the next one with a
+     bare column header and no section title. Rows and the repeating thead
+     already protect the table itself. */
+  .card.flush, .grid2 { break-inside: auto; }
   .card-t { font-size: 7.6pt; font-weight: 700; letter-spacing: .11em;
             text-transform: uppercase; color: #13344E; margin: 0 0 9pt; }
   .card.flush { padding: 0; overflow: hidden; }
@@ -364,7 +370,7 @@
 </div>
 {% endif %}
 
-<div class="grid2">
+<div>
   {% if r.market.lot_bands %}
   <div class="card flush">
     <div class="card-t" style="padding:12pt 13pt 9pt;margin:0">Product mix by lot width</div>

@@ -816,20 +816,43 @@ def _map_market(r, cb):
         return
     agg = cb.get("aggregate") or {}
     starts = _first(agg, "annual_starts") or cb.get("ring_annual_starts")
-    mos = _n(cb.get("months_lot_supply"))
+    closings = _first(agg, "annual_closings")
+    vdls = _first(agg, "vdls", "finished_lots")
     radius = _n(cb.get("radius_mi"))
+
+    # Months of lot supply is derived when the field is absent rather than
+    # printed as a dash. It is a definition, not a lookup: finished lots over
+    # monthly closings. The first run showed "-" here beside 3,349 finished
+    # lots and 1,857 annual closings, which is 21.6 months sitting in plain
+    # sight on the same row.
+    mos = _n(cb.get("months_lot_supply"))
+    if mos is None and _n(vdls) and _n(closings):
+        mos = _n(vdls) / (_n(closings) / 12.0)
+
+    # price_band is {"min": ..., "max": ...}, not a string.
+    pb = cb.get("price_band")
+    if isinstance(pb, dict):
+        # Exact figures here, not the abbreviated form used elsewhere: a price
+        # band is a range someone will quote, and "$185k - $1M" loses the ends.
+        lo, hi = _n(pb.get("min")), _n(pb.get("max"))
+        price_range = (f"${lo:,.0f} - ${hi:,.0f}" if lo and hi
+                       else (f"${(lo or hi):,.0f}" if (lo or hi) else "-"))
+    else:
+        price_range = str(pb) if pb else "-"
+
     ctx = {
         "subtitle": ("New-home velocity, lot supply, future pipeline and product depth"
                      + (f" within the {radius:g}-mile competitive ring" if radius else "")),
         "starts": num(starts),
-        "closings": num(_first(agg, "annual_closings")),
-        "vdl": num(_first(agg, "vdls", "finished_lots")),
+        "closings": num(closings),
+        "vdl": num(vdls),
         "mos": (f"{mos:,.1f}" if mos is not None else "-"),
         "mos_hot": bool(mos is not None and mos >= 18),
-        "uc": num(_first(agg, "under_construction", "uc")),
-        "fv": num(_first(agg, "finished_vacant", "fv")),
-        "future": num(_first(agg, "futures", "future_lots")),
-        "price_range": cb.get("price_band") or "-",
+        "uc": num(_first(agg, "under_construction")),
+        # The payload calls it complete_vacant; there is no finished_vacant.
+        "fv": num(_first(agg, "complete_vacant")),
+        "future": num(_first(agg, "futures")),
+        "price_range": price_range,
     }
     bits = []
     if cb.get("quarter_label"):
@@ -848,16 +871,17 @@ def _map_market(r, cb):
              "starts": _first(q, "starts", "start"),
              "closings": _first(q, "closings", "closing")} for q in qs])
 
+    # lot_bands ship pre-aggregated: label ("40-50 FF"), avg_price, avg_ppsf.
+    # Reading prices/ppsfs/lot_width_ff -- the internal accumulator's names --
+    # put a dash in Width, Avg price and $/SF on every row.
     bands = []
     for b in (cb.get("lot_bands") or []):
-        prices = [p for p in (b.get("prices") or []) if _n(p)]
-        ppsfs = [p for p in (b.get("ppsfs") or []) if _n(p)]
-        ff = b.get("lot_width_ff")
+        ppsf = _n(b.get("avg_ppsf"))
         bands.append({
-            "width": (f"{ff} FF" if ff not in (None, "") else "-"),
+            "width": str(b.get("label") or "-")[:12],
             "lots": num(b.get("lots")),
-            "avg_price": money(sum(prices) / len(prices)) if prices else "-",
-            "psf": (f"${sum(ppsfs) / len(ppsfs):,.0f}" if ppsfs else "-"),
+            "avg_price": money(b.get("avg_price")),
+            "psf": (f"${ppsf:,.0f}" if ppsf is not None else "-"),
             "_sort": _n(b.get("lots")) or 0,
         })
     ctx["lot_bands"] = sorted(bands, key=lambda x: -x["_sort"])[:8]
@@ -865,11 +889,14 @@ def _map_market(r, cb):
     blds = []
     for b in (cb.get("builders") or []):
         prices = [p for p in (b.get("prices") or []) if _n(p)]
+        avg = _n(b.get("avg_price"))
+        if avg is None and prices:
+            avg = sum(prices) / len(prices)
         blds.append({
             "name": b.get("name") or "-",
             "starts": num(b.get("est_annual_starts")),
             "lots": num(b.get("lots")),
-            "avg_price": money(sum(prices) / len(prices)) if prices else "-",
+            "avg_price": money(avg),
             "_sort": _n(b.get("est_annual_starts")) or 0,
         })
     blds.sort(key=lambda x: -x["_sort"])
@@ -891,9 +918,14 @@ def _map_market(r, cb):
         read.append(f"{mos:,.1f} months of lot supply is elevated; phase conservatively."
                     if mos >= 18 else
                     f"{mos:,.1f} months of lot supply indicates a constrained lot market.")
-    if ctx["lot_bands"]:
-        read.append(f"The deepest product is {ctx['lot_bands'][0]['width']}, which is where "
-                    "the preliminary mix should concentrate.")
+    # Only claim a deepest product when it is actually named. The first run
+    # printed "The deepest product is -, which is where the preliminary mix
+    # should concentrate", which is worse than saying nothing.
+    top_band = next((b for b in ctx["lot_bands"] if b["width"] not in ("-", "")), None)
+    if top_band:
+        read.append(f"The deepest product is {top_band['width']} at "
+                    f"{top_band['lots']} lots, which is where the preliminary mix "
+                    "should concentrate.")
     ctx["read"] = read or None
     r["market"] = ctx
 

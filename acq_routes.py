@@ -4460,7 +4460,21 @@ def acq_project_report_html(pid):
     ctx, err = _build_report_context(pid)
     if err:
         return jsonify({"error": err}), 400
-    return render_template("acq_report.html", r=ctx)
+    # Debug view only: say which sections were skipped and why. Chasing a
+    # missing page through the Railway log is slower than reading it here, and
+    # this banner must never reach the PDF.
+    skipped = (ctx.get("missing") or []) + (ctx.get("_failed") or [])
+    present = [k for k in ("market", "comps", "schools", "demographics", "access",
+                           "amenities", "news", "macro") if ctx.get(k)]
+    banner = (
+        '<div style="font:12px/1.5 monospace;background:#13344E;color:#fff;'
+        'padding:10px 14px">'
+        '<b>DEBUG — not part of the PDF.</b><br>sections present: '
+        + (", ".join(present) or "none")
+        + "<br>skipped: " + ("<br>&nbsp;&nbsp;" + "<br>&nbsp;&nbsp;".join(skipped)
+                             if skipped else "none")
+        + "</div>")
+    return banner + render_template("acq_report.html", r=ctx)
 
 
 @acq_bp.route("/api/acq/projects/<pid>/executive-pdf")
