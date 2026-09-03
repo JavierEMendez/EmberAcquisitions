@@ -551,7 +551,7 @@
   {% for grp in r.amenities.groups[:2] %}
   <div class="card">
     <div class="card-t">{{ grp.title }}</div>
-    {% for a in grp.items %}
+    {% for a in grp.places %}
     <div class="pair"><span class="p-l">{{ a.name }}</span><span class="p-v">{{ a.distance }}</span></div>
     {% endfor %}
   </div>
@@ -561,7 +561,7 @@
   {% for grp in r.amenities.groups[2:4] %}
   <div class="card">
     <div class="card-t">{{ grp.title }}</div>
-    {% for a in grp.items %}
+    {% for a in grp.places %}
     <div class="pair"><span class="p-l">{{ a.name }}</span><span class="p-v">{{ a.distance }}</span></div>
     {% endfor %}
   </div>

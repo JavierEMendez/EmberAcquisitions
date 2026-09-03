@@ -4333,6 +4333,17 @@ def acq_api_projects_fred(pid):
 # same number on screen cannot drift apart.
 # ══════════════════════════════════════════════════════════════════════════
 
+def _report_last_frame(tb):
+    """The last line of our own code in a traceback, for the error message.
+
+    A user staring at an alert box needs "acq_report.py:812 in _map_comps",
+    not the exception text on its own.
+    """
+    ours = [l.strip() for l in (tb or "").splitlines()
+            if l.strip().startswith("File ") and ("acq_report" in l or "acq_routes" in l)]
+    return ours[-1][:180] if ours else None
+
+
 def _report_payloads(pid, want=("cbas", "roads", "amenities", "news", "market", "fred")):
     """Call the existing section endpoints and keep whatever answers.
 
@@ -4459,11 +4470,29 @@ def acq_project_executive_pdf(pid):
     guard = _acq_guard()
     if guard:
         return guard
-    ctx, err = _build_report_context(pid)
+    # Build and render are wrapped separately so a failure says WHICH stage
+    # broke and on which line. A bare str(e) -- "'builtin_function_or_method'
+    # object is not iterable" -- names neither, and the section mappers touch
+    # payloads that cannot be exercised without the live CBAS/FRED/Census keys.
+    import traceback
+    try:
+        ctx, err = _build_report_context(pid)
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(f"[report] context build failed:{chr(10)}{tb}", flush=True)
+        frame = _report_last_frame(tb)
+        return jsonify({"error": f"Report data build failed: {e}",
+                        "where": frame, "stage": "context"}), 500
     if err:
         return jsonify({"error": err}), 400
 
-    html = render_template("acq_report.html", r=ctx)
+    try:
+        html = render_template("acq_report.html", r=ctx)
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(f"[report] template render failed:{chr(10)}{tb}", flush=True)
+        return jsonify({"error": f"Report template failed: {e}",
+                        "where": _report_last_frame(tb), "stage": "template"}), 500
     try:
         from weasyprint import HTML as _WHTML
     except Exception as e:

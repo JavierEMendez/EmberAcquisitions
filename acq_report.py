@@ -780,14 +780,29 @@ def build_context(proj, analysis, data=None, elevation=None):
     r["next_steps"] = NEXT_STEPS
     r["diligence"] = NEXT_STEPS[:4]
 
-    _map_market(r, data.get("cbas"))
-    _map_comps(r, data.get("cbas"), data.get("comp_map"))
-    _map_schools(r, data.get("schools"))
-    _map_demographics(r, data.get("market"))
-    _map_access(r, data.get("roads"), data.get("amenities"))
-    _map_amenities(r, data.get("amenities"))
-    _map_news(r, data.get("news"))
-    _map_macro(r, data.get("fred"))
+    # Each section is mapped in isolation. One upstream payload shaped
+    # differently than expected should cost its own page, not the whole
+    # document -- an executive report that fails entirely because the macro
+    # feed renamed a field is worse than one that comes back a page short and
+    # says so.
+    import traceback
+    sections = (
+        ("market", _map_market, (data.get("cbas"),)),
+        ("competition", _map_comps, (data.get("cbas"), data.get("comp_map"))),
+        ("schools", _map_schools, (data.get("schools"),)),
+        ("demographics", _map_demographics, (data.get("market"),)),
+        ("access", _map_access, (data.get("roads"), data.get("amenities"))),
+        ("amenities", _map_amenities, (data.get("amenities"),)),
+        ("news", _map_news, (data.get("news"),)),
+        ("macro", _map_macro, (data.get("fred"),)),
+    )
+    for name, fn, args in sections:
+        try:
+            fn(r, *args)
+        except Exception as e:
+            r["missing"].append(f"{name}: {type(e).__name__}: {e}")
+            print(f"[report] section {name!r} failed: {e}{chr(10)}"
+                  f"{traceback.format_exc()}", flush=True)
     return r
 
 
@@ -1087,7 +1102,10 @@ def _map_amenities(r, am):
                               "_d": _n(x.get("distance_mi"))})
         items.sort(key=lambda i: i["_d"])
         if items:
-            groups.append({"title": title, "items": items[:6]})
+            # NOT "items": in Jinja, `group.items` resolves to dict.items --
+            # the bound method -- before it falls back to the key, and the
+            # template then tries to iterate a builtin_function_or_method.
+            groups.append({"title": title, "places": items[:6]})
     nearest = []
     for label, key in (("Nearest fuel", "fuel"), ("Nearest pharmacy", "pharmacies"),
                        ("Nearest grocery", "grocery_stores"),
