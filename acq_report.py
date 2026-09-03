@@ -884,7 +884,7 @@ def _map_market(r, cb):
             "psf": (f"${ppsf:,.0f}" if ppsf is not None else "-"),
             "_sort": _n(b.get("lots")) or 0,
         })
-    ctx["lot_bands"] = sorted(bands, key=lambda x: -x["_sort"])[:8]
+    ctx["lot_bands"] = sorted(bands, key=lambda x: -x["_sort"])[:6]
 
     blds = []
     for b in (cb.get("builders") or []):
@@ -900,8 +900,8 @@ def _map_market(r, cb):
             "_sort": _n(b.get("est_annual_starts")) or 0,
         })
     blds.sort(key=lambda x: -x["_sort"])
-    ctx["builders"] = blds[:10]
-    if len(blds) > 10:
+    ctx["builders"] = blds[:7]
+    if len(blds) > 7:
         n = _n(cb.get("builder_count")) or len(blds)
         ctx["builder_note"] = f"{n:,.0f} builders active within the competitive study area."
 
@@ -961,7 +961,7 @@ def _map_comps(r, cb, comp_map=None):
     live.sort(key=lambda c: (0 if (_n(c.get("annual_closings")) or 0) > 0 else 1, dist(c)))
 
     rows = []
-    for c in live[:13]:
+    for c in live[:11]:
         bl = c.get("builders")
         if isinstance(bl, (list, set, tuple)):
             bl = ", ".join(sorted(str(x) for x in bl)[:2])
@@ -1032,7 +1032,7 @@ def _map_schools(r, sd):
     score = _n(tea.get("overall_score"))
     campuses = []
     for c in sorted((sd.get("schools") or []),
-                    key=lambda x: _n(x.get("distance_mi")) or 999.0)[:10]:
+                    key=lambda x: _n(x.get("distance_mi")) or 999.0)[:8]:
         campuses.append({
             "name": str(c.get("name") or "-")[:30],
             "tea": str(c.get("tea_rating") or "Not rated")[:12],
@@ -1179,7 +1179,7 @@ def _map_amenities(r, am):
             # NOT "items": in Jinja, `group.items` resolves to dict.items --
             # the bound method -- before it falls back to the key, and the
             # template then tries to iterate a builtin_function_or_method.
-            groups.append({"title": title, "places": items[:6]})
+            groups.append({"title": title, "places": items[:5]})
     nearest = []
     for label, key in (("Nearest fuel", "fuel"), ("Nearest pharmacy", "pharmacies"),
                        ("Nearest grocery", "grocery_stores"),
@@ -1306,7 +1306,7 @@ def _map_news(r, nw):
             "date": (when.strftime("%b %Y") if when else ""),
             "why": why,
         })
-        if len(r["news"]) >= 7:
+        if len(r["news"]) >= 5:
             break
 
 

@@ -4415,15 +4415,27 @@ def _build_report_context(pid):
         districts = (sm or {}).get("school_districts") or []
         if districts and centroid:
             d0 = districts[0]
+            # test_request_context starts with an EMPTY session, so
+            # @_login_required on the district endpoint rejected the call and
+            # the schools section vanished from every report without ever
+            # raising. Carry the caller's session into the inner context.
+            outer_session = dict(session)
             with current_app.test_request_context(
                     f"/api/acq/school-district/{d0.get('geoid')}",
                     query_string={"lat": centroid.get("lat"), "lon": centroid.get("lon"),
                                   "name": d0.get("name") or ""}):
+                session.update(outer_session)
                 sd = acq_api_school_district_profile(str(d0.get("geoid")))
-            sd = sd[0] if isinstance(sd, tuple) else sd
-            sd = sd.get_json() if hasattr(sd, "get_json") else sd
+                sd = sd[0] if isinstance(sd, tuple) else sd
+                sd = sd.get_json() if hasattr(sd, "get_json") else sd
             if isinstance(sd, dict) and not sd.get("error"):
                 data["schools"] = sd
+            else:
+                print(f"[report] school profile refused: "
+                      f"{str(sd)[:160] if sd else 'empty'}", flush=True)
+        else:
+            print(f"[report] no school district resolved "
+                  f"(districts={len(districts)}, centroid={bool(centroid)})", flush=True)
     except Exception as e:
         print(f"[report] schools lookup failed: {e}", flush=True)
 
