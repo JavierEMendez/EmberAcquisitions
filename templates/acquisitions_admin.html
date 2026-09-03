@@ -40,7 +40,11 @@
   .sidebar-item.active .icon{opacity:1;color:var(--eax-accent)}
   #main-content{flex:1;overflow:hidden;min-width:0;display:flex;}
 
-  .acq-legacy { flex:1; min-width:0; overflow:auto; padding:0 0 60px; }
+  /* Content here has no horizontal padding of its own, so it sat flush
+     against the sidebar. 24px is a quarter inch at 96dpi. The other
+     acquisitions pages already carry a 28px gutter on their own
+     containers and are left alone. */
+  .acq-legacy { flex:1; min-width:0; overflow:auto; padding:0 24px 60px; }
   /* The ported page's own styles. Rules targeting body, html, * or the old
      nav were dropped at build time - they would have fought the shell. */
 

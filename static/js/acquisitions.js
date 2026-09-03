@@ -2998,7 +2998,13 @@ window.analyzeOwnerHolding = async function () {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name,
-        is_user_project: true,
+        // A search, not a project. "Analyse all" runs against whatever owner
+        // was typed, so the same holding came back as a new Project for every
+        // spelling tried -- three rows for one piece of land. Projects are now
+        // only what was deliberately saved through Create Project; this lands
+        // in the search history beside the single-tract runs.
+        is_user_project: false,
+        project_kind: 'quick_analysis',
         tracts: parcels.map(p => ({
           prop_id: String(p.prop_id), owner_name: p.owner_name || '',
           acres: +p.acres || 0, county: p.county || '', geometry: p.geometry,
