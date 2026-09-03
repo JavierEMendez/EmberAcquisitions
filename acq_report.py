@@ -466,7 +466,7 @@ def render_quarter_chart(quarters, width_in=6.9):
     labels = [q.get("label") or q.get("quarter") or "" for q in quarters]
     starts = [_n(q.get("starts")) or 0 for q in quarters]
     clos = [_n(q.get("closings")) or 0 for q in quarters]
-    fig, ax = plt.subplots(figsize=(width_in, 1.95), dpi=170)
+    fig, ax = plt.subplots(figsize=(width_in, 1.45), dpi=170)
     fig.patch.set_facecolor("white")
     x = np.arange(len(labels))
     ax.bar(x - 0.19, starts, 0.36, color=NAVY, label="Starts")
@@ -495,7 +495,7 @@ def render_enrollment_chart(trend, width_in=6.9):
         return None
     xs = [p[0] for p in pts]
     ys = [p[1] for p in pts]
-    fig, ax = plt.subplots(figsize=(width_in, 1.85), dpi=170)
+    fig, ax = plt.subplots(figsize=(width_in, 1.5), dpi=170)
     fig.patch.set_facecolor("white")
     ax.fill_between(xs, ys, color=ORANGE, alpha=0.13)
     ax.plot(xs, ys, color=ORANGE, linewidth=1.7)
@@ -630,6 +630,38 @@ NEXT_STEPS = [
     "plus a clear walk-away land basis.",
 ]
 
+
+
+# ---------------------------------------------------------------------------
+# Height budget
+#
+# A section either fits its sheet or it does not. If a table spills three rows
+# onto a fresh page, the page it came from ends short AND the spill page sits
+# two-thirds empty, because the next section always starts fresh -- so the only
+# real fix is to not spill. These are the template's own measurements in
+# points; keep them in step if the CSS padding changes.
+#
+# Letter is 792pt tall; the @page margins take 0.52in and 0.62in, leaving this.
+# ---------------------------------------------------------------------------
+PAGE_PT = 709.9
+SECTION_CHROME_PT = 74.0        # running header + section title + subtitle
+KPI_ROW_PT = 56.0               # a row of metric cards, incl. its margin
+TABLE_CHROME_PT = 42.0          # card title + table header + card margin
+TABLE_ROW_PT = 18.0
+CARD_CHROME_PT = 45.0           # padding + title + margin on a plain card
+READ_LINE_PT = 16.0
+IMAGE_W_PT = 532.8              # content width: 8.5in less 0.55in each side
+
+
+def _image_pt(aspect_w, aspect_h, card=True):
+    """Height of a full-width figure, plus its card if it sits in one."""
+    return IMAGE_W_PT * (aspect_h / aspect_w) + (CARD_CHROME_PT if card else 0)
+
+
+def _rows_that_fit(used_pt, n_wanted, min_rows=3):
+    """How many table rows are left after everything else on the sheet."""
+    spare = PAGE_PT - used_pt - TABLE_CHROME_PT
+    return max(min_rows, min(n_wanted, int(spare // TABLE_ROW_PT)))
 
 # ---------------------------------------------------------------------------
 # Context assembly
@@ -884,7 +916,17 @@ def _map_market(r, cb):
             "psf": (f"${ppsf:,.0f}" if ppsf is not None else "-"),
             "_sort": _n(b.get("lots")) or 0,
         })
-    ctx["lot_bands"] = sorted(bands, key=lambda x: -x["_sort"])[:6]
+    # Budget the sheet before choosing row counts. Two KPI rows, the quarterly
+    # chart and the section chrome already spend 382 of 710 points; two full
+    # tables plus a read block came to 793 and spilled.
+    used = SECTION_CHROME_PT + 2 * KPI_ROW_PT
+    if ctx.get("quarterly_chart"):
+        used += _image_pt(6.9, 1.45)   # a shorter chart buys three table rows
+    used += CARD_CHROME_PT + 3 * READ_LINE_PT          # the market read
+    per_table = max(0.0, (PAGE_PT - used) / 2.0)
+    n_rows = max(3, int((per_table - TABLE_CHROME_PT) // TABLE_ROW_PT))
+    ctx["lot_bands"] = sorted(bands, key=lambda x: -x["_sort"])[:n_rows]
+    ctx["_row_budget"] = n_rows
 
     blds = []
     for b in (cb.get("builders") or []):
@@ -900,8 +942,9 @@ def _map_market(r, cb):
             "_sort": _n(b.get("est_annual_starts")) or 0,
         })
     blds.sort(key=lambda x: -x["_sort"])
-    ctx["builders"] = blds[:7]
-    if len(blds) > 7:
+    nb = ctx.get("_row_budget") or 6
+    ctx["builders"] = blds[:nb]
+    if len(blds) > nb:
         n = _n(cb.get("builder_count")) or len(blds)
         ctx["builder_note"] = f"{n:,.0f} builders active within the competitive study area."
 
@@ -960,8 +1003,16 @@ def _map_comps(r, cb, comp_map=None):
     # that is only sitting on future lots.
     live.sort(key=lambda c: (0 if (_n(c.get("annual_closings")) or 0) > 0 else 1, dist(c)))
 
+    # Same budget: the competitor map and a KPI row come first, the table gets
+    # what is left rather than a fixed count that spilled onto a near-empty
+    # page.
+    used = SECTION_CHROME_PT + KPI_ROW_PT + CARD_CHROME_PT + READ_LINE_PT * 2
+    if comp_map:
+        used += _image_pt(7.4, 3.6)
+    n_rows = _rows_that_fit(used, 12, min_rows=6)
+
     rows = []
-    for c in live[:11]:
+    for c in live[:n_rows]:
         bl = c.get("builders")
         if isinstance(bl, (list, set, tuple)):
             bl = ", ".join(sorted(str(x) for x in bl)[:2])
