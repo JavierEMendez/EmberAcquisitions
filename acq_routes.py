@@ -4384,11 +4384,18 @@ def _build_report_context(pid):
 
     conn = get_db()
     try:
-        proj = acq_store.get_object(conn, "project", pid, _acq_owner())
+        # The admin/include-all flag matters: without it this lookup is
+        # stricter than the one behind the project page itself, so a project an
+        # admin can open and analyse reported "project not found" the moment it
+        # was asked for as a report.
+        proj = acq_store.get_object(conn, "project", pid, _acq_owner(),
+                                    _acq_is_admin())
     finally:
         conn.close()
     if not proj:
-        return None, "project not found"
+        return None, ("Project not found, or not visible to this account. "
+                      "Open it from the Analyses list and use the ID in that "
+                      "page's address.")
     analysis = proj.get("analysis_cache")
     if not analysis:
         return None, ("Run the acquisition analysis first -- the report is built "
