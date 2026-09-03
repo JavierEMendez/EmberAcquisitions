@@ -573,46 +573,144 @@ def _factors(a, cbas):
     return out
 
 
-def _positives(a, cbas, schools, county_growth):
+def _inline_name(name):
+    """District names are stored upper-case for the card label; mid-sentence
+    that reads as shouting, so give it back its title case."""
+    n = str(name or "").strip()
+    if n and n.isupper():
+        n = n.title().replace(" Isd", " ISD").replace(" Hs", " HS")
+    return n or "The district"
+
+
+def _pct_of_gross(a, key):
+    gross = _n(a.get("gross_acres")) or 0
+    for d in (a.get("netout_detail") or []):
+        if d.get("key") == key and gross:
+            acres = _n(d.get("acres")) or 0
+            return acres, acres / gross * 100
+    return None, None
+
+
+def _positives(r, a, data):
+    """What supports the deal, drawn from every section that rendered.
+
+    Each line names the figure it rests on, so a reader can find it elsewhere
+    in the document. Nothing is asserted that the report does not also show.
+    """
     out = []
-    g5 = (schools or {}).get("growth", {}).get("5yr", {}) if schools else {}
-    if _n(g5.get("pct")) and _n(g5.get("pct")) > 8:
-        out.append(f"District enrollment is up {_n(g5.get('pct')):,.1f}% over five years, "
-                   "a credible household-growth signal.")
-    starts = _n((cbas or {}).get("ring_annual_starts"))
+    sd = data.get("schools") or {}
+    win = (sd.get("growth") or {}).get("windows") or {}
+    g5 = _n((win.get("5_year") or {}).get("total_pct"))
+    if g5 is not None and g5 > 8:
+        out.append(f"{_inline_name(r.get('schools', {}).get('district'))} enrolment is "
+                   f"up {g5:,.1f}% over five years, a direct read on household formation.")
+
+    mk = r.get("market") or {}
+    starts = _n((data.get("cbas") or {}).get("ring_annual_starts")) or _n(
+        ((data.get("cbas") or {}).get("aggregate") or {}).get("annual_starts"))
     if starts and starts >= 400:
-        out.append(f"{starts:,.0f} annual starts in the ring: builders are already "
-                   "proving demand here, which lowers market-proof risk.")
+        out.append(f"{starts:,.0f} annual starts in the competitive ring: builders are "
+                   "already proving demand here, which lowers market-proof risk.")
+    if mk.get("builders"):
+        names = ", ".join(b["name"] for b in mk["builders"][:3])
+        out.append(f"National and regional builders are active on the ring -- {names} "
+                   "among them -- so lot takedown has credible counterparties.")
+    if mk.get("lot_bands"):
+        top = mk["lot_bands"][0]
+        out.append(f"The deepest lot product is {top['width']} at {top['lots']} lots, "
+                   "which the preliminary mix can be aimed at.")
+
     slope = _n((a.get("_topo") or {}).get("mean_slope_pct"))
     if slope is not None and slope < 2:
-        out.append(f"Gentle topography ({slope:,.2f}% mean slope) implies standard "
+        out.append(f"Gentle topography at {slope:,.2f}% mean slope implies standard "
                    "grading rather than heavy earthwork.")
     conv = _n(a.get("net_saleable_pct"))
     if conv is not None and conv >= 55:
         out.append(f"{conv:,.1f}% of gross converts to saleable land, an efficient site.")
+
+    acc = r.get("access") or {}
+    fw = next((c for c in acc.get("cards", []) if c["label"] == "Nearest freeway"), None)
+    if fw:
+        out.append(f"{fw['value']} is {fw['note']}, giving a credible regional access story.")
+    if acc.get("funded_note"):
+        out.append(f"Roadway investment is committed nearby: {acc['funded_note'].lower()}.")
+
+    dem = r.get("demographics") or {}
+    pop = next((d for d in dem.get("rows", []) if d["label"] == "Population"), None)
+    inc = next((d for d in dem.get("rows", []) if d["label"] == "Median HH income"), None)
+    if pop and inc:
+        out.append(f"County demand context: {pop['value']} residents at "
+                   f"{inc['value']} median household income.")
     return out[:5]
 
 
-def _risks(a, cbas):
+def _risks(r, a, data):
+    """What could break the deal. Same rule: every line cites a figure shown."""
     out = []
-    for d in (a.get("netout_detail") or []):
-        acres = _n(d.get("acres")) or 0
-        gross = _n(a.get("gross_acres")) or 0
-        if d.get("key") == "flood" and gross and acres / gross > 0.15:
-            out.append(f"{acres:,.1f} acres of floodplain ({acres/gross*100:,.1f}% of gross) "
-                       "materially reduces land efficiency and implies mitigation "
-                       "and detention cost.")
-    mos = _n((cbas or {}).get("months_lot_supply"))
-    fut = _n(((cbas or {}).get("aggregate") or {}).get("futures"))
-    if mos and mos >= 18:
-        s = f"{mos:,.1f} months of lot supply"
+    fl_ac, fl_pct = _pct_of_gross(a, "flood")
+    if fl_pct is not None and fl_pct > 15:
+        out.append(f"{fl_ac:,.1f} acres of floodplain -- {fl_pct:,.1f}% of gross -- "
+                   "materially reduces land efficiency and implies mitigation and "
+                   "detention cost.")
+    conv = _n(a.get("net_saleable_pct"))
+    if conv is not None and conv < 50:
+        out.append(f"Only {conv:,.1f}% of gross reaches net saleable, so land basis has "
+                   "to be underwritten on saleable acres rather than gross.")
+
+    mk = r.get("market") or {}
+    mos = _n(str(mk.get("mos", "")).replace(",", "") or None)
+    fut = _n(((data.get("cbas") or {}).get("aggregate") or {}).get("futures"))
+    if mos is not None and mos >= 18:
+        line = f"{mos:,.1f} months of lot supply"
         if fut:
-            s += f" plus {fut:,.0f} future lots"
-        out.append(s + " creates absorption and pricing pressure.")
+            line += f" plus {fut:,.0f} future lots in the ring"
+        out.append(line + " creates absorption and pricing pressure.")
+    elif fut and fut > 10000:
+        out.append(f"{fut:,.0f} future lots in the ring will compete with later phases.")
+
+    sd = r.get("schools") or {}
+    rating = str(sd.get("rating") or "")
+    if rating[:1] in ("C", "D", "F"):
+        out.append(f"{_inline_name(sd.get('district'))} carries a TEA rating of "
+                   f"{rating}, which can cap pricing power against stronger "
+                   "school-district submarkets.")
+
     slope = _n((a.get("_topo") or {}).get("max_slope_pct"))
     if slope is not None and slope > 8:
         out.append(f"Maximum slope of {slope:,.1f}% indicates areas needing grading design.")
+
+    am = r.get("amenities") or {}
+    hosp = next((n for n in am.get("nearest", []) if n["label"] == "Nearest hospital"), None)
+    groc = next((n for n in am.get("nearest", []) if n["label"] == "Nearest grocery"), None)
+    far = [n for n in (hosp, groc) if n and (_n(n["value"].split()[0]) or 0) > 7]
+    if far:
+        out.append("Daily-needs and healthcare convenience is dispersed ("
+                   + "; ".join(f"{n['label'].lower()} {n['value']}" for n in far)
+                   + "), which lengthens the growth thesis.")
     return out[:5]
+
+
+def _site_read(r, a):
+    """The two or three lines that sit under the site section."""
+    out = []
+    fl_ac, fl_pct = _pct_of_gross(a, "flood")
+    if fl_pct is not None and fl_pct > 5:
+        out.append(f"Floodplain is the primary land-efficiency issue at {fl_ac:,.1f} ac "
+                   f"({fl_pct:,.1f}% of gross); wetlands and stream overlap add limited "
+                   "incremental loss because they largely sit inside it.")
+    topo = r.get("topo") or {}
+    y = r.get("yield") or {}
+    if topo.get("character") and y.get("total_lots"):
+        out.append(f"Topography is {topo['character'].lower()}. The current mix implies "
+                   f"{y['total_lots']} lots at {y.get('density', 'the stated density')} "
+                   "before civil refinement.")
+    infra = _n(a.get("infrastructure_acres"))
+    if infra:
+        out.append(f"Infrastructure and landscaping is carried at "
+                   f"{_n(a.get('infrastructure_pct')) or 30:,.0f}% of net developable "
+                   f"({infra:,.1f} ac), which should be tested against a real "
+                   "roads-and-detention layout.")
+    return out[:3] or None
 
 
 NEXT_STEPS = [
@@ -807,9 +905,6 @@ def build_context(proj, analysis, data=None, elevation=None):
     r["thesis"] = _thesis(r, a, data.get("cbas"), data.get("schools"),
                           counties[0] if counties else None)
     r["factors"] = _factors(a, data.get("cbas"))
-    r["dev_read"] = _positives(a, data.get("cbas"), data.get("schools"), None)[:2] or None
-    r["why_works"] = _positives(a, data.get("cbas"), data.get("schools"), None)
-    r["what_breaks"] = _risks(a, data.get("cbas"))
     r["next_steps"] = NEXT_STEPS
     r["diligence"] = NEXT_STEPS[:4]
 
@@ -836,6 +931,14 @@ def build_context(proj, analysis, data=None, elevation=None):
             r["missing"].append(f"{name}: {type(e).__name__}: {e}")
             print(f"[report] section {name!r} failed: {e}{chr(10)}"
                   f"{traceback.format_exc()}", flush=True)
+
+    # The synthesis runs LAST, once every section has been mapped. Run before,
+    # it could only see the raw analysis and produced a single positive and a
+    # single risk -- schools, demographics, access and the market read were all
+    # sitting there unused.
+    r["why_works"] = _positives(r, a, data)
+    r["what_breaks"] = _risks(r, a, data)
+    r["dev_read"] = _site_read(r, a)
     return r
 
 
