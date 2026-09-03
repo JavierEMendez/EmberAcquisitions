@@ -20,6 +20,7 @@ into view, none of which belong in a document going to an investment committee.
 import base64
 import io
 import math
+import re
 
 # Palette — matches the report template and the rest of the acquisitions tab.
 NAVY = "#13344E"
@@ -898,87 +899,128 @@ def _map_market(r, cb):
 
 
 def _map_comps(r, cb, comp_map=None):
+    """The competitive set, with the dead entries left out.
+
+    The first run listed the fourteen nearest communities whatever their state,
+    so half the table was rows of zeroes -- subdivisions with no starts, no
+    closings and no pipeline tell a reader nothing about the competitive
+    environment and push the ones that matter off the page. A community earns
+    a row only if it is actually doing something.
+
+    Field names are the endpoint's: lot_type_range, months_lot_supply and
+    pct_built_out. The first attempt guessed lot_widths / months_supply /
+    pct_built and printed a dash in all three columns for every row.
+    """
     comms = (cb or {}).get("communities") or []
     if not comms:
         return
 
     def dist(c):
-        return _n(_first(c, "distance_mi", "distance")) or 999.0
+        return _n(c.get("distance_mi")) or 999.0
+
+    def activity(c):
+        return ((_n(c.get("annual_closings")) or 0) + (_n(c.get("annual_starts")) or 0)
+                + (_n(c.get("vdls")) or 0) + (_n(c.get("futures")) or 0))
+
+    live = [c for c in comms if activity(c) > 0]
+    dropped = len(comms) - len(live)
+    # Nearest first, but a community with real velocity outranks a closer one
+    # that is only sitting on future lots.
+    live.sort(key=lambda c: (0 if (_n(c.get("annual_closings")) or 0) > 0 else 1, dist(c)))
 
     rows = []
-    for c in sorted(comms, key=dist)[:14]:
+    for c in live[:13]:
         bl = c.get("builders")
         if isinstance(bl, (list, set, tuple)):
             bl = ", ".join(sorted(str(x) for x in bl)[:2])
+        mos = _n(c.get("months_lot_supply"))
         rows.append({
-            "name": str(c.get("name") or c.get("community") or "-")[:26],
-            "distance": miles(_first(c, "distance_mi", "distance"), c.get("direction")),
-            "builders": (str(bl)[:26] if bl else "-"),
-            "widths": str(_first(c, "lot_widths", "widths", default="") or "-")[:12],
-            "closings": num(_first(c, "annual_closings", "closings")),
-            "starts": num(_first(c, "annual_starts", "starts")),
-            "mos": (f"{_n(c.get('months_supply')):,.1f}"
-                    if _n(c.get("months_supply")) is not None else "-"),
-            "pipeline": num(_first(c, "futures", "pipeline")),
-            "built": pct(_first(c, "pct_built", "built_pct"), dp=0),
+            "name": str(c.get("name") or "-")[:26],
+            "distance": miles(c.get("distance_mi"), c.get("direction")),
+            "builders": (str(bl)[:24] if bl else "-"),
+            "widths": str(c.get("lot_type_range") or c.get("lot_types_ff") or "-")[:12],
+            "closings": num(c.get("annual_closings")),
+            "starts": num(c.get("annual_starts")),
+            "mos": (f"{mos:,.1f}" if mos is not None else "-"),
+            "pipeline": num(c.get("futures")),
+            "built": pct(c.get("pct_built_out"), dp=0),
         })
+    if not rows:
+        return
+
     kpis = []
-    nearest = min((dist(c) for c in comms), default=None)
+    nearest = min((dist(c) for c in live), default=None)
     if nearest and nearest < 900:
         kpis.append({"label": "Nearest active comp", "value": miles(nearest)})
-    for label, keys in (("Top closings", ("annual_closings", "closings")),
-                        ("Largest pipeline", ("futures", "pipeline"))):
-        v = max((_n(_first(c, *keys)) or 0 for c in comms), default=0)
+    for label, key in (("Top closings", "annual_closings"),
+                       ("Largest pipeline", "futures")):
+        v = max((_n(c.get(key)) or 0 for c in live), default=0)
         if v:
             kpis.append({"label": label, "value": num(v)})
+    mx = [m for m in (_n(c.get("months_lot_supply")) for c in live) if m is not None]
+    if mx:
+        kpis.append({"label": "Highest MOS", "value": f"{max(mx):,.1f}"})
+
+    note = []
+    if len(live) > len(rows):
+        note.append(f"{len(live):,} active communities in the study area; the "
+                    f"{len(rows)} most relevant are listed.")
+    if dropped:
+        note.append(f"{dropped:,} with no starts, closings, lots or pipeline omitted.")
     r["comps"] = {
-        "map": comp_map, "rows": rows, "kpis": kpis,
-        "note": (f"{len(comms):,} communities in the study area; the {len(rows)} nearest "
-                 "are listed." if len(comms) > len(rows) else None),
+        "map": comp_map, "rows": rows, "kpis": kpis[:4],
+        "note": " ".join(note) or None,
         "read": ("nearest communities are already proving demand, but several early-stage "
-                 "projects carry large pipelines and long remaining buildout."
-                 if rows else None),
+                 "projects carry large pipelines and long remaining buildout."),
     }
 
 
 def _map_schools(r, sd):
+    """Field names here are the district endpoint's, not invented ones.
+
+    The first attempt guessed district_name / school_count / schools_nearby and
+    got an empty section: the payload calls them name, schools_count and
+    schools, and buries the growth windows under growth["windows"] keyed
+    5_year rather than 5yr.
+    """
     if not sd or sd.get("error"):
         return
-    g = sd.get("growth") or {}
+    win = (sd.get("growth") or {}).get("windows") or {}
     growth = []
-    for key, label in (("5yr", "Enrollment / 5 yr"), ("10yr", "10-year"),
-                       ("20yr", "20-year"), ("all", "Since inception")):
-        blk = g.get(key) or {}
-        p = _n(_first(blk, "pct", "total_pct"))
+    for key, label in (("5_year", "Enrollment / 5 yr"), ("10_year", "10-year"),
+                       ("20_year", "20-year"), ("all_time", "All-time")):
+        blk = win.get(key) or {}
+        p = _n(blk.get("total_pct"))
         if p is not None:
             cagr = _n(blk.get("cagr_pct"))
             growth.append({"label": label, "value": f"{p:+,.1f}%",
                            "note": (f"{cagr:+,.2f}% CAGR" if cagr is not None else "")})
     tea = sd.get("tea") or {}
-    rating = _first(tea, "grade", "rating")
-    score = _n(_first(tea, "score", "overall_score"))
+    rating = tea.get("overall_rating")
+    score = _n(tea.get("overall_score"))
+    campuses = []
+    for c in sorted((sd.get("schools") or []),
+                    key=lambda x: _n(x.get("distance_mi")) or 999.0)[:10]:
+        campuses.append({
+            "name": str(c.get("name") or "-")[:30],
+            "tea": str(c.get("tea_rating") or "Not rated")[:12],
+            "level": str(c.get("level") or "-")[:20],
+            "enrollment": num(c.get("enrollment")),
+            "distance": miles(c.get("distance_mi"), c.get("direction")),
+        })
     r["schools"] = {
-        "district": str(sd.get("district_name") or sd.get("name")
-                        or "School district").upper(),
+        "district": str(sd.get("name") or "School district").upper(),
         "rating": (f"{rating} / {score:,.0f}" if rating and score is not None
                    else (str(rating) if rating else "-")),
         "rating_note": ("TEA " + str(sd.get("tea_year") or "")).strip(),
         "growth": growth[:3],
-        "enrollment": num(_first(sd, "enrollment", "current_enrollment")),
-        "school_count": num(_first(sd, "school_count", "schools")),
-        "teachers": num(_first(sd, "teachers_fte", "teachers")),
+        "enrollment": num(sd.get("enrollment")),
+        "school_count": num(sd.get("schools_count")),
+        "teachers": num(sd.get("teachers_fte")),
         "ratio": (f"{_n(sd.get('student_teacher_ratio')):,.1f} : 1"
                   if _n(sd.get("student_teacher_ratio")) is not None else "-"),
         "trend_chart": render_enrollment_chart(sd.get("enrollment_trend")),
-        "campuses": [{
-            "name": str(c.get("name") or "-")[:30],
-            "tea": (f"{c.get('grade')} / {_n(c.get('score')):,.0f}"
-                    if c.get("grade") and _n(c.get("score")) is not None
-                    else (c.get("grade") or "-")),
-            "level": str(c.get("level") or c.get("type") or "-")[:20],
-            "enrollment": num(c.get("enrollment")),
-            "distance": miles(_first(c, "distance_mi", "distance")),
-        } for c in (sd.get("schools_nearby") or sd.get("campuses") or [])[:10]],
+        "campuses": campuses,
     }
 
 
@@ -1119,16 +1161,121 @@ def _map_amenities(r, am):
         r["amenities"] = {"groups": groups, "nearest": nearest[:4]}
 
 
+NEWS_MAX_AGE_DAYS = 550          # roughly eighteen months
+
+# Why a story matters to an acquisition, keyed off what it is about. A headline
+# on its own makes a reader do the work; the point of this section is to say
+# what the signal is.
+NEWS_SIGNALS = [
+    (("jobs", "hiring", "employment", "workforce", "manufactur", "plant"),
+     "Employment signal supporting regional household growth."),
+    (("distribution", "industrial", "warehouse", "logistics", "data center"),
+     "Industrial absorption -- a demand driver for nearby rooftops."),
+    (("hospital", "medical", "health", "clinic"),
+     "Healthcare investment adds an institutional growth signal."),
+    (("highway", "road", "interchange", "corridor", "expansion", "infrastructure",
+      "utility", "water"),
+     "Infrastructure investment affecting access and development timing."),
+    (("home", "housing", "subdivision", "master-planned", "master planned",
+      "lots", "builder", "residential", "development"),
+     "Reinforces the residential growth thesis and the future-supply picture."),
+    (("school", "isd", "enrollment", "campus"),
+     "District growth pressure, a proxy for household formation."),
+    (("acres", "land", "ranch", "acquisition", "sold", "purchase"),
+     "Land transaction comparable to the subject."),
+]
+
+
+def _news_relevance(title):
+    """Match on whole words, not substrings.
+
+    A plain `"water" in title` tagged "New Homes Now Selling in Attwater" as
+    infrastructure, because the place name contains the keyword. Place names
+    swallow short keywords constantly, so every term is anchored.
+    """
+    t = " " + re.sub(r"[^a-z0-9 ]+", " ", (title or "").lower()) + " "
+    for words, why in NEWS_SIGNALS:
+        for w in words:
+            # prefix match so "manufactur" still catches manufacturing
+            if re.search(r"\b" + re.escape(w), t):
+                return why
+    return None
+
+
 def _map_news(r, nw):
+    """Recent, relevant stories only.
+
+    The feed returns whatever the query matched, oldest included, in query
+    order. A report dated this month carrying a two-year-old headline reads as
+    stale research, so anything past NEWS_MAX_AGE_DAYS is dropped and the rest
+    are newest first.
+    """
+    import datetime as _dt
+    from email.utils import parsedate_to_datetime
+
     stories = (nw or {}).get("stories") or []
     if not stories:
         return
-    r["news"] = [{
-        "headline": str(st.get("title") or "")[:150],
-        "source": str(st.get("source") or "")[:34],
-        "date": str(st.get("published") or "")[:17],
-        "why": None,
-    } for st in stories[:8]]
+    now = _dt.datetime.now(_dt.timezone.utc)
+    dated = []
+    for st in stories:
+        raw = st.get("published")
+        when = None
+        if raw:
+            try:                                  # RSS: RFC-2822
+                when = parsedate_to_datetime(str(raw))
+            except Exception:
+                try:                              # or ISO
+                    when = _dt.datetime.fromisoformat(str(raw)[:19])
+                except Exception:
+                    when = None
+        if when is not None and when.tzinfo is None:
+            when = when.replace(tzinfo=_dt.timezone.utc)
+        # An undated story is kept but sorts last -- dropping it would hide a
+        # relevant item purely because the feed omitted a timestamp.
+        if when is not None and (now - when).days > NEWS_MAX_AGE_DAYS:
+            continue
+        dated.append((when, st))
+    dated.sort(key=lambda p: (p[0] is not None, p[0]), reverse=True)
+
+    # The aggregator runs several overlapping queries, so one event arrives as
+    # three near-identical headlines from three outlets -- "Waller ISD faces
+    # registration backlog", "Waller ISD experiences application surge", "'All
+    # hands on deck': Waller ISD experiences application..." all in one list.
+    # Keeping the first of each cluster is what a person would do.
+    STOP = {"the", "a", "an", "of", "in", "at", "to", "for", "and", "on", "as",
+            "with", "after", "new", "its", "is", "are", "from", "by"}
+
+    def sig(title):
+        return {w for w in re.findall(r"[a-z0-9]+", (title or "").lower())
+                if len(w) > 2 and w not in STOP}
+
+    # Token overlap alone does not cluster these: "Waller ISD faces
+    # registration backlog", "Waller ISD experiences application backlog" and
+    # "'All hands on deck': Waller ISD experiences application backlog" share
+    # only two or three words once stop words are gone. Capping each signal
+    # category at two is the rule that actually produces a varied page.
+    kept, per_topic = [], {}
+    for when, st in dated:
+        s = sig(st.get("title"))
+        if not s:
+            continue
+        if any(len(s & k) / max(len(s | k), 1) >= 0.34 for k in kept):
+            continue                       # same story, different outlet
+        why = _news_relevance(st.get("title"))
+        topic = why or "other"
+        if per_topic.get(topic, 0) >= 2:
+            continue                       # already covered this signal
+        per_topic[topic] = per_topic.get(topic, 0) + 1
+        kept.append(s)
+        r.setdefault("news", []).append({
+            "headline": str(st.get("title") or "")[:150],
+            "source": str(st.get("source") or "")[:34],
+            "date": (when.strftime("%b %Y") if when else ""),
+            "why": why,
+        })
+        if len(r["news"]) >= 7:
+            break
 
 
 def _map_macro(r, fr):
