@@ -378,6 +378,29 @@ def api_acq_users():
             pass
 
 
+@acq_bp.route("/api/acq/owner-related")
+@_login_required
+def api_acq_owner_related():
+    """Owners sharing a mailing address with this one.
+
+    Stands in for a registered-agent search, which Texas does not publish:
+    the SOS keeps agent data behind SOSDirect and the Comptroller's franchise
+    file has no agent field. A shared mailbox is evidence of a relationship,
+    not proof of one, so the response carries the addresses it used and
+    anything it skipped alongside the owners it found.
+    """
+    guard = _acq_guard()
+    if guard:
+        return guard
+    name = (request.args.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "name required"}), 400
+    try:
+        return jsonify(parcel_cache.find_related_owners(name))
+    except Exception as e:
+        return jsonify({"error": str(e), "owners": []}), 200
+
+
 @acq_bp.route("/api/acq/owner-dossier")
 @_login_required
 def api_acq_owner_dossier():

@@ -2529,15 +2529,15 @@ function _renderOutreach(d, propId, ownerName, acres, county) {
       </div>
       <div>
         <label style="font-size:10px;color:#6B7B8B;text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Broker</label>
-        <input id="outreach-broker" type="text" value="${escapeHtml(rec.broker_name || '')}" style="width:100%;padding:8px;border:1px solid #D1D3D4;border-radius:6px;font:inherit;margin-top:4px">
+        <input autocomplete="off" data-lpignore="true" data-1p-ignore id="outreach-broker" type="text" value="${escapeHtml(rec.broker_name || '')}" style="width:100%;padding:8px;border:1px solid #D1D3D4;border-radius:6px;font:inherit;margin-top:4px">
       </div>
       <div>
         <label style="font-size:10px;color:#6B7B8B;text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Next action</label>
-        <input id="outreach-next" type="text" value="${escapeHtml(rec.next_action || '')}" placeholder="e.g. Send LOI" style="width:100%;padding:8px;border:1px solid #D1D3D4;border-radius:6px;font:inherit;margin-top:4px">
+        <input autocomplete="off" data-lpignore="true" data-1p-ignore id="outreach-next" type="text" value="${escapeHtml(rec.next_action || '')}" placeholder="e.g. Send LOI" style="width:100%;padding:8px;border:1px solid #D1D3D4;border-radius:6px;font:inherit;margin-top:4px">
       </div>
       <div>
         <label style="font-size:10px;color:#6B7B8B;text-transform:uppercase;letter-spacing:0.06em;font-weight:700">By when</label>
-        <input id="outreach-next-date" type="date" value="${escapeHtml(rec.next_action_date || '')}" style="width:100%;padding:8px;border:1px solid #D1D3D4;border-radius:6px;font:inherit;margin-top:4px">
+        <input autocomplete="off" data-lpignore="true" data-1p-ignore id="outreach-next-date" type="date" value="${escapeHtml(rec.next_action_date || '')}" style="width:100%;padding:8px;border:1px solid #D1D3D4;border-radius:6px;font:inherit;margin-top:4px">
       </div>
     </div>
     <button id="outreach-save-fields" class="btn-save" style="background:var(--ember-orange);color:#FFF;padding:8px 14px;border:0;border-radius:6px;font-weight:600;font-size:12px;cursor:pointer">Save status &amp; fields</button>
@@ -3096,7 +3096,71 @@ document.getElementById('dossier-close').addEventListener('click', () => {
   _restoreMatchingTracts(false);
   setTimeout(() => { try { map.invalidateSize(); } catch (e) {} }, 60);
 });
+
+// --- Related owners, by shared mailing address ---------------------------
+// Texas does not publish registered-agent data (the SOS keeps it behind
+// SOSDirect, the Comptroller's franchise file has no agent field), so the
+// question a registered-agent lookup is really asked for -- "what else does
+// this operator hold, under whatever LLC" -- is answered from the mailing
+// address on the appraisal roll. Rancho La Laguna's 5 tracts open into 121
+// across 20 related names.
+window.showRelatedOwners = async function () {
+  const d = window._ownerDossier;
+  const name = (d && (d.query || (d.parcels || [])[0]?.owner_name)) || '';
+  if (!name) { setStatus('Search an owner first.', true); return; }
+  const body = document.getElementById('dossier-body');
+  const prev = body.innerHTML;
+  body.innerHTML = '<div style="text-align:center;padding:30px;color:#6B7B8B">'
+    + 'Looking for owners at the same mailing address…</div>';
+  try {
+    const r = await fetch('/api/acq/owner-related?name=' + encodeURIComponent(name));
+    const j = await r.json();
+    if (!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
+    const owners = j.owners || [];
+    if (!owners.length) {
+      body.innerHTML = prev;
+      setStatus('No other owners share a mailing address with this one.', true);
+      return;
+    }
+    const rows = owners.map(o => `
+      <div class="rel-row${o.is_seed ? ' rel-seed' : ''}">
+        <span class="rel-name">${escapeHtml(o.owner_name || '')}
+          ${o.is_seed ? '<span class="rel-tag">searched</span>' : ''}</span>
+        <span class="rel-meta">${o.parcels} parcel${o.parcels === 1 ? '' : 's'}
+          · ${escapeHtml((o.counties || []).join(', '))}</span>
+        <span class="rel-ac">${Number(o.acres || 0).toLocaleString('en-US',
+          { maximumFractionDigits: 1 })} ac</span>
+        <button type="button" class="rel-go"
+                onclick="showOwnerDossier(${JSON.stringify(o.owner_name || '').replace(/"/g, '&quot;')}, null, null, null, true)"
+                title="Search this owner">Open</button>
+      </div>`).join('');
+    const addrs = (j.addresses || []).map(a =>
+      `<div class="rel-addr">${escapeHtml(a.address)} <span>${a.owners} owners · ${a.parcels} parcels</span></div>`).join('');
+    // Skipped entries are shown, never swallowed: a service-provider address
+    // or a scan cap changes what "everything they hold" means.
+    const skips = (j.skipped || []).map(sk =>
+      `<div class="rel-skip"><b>${escapeHtml(sk.address)}</b> — ${escapeHtml(sk.reason)}</div>`).join('');
+    body.innerHTML = `
+      <div class="rel-wrap">
+        <button type="button" class="rel-back" onclick="showOwnerDossier(${JSON.stringify(name).replace(/"/g, '&quot;')}, null, null, null, true)">&larr; Back to ${escapeHtml(name)}</button>
+        <div class="rel-head">
+          <b>${j.owner_count}</b> owners · <b>${j.total_parcels}</b> parcels ·
+          <b>${Number(j.total_acres || 0).toLocaleString('en-US', { maximumFractionDigits: 1 })}</b> ac
+        </div>
+        <div class="rel-sub">Sharing ${(j.addresses || []).length} mailing address${(j.addresses || []).length === 1 ? '' : 'es'}.
+          A shared mailbox is evidence of a relationship, not proof of one.</div>
+        ${addrs}
+        ${skips}
+        <div class="rel-list">${rows}</div>
+      </div>`;
+  } catch (e) {
+    body.innerHTML = prev;
+    setStatus('Related owners failed: ' + escapeHtml(e.message), true);
+  }
+};
+
 document.getElementById('dossier-analyze').addEventListener('click', analyzeOwnerHolding);
+document.getElementById('dossier-related').addEventListener('click', showRelatedOwners);
 document.getElementById('dossier-zoom').addEventListener('click', () => {
   const d = window._ownerDossier;
   if (d && d.parcels) _drawOwnerMatches(d.parcels);

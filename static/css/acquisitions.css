@@ -1025,3 +1025,33 @@ body.sidebar-collapsed #acq-root #sidebar-toggle{
   background: var(--eax-accent) !important;
   color: var(--eax-accent-fg) !important;
 }
+
+
+/* Related owners (shared mailing address) --------------------------------
+   Lives in the dossier body, replacing the tract list until Back is used. */
+#acq-root .rel-wrap { padding: 12px 14px 18px; }
+#acq-root .rel-back { background: none; border: 0; color: var(--ember-orange);
+  font-size: 11.5px; font-weight: 600; cursor: pointer; padding: 0 0 8px; }
+#acq-root .rel-back:hover { text-decoration: underline; }
+#acq-root .rel-head { font-size: 13px; color: #13344E; }
+#acq-root .rel-sub { font-size: 11px; color: #6B7B8B; margin: 2px 0 10px; line-height: 1.45; }
+#acq-root .rel-addr { font-size: 11px; color: #13344E; background: #F1F3F6;
+  border-radius: 4px; padding: 5px 8px; margin-bottom: 4px; }
+#acq-root .rel-addr span { color: #6B7B8B; }
+#acq-root .rel-skip { font-size: 11px; color: #8a5a00; background: #FFF6E5;
+  border-left: 3px solid #E0A030; border-radius: 4px; padding: 6px 8px; margin-bottom: 6px; }
+#acq-root .rel-list { margin-top: 8px; }
+#acq-root .rel-row { display: grid; grid-template-columns: 1fr auto auto;
+  grid-template-areas: "name ac go" "meta ac go"; gap: 0 10px;
+  align-items: center; padding: 8px 0; border-top: 1px solid #E8ECF0; }
+#acq-root .rel-row.rel-seed { background: #FFF4ED; }
+#acq-root .rel-name { grid-area: name; font-size: 12px; font-weight: 600; color: #13344E; }
+#acq-root .rel-meta { grid-area: meta; font-size: 10.5px; color: #6B7B8B; }
+#acq-root .rel-ac { grid-area: ac; font-size: 12px; font-weight: 700;
+  color: var(--ember-orange); font-variant-numeric: tabular-nums; }
+#acq-root .rel-tag { font-size: 9px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; background: var(--ember-orange); color: #FFF;
+  border-radius: 3px; padding: 1px 5px; margin-left: 5px; }
+#acq-root .rel-go { grid-area: go; background: #F1F3F6; border: 0; color: #13344E;
+  border-radius: 4px; font-size: 11px; cursor: pointer; padding: 4px 9px; }
+#acq-root .rel-go:hover { background: var(--ember-orange); color: #FFF; }

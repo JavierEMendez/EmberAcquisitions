@@ -30,6 +30,7 @@ cached. The cache is essentially a fast index, not a source of truth for owners.
 """
 from __future__ import annotations
 
+import re
 import sqlite3
 import time
 import threading
@@ -971,6 +972,182 @@ def query_parcels_in_polygon(buffer_wgs, min_acres=0, max_acres=1e12):
 
     return {"type": "FeatureCollection", "features": features}
 
+
+
+# --------------------------------------------------------------------------
+# Related owners, by shared mailing address
+#
+# Texas does not publish registered-agent data: the Secretary of State keeps it
+# behind SOSDirect (paid, per-search, no API) and the Comptroller's franchise
+# file carries a taxpayer address and SOS file number but no agent field. So
+# the thing a registered-agent search is actually wanted FOR -- "show me
+# everything this operator holds, under whatever LLC" -- is answered here from
+# the appraisal roll instead, by the mailing address the tax bill goes to.
+#
+# It works because shells share a mailbox. Rancho La Laguna LLC's five parcels
+# mail to PO BOX 40468; so do 89 more, across SGJGM Family LP, Don Chava Real
+# Estate Interests LP and LLC, Pantano Ranch Ltd, Rancho Los Pinos LLC, Rancho
+# El Venado LLC and an individual. Five parcels in, ninety-four out.
+#
+# It is a lead generator, not a corporate record. A shared mailbox is evidence
+# of a relationship, not proof of one -- an attorney's or bookkeeper's address
+# groups their clients together -- and entities using different addresses are
+# missed. Grand Prairie Development alone mails from six.
+# --------------------------------------------------------------------------
+
+# Placeholders the appraisal districts use for "we don't know". Grouping on
+# these would put thousands of unrelated owners in one bucket.
+_MAIL_JUNK = re.compile(r"^(0+|ADDRESS UNKNOWN|UNKNOWN|N/?A|NONE|TBD|NO ADDRESS)\b")
+
+# Above this many distinct owners an address is a service provider, not a
+# portfolio: a property-tax firm, a bank lockbox, an agent-for-hire. Only ~900
+# addresses out of 2M exceed ten owners, so this cuts against a clear gap
+# rather than a guessed threshold. Such addresses are reported, not dropped.
+MAIL_MAX_OWNERS = 25
+
+
+def norm_mail(addr):
+    """Normalise a mailing address so spelling variants group together.
+
+    The roll is inconsistent in ways that carry no meaning: a stray space
+    before the comma, ZIP+4 on some rows and ZIP on others, a trailing hyphen.
+    Normalising merges about 62,000 groups that would otherwise look distinct.
+    """
+    a = (addr or "").upper()
+    a = re.sub(r"[.,#]+", " ", a)
+    a = re.sub(r"\b(\d{5})-\d{4}\b", r"\1", a)      # ZIP+4 -> ZIP
+    a = re.sub(r"-+\s*$", "", a)
+    return re.sub(r"\s+", " ", a).strip()
+
+
+def _usable_mail(n):
+    return bool(n) and len(n) >= 8 and not _MAIL_JUNK.match(n)
+
+
+def find_related_owners(owner_query, max_parcels=4000,
+                        max_owners_per_address=MAIL_MAX_OWNERS):
+    """Every owner sharing a mailing address with the entity searched for.
+
+    Returns the addresses used, the owners found at them, and whatever was
+    deliberately skipped. A silent exclusion would read as "this is all they
+    hold", which is the one answer this must never give by accident.
+    """
+    from shapely.wkb import loads as wkb_loads
+
+    seed = find_parcels_by_owner(owner_query)
+    seed_parcels = seed.get("parcels") or []
+    if not seed_parcels:
+        return {"query": owner_query, "owners": [], "addresses": [],
+                "skipped": [], "owner_count": 0, "total_parcels": 0,
+                "total_acres": 0.0, "error": "no parcels matched that owner"}
+
+    seed_names = {(p.get("owner_name") or "").upper() for p in seed_parcels}
+    wanted = {}
+    for p in seed_parcels:
+        n = norm_mail(p.get("mail_addr"))
+        if _usable_mail(n):
+            wanted.setdefault(n, p.get("mail_addr"))
+
+    init_db()
+    addresses, skipped, rows = [], [], []
+    if not wanted:
+        skipped.append({"address": "(none)", "owners": 0, "parcels": 0,
+                        "reason": "no usable mailing address on the matched parcels"})
+
+    # mail_addr has no index that a leading-wildcard LIKE could use, so every
+    # probe is a table scan. Six addresses meant six scans and 24 seconds;
+    # OR-ing the probes into ONE scan and bucketing the rows in Python does
+    # the same work once.
+    probes = {}
+    for n in wanted:
+        toks = n.split(" ")
+        nums = [t for t in toks if t.isdigit()]
+        zips = [t for t in toks if len(t) == 5 and t.isdigit()]
+        # The probe has to be SELECTIVE. Taking the leading token looked fine
+        # on "9950 WESTPARK DR" and was useless on "PO BOX 40468", where it is
+        # "PO": that matched most of the table, the LIMIT truncated, and the
+        # address came back with 5 of its 94 parcels -- a confident wrong
+        # answer that looked complete. Numbers are what distinguish an address.
+        p = []
+        if nums:
+            p.append(nums[0])
+        if zips and zips[-1] not in p:
+            p.append(zips[-1])
+        probes[n] = p or [max(toks, key=len)[:12]]
+
+    cap = max(max_parcels * 5, 20000)
+    saturated = False
+    if wanted:
+        where = " OR ".join(
+            "(" + " AND ".join(["mail_addr LIKE ?"] * len(p)) + ")"
+            for p in probes.values())
+        params = ["%" + t + "%" for p in probes.values() for t in p] + [cap]
+        with _db_lock, _conn() as c:
+            cand = c.execute(
+                "SELECT prop_id, county_name, owner_name, mail_addr, gis_area,"
+                "       legal_area, shape_wkb"
+                "  FROM parcels WHERE " + where + " LIMIT ?", params).fetchall()
+        saturated = len(cand) >= cap
+        buckets = {}
+        for r in cand:
+            n = norm_mail(r[3])
+            if n in wanted:
+                buckets.setdefault(n, []).append(r)
+        for n, raw in wanted.items():
+            hit = buckets.get(n, [])
+            here = {(r[2] or "").upper() for r in hit}
+            if len(here) > max_owners_per_address:
+                skipped.append({
+                    "address": raw, "owners": len(here), "parcels": len(hit),
+                    "reason": (str(len(here)) + " owners share this address"
+                               " -- a service provider, not a portfolio")})
+                continue
+            addresses.append({"address": raw, "owners": len(here),
+                              "parcels": len(hit)})
+            rows.extend(hit)
+    if saturated:
+        # Say so rather than quietly returning a subset.
+        skipped.append({
+            "address": "(scan limit)", "owners": 0, "parcels": 0,
+            "reason": "too many candidate rows to scan safely -- results may be incomplete"})
+
+    # Slicing to max_parcels without saying so is the same silent-truncation
+    # bug as the probe above: Colony Ridge came back as exactly 4,000 parcels,
+    # a number that is obviously a cap and was presented as a total.
+    if len(rows) > max_parcels:
+        skipped.append({
+            "address": "(parcel limit)", "owners": 0, "parcels": len(rows),
+            "reason": ("only the first " + str(max_parcels) + " of " + str(len(rows))
+                       + " parcels were measured -- acreage below is a floor")})
+
+    by_owner = {}
+    for prop_id, county, owner, mail, gis_area, legal_area, wkb in rows[:max_parcels]:
+        key = (owner or "").upper()
+        rec = by_owner.setdefault(key, {
+            "owner_name": owner, "parcels": 0, "acres": 0.0, "counties": set(),
+            "is_seed": key in seed_names, "sample_prop_id": prop_id})
+        rec["parcels"] += 1
+        rec["counties"].add(county)
+        try:
+            if wkb:
+                rec["acres"] += trusted_acres(wkb_loads(wkb), gis_area, legal_area)
+            else:
+                rec["acres"] += round((gis_area or legal_area or 0), 1)
+        except Exception:
+            pass
+
+    owners = sorted(({**v, "counties": sorted(x for x in v["counties"] if x),
+                      "acres": round(v["acres"], 1)} for v in by_owner.values()),
+                    key=lambda x: -x["acres"])
+    return {
+        "query": owner_query,
+        "addresses": addresses,
+        "skipped": skipped,
+        "owners": owners,
+        "owner_count": len(owners),
+        "total_parcels": sum(o["parcels"] for o in owners),
+        "total_acres": round(sum(o["acres"] for o in owners), 1),
+    }
 
 def coverage_for_polygon(buffer_wgs) -> list:
     """Return which counties this buffer touches and their cache status.
