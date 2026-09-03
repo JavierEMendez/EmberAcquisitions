@@ -1,0 +1,632 @@
+{#
+  Executive acquisition summary — the print document, not a page of the app.
+
+  Rendered by WeasyPrint. Every section is guarded: if a dataset did not come
+  back, the section collapses rather than printing "None" or an empty card.
+  Page breaks are controlled with `break-inside: avoid` on cards and rows, so a
+  table row or a metric card is never sliced in half across a sheet.
+#}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ r.project.name }} — Acquisition Summary</title>
+<style>
+  @page {
+    size: Letter;
+    margin: 0.52in 0.55in 0.62in 0.55in;
+    background: #F7F4EF;
+    @bottom-left {
+      content: "Generated from Acquisitions GIS  |  Screening analysis — subject to diligence";
+      font-family: Helvetica, Arial, sans-serif; font-size: 7pt;
+      font-style: italic; color: #93A0AC; padding-bottom: 6pt;
+    }
+    @bottom-right {
+      content: counter(page) " / " counter(pages);
+      font-family: Helvetica, Arial, sans-serif; font-size: 7pt;
+      color: #93A0AC; padding-bottom: 6pt;
+    }
+  }
+  @page :first { @bottom-left { content: ""; } }
+
+  * { box-sizing: border-box; }
+  html { -weasy-hyphens: none; }
+  body {
+    margin: 0; background: #F7F4EF; color: #13344E;
+    font-family: Helvetica, Arial, sans-serif; font-size: 8.6pt; line-height: 1.42;
+  }
+
+  /* ---------- running header ---------- */
+  .rh { display: flex; align-items: flex-end; justify-content: space-between;
+        border-bottom: 1px solid #E3E7EA; padding-bottom: 7pt; margin-bottom: 15pt; }
+  .brand { display: flex; align-items: center; gap: 8pt; }
+  .brand-bars { display: flex; gap: 1.6pt; align-items: flex-end; }
+  .brand-bars i { display: block; width: 2.1pt; background: #F25929; border-radius: 1pt; }
+  .brand-name { font-size: 14pt; font-weight: 700; letter-spacing: .01em; color: #13344E; line-height: 1; }
+  .brand-sub { font-size: 5.6pt; letter-spacing: .3em; color: #93A0AC; font-weight: 700; margin-top: 2pt; }
+  .rh-sec { font-size: 8.6pt; font-weight: 700; color: #13344E; }
+
+  /* ---------- section furniture ---------- */
+  .sec-title { font-size: 15pt; font-weight: 700; color: #13344E; margin: 0 0 2pt; }
+  .sec-sub { font-size: 8pt; font-style: italic; color: #93A0AC; margin: 0 0 12pt; }
+  .eyebrow { font-size: 8pt; font-weight: 700; letter-spacing: .12em;
+             text-transform: uppercase; color: #F25929; margin-bottom: 6pt; }
+
+  .card { background: #FFFFFF; border: 1px solid #E6E9EC; border-radius: 8pt;
+          padding: 12pt 13pt; margin-bottom: 11pt; break-inside: avoid; }
+  .card-t { font-size: 7.6pt; font-weight: 700; letter-spacing: .11em;
+            text-transform: uppercase; color: #13344E; margin: 0 0 9pt; }
+  .card.flush { padding: 0; overflow: hidden; }
+
+  /* ---------- metric cards ---------- */
+  .kpis { display: flex; gap: 8pt; margin-bottom: 11pt; break-inside: avoid; }
+  .kpi { flex: 1; background: #FFFFFF; border: 1px solid #E6E9EC; border-radius: 7pt;
+         padding: 9pt 10pt; break-inside: avoid; }
+  .kpi-l { font-size: 6.2pt; font-weight: 700; letter-spacing: .13em;
+           text-transform: uppercase; color: #93A0AC; margin-bottom: 4pt; }
+  .kpi-v { font-size: 14pt; font-weight: 700; color: #13344E; line-height: 1.05; }
+  .kpi-n { font-size: 6.6pt; color: #93A0AC; margin-top: 3pt; }
+  .kpi.hot { border-color: #F5B79E; background: #FEF4EF; }
+  .kpi.hot .kpi-v { color: #F25929; }
+  .kpi.sm .kpi-v { font-size: 11.4pt; }
+
+  .grid2 { display: flex; gap: 10pt; align-items: flex-start; }
+  .grid2 > * { flex: 1; min-width: 0; }
+
+  /* ---------- bars ---------- */
+  .bridge-row { display: flex; align-items: center; gap: 10pt; margin-bottom: 7pt;
+                break-inside: avoid; }
+  .bridge-l { width: 92pt; font-size: 8pt; color: #4C6172; }
+  .bridge-v { width: 62pt; text-align: right; font-size: 8pt; font-weight: 700; }
+  .track { flex: 1; height: 8pt; background: #EDF0F3; border-radius: 4pt; overflow: hidden; }
+  .track > span { display: block; height: 100%; border-radius: 4pt; }
+  .bridge-row.total .bridge-l, .bridge-row.total .bridge-v { font-weight: 700; color: #13344E; }
+
+  .cb-row { margin-bottom: 8pt; break-inside: avoid; }
+  .cb-head { display: flex; justify-content: space-between; font-size: 7.6pt;
+             color: #4C6172; margin-bottom: 3pt; }
+  .cb-head b { color: #13344E; font-weight: 600; }
+  .cb-track { height: 5pt; background: #EDF0F3; border-radius: 3pt; overflow: hidden; }
+  .cb-track > span { display: block; height: 100%; border-radius: 3pt; }
+
+  /* ---------- tables ---------- */
+  table { width: 100%; border-collapse: collapse; font-size: 7.6pt; }
+  thead { display: table-header-group; }        /* repeat header across pages */
+  tr { break-inside: avoid; }
+  th { background: #13344E; color: #FFFFFF; font-size: 6.6pt; font-weight: 700;
+       letter-spacing: .08em; text-transform: uppercase; text-align: left;
+       padding: 6pt 8pt; }
+  td { padding: 5.4pt 8pt; border-bottom: 1px solid #EDF0F3; color: #33475A;
+       vertical-align: top; }
+  tbody tr:nth-child(even) td { background: #FAFBFC; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .tbl-note { font-size: 6.8pt; color: #93A0AC; font-style: italic;
+              padding: 6pt 8pt 0; }
+
+  /* ---------- read / callout blocks ---------- */
+  .read li { list-style: none; position: relative; padding-left: 11pt;
+             margin-bottom: 5pt; font-size: 8pt; color: #33475A; break-inside: avoid; }
+  .read li:before { content: "•"; position: absolute; left: 0; color: #F25929;
+                    font-weight: 700; }
+  .read ul { margin: 0; padding: 0; }
+  .tint { background: #FEF4EF; border-radius: 6pt; padding: 8pt 10pt;
+          font-size: 7.8pt; color: #C0431C; font-weight: 600; break-inside: avoid; }
+
+  .fact { display: flex; align-items: baseline; gap: 8pt; padding: 6pt 0;
+          border-bottom: 1px solid #EDF0F3; break-inside: avoid; }
+  .fact:last-child { border-bottom: 0; }
+  .fact-l { flex: 1; font-size: 8pt; color: #4C6172; }
+  .fact-v { font-size: 8pt; font-weight: 700; letter-spacing: .04em; }
+  .fact-n { width: 118pt; font-size: 7.2pt; color: #93A0AC; text-align: right; }
+  .v-strong { color: #2E7D4F; } .v-mod { color: #C08A2E; } .v-risk { color: #C0431C; }
+
+  .dq { display: flex; gap: 8pt; padding: 7pt 0; break-inside: avoid; }
+  .dq-n { width: 13pt; height: 13pt; flex: none; border-radius: 50%;
+          background: #F25929; color: #FFF; font-size: 6.8pt; font-weight: 700;
+          text-align: center; line-height: 13pt; }
+  .dq-t { font-size: 8pt; color: #33475A; }
+
+  img.map { display: block; width: 100%; border-radius: 6pt; }
+
+  .pair { display: flex; justify-content: space-between; font-size: 7.8pt;
+          padding: 4.2pt 0; border-bottom: 1px solid #F1F4F6; break-inside: avoid; }
+  .pair:last-child { border-bottom: 0; }
+  .pair .p-l { color: #4C6172; } .pair .p-v { font-weight: 700; color: #13344E; }
+
+  .page-break { break-before: page; }
+</style>
+</head>
+<body>
+
+{% macro header(section) %}
+<div class="rh">
+  <div class="brand">
+    <div class="brand-bars">
+      <i style="height:13pt"></i><i style="height:17pt"></i><i style="height:11pt"></i>
+      <i style="height:17pt"></i><i style="height:13pt"></i>
+    </div>
+    <div>
+      <div class="brand-name">EMBER</div>
+      <div class="brand-sub">ACQUISITIONS</div>
+    </div>
+  </div>
+  <div class="rh-sec">{{ section }}</div>
+</div>
+{% endmacro %}
+
+{% macro kpi(label, value, note='', hot=False, small=False) %}
+<div class="kpi{{ ' hot' if hot }}{{ ' sm' if small }}">
+  <div class="kpi-l">{{ label }}</div>
+  <div class="kpi-v">{{ value }}</div>
+  {% if note %}<div class="kpi-n">{{ note }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+
+{# ══════════════ 1 · COVER ══════════════ #}
+{{ header('') }}
+<div class="eyebrow">Acquisition Screening Summary</div>
+<div style="font-size:27pt;font-weight:700;color:#13344E;line-height:1.06;margin-bottom:5pt">
+  {{ r.project.name }}</div>
+<div style="font-size:10pt;color:#93A0AC;margin-bottom:14pt">
+  {{ r.project.tract_line }}{% if r.project.location %} &nbsp;|&nbsp; {{ r.project.location }}{% endif %}</div>
+
+{% if r.site_map %}
+<div class="card" style="padding:7pt"><img class="map" src="{{ r.site_map }}" alt="Subject site"></div>
+{% endif %}
+
+<div class="kpis">
+  {{ kpi('Gross acreage', r.kpi.gross) }}
+  {{ kpi('Net developable', r.kpi.net_dev) }}
+  {{ kpi('Net saleable', r.kpi.net_saleable, hot=True) }}
+  {{ kpi('Pro-forma yield', r.kpi.lots) }}
+</div>
+
+<div style="margin-top:16pt;font-size:8.4pt;font-weight:700;color:#13344E">
+  Prepared from EMBER Acquisitions GIS</div>
+<div style="font-size:7.6pt;color:#93A0AC;margin-top:3pt">
+  Market, physical site, competition, schools, infrastructure, amenities and macro screening</div>
+<div style="font-size:7.6pt;color:#93A0AC;margin-top:10pt">{{ r.project.date_long }}</div>
+
+
+{# ══════════════ 2 · EXECUTIVE VIEW ══════════════ #}
+<div class="page-break"></div>
+{{ header('Executive Investment View') }}
+<div class="sec-title">{{ r.project.name_upper }}</div>
+<div class="sec-sub">{{ r.project.location }}{% if r.kpi.gross %} &nbsp;|&nbsp; {{ r.kpi.gross }} gross{% endif %}</div>
+
+<div class="kpis">
+  {{ kpi('Gross acreage', r.kpi.gross) }}
+  {{ kpi('Net developable', r.kpi.net_dev) }}
+  {{ kpi('Net saleable', r.kpi.net_saleable, hot=True) }}
+  {{ kpi('Pro-forma yield', r.kpi.lots) }}
+</div>
+
+{% if r.thesis %}
+<div class="card">
+  <div class="card-t">Executive thesis</div>
+  <div style="font-size:8.4pt;color:#33475A;line-height:1.55">{{ r.thesis }}</div>
+</div>
+{% endif %}
+
+{% if r.factors %}
+<div class="card">
+  <div class="card-t">Screening factors</div>
+  {% for f in r.factors %}
+  <div class="fact">
+    <div class="fact-l">{{ f.label }}</div>
+    <div class="fact-v {{ f.tone }}">{{ f.verdict }}</div>
+    <div class="fact-n">{{ f.note }}</div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if r.diligence %}
+<div class="card">
+  <div class="card-t">Key diligence questions</div>
+  {% for d in r.diligence %}
+  <div class="dq"><div class="dq-n">{{ loop.index }}</div><div class="dq-t">{{ d }}</div></div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if r.tracts and r.tracts|length > 1 %}
+<div class="card flush">
+  <div class="card-t" style="padding:12pt 13pt 9pt;margin:0">Tract composition</div>
+  <table>
+    <thead><tr><th>#</th><th>Owner</th><th>Prop ID</th><th>County</th>
+      <th class="num">Acres</th><th class="num">% of assembly</th></tr></thead>
+    <tbody>
+      {% for t in r.tracts %}
+      <tr><td>{{ loop.index }}</td><td>{{ t.owner }}</td><td>{{ t.prop_id }}</td>
+        <td>{{ t.county }}</td><td class="num">{{ t.acres }}</td>
+        <td class="num">{{ t.pct }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+
+{# ══════════════ 3 · SITE & DEVELOPMENT POTENTIAL ══════════════ #}
+{% if r.bridge %}
+<div class="page-break"></div>
+{{ header('Site & Development Potential') }}
+<div class="sec-title">1. Site &amp; Development Potential</div>
+<div class="sec-sub">Physical constraints, developable efficiency and preliminary lot yield</div>
+
+<div class="card">
+  <div class="card-t">Gross-to-saleable bridge</div>
+  {% for b in r.bridge %}
+  <div class="bridge-row{{ ' total' if b.total }}">
+    <div class="bridge-l">{{ b.label }}</div>
+    <div class="bridge-v" style="color:{{ b.colour }}">{{ b.value }}</div>
+    <div class="track"><span style="width:{{ b.pct }}%;background:{{ b.colour }}"></span></div>
+  </div>
+  {% endfor %}
+  <div style="font-size:6.8pt;color:#93A0AC;font-style:italic;margin-top:6pt">
+    Deductions are marginal — overlapping constraints are removed once, so the column
+    sums exactly to net developable. Each layer's full footprint is shown below.</div>
+</div>
+
+<div class="grid2">
+  <div class="card">
+    <div class="card-t">Constraint breakdown</div>
+    {% for c in r.constraints %}
+    <div class="cb-row">
+      <div class="cb-head"><span>{{ c.label }}</span>
+        <span><b>{{ c.acres }}</b> &nbsp;|&nbsp; {{ c.pct }}</span></div>
+      <div class="cb-track"><span style="width:{{ c.bar }}%;background:{{ c.colour }}"></span></div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if r.topo %}
+  <div class="card">
+    <div class="card-t">Topography &amp; site character</div>
+    <div class="kpis" style="margin-bottom:8pt">
+      {{ kpi('Elevation range', r.topo.range, small=True) }}
+      {{ kpi('Min · max', r.topo.min_max, small=True) }}
+    </div>
+    <div class="kpis" style="margin-bottom:8pt">
+      {{ kpi('Mean slope', r.topo.mean_slope, small=True) }}
+      {{ kpi('Max slope', r.topo.max_slope, small=True) }}
+    </div>
+    {% if r.topo.drainage %}<div class="pair"><span class="p-l">Drainage</span>
+      <span class="p-v">{{ r.topo.drainage }}</span></div>{% endif %}
+    {% if r.topo.character %}
+    <div class="tint" style="margin-top:8pt">Site character: {{ r.topo.character }}</div>{% endif %}
+  </div>
+  {% endif %}
+</div>
+
+{% if r.yield %}
+<div class="card">
+  <div class="card-t">Pro-forma yield</div>
+  <div class="kpis">
+    {{ kpi('Total lots', r.yield.total_lots, hot=True) }}
+    {{ kpi('Weighted density', r.yield.density) }}
+    {{ kpi('Saleable conversion', r.yield.conversion) }}
+  </div>
+  {% if r.yield.products %}
+  <table style="margin-top:4pt">
+    <thead><tr><th>Product</th><th>Density</th><th>Allocation</th>
+      <th class="num">Acres</th><th class="num">Lots</th></tr></thead>
+    <tbody>
+      {% for p in r.yield.products %}
+      <tr><td>{{ p.product }}</td><td>{{ p.density }}</td><td>{{ p.allocation }}</td>
+        <td class="num">{{ p.acres }}</td><td class="num">{{ p.lots }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if r.dev_read %}
+<div class="card read">
+  <div class="card-t">Development read</div>
+  <ul>{% for x in r.dev_read %}<li>{{ x }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+{% endif %}
+
+
+{# ══════════════ 4 · MARKET DEMAND & SUPPLY ══════════════ #}
+{% if r.market %}
+<div class="page-break"></div>
+{{ header('Market Demand & Supply') }}
+<div class="sec-title">2. Market Demand &amp; Supply</div>
+<div class="sec-sub">{{ r.market.subtitle }}</div>
+
+{% if r.market.context %}
+<div style="font-size:7.6pt;color:#93A0AC;margin:-6pt 0 10pt">{{ r.market.context }}</div>
+{% endif %}
+
+<div class="kpis">
+  {{ kpi('Annual starts', r.market.starts) }}
+  {{ kpi('Annual closings', r.market.closings) }}
+  {{ kpi('Finished lot supply', r.market.vdl) }}
+  {{ kpi('Months of lot supply', r.market.mos, hot=r.market.mos_hot) }}
+</div>
+<div class="kpis">
+  {{ kpi('Under construction', r.market.uc) }}
+  {{ kpi('Finished vacant', r.market.fv) }}
+  {{ kpi('Future lots', r.market.future) }}
+  {{ kpi('Home price range', r.market.price_range, small=True) }}
+</div>
+
+{% if r.market.quarterly_chart %}
+<div class="card">
+  <div class="card-t">Quarterly starts vs. closings</div>
+  <img class="map" src="{{ r.market.quarterly_chart }}" alt="Quarterly starts vs closings">
+</div>
+{% endif %}
+
+<div class="grid2">
+  {% if r.market.lot_bands %}
+  <div class="card flush">
+    <div class="card-t" style="padding:12pt 13pt 9pt;margin:0">Product mix by lot width</div>
+    <table>
+      <thead><tr><th>Width</th><th class="num">Lots</th><th class="num">Avg price</th>
+        <th class="num">$/SF</th></tr></thead>
+      <tbody>{% for b in r.market.lot_bands %}
+        <tr><td>{{ b.width }}</td><td class="num">{{ b.lots }}</td>
+          <td class="num">{{ b.avg_price }}</td><td class="num">{{ b.psf }}</td></tr>
+      {% endfor %}</tbody>
+    </table>
+  </div>
+  {% endif %}
+  {% if r.market.builders %}
+  <div class="card flush">
+    <div class="card-t" style="padding:12pt 13pt 9pt;margin:0">Top builders by est. annual starts</div>
+    <table>
+      <thead><tr><th>Builder</th><th class="num">Starts</th><th class="num">Lots</th>
+        <th class="num">Avg price</th></tr></thead>
+      <tbody>{% for b in r.market.builders %}
+        <tr><td>{{ b.name }}</td><td class="num">{{ b.starts }}</td>
+          <td class="num">{{ b.lots }}</td><td class="num">{{ b.avg_price }}</td></tr>
+      {% endfor %}</tbody>
+    </table>
+    {% if r.market.builder_note %}<div class="tbl-note">{{ r.market.builder_note }}</div>{% endif %}
+  </div>
+  {% endif %}
+</div>
+
+{% if r.market.read %}
+<div class="card read">
+  <div class="card-t">Market read</div>
+  <ul>{% for x in r.market.read %}<li>{{ x }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+{% endif %}
+
+
+{# ══════════════ 5 · NEARBY COMPETING COMMUNITIES ══════════════ #}
+{% if r.comps %}
+<div class="page-break"></div>
+{{ header('Nearby Competing Communities') }}
+<div class="sec-title">3. Nearby Competing Communities</div>
+<div class="sec-sub">Active communities nearest the project, with velocity, lot supply, pipeline and buildout indicators</div>
+
+{% if r.comps.map %}
+<div class="card" style="padding:7pt"><img class="map" src="{{ r.comps.map }}" alt="Competitive map"></div>
+{% endif %}
+
+{% if r.comps.kpis %}
+<div class="kpis">
+  {% for k in r.comps.kpis %}{{ kpi(k.label, k.value) }}{% endfor %}
+</div>
+{% endif %}
+
+<div class="card flush">
+  <table>
+    <thead><tr><th>Community</th><th>Distance</th><th>Builders</th><th>Lot widths</th>
+      <th class="num">Ann. clos.</th><th class="num">Ann. starts</th><th class="num">MOS</th>
+      <th class="num">Pipeline</th><th class="num">Built</th></tr></thead>
+    <tbody>{% for c in r.comps.rows %}
+      <tr><td>{{ c.name }}</td><td>{{ c.distance }}</td><td>{{ c.builders }}</td>
+        <td>{{ c.widths }}</td><td class="num">{{ c.closings }}</td>
+        <td class="num">{{ c.starts }}</td><td class="num">{{ c.mos }}</td>
+        <td class="num">{{ c.pipeline }}</td><td class="num">{{ c.built }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+  {% if r.comps.note %}<div class="tbl-note">{{ r.comps.note }}</div>{% endif %}
+</div>
+
+{% if r.comps.read %}<div class="tint">Competitive read: {{ r.comps.read }}</div>{% endif %}
+{% endif %}
+
+
+{# ══════════════ 6 · SCHOOLS & GROWTH ══════════════ #}
+{% if r.schools %}
+<div class="page-break"></div>
+{{ header('Schools & Growth Corridor') }}
+<div class="sec-title">4. Schools &amp; Growth Corridor</div>
+<div class="sec-sub">School-district trajectory, campus proximity and county household growth</div>
+
+<div class="kpis">
+  {{ kpi(r.schools.district, r.schools.rating, note=r.schools.rating_note, hot=True) }}
+  {% for g in r.schools.growth %}{{ kpi(g.label, g.value, small=True) }}{% endfor %}
+</div>
+<div class="kpis">
+  {{ kpi('Enrollment', r.schools.enrollment) }}
+  {{ kpi('Schools', r.schools.school_count) }}
+  {{ kpi('Teachers (FTE)', r.schools.teachers) }}
+  {{ kpi('Student : teacher', r.schools.ratio) }}
+</div>
+
+{% if r.schools.trend_chart %}
+<div class="card">
+  <div class="card-t">District enrollment history</div>
+  <img class="map" src="{{ r.schools.trend_chart }}" alt="Enrollment trend">
+</div>
+{% endif %}
+
+{% if r.schools.campuses %}
+<div class="card flush">
+  <div class="card-t" style="padding:12pt 13pt 9pt;margin:0">Nearby campuses — sorted by distance</div>
+  <table>
+    <thead><tr><th>Campus</th><th>TEA</th><th>Level</th>
+      <th class="num">Enrollment</th><th class="num">Distance</th></tr></thead>
+    <tbody>{% for c in r.schools.campuses %}
+      <tr><td>{{ c.name }}</td><td>{{ c.tea }}</td><td>{{ c.level }}</td>
+        <td class="num">{{ c.enrollment }}</td><td class="num">{{ c.distance }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if r.demographics %}
+<div class="card">
+  <div class="card-t">{{ r.demographics.title }}</div>
+  <div class="kpis">{% for d in r.demographics.rows[:4] %}
+    {{ kpi(d.label, d.value, note=d.note, small=True) }}{% endfor %}</div>
+  {% if r.demographics.rows|length > 4 %}
+  <div class="kpis">{% for d in r.demographics.rows[4:8] %}
+    {{ kpi(d.label, d.value, note=d.note, small=True) }}{% endfor %}</div>{% endif %}
+  {% if r.demographics.rows|length > 8 %}
+  <div class="kpis" style="margin-bottom:0">{% for d in r.demographics.rows[8:12] %}
+    {{ kpi(d.label, d.value, note=d.note, small=True) }}{% endfor %}</div>{% endif %}
+</div>
+{% endif %}
+{% endif %}
+
+
+{# ══════════════ 7 · ACCESS & INFRASTRUCTURE ══════════════ #}
+{% if r.access %}
+<div class="page-break"></div>
+{{ header('Access & Infrastructure') }}
+<div class="sec-title">5. Access &amp; Infrastructure</div>
+<div class="sec-sub">Regional connectivity, roadway capacity investment and corridor positioning</div>
+
+<div class="kpis">
+  {% for c in r.access.cards %}{{ kpi(c.label, c.value, note=c.note) }}{% endfor %}
+</div>
+
+{% if r.access.projects %}
+<div class="card flush">
+  <div class="card-t" style="padding:12pt 13pt 9pt;margin:0">
+    Planned road projects{% if r.access.funded_note %} — {{ r.access.funded_note }}{% endif %}</div>
+  <table>
+    <thead><tr><th>Roadway</th><th>Work</th><th>Limits</th><th class="num">Start</th></tr></thead>
+    <tbody>{% for p in r.access.projects %}
+      <tr><td>{{ p.road }}</td><td>{{ p.work }}</td><td>{{ p.limits }}</td>
+        <td class="num">{{ p.start }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+  {% if r.access.note %}<div class="tbl-note">{{ r.access.note }}</div>{% endif %}
+</div>
+{% endif %}
+
+{% if r.access.map %}
+<div class="card" style="padding:7pt"><img class="map" src="{{ r.access.map }}" alt="Road projects"></div>
+{% endif %}
+
+{% if r.access.read %}
+<div class="card read">
+  <div class="card-t">Access read</div>
+  <ul>{% for x in r.access.read %}<li>{{ x }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+{% endif %}
+
+
+{# ══════════════ 8 · AMENITIES & MARKET INTELLIGENCE ══════════════ #}
+{% if r.amenities or r.news %}
+<div class="page-break"></div>
+{{ header('Amenities & Market Intelligence') }}
+<div class="sec-title">6. Amenities &amp; Market Intelligence</div>
+<div class="sec-sub">Daily-needs proximity, healthcare access and economic-development signals</div>
+
+{% if r.amenities %}
+{% if r.amenities.nearest %}
+<div class="kpis">
+  {% for n in r.amenities.nearest %}{{ kpi(n.label, n.value, note=n.note) }}{% endfor %}
+</div>
+{% endif %}
+
+<div class="grid2">
+  {% for grp in r.amenities.groups[:2] %}
+  <div class="card">
+    <div class="card-t">{{ grp.title }}</div>
+    {% for a in grp.items %}
+    <div class="pair"><span class="p-l">{{ a.name }}</span><span class="p-v">{{ a.distance }}</span></div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+<div class="grid2">
+  {% for grp in r.amenities.groups[2:4] %}
+  <div class="card">
+    <div class="card-t">{{ grp.title }}</div>
+    {% for a in grp.items %}
+    <div class="pair"><span class="p-l">{{ a.name }}</span><span class="p-v">{{ a.distance }}</span></div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if r.news %}
+<div class="card">
+  <div class="card-t">News &amp; market intelligence</div>
+  {% for n in r.news %}
+  <div style="padding:7pt 0;border-bottom:1px solid #EDF0F3;break-inside:avoid">
+    <div style="font-size:6.6pt;color:#93A0AC;font-weight:700;letter-spacing:.09em;
+                text-transform:uppercase">{{ n.date }}{% if n.source %} &nbsp;·&nbsp; {{ n.source }}{% endif %}</div>
+    <div style="font-size:8.2pt;font-weight:700;color:#13344E;margin:2pt 0 2pt">{{ n.headline }}</div>
+    {% if n.why %}<div style="font-size:7.4pt;color:#6B7B8B">{{ n.why }}</div>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endif %}
+
+
+{# ══════════════ 9 · MACRO & IC CHECKLIST ══════════════ #}
+{% if r.macro or r.why_works or r.next_steps %}
+<div class="page-break"></div>
+{{ header('Macro Context & IC Checklist') }}
+<div class="sec-title">7. Macro Context &amp; Investment Committee Checklist</div>
+<div class="sec-sub">Economic backdrop, synthesized risks and diligence questions before pricing land</div>
+
+{% if r.macro %}
+<div class="card">
+  <div class="card-t">Macro indicators</div>
+  {% for chunk in r.macro|batch(4) %}
+  <div class="kpis"{% if loop.last %} style="margin-bottom:0"{% endif %}>
+    {% for m in chunk %}{{ kpi(m.label, m.value, note=m.note, small=True) }}{% endfor %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="grid2">
+  {% if r.why_works %}
+  <div class="card read">
+    <div class="card-t" style="color:#2E7D4F">Why this could work</div>
+    <ul>{% for x in r.why_works %}<li>{{ x }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  {% if r.what_breaks %}
+  <div class="card read">
+    <div class="card-t" style="color:#C0431C">What could break the deal</div>
+    <ul>{% for x in r.what_breaks %}<li>{{ x }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+</div>
+
+{% if r.next_steps %}
+<div class="card">
+  <div class="card-t">Recommended next diligence</div>
+  {% for s in r.next_steps %}
+  <div class="dq"><div class="dq-n">{{ loop.index }}</div><div class="dq-t">{{ s }}</div></div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endif %}
+
+</body>
+</html>

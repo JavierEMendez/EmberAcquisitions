@@ -454,6 +454,10 @@ function _readNetouts() {
 // The summary report is built from the cached analysis, so it only becomes
 // available once one has run. Enabling it before that just produces a 400.
 function _syncSummaryBtn(hasAnalysis) {
+  for (const id of ['btn-summary-pdf', 'btn-exec-pdf']) {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !hasAnalysis;
+  }
   const b = document.getElementById('btn-summary-pdf');
   if (!b) return;
   b.disabled = !hasAnalysis;
@@ -463,6 +467,42 @@ function _syncSummaryBtn(hasAnalysis) {
 }
 document.getElementById('btn-summary-pdf')?.addEventListener('click', () => {
   window.open(`/api/acq/projects/${encodeURIComponent(PROJECT_ID)}/pdf`, '_blank');
+});
+
+// Executive summary. Fetched rather than window.open'd so the button can show
+// a real progress state -- the report draws a satellite map and several charts
+// and takes a few seconds -- and so a failure surfaces as a readable message
+// instead of a browser tab containing raw JSON.
+document.getElementById('btn-exec-pdf')?.addEventListener('click', async (ev) => {
+  const btn = ev.currentTarget;
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Building report…';
+  try {
+    const r = await fetch(`/api/acq/projects/${encodeURIComponent(PROJECT_ID)}/executive-pdf`);
+    if (!r.ok) {
+      let msg = `HTTP ${r.status}`;
+      try { msg = (await r.json()).error || msg; } catch (e) {}
+      throw new Error(msg);
+    }
+    const blob = await r.blob();
+    const cd = r.headers.get('content-disposition') || '';
+    const m = /filename="?([^"]+)"?/.exec(cd);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = m ? m[1] : 'EMBER_Acquisition_Summary.pdf';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch (e) {
+    console.error('[executive pdf]', e);
+    alert('Could not build the executive report: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
 });
 
 document.getElementById('btn-analyze').addEventListener('click', async () => {

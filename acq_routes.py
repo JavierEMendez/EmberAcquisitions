@@ -14,6 +14,7 @@ callables it needs so this module never imports app.py, which would be circular.
 from flask import (Blueprint, request, jsonify, session, redirect,
                    render_template, url_for, send_file)
 import datetime
+import re as _re            # explicit: not inherited from the star import
 import time                    # explicit: `from acq_gis import *` below
                                # must not be what supplies this name
 import io as _io
@@ -4321,6 +4322,134 @@ def acq_api_projects_fred(pid):
         "msa":        "Houston-The Woodlands-Sugar Land MSA (26420)",
         "notes":      "All FRED series IDs included for verification — query directly on fred.stlouisfed.org.",
     })
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Executive acquisition summary (HTML -> WeasyPrint)
+#
+# The layout lives in templates/acq_report.html as ordinary HTML and CSS.
+# Nothing here recomputes the analysis: the payloads come from the very view
+# functions the project page already calls, so a number in the report and the
+# same number on screen cannot drift apart.
+# ══════════════════════════════════════════════════════════════════════════
+
+def _report_payloads(pid, want=("cbas", "roads", "amenities", "news", "market", "fred")):
+    """Call the existing section endpoints and keep whatever answers.
+
+    Each one is optional. A section whose service is unconfigured or down is
+    left out of the context entirely and the template drops it, rather than
+    printing an empty card -- which in a document going to an investment
+    committee would read as "there is nothing here" rather than "we could not
+    reach the source".
+    """
+    fetchers = {
+        "cbas": acq_api_projects_cbas, "roads": acq_api_projects_roads,
+        "amenities": acq_api_projects_amenities, "news": acq_api_projects_news,
+        "market": acq_api_projects_market, "fred": acq_api_projects_fred,
+    }
+    out, failed = {}, []
+    for key in want:
+        fn = fetchers.get(key)
+        if fn is None:
+            continue
+        try:
+            resp = fn(pid)
+            payload = resp[0] if isinstance(resp, tuple) else resp
+            data = payload.get_json() if hasattr(payload, "get_json") else payload
+            if isinstance(data, dict) and data.get("error"):
+                failed.append(f"{key}: {str(data['error'])[:90]}")
+                continue
+            out[key] = data
+        except Exception as e:
+            failed.append(f"{key}: {type(e).__name__} {str(e)[:70]}")
+    out["_failed"] = failed
+    return out
+
+
+def _build_report_context(pid):
+    import acq_report
+    from shapely.geometry import shape as shp_shape
+    from shapely.ops import unary_union
+
+    conn = get_db()
+    try:
+        proj = acq_store.get_object(conn, "project", pid, _acq_owner())
+    finally:
+        conn.close()
+    if not proj:
+        return None, "project not found"
+    analysis = proj.get("analysis_cache")
+    if not analysis:
+        return None, ("Run the acquisition analysis first -- the report is built "
+                      "from it.")
+
+    data = _report_payloads(pid)
+    ctx = acq_report.build_context(proj, analysis, data,
+                                   (analysis.get("elevation") or None))
+
+    # Subject map, drawn from the project's own geometry.
+    try:
+        geoms = [shp_shape(t["geometry"]) for t in (proj.get("tracts") or [])
+                 if t.get("geometry")]
+        if geoms:
+            ctx["site_map"] = acq_report.render_site_map(
+                unary_union(geoms), analysis.get("constraint_geoms"),
+                proj.get("tracts"))
+    except Exception as e:
+        print(f"[report] site map failed: {e}", flush=True)
+
+    ctx["_failed"] = data.get("_failed") or []
+    return ctx, None
+
+
+@acq_bp.route("/acquisitions/project/<pid>/report")
+@_login_required
+def acq_project_report_html(pid):
+    """HTML view of the report. Not linked from anywhere -- it exists so the
+    layout can be inspected in a browser without a WeasyPrint round trip."""
+    guard = _acq_guard()
+    if guard:
+        return guard
+    ctx, err = _build_report_context(pid)
+    if err:
+        return jsonify({"error": err}), 400
+    return render_template("acq_report.html", r=ctx)
+
+
+@acq_bp.route("/api/acq/projects/<pid>/executive-pdf")
+@_login_required
+def acq_project_executive_pdf(pid):
+    """The executive acquisition summary as a PDF."""
+    guard = _acq_guard()
+    if guard:
+        return guard
+    ctx, err = _build_report_context(pid)
+    if err:
+        return jsonify({"error": err}), 400
+
+    html = render_template("acq_report.html", r=ctx)
+    try:
+        from weasyprint import HTML as _WHTML
+    except Exception as e:
+        # Named plainly rather than falling back to a different-looking
+        # document: a silent substitution is worse than a clear failure when
+        # the file is about to be emailed to a committee.
+        print(f"[report] WeasyPrint unavailable: {e}", flush=True)
+        return jsonify({"error": "PDF engine unavailable on this server "
+                                 "(WeasyPrint could not load). The HTML view at "
+                                 f"/acquisitions/project/{pid}/report still works."}), 500
+    try:
+        pdf = _WHTML(string=html, base_url=request.host_url).write_pdf()
+    except Exception as e:
+        print(f"[report] render failed: {e}", flush=True)
+        return jsonify({"error": f"Report render failed: {e}"}), 500
+
+    name = _re.sub(r"[^A-Za-z0-9]+", "_",
+                  (ctx.get("project") or {}).get("name") or "Project").strip("_")[:48]
+    fname = f"EMBER_{name}_Acquisition_Summary_{_utcnow()[:10]}.pdf"
+    _acq_log("export_executive_pdf", {"project_id": pid})
+    return send_file(_io.BytesIO(pdf), mimetype="application/pdf",
+                     as_attachment=True, download_name=fname)
 
 
 @acq_bp.route("/api/acq/projects/<pid>/pdf")
