@@ -239,6 +239,9 @@ document.getElementById('btn-add-tracts').addEventListener('click', async () => 
 });
 
 function renderAnalysis(a) {
+  // Reached from both the cached-analysis path on load and the fresh run, so
+  // the button's state follows the analysis wherever it came from.
+  _syncSummaryBtn(!!a);
   const c = a.constraints || {};
   const body = document.getElementById('analysis-body');
   memoPut('analysis', a);
@@ -446,6 +449,21 @@ function _readNetouts() {
     infrastructure_pct: Math.max(0, Math.min(pct, 90)),
   };
 }
+
+
+// The summary report is built from the cached analysis, so it only becomes
+// available once one has run. Enabling it before that just produces a 400.
+function _syncSummaryBtn(hasAnalysis) {
+  const b = document.getElementById('btn-summary-pdf');
+  if (!b) return;
+  b.disabled = !hasAnalysis;
+  b.title = hasAnalysis
+    ? 'Ten-page report: executive summary, constraint map, yield, topography, submarket and tract roster'
+    : 'Run the acquisition analysis first — the report is built from it';
+}
+document.getElementById('btn-summary-pdf')?.addEventListener('click', () => {
+  window.open(`/api/acq/projects/${encodeURIComponent(PROJECT_ID)}/pdf`, '_blank');
+});
 
 document.getElementById('btn-analyze').addEventListener('click', async () => {
   await fetch(`/api/acq/projects/${PROJECT_ID}`, {

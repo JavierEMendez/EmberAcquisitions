@@ -4326,7 +4326,7 @@ def acq_api_projects_fred(pid):
 @acq_bp.route("/api/acq/projects/<pid>/pdf")
 @_login_required
 def acq_api_projects_pdf(pid):
-    """Generate a presentation-grade Acquisitions Summary PDF.
+    """Generate a presentation-grade Acquisition Analysis Summary PDF.
 
     Multi-page report with:
       • Cover page
@@ -4521,10 +4521,40 @@ def acq_api_projects_pdf(pid):
                 fontsize=12, color="#FFFFFF", fontweight="bold",
                 bbox=dict(boxstyle="round,pad=0.3", facecolor=EMBER_BLUE, edgecolor="white"))
 
-        ax.tick_params(labelsize=7, colors=GRAY_700)
+        # No degree ticks. Raw decimal latitude and longitude down the side of
+        # an aerial reads as a plotting artefact in a partner deck, and nobody
+        # navigates by them -- a scale bar is what the page actually needs.
+        ax.set_xticks([]); ax.set_yticks([])
         for spine in ax.spines.values():
             spine.set_edgecolor(GRAY_300)
-        ax.set_title(f"Project · {analysis['tract_count']} tract(s) · {analysis['gross_acres']:,.0f} ac gross  ·  Floodplain/Wetlands/Transmission/Streams/Pipelines overlaid",
+
+        # Scale bar, sized from the map's own extent. A degree of longitude
+        # shortens with latitude, so it is measured at the map's centre.
+        try:
+            import math
+            x0, x1 = ax.get_xlim()
+            y0, y1 = ax.get_ylim()
+            mid_lat = (y0 + y1) / 2.0
+            span_ft = abs(x1 - x0) * 364000.0 * math.cos(math.radians(mid_lat))
+            target = span_ft * 0.25
+            nice = min([264, 528, 1320, 2640, 5280, 10560, 26400],
+                       key=lambda v: abs(v - target))
+            frac = (nice / span_ft) if span_ft else 0.25
+            bx = x0 + (x1 - x0) * 0.04
+            by = y0 + (y1 - y0) * 0.045
+            ax.plot([bx, bx + (x1 - x0) * frac], [by, by],
+                    color="#FFFFFF", lw=3.2, solid_capstyle="butt", zorder=60)
+            ax.plot([bx, bx + (x1 - x0) * frac], [by, by],
+                    color=EMBER_BLUE, lw=1.6, solid_capstyle="butt", zorder=61)
+            ax.text(bx + (x1 - x0) * frac / 2, by + (y1 - y0) * 0.018,
+                    (f"{nice/5280:g} mi" if nice >= 5280 else f"{nice:,} ft"),
+                    ha="center", va="bottom", fontsize=7, color="#FFFFFF",
+                    fontweight="bold", zorder=62,
+                    bbox=dict(boxstyle="round,pad=0.18", facecolor=EMBER_BLUE,
+                              edgecolor="none", alpha=0.85))
+        except Exception:
+            pass                      # a missing scale bar must not lose the map
+        ax.set_title(f"Project · {analysis['tract_count']} tract{'' if analysis['tract_count'] == 1 else 's'} · {analysis['gross_acres']:,.0f} ac gross  ·  Floodplain/Wetlands/Transmission/Streams/Pipelines overlaid",
                       fontsize=9, color=EMBER_BLUE, pad=10, fontweight="bold")
         ax.set_xlabel("")
         ax.set_ylabel("")
@@ -4649,7 +4679,7 @@ def acq_api_projects_pdf(pid):
     doc = SimpleDocTemplate(buf, pagesize=letter,
                               leftMargin=0.6*inch, rightMargin=0.6*inch,
                               topMargin=0.6*inch, bottomMargin=0.6*inch,
-                              title=f"{proj.get('name','Project')} — Acquisitions Summary",
+                              title=f"{proj.get('name','Project')} — Acquisition Analysis Summary",
                               author="Ember Acquisitions")
 
     styles = getSampleStyleSheet()
@@ -4692,16 +4722,38 @@ def acq_api_projects_pdf(pid):
     story.append(Paragraph("EMBER ACQUISITIONS", cover_sub))
     story.append(Spacer(1, 0.3*inch))
     story.append(Paragraph(proj.get("name", "(unnamed project)"), title_xl))
-    story.append(Paragraph("Acquisitions Summary", cover_sub))
+    story.append(Paragraph("Acquisition Analysis Summary", cover_sub))
     story.append(Spacer(1, 0.5*inch))
 
     # Headline KPIs (centered)
+    #
+    # Three stacked paragraphs per cell, not one with <br/>: a 22pt number set
+    # on the body style's 9pt leading printed the label straight through the
+    # figure, so the cover read "GROSS" struck across "1,065".
+    _kpi_lbl = ParagraphStyle("kpiLbl", parent=body, fontSize=8, leading=11,
+                              alignment=1, textColor=colors.HexColor(GRAY_700))
+    _kpi_val = ParagraphStyle("kpiVal", parent=body, fontSize=22, leading=26,
+                              alignment=1, fontName="Helvetica-Bold")
+    _kpi_sub = ParagraphStyle("kpiSub", parent=body, fontSize=8, leading=11,
+                              alignment=1, textColor=colors.HexColor(GRAY_700))
+
+    def _kpi(label, value, sub, colour):
+        return [Paragraph(label.upper(), _kpi_lbl),
+                Paragraph(f'<font color="{colour}">{value}</font>', _kpi_val),
+                Paragraph(sub, _kpi_sub)]
+
+    _y = analysis.get("yield_estimates", {}) or {}
+    _upa = (_y.get("assumptions", {}) or {}).get("units_per_acre", 3.5)
+    _tc = analysis["tract_count"]
     kpi_data = [
         [
-            Paragraph(f'<para alignment="center"><font size=9 color="{GRAY_700}">GROSS</font><br/><font size=22 color="{EMBER_BLUE}"><b>{analysis["gross_acres"]:,.0f}</b></font><br/><font size=9 color="{GRAY_700}">acres</font></para>', body),
-            Paragraph(f'<para alignment="center"><font size=9 color="{GRAY_700}">DEVELOPABLE</font><br/><font size=22 color="{EMBER_ORANGE}"><b>{analysis["net_developable_acres"]:,.0f}</b></font><br/><font size=9 color="{GRAY_700}">{analysis["net_developable_pct"]:.0f}% of gross</font></para>', body),
-            Paragraph(f'<para alignment="center"><font size=9 color="{GRAY_700}">EST. LOTS</font><br/><font size=22 color="{EMBER_BLUE}"><b>{analysis.get("yield_estimates",{}).get("total_lots",0):,}</b></font><br/><font size=9 color="{GRAY_700}">@ {analysis.get("yield_estimates",{}).get("assumptions",{}).get("units_per_acre",3.5):.1f} units/ac</font></para>', body),
-            Paragraph(f'<para alignment="center"><font size=9 color="{GRAY_700}">TRACTS</font><br/><font size=22 color="{EMBER_BLUE}"><b>{analysis["tract_count"]}</b></font><br/><font size=9 color="{GRAY_700}">combined</font></para>', body),
+            _kpi("Gross", f'{analysis["gross_acres"]:,.0f}', "acres", EMBER_BLUE),
+            _kpi("Developable", f'{analysis["net_developable_acres"]:,.0f}',
+                 f'{analysis["net_developable_pct"]:.0f}% of gross', EMBER_ORANGE),
+            _kpi("Est. lots", f'{_y.get("total_lots", 0):,}',
+                 f'@ {_upa:.1f} units/ac', EMBER_BLUE),
+            _kpi("Tracts", f'{_tc}',
+                 "combined" if _tc != 1 else "single tract", EMBER_BLUE),
         ]
     ]
     kt = Table(kpi_data, colWidths=[1.6*inch]*4, rowHeights=[1.2*inch])
@@ -5068,7 +5120,7 @@ def acq_api_projects_pdf(pid):
         sumd = submarket_data.get("tract_summary") or {}
         if sumd and sumd.get("tract_count"):
             story.append(Paragraph(
-                f"Census tract aggregates · <b>{sumd.get('tract_count')}</b> tract(s) containing the project · "
+                f"Census tract aggregates · <b>{sumd.get('tract_count')}</b> census tract{'' if sumd.get('tract_count') == 1 else 's'} containing the project · "
                 f"population-weighted averages where applicable", body))
             story.append(Spacer(1, 6))
             sm_rows = [["Indicator", "Submarket"]]

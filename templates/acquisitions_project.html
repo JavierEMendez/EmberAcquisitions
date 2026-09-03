@@ -207,6 +207,14 @@
       <div style="margin-top:8px">
         <button class="primary"id="btn-analyze"style="width:100%">Run Acquisition Analysis</button>
         <div id="analyze-status" class="status-msg"></div>
+        <!-- The report already existed at /api/acq/projects/<id>/pdf and
+             nothing in the app linked to it, so nobody could reach it.
+             Disabled until an analysis has run, because the PDF is built
+             from the cached analysis and 400s without one. -->
+        <button class="ghost" id="btn-summary-pdf" style="width:100%;margin-top:6px" disabled
+                title="Ten-page report: executive summary, constraint map, yield, topography, submarket and tract roster">
+          Acquisition Analysis Summary (PDF)
+        </button>
       </div>
     </div>
   </div>
