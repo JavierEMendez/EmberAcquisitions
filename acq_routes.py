@@ -12,7 +12,7 @@ callables it needs so this module never imports app.py, which would be circular.
 """
 
 from flask import (Blueprint, request, jsonify, session, redirect,
-                   render_template, url_for, send_file)
+                   render_template, url_for, send_file, current_app)
 import datetime
 import re as _re            # explicit: not inherited from the star import
 import time                    # explicit: `from acq_gis import *` below
@@ -4384,6 +4384,42 @@ def _build_report_context(pid):
                       "from it.")
 
     data = _report_payloads(pid)
+
+    # Schools take two hops, the same two the project page takes: /submarket
+    # resolves which district(s) the site sits in and the project centroid,
+    # then the district profile is fetched for the first of them.
+    centroid = None
+    try:
+        sm = acq_api_projects_submarket(pid)
+        sm = sm[0] if isinstance(sm, tuple) else sm
+        sm = sm.get_json() if hasattr(sm, "get_json") else sm
+        centroid = (sm or {}).get("centroid")
+        districts = (sm or {}).get("school_districts") or []
+        if districts and centroid:
+            d0 = districts[0]
+            with current_app.test_request_context(
+                    f"/api/acq/school-district/{d0.get('geoid')}",
+                    query_string={"lat": centroid.get("lat"), "lon": centroid.get("lon"),
+                                  "name": d0.get("name") or ""}):
+                sd = acq_api_school_district_profile(str(d0.get("geoid")))
+            sd = sd[0] if isinstance(sd, tuple) else sd
+            sd = sd.get_json() if hasattr(sd, "get_json") else sd
+            if isinstance(sd, dict) and not sd.get("error"):
+                data["schools"] = sd
+    except Exception as e:
+        print(f"[report] schools lookup failed: {e}", flush=True)
+
+    # Competitor map, centred on the site with the CBAS ring.
+    try:
+        cb = data.get("cbas") or {}
+        comms = cb.get("communities") or []
+        centre = centroid or cb.get("center") or (data.get("amenities") or {}).get("centroid")
+        if comms and centre:
+            data["comp_map"] = acq_report.render_competitor_map(
+                centre, comms, cb.get("radius_mi"))
+    except Exception as e:
+        print(f"[report] competitor map failed: {e}", flush=True)
+
     ctx = acq_report.build_context(proj, analysis, data,
                                    (analysis.get("elevation") or None))
 

@@ -779,4 +779,362 @@ def build_context(proj, analysis, data=None, elevation=None):
     r["what_breaks"] = _risks(a, data.get("cbas"))
     r["next_steps"] = NEXT_STEPS
     r["diligence"] = NEXT_STEPS[:4]
+
+    _map_market(r, data.get("cbas"))
+    _map_comps(r, data.get("cbas"), data.get("comp_map"))
+    _map_schools(r, data.get("schools"))
+    _map_demographics(r, data.get("market"))
+    _map_access(r, data.get("roads"), data.get("amenities"))
+    _map_amenities(r, data.get("amenities"))
+    _map_news(r, data.get("news"))
+    _map_macro(r, data.get("fred"))
     return r
+
+
+# ---------------------------------------------------------------------------
+# Section mappers. Each is a no-op when its payload is absent, so the template
+# omits that page rather than printing an empty shell.
+# ---------------------------------------------------------------------------
+def _map_market(r, cb):
+    if not cb:
+        return
+    agg = cb.get("aggregate") or {}
+    starts = _first(agg, "annual_starts") or cb.get("ring_annual_starts")
+    mos = _n(cb.get("months_lot_supply"))
+    radius = _n(cb.get("radius_mi"))
+    ctx = {
+        "subtitle": ("New-home velocity, lot supply, future pipeline and product depth"
+                     + (f" within the {radius:g}-mile competitive ring" if radius else "")),
+        "starts": num(starts),
+        "closings": num(_first(agg, "annual_closings")),
+        "vdl": num(_first(agg, "vdls", "finished_lots")),
+        "mos": (f"{mos:,.1f}" if mos is not None else "-"),
+        "mos_hot": bool(mos is not None and mos >= 18),
+        "uc": num(_first(agg, "under_construction", "uc")),
+        "fv": num(_first(agg, "finished_vacant", "fv")),
+        "future": num(_first(agg, "futures", "future_lots")),
+        "price_range": cb.get("price_band") or "-",
+    }
+    bits = []
+    if cb.get("quarter_label"):
+        bits.append(str(cb["quarter_label"]))
+    for key, word in (("community_count", "communities"),
+                      ("active_count", "actively closing"),
+                      ("builder_count", "builders")):
+        if _n(cb.get(key)) is not None:
+            bits.append(f"{_n(cb[key]):,.0f} {word}")
+    ctx["context"] = "  |  ".join(bits)
+
+    qs = cb.get("quarter_series") or []
+    if qs:
+        ctx["quarterly_chart"] = render_quarter_chart([
+            {"label": q.get("label") or q.get("quarter"),
+             "starts": _first(q, "starts", "start"),
+             "closings": _first(q, "closings", "closing")} for q in qs])
+
+    bands = []
+    for b in (cb.get("lot_bands") or []):
+        prices = [p for p in (b.get("prices") or []) if _n(p)]
+        ppsfs = [p for p in (b.get("ppsfs") or []) if _n(p)]
+        ff = b.get("lot_width_ff")
+        bands.append({
+            "width": (f"{ff} FF" if ff not in (None, "") else "-"),
+            "lots": num(b.get("lots")),
+            "avg_price": money(sum(prices) / len(prices)) if prices else "-",
+            "psf": (f"${sum(ppsfs) / len(ppsfs):,.0f}" if ppsfs else "-"),
+            "_sort": _n(b.get("lots")) or 0,
+        })
+    ctx["lot_bands"] = sorted(bands, key=lambda x: -x["_sort"])[:8]
+
+    blds = []
+    for b in (cb.get("builders") or []):
+        prices = [p for p in (b.get("prices") or []) if _n(p)]
+        blds.append({
+            "name": b.get("name") or "-",
+            "starts": num(b.get("est_annual_starts")),
+            "lots": num(b.get("lots")),
+            "avg_price": money(sum(prices) / len(prices)) if prices else "-",
+            "_sort": _n(b.get("est_annual_starts")) or 0,
+        })
+    blds.sort(key=lambda x: -x["_sort"])
+    ctx["builders"] = blds[:10]
+    if len(blds) > 10:
+        n = _n(cb.get("builder_count")) or len(blds)
+        ctx["builder_note"] = f"{n:,.0f} builders active within the competitive study area."
+
+    read = []
+    st, cl = _n(starts), _n(_first(agg, "annual_closings"))
+    if st and cl:
+        read.append(
+            f"Starts ({st:,.0f}) and closings ({cl:,.0f}) are close, so absorption is "
+            "keeping pace with delivery."
+            if cl >= st * 0.95 else
+            f"Starts ({st:,.0f}) run ahead of closings ({cl:,.0f}), a signal of "
+            "inventory build in the ring.")
+    if mos is not None:
+        read.append(f"{mos:,.1f} months of lot supply is elevated; phase conservatively."
+                    if mos >= 18 else
+                    f"{mos:,.1f} months of lot supply indicates a constrained lot market.")
+    if ctx["lot_bands"]:
+        read.append(f"The deepest product is {ctx['lot_bands'][0]['width']}, which is where "
+                    "the preliminary mix should concentrate.")
+    ctx["read"] = read or None
+    r["market"] = ctx
+
+
+def _map_comps(r, cb, comp_map=None):
+    comms = (cb or {}).get("communities") or []
+    if not comms:
+        return
+
+    def dist(c):
+        return _n(_first(c, "distance_mi", "distance")) or 999.0
+
+    rows = []
+    for c in sorted(comms, key=dist)[:14]:
+        bl = c.get("builders")
+        if isinstance(bl, (list, set, tuple)):
+            bl = ", ".join(sorted(str(x) for x in bl)[:2])
+        rows.append({
+            "name": str(c.get("name") or c.get("community") or "-")[:26],
+            "distance": miles(_first(c, "distance_mi", "distance"), c.get("direction")),
+            "builders": (str(bl)[:26] if bl else "-"),
+            "widths": str(_first(c, "lot_widths", "widths", default="") or "-")[:12],
+            "closings": num(_first(c, "annual_closings", "closings")),
+            "starts": num(_first(c, "annual_starts", "starts")),
+            "mos": (f"{_n(c.get('months_supply')):,.1f}"
+                    if _n(c.get("months_supply")) is not None else "-"),
+            "pipeline": num(_first(c, "futures", "pipeline")),
+            "built": pct(_first(c, "pct_built", "built_pct"), dp=0),
+        })
+    kpis = []
+    nearest = min((dist(c) for c in comms), default=None)
+    if nearest and nearest < 900:
+        kpis.append({"label": "Nearest active comp", "value": miles(nearest)})
+    for label, keys in (("Top closings", ("annual_closings", "closings")),
+                        ("Largest pipeline", ("futures", "pipeline"))):
+        v = max((_n(_first(c, *keys)) or 0 for c in comms), default=0)
+        if v:
+            kpis.append({"label": label, "value": num(v)})
+    r["comps"] = {
+        "map": comp_map, "rows": rows, "kpis": kpis,
+        "note": (f"{len(comms):,} communities in the study area; the {len(rows)} nearest "
+                 "are listed." if len(comms) > len(rows) else None),
+        "read": ("nearest communities are already proving demand, but several early-stage "
+                 "projects carry large pipelines and long remaining buildout."
+                 if rows else None),
+    }
+
+
+def _map_schools(r, sd):
+    if not sd or sd.get("error"):
+        return
+    g = sd.get("growth") or {}
+    growth = []
+    for key, label in (("5yr", "Enrollment / 5 yr"), ("10yr", "10-year"),
+                       ("20yr", "20-year"), ("all", "Since inception")):
+        blk = g.get(key) or {}
+        p = _n(_first(blk, "pct", "total_pct"))
+        if p is not None:
+            cagr = _n(blk.get("cagr_pct"))
+            growth.append({"label": label, "value": f"{p:+,.1f}%",
+                           "note": (f"{cagr:+,.2f}% CAGR" if cagr is not None else "")})
+    tea = sd.get("tea") or {}
+    rating = _first(tea, "grade", "rating")
+    score = _n(_first(tea, "score", "overall_score"))
+    r["schools"] = {
+        "district": str(sd.get("district_name") or sd.get("name")
+                        or "School district").upper(),
+        "rating": (f"{rating} / {score:,.0f}" if rating and score is not None
+                   else (str(rating) if rating else "-")),
+        "rating_note": ("TEA " + str(sd.get("tea_year") or "")).strip(),
+        "growth": growth[:3],
+        "enrollment": num(_first(sd, "enrollment", "current_enrollment")),
+        "school_count": num(_first(sd, "school_count", "schools")),
+        "teachers": num(_first(sd, "teachers_fte", "teachers")),
+        "ratio": (f"{_n(sd.get('student_teacher_ratio')):,.1f} : 1"
+                  if _n(sd.get("student_teacher_ratio")) is not None else "-"),
+        "trend_chart": render_enrollment_chart(sd.get("enrollment_trend")),
+        "campuses": [{
+            "name": str(c.get("name") or "-")[:30],
+            "tea": (f"{c.get('grade')} / {_n(c.get('score')):,.0f}"
+                    if c.get("grade") and _n(c.get("score")) is not None
+                    else (c.get("grade") or "-")),
+            "level": str(c.get("level") or c.get("type") or "-")[:20],
+            "enrollment": num(c.get("enrollment")),
+            "distance": miles(_first(c, "distance_mi", "distance")),
+        } for c in (sd.get("schools_nearby") or sd.get("campuses") or [])[:10]],
+    }
+
+
+ACS = [
+    ("B01003_001E", "Population", num), ("B11001_001E", "Households", num),
+    ("B19013_001E", "Median HH income", money), ("B19301_001E", "Per-capita income", money),
+    ("B25077_001E", "Median home value", money), ("B25064_001E", "Median rent", money),
+    ("B25001_001E", "Housing units", num), ("B23025_004E", "Employed", num),
+]
+
+
+def _map_demographics(r, mk):
+    if not mk or mk.get("error"):
+        return
+    src = mk.get("current") if isinstance(mk.get("current"), dict) else mk
+    rows = []
+    for code, label, fmt in ACS:
+        v = src.get(code, mk.get(code))
+        if _n(v) is None:
+            continue
+        rows.append({"label": label, "value": fmt(v), "note": ""})
+    occ, vac = _n(src.get("B25002_002E")), _n(src.get("B25002_003E"))
+    if occ and vac is not None and (occ + vac):
+        rows.append({"label": "Vacancy rate", "value": pct(vac / (occ + vac) * 100), "note": ""})
+    own, rent = _n(src.get("B25003_002E")), _n(src.get("B25003_003E"))
+    if own and rent is not None and (own + rent):
+        rows.append({"label": "Owner occupancy", "value": pct(own / (own + rent) * 100, dp=0),
+                     "note": ""})
+    tot = _n(src.get("B15003_001E"))
+    ba = sum(_n(src.get(k)) or 0 for k in
+             ("B15003_022E", "B15003_023E", "B15003_024E", "B15003_025E"))
+    if tot and ba:
+        rows.append({"label": "Bachelor's degree +", "value": pct(ba / tot * 100), "note": ""})
+    if rows:
+        r["demographics"] = {
+            "title": str(mk.get("county_name") or "County") + " - demand context",
+            "rows": rows[:12],
+        }
+
+
+def _map_access(r, roads, am):
+    am = am or {}
+    cards = []
+    hw = [h for h in (am.get("highways") or []) if _n(h.get("distance_mi")) is not None]
+    if hw:
+        h = min(hw, key=lambda x: _n(x.get("distance_mi")))
+        # OSM packs concurrent routes into one ref separated by semicolons
+        # ("US 290;TX 6"), which reads as a typo on a printed page.
+        ref = str(h.get("ref") or h.get("name") or "-").replace(";", " / ")
+        cards.append({"label": "Nearest freeway", "value": ref[:20],
+                      "note": miles(h.get("distance_mi"), h.get("direction"))})
+    if _n(am.get("nearest_ramp_mi")) is not None:
+        cards.append({"label": "Nearest on-ramp", "value": miles(am["nearest_ramp_mi"]),
+                      "note": "closest interchange"})
+    ap = [a for a in (am.get("airports") or []) if _n(a.get("distance_mi")) is not None]
+    if ap:
+        comm = [a for a in ap if a.get("commercial")] or ap
+        a0 = min(comm, key=lambda x: _n(x.get("distance_mi")))
+        cards.append({"label": "Airport", "value": str(a0.get("iata") or a0.get("name") or "-")[:16],
+                      "note": miles(a0.get("distance_mi"), a0.get("direction"))})
+    if not cards and not roads:
+        return
+
+    projects, note, funded = [], None, None
+    if roads:
+        planned = (roads.get("planned") or []) + (roads.get("programmed") or [])
+
+        def yr(p):
+            return _n(_first(p, "let_year", "start_year")) or 9999
+
+        rows = sorted(planned, key=yr)[:10]
+        for p in rows:
+            frm = _first(p, "from", default="") or ""
+            to = _first(p, "to", default="") or ""
+            projects.append({
+                "road": str(_first(p, "roadway", "highway", default="-"))[:16],
+                "work": str(_first(p, "work", "description", default="-"))[:38],
+                "limits": (f"{frm} - {to}".strip(" -") or "-")[:38],
+                "start": num(_first(p, "let_year", "start_year")),
+            })
+        near = _n((roads.get("counts") or {}).get("near_term"))
+        if near:
+            funded = f"{near:,.0f} funded / dated in the next four years"
+        if len(planned) > len(rows):
+            note = (f"{len(planned):,} programmed projects within "
+                    f"{roads.get('radius_mi', '')} mi; nearest-term shown.")
+
+    read = []
+    if cards and cards[0]["label"] == "Nearest freeway":
+        read.append(f"{cards[0]['value']} at {cards[0]['note']} gives a credible regional "
+                    "access story.")
+    if projects:
+        read.append("Programmed capacity work on the surrounding network reinforces the "
+                    "longer-term growth corridor.")
+        read.append("Off-site road obligations and timing should be tied directly into "
+                    "phase-level development underwriting.")
+    r["access"] = {"cards": cards[:4], "projects": projects, "funded_note": funded,
+                   "note": note, "read": read or None, "map": None}
+
+
+AMENITY_GROUPS = [
+    ("Grocery & retail", ("grocery_stores",)),
+    ("Healthcare", ("hospitals",)),
+    ("Pharmacies & parks", ("pharmacies", "parks")),
+    ("Fuel & convenience", ("fuel",)),
+]
+
+
+def _map_amenities(r, am):
+    if not am:
+        return
+    groups = []
+    for title, keys in AMENITY_GROUPS:
+        items = []
+        for k in keys:
+            for x in (am.get(k) or []):
+                if _n(x.get("distance_mi")) is None:
+                    continue
+                items.append({"name": str(x.get("name") or x.get("brand") or "-")[:32],
+                              "distance": miles(x.get("distance_mi"), x.get("direction")),
+                              "_d": _n(x.get("distance_mi"))})
+        items.sort(key=lambda i: i["_d"])
+        if items:
+            groups.append({"title": title, "items": items[:6]})
+    nearest = []
+    for label, key in (("Nearest fuel", "fuel"), ("Nearest pharmacy", "pharmacies"),
+                       ("Nearest grocery", "grocery_stores"),
+                       ("Nearest hospital", "hospitals")):
+        pool = [x for x in (am.get(key) or []) if _n(x.get("distance_mi")) is not None]
+        if pool:
+            x = min(pool, key=lambda i: _n(i["distance_mi"]))
+            nearest.append({"label": label, "value": miles(x["distance_mi"]),
+                            "note": str(x.get("name") or x.get("brand") or "")[:20]})
+    if groups or nearest:
+        r["amenities"] = {"groups": groups, "nearest": nearest[:4]}
+
+
+def _map_news(r, nw):
+    stories = (nw or {}).get("stories") or []
+    if not stories:
+        return
+    r["news"] = [{
+        "headline": str(st.get("title") or "")[:150],
+        "source": str(st.get("source") or "")[:34],
+        "date": str(st.get("published") or "")[:17],
+        "why": None,
+    } for st in stories[:8]]
+
+
+def _map_macro(r, fr):
+    out = []
+    for i in ((fr or {}).get("indicators") or []):
+        d = i.get("data") or {}
+        cur = _n(d.get("current"))
+        if d.get("error") or cur is None:
+            continue
+        fmt = str(i.get("format") or "").lower()
+        if "dollar" in fmt or "usd" in fmt or "$" in fmt:
+            val = money(cur)
+        elif "percent" in fmt or "pct" in fmt or "rate" in fmt:
+            val = pct(cur, dp=2)
+        elif abs(cur) >= 1_000_000:
+            val = f"{cur / 1e6:,.1f}M"
+        else:
+            val = f"{cur:,.1f}" if abs(cur) < 1000 else num(cur)
+        note = []
+        if _n(d.get("yoy_pct")) is not None:
+            note.append(f"YoY {_n(d['yoy_pct']):+,.1f}%")
+        if _n(d.get("five_year_total_pct")) is not None:
+            note.append(f"5Y {_n(d['five_year_total_pct']):+,.1f}%")
+        out.append({"label": str(i.get("label") or i.get("series_id") or "").upper()[:26],
+                    "value": val, "note": "   ".join(note)})
+    if out:
+        r["macro"] = out[:12]
