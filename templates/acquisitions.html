@@ -406,18 +406,24 @@
 <!-- Owner search results — a docked right-hand panel rather than a modal, so the
      map stays visible and the highlighted tracts can be read alongside the list. -->
 <div id="dossier-panel">
+  <!-- Two rows: the name and the close button, then the actions beneath.
+       On one row the four action buttons are nowrap and the title carries
+       min-width:0, so the title lost every pixel of the fight and wrapped one
+       character per line -- "ranc / ho / la / lagu / na". -->
   <div class="dossier-head">
-    <div style="flex:1;min-width:0">
+    <div class="dossier-head-title">
       <div id="dossier-title">Owner research</div>
       <div id="dossier-sub"></div>
     </div>
-    <button id="dossier-show-results" type="button" title="Show the full matching-tract search layer again">Show tracts</button>
-    <button id="dossier-analyze" type="button"
-            title="Run an acquisition analysis over every tract this owner holds, as one project">Analyse all</button>
-    <button id="dossier-related" type="button"
-            title="Other owners mailing to the same address -- stands in for a registered-agent search, which Texas does not publish">Related owners</button>
-    <button id="dossier-zoom" type="button" title="Zoom the map to every matching owner tract">Zoom owner</button>
     <button id="dossier-close" type="button" title="Close">&times;</button>
+    <div class="dossier-head-actions">
+      <button id="dossier-show-results" type="button" title="Show the full matching-tract search layer again">Show tracts</button>
+      <button id="dossier-analyze" type="button"
+              title="Run an acquisition analysis over every tract this owner holds, as one project">Analyse all</button>
+      <button id="dossier-related" type="button"
+              title="Other owners mailing to the same address -- stands in for a registered-agent search, which Texas does not publish">Related owners</button>
+      <button id="dossier-zoom" type="button" title="Zoom the map to every matching owner tract">Zoom owner</button>
+    </div>
   </div>
   <div id="dossier-body">
     <div style="text-align:center;padding:30px;color:#6B7B8B">Searching cached parcels…</div>

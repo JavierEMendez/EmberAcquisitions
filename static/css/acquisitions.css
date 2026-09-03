@@ -799,9 +799,18 @@ a.acq-btn:hover { text-decoration: none; }
                    box-shadow: 0 10px 32px rgba(15,23,42,0.18);
                    z-index: 900; display: none; flex-direction: column; overflow: hidden; }
   #acq-root #dossier-panel.show{ display: flex; }
-  #acq-root #dossier-panel .dossier-head{ display: flex; align-items: flex-start; gap: 8px; padding: 12px 14px;
+  #acq-root #dossier-panel .dossier-head{ display: flex; flex-wrap: wrap; align-items: flex-start;
+                                 gap: 8px; padding: 12px 14px;
                                  border-bottom: 1px solid var(--gray-200); background: var(--ember-blue-900); color: #FFF; }
-  #acq-root #dossier-title{ font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+  /* The name takes the first row with the close button; the actions get a row
+     of their own. Four nowrap buttons beside a min-width:0 title left the name
+     one character wide. */
+  /* basis 0, not auto: on auto the name plus its subtitle claim the whole
+     row and push the close button onto a line of its own. */
+  #acq-root #dossier-panel .dossier-head-title{ flex: 1 1 0; min-width: 0; }
+  #acq-root #dossier-panel .dossier-head-actions{ flex: 1 1 100%; display: flex;
+                                 flex-wrap: wrap; gap: 6px; }
+  #acq-root #dossier-title{ font-size: 14px; font-weight: 700; overflow-wrap: break-word; line-height: 1.25; }
   #acq-root #dossier-sub{ font-size: 11px; color: rgba(255,255,255,0.66); margin-top: 3px; }
   #acq-root #dossier-panel .dossier-head button{ background: rgba(255,255,255,0.12); border: 0; color: #FFF;
                                         border-radius: 4px; cursor: pointer; font-size: 11px; padding: 4px 8px; white-space: nowrap; }
