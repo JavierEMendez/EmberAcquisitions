@@ -4343,6 +4343,7 @@ def acq_api_projects_pdf(pid):
     elevation/market/FRED data live.
     """
     import matplotlib
+    import io
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import matplotlib.patches as mpatches
@@ -4353,7 +4354,7 @@ def acq_api_projects_pdf(pid):
     from reportlab.lib import colors
     from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table,
                                        TableStyle, PageBreak, Image as RLImage,
-                                       KeepTogether)
+                                       KeepTogether, CondPageBreak)
     from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
     from shapely.geometry import shape as shp_shape, mapping as shp_mapping
     from shapely.ops import unary_union
@@ -4720,10 +4721,38 @@ def acq_api_projects_pdf(pid):
     # ============ PAGE 1: COVER ============
     story.append(Spacer(1, 1.4*inch))
     story.append(Paragraph("EMBER ACQUISITIONS", cover_sub))
-    story.append(Spacer(1, 0.3*inch))
+    story.append(Spacer(1, 0.05*inch))
     story.append(Paragraph(proj.get("name", "(unnamed project)"), title_xl))
+    # The map is the single most useful thing on the page, so it is rendered
+    # once here and used on both the cover and the executive summary. The
+    # cover was previously a title over 40% empty sheet.
+    _map_png, _map_err = None, None
+    if proj_union:
+        try:
+            _mb = render_project_map(
+                proj_union,
+                constraint_geoms=analysis.get("constraint_geoms"),
+                tracts_list=proj.get("tracts") or [],
+            )
+            _map_png = _mb.getvalue()
+        except Exception as e:
+            _map_err = e
+
+    _counties = sorted({(t.get("county") or "").strip()
+                        for t in (proj.get("tracts") or []) if t.get("county")})
+    _where = (", ".join(_counties) + (" County" if len(_counties) == 1 else " Counties")
+              ) if _counties else "Texas"
+
     story.append(Paragraph("Acquisition Analysis Summary", cover_sub))
-    story.append(Spacer(1, 0.5*inch))
+    story.append(Paragraph(
+        f'<para alignment="center"><font size=11 color="{GRAY_700}">'
+        f'{_where} &nbsp;·&nbsp; {analysis["gross_acres"]:,.0f} gross acres &nbsp;·&nbsp; '
+        f'{analysis["tract_count"]} tract{"" if analysis["tract_count"] == 1 else "s"}'
+        f'</font></para>', body))
+    if _map_png:
+        story.append(Spacer(1, 0.22*inch))
+        story.append(RLImage(io.BytesIO(_map_png), width=6.4*inch, height=3.3*inch))
+    story.append(Spacer(1, 0.26*inch))
 
     # Headline KPIs (centered)
     #
@@ -4764,23 +4793,17 @@ def acq_api_projects_pdf(pid):
         ('VALIGN',      (0,0), (-1,-1), 'MIDDLE'),
     ]))
     story.append(kt)
-    story.append(Spacer(1, 1.0*inch))
-    story.append(Paragraph(f'<para alignment="center"><font size=10 color="{GRAY_700}">Prepared {datetime.now().strftime("%B %d, %Y")}</font></para>', body))
+    story.append(Spacer(1, 0.42*inch))
+    story.append(Paragraph(f'<para alignment="center"><font size=10 color="{GRAY_700}">Prepared {datetime.now().strftime("%B %d, %Y")} &nbsp;·&nbsp; Ember Group Acquisitions</font><br/><font size=8 color="{GRAY_700}">Confidential — for internal and partner review. Figures are preliminary and derived from public data; verify before underwriting.</font></para>', body))
     story.append(PageBreak())
 
     # ============ PAGE 2: EXECUTIVE SUMMARY (Map + Donut) ============
     story.append(Paragraph("Executive Summary", h1))
 
-    if proj_union:
-        try:
-            map_buf = render_project_map(
-                proj_union,
-                constraint_geoms=analysis.get("constraint_geoms"),
-                tracts_list=proj.get("tracts") or [],
-            )
-            story.append(RLImage(map_buf, width=7.2*inch, height=5.3*inch))
-        except Exception as e:
-            story.append(Paragraph(f"<i>Map render failed: {e}</i>", label))
+    if _map_png:
+        story.append(RLImage(io.BytesIO(_map_png), width=7.2*inch, height=5.3*inch))
+    elif _map_err:
+        story.append(Paragraph(f"<i>Map render failed: {_map_err}</i>", label))
 
     # Side-by-side: donut + key callouts
     try:
@@ -4888,9 +4911,11 @@ def acq_api_projects_pdf(pid):
 
     yield_kpi = Table([
         [
-            Paragraph(f'<para alignment="center"><font size=9 color="{GRAY_700}">TOTAL LOTS</font><br/><br/>'
-                       f'<font size=42 color="{EMBER_ORANGE}"><b>{total_lots:,}</b></font>'
-                       f'<br/><font size=10 color="{GRAY_700}">across {len(breakdown)} product type{"s" if len(breakdown)!=1 else ""} · {weighted_density} u/ac weighted</font></para>', body),
+            [Paragraph("TOTAL LOTS", _kpi_lbl),
+             Paragraph(f'<font size=42 color="{EMBER_ORANGE}"><b>{total_lots:,}</b></font>',
+                       ParagraphStyle("yieldBig", parent=_kpi_val, fontSize=42, leading=48)),
+             Paragraph(f'across {len(breakdown)} product type{"s" if len(breakdown)!=1 else ""}'
+                       f' · {weighted_density} u/ac weighted', _kpi_sub)],
         ]
     ], colWidths=[6.8*inch], rowHeights=[1.8*inch])
     yield_kpi.setStyle(TableStyle([
@@ -4952,7 +4977,8 @@ def acq_api_projects_pdf(pid):
         ('ALIGN',      (0,0), (-1,-1), 'CENTER'),
     ]))
     story.append(st)
-    story.append(PageBreak())
+    story.append(CondPageBreak(3.2*inch))
+    story.append(Spacer(1, 0.18*inch))
 
     # ============ PAGE 5: ELEVATION / TOPOGRAPHY ============
     if elev_data and not elev_data.get("error"):
@@ -4975,11 +5001,16 @@ def acq_api_projects_pdf(pid):
             slope_label = "significant relief — natural drainage; verify floodplain on low side"
             slope_color = WARN_RED
 
+        # Same overlap the cover had: an 18pt figure inside a paragraph
+        # whose leading is set for 9pt text, so the label printed through it.
         elev_kpi = Table([
             [
-                Paragraph(f'<para alignment="center"><font size=9 color="{GRAY_700}">ELEVATION RANGE</font><br/><font size=18 color="{EMBER_BLUE}"><b>{rng_ft:.0f} ft</b></font><br/><font size=8 color="{GRAY_700}">{elev_data.get("min_ft",0):.0f} – {elev_data.get("max_ft",0):.0f} ft</font></para>', body),
-                Paragraph(f'<para alignment="center"><font size=9 color="{GRAY_700}">MEAN SLOPE</font><br/><font size=18 color="{slope_color}"><b>{slope_mean:.2f}%</b></font><br/><font size=8 color="{GRAY_700}">max {slope_max:.2f}%</font></para>', body),
-                Paragraph(f'<para alignment="center"><font size=9 color="{GRAY_700}">DRAINAGE</font><br/><font size=14 color="{EMBER_BLUE}"><b>{drainage}</b></font></para>', body),
+                _kpi("Elevation range", f"{rng_ft:.0f} ft",
+                     f'{elev_data.get("min_ft",0):.0f} - {elev_data.get("max_ft",0):.0f} ft',
+                     EMBER_BLUE),
+                _kpi("Mean slope", f"{slope_mean:.2f}%",
+                     f"max {slope_max:.2f}%", slope_color),
+                _kpi("Drainage", drainage, "fall direction", EMBER_BLUE),
             ]
         ], colWidths=[2.3*inch]*3, rowHeights=[1.0*inch])
         elev_kpi.setStyle(TableStyle([
@@ -5024,8 +5055,11 @@ def acq_api_projects_pdf(pid):
                 ll = elev_data.get("lowest_latlon")
                 if hl: axm.plot(hl[1], hl[0], 'r^', markersize=10, markeredgecolor='white', markeredgewidth=1)
                 if ll: axm.plot(ll[1], ll[0], 'bv', markersize=10, markeredgecolor='white', markeredgewidth=1)
-                axm.set_xlabel("Longitude", fontsize=8, color=GRAY_700)
-                axm.set_ylabel("Latitude", fontsize=8, color=GRAY_700)
+                # Degree axes on an aerial read as a plotting artefact; the
+                # colour bar already carries the only scale that matters here.
+                axm.set_xticks([]); axm.set_yticks([])
+                axm.set_xlabel("", fontsize=8, color=GRAY_700)
+                axm.set_ylabel("", fontsize=8, color=GRAY_700)
                 axm.tick_params(labelsize=7, colors=GRAY_700)
                 cbar = figmap.colorbar(im, ax=axm, shrink=0.85)
                 cbar.set_label("Elevation (ft)", fontsize=8, color=GRAY_700)
@@ -5043,10 +5077,16 @@ def acq_api_projects_pdf(pid):
             ew = elev_data.get("ew_profile") or []
             if ns and ew:
                 figcross, (ax_ns, ax_ew) = plt.subplots(1, 2, figsize=(7.0, 2.3), dpi=150)
-                ns_x = [p.get("distance_ft", 0) for p in ns]
+                # `frac` is the position along the transect; distance_ft
+                # was never in the payload, so reading it put every point at
+                # zero and drew a single vertical line.
+                _ns_span = float(elev_data.get("ns_span_ft") or 0)
+                _ew_span = float(elev_data.get("ew_span_ft") or 0)
+                ns_x = [float(p.get("frac", 0)) * (_ns_span or 1.0) for p in ns]
                 ns_y = [p.get("elev_ft") for p in ns]
-                ew_x = [p.get("distance_ft", 0) for p in ew]
+                ew_x = [float(p.get("frac", 0)) * (_ew_span or 1.0) for p in ew]
                 ew_y = [p.get("elev_ft") for p in ew]
+                _unit = "ft" if _ns_span else "position (0-1)"
                 ax_ns.fill_between(ns_x, ns_y, color=EMBER_ORANGE, alpha=0.20)
                 ax_ns.plot(ns_x, ns_y, color=EMBER_ORANGE, linewidth=1.5)
                 ax_ns.set_title("North–South cross-section", fontsize=9, color=EMBER_BLUE, fontweight="bold")
@@ -5054,8 +5094,14 @@ def acq_api_projects_pdf(pid):
                 ax_ew.plot(ew_x, ew_y, color=EMBER_BLUE, linewidth=1.5)
                 ax_ew.set_title("East–West cross-section", fontsize=9, color=EMBER_BLUE, fontweight="bold")
                 for ax in (ax_ns, ax_ew):
-                    ax.set_xlabel("Distance (ft)", fontsize=7, color=GRAY_700)
+                    ax.set_xlabel(f"Distance ({_unit})", fontsize=7, color=GRAY_700)
                     ax.set_ylabel("Elevation (ft)", fontsize=7, color=GRAY_700)
+                    # Elevation range is tens of feet on a site thousands wide;
+                    # a zero-based y-axis flattens every profile into a line.
+                    _yy = [v for v in (ns_y + ew_y) if v is not None]
+                    if _yy and max(_yy) > min(_yy):
+                        _pad = (max(_yy) - min(_yy)) * 0.15
+                        ax.set_ylim(min(_yy) - _pad, max(_yy) + _pad)
                     ax.tick_params(labelsize=7, colors=GRAY_700)
                     ax.grid(True, linestyle=":", color=GRAY_300, linewidth=0.5)
                     for spine in ["top", "right"]: ax.spines[spine].set_visible(False)
@@ -5163,7 +5209,8 @@ def acq_api_projects_pdf(pid):
             story.append(Spacer(1, 10))
             for c in caveats:
                 story.append(Paragraph(f"<i>• {c}</i>", label))
-        story.append(PageBreak())
+        story.append(CondPageBreak(3.4*inch))
+        story.append(Spacer(1, 0.2*inch))
 
     # ============ PAGE 6: MARKET CONTEXT ============
     if market_data and not market_data.get("error"):
@@ -5264,7 +5311,8 @@ def acq_api_projects_pdf(pid):
             ('PADDING',    (0,0), (-1,-1), 5),
         ]))
         story.append(t)
-        story.append(PageBreak())
+        story.append(CondPageBreak(3.4*inch))
+        story.append(Spacer(1, 0.2*inch))
 
     # ============ PAGE 7: TRACT ROSTER ============
     story.append(Paragraph("Tracts in this Project", h1))
@@ -5862,6 +5910,11 @@ def acq_api_elevation_profile(geometry=None):
         "contours":            contours,
         "ns_profile":          ns_profile,
         "ew_profile":          ew_profile,
+        # Transect lengths, so a profile point's `frac` can be drawn against
+        # real distance. Without these the PDF's cross-sections had nothing to
+        # scale by and silently collapsed to a spike at zero.
+        "ns_span_ft":          round(float((maxy - miny) * lat_to_ft), 1),
+        "ew_span_ft":          round(float((maxx - minx) * lon_to_ft), 1),
         "histogram":           histogram,
         # legacy (back-compat — drop later)
         "grid": [[None if np.isnan(Z[i, j]) else round(float(Z[i, j]), 1)
