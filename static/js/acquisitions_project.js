@@ -473,6 +473,11 @@ document.getElementById('btn-summary-pdf')?.addEventListener('click', () => {
 // a real progress state -- the report draws a satellite map and several charts
 // and takes a few seconds -- and so a failure surfaces as a readable message
 // instead of a browser tab containing raw JSON.
+(() => {
+  const a = document.getElementById('lnk-report-debug');
+  if (a) a.href = `/acquisitions/project/${encodeURIComponent(PROJECT_ID)}/report`;
+})();
+
 document.getElementById('btn-exec-pdf')?.addEventListener('click', async (ev) => {
   const btn = ev.currentTarget;
   const label = btn.textContent;
