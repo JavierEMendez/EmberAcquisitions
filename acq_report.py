@@ -1495,7 +1495,7 @@ def _map_access(r, roads, am, roads_map=None):
         used = SECTION_CHROME_PT + KPI_ROW_PT + CARD_CHROME_PT + 3 * READ_LINE_PT
         if roads_map:
             used += _image_pt(7.4, 3.4)
-        rows = sorted(planned, key=yr)[:max(8, _rows_that_fit(used, 10, min_rows=8))]
+        rows = sorted(planned, key=yr)[:max(6, _rows_that_fit(used, 12, min_rows=6))]
         for p in rows:
             frm = _first(p, "from", default="") or ""
             to = _first(p, "to", default="") or ""

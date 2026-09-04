@@ -268,7 +268,7 @@
 
 {# ══════════════ 3 · SITE & DEVELOPMENT POTENTIAL ══════════════ #}
 {% if r.bridge %}
-<div class="page-break hard"></div>
+<div class="page-break"></div>
 <div class="sec-head">
 {{ header('Site & Development Potential') }}
 <div class="sec-title">1. Site &amp; Development Potential</div>
@@ -553,6 +553,9 @@
   {% for c in r.access.cards %}{{ kpi(c.label, c.value, note=c.note) }}{% endfor %}
 </div>
 
+{% if r.access.map %}
+<div class="card" style="padding:7pt"><img class="map" src="{{ r.access.map }}" alt="Road projects"></div>
+{% endif %}
 {% if r.access.projects %}
 <div class="card flush">
   <div class="card-t" style="padding:12pt 13pt 9pt;margin:0">
@@ -568,9 +571,6 @@
 </div>
 {% endif %}
 
-{% if r.access.map %}
-<div class="card" style="padding:7pt"><img class="map" src="{{ r.access.map }}" alt="Road projects"></div>
-{% endif %}
 
 {% if r.access.read %}
 <div class="card read">
