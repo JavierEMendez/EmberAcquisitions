@@ -246,27 +246,7 @@
 </div>
 {% endif %}
 
-{% if r.factors %}
-<div class="card">
-  <div class="card-t">Screening factors</div>
-  {% for f in r.factors %}
-  <div class="fact">
-    <div class="fact-l">{{ f.label }}</div>
-    <div class="fact-v {{ f.tone }}">{{ f.verdict }}</div>
-    <div class="fact-n">{{ f.note }}</div>
-  </div>
-  {% endfor %}
-</div>
-{% endif %}
 
-{% if r.diligence %}
-<div class="card">
-  <div class="card-t">Key diligence questions</div>
-  {% for d in r.diligence %}
-  <div class="dq"><div class="dq-n">{{ loop.index }}</div><div class="dq-t">{{ d }}</div></div>
-  {% endfor %}
-</div>
-{% endif %}
 
 {% if r.tracts and r.tracts|length > 1 %}
 <div class="card flush">

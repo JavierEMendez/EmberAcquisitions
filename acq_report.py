@@ -554,45 +554,66 @@ def render_quarter_chart(quarters, width_in=6.9):
     return _fig_to_uri(fig, dpi=170, pad=0.02)
 
 
-def render_enrollment_chart(trend, width_in=6.9):
-    """District enrolment history, with the figure called out every five years.
+def render_enrollment_chart(series, width_in=6.9):
+    """District enrolment history. Takes one series or several.
 
-    The app's own chart labels 1990, 1995, 2000 ... and the latest year; the
-    PDF was labelling only the final point, so the reader could see a rising
-    line but not what it rose from. The callouts are the migration story.
+    A tract on a district line belongs to both, so both trajectories matter --
+    charting only the larger one told half the story. Each district gets its
+    own line; the callouts stay on the largest so two sets of labels do not
+    collide.
+
+    `series` is a list of (name, trend) pairs; a bare trend list is accepted
+    for the single-district case.
     """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    pts = [(p.get("year"), _n(p.get("enrollment"))) for p in (trend or [])]
-    pts = sorted([(int(y), e) for y, e in pts if y and e])
-    if len(pts) < 3:
-        return None
-    xs = [p[0] for p in pts]
-    ys = [p[1] for p in pts]
-    fig, ax = plt.subplots(figsize=(width_in, 1.7), dpi=170)
-    fig.patch.set_facecolor("white")
-    ax.fill_between(xs, ys, color=ORANGE, alpha=0.13)
-    ax.plot(xs, ys, color=ORANGE, linewidth=1.6, zorder=3)
-    ax.scatter(xs, ys, s=5, color=NAVY, zorder=4)
-
-    # Label the first year, the last, and every fifth in between -- but only
-    # when there is room, so a long series does not turn into a wall of text.
-    first, last = xs[0], xs[-1]
-    marks = [i for i, y in enumerate(xs)
-             if y == first or y == last or (y % 5 == 0 and last - y >= 3)]
-    if len(marks) > 9:
-        marks = [i for i in marks if xs[i] % 10 == 0 or xs[i] in (first, last)]
-    for i in marks:
-        end = xs[i] in (first, last)
-        ax.annotate(f"{ys[i]:,.0f}", (xs[i], ys[i]), textcoords="offset points",
-                    xytext=(0, 7), ha="center", fontsize=6.6,
-                    fontweight="bold" if end else "normal",
-                    color=ORANGE if end else NAVY, zorder=6)
-    ax.scatter([xs[-1]], [ys[-1]], s=26, color=ORANGE, zorder=7)
-
-    ax.set_ylim(min(ys) * 0.88, max(ys) * 1.16)
     from matplotlib.ticker import FuncFormatter
+
+    if series and isinstance(series[0], dict):        # a bare trend
+        series = [(None, series)]
+    cleaned = []
+    for name, trend in (series or []):
+        pts = sorted([(int(y), e) for y, e in
+                      ((p.get("year"), _n(p.get("enrollment"))) for p in (trend or []))
+                      if y and e])
+        if len(pts) >= 3:
+            cleaned.append((name, pts))
+    if not cleaned:
+        return None
+    cleaned.sort(key=lambda t: -t[1][-1][1])          # largest district first
+
+    fig, ax = plt.subplots(figsize=(width_in, 1.85), dpi=170)
+    fig.patch.set_facecolor("white")
+    colours = [ORANGE, BLUE, GREEN]
+    all_y = []
+    for idx, (name, pts) in enumerate(cleaned):
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        all_y += ys
+        col = colours[idx % len(colours)]
+        if idx == 0:
+            ax.fill_between(xs, ys, color=col, alpha=0.13)
+        ax.plot(xs, ys, color=col, linewidth=1.6, zorder=3, label=(name or None))
+        ax.scatter([xs[-1]], [ys[-1]], s=24, color=col, zorder=7)
+        if idx == 0:
+            first, last = xs[0], xs[-1]
+            marks = [i for i, y in enumerate(xs)
+                     if y in (first, last) or (y % 5 == 0 and last - y >= 3)]
+            if len(marks) > 9:
+                marks = [i for i in marks if xs[i] % 10 == 0 or xs[i] in (first, last)]
+            for i in marks:
+                end = xs[i] in (first, last)
+                ax.annotate(f"{ys[i]:,.0f}", (xs[i], ys[i]),
+                            textcoords="offset points", xytext=(0, 7), ha="center",
+                            fontsize=6.6, fontweight="bold" if end else "normal",
+                            color=col if end else NAVY, zorder=6)
+        else:
+            ax.annotate(f"{ys[-1]:,.0f}", (xs[-1], ys[-1]),
+                        textcoords="offset points", xytext=(0, -11), ha="right",
+                        fontsize=6.6, fontweight="bold", color=col, zorder=6)
+
+    ax.set_ylim(min(all_y) * 0.82, max(all_y) * 1.16)
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.0f}"))
     ax.tick_params(labelsize=6.8, colors=GREY)
     ax.grid(axis="y", linestyle=":", color=GREY_LINE, linewidth=0.6)
@@ -600,6 +621,8 @@ def render_enrollment_chart(trend, width_in=6.9):
     for sp in ("top", "right", "left"):
         ax.spines[sp].set_visible(False)
     ax.spines["bottom"].set_color(GREY_LINE)
+    if len(cleaned) > 1:
+        ax.legend(fontsize=6.6, frameon=False, ncol=len(cleaned), loc="upper left")
     fig.tight_layout(pad=0.4)
     return _fig_to_uri(fig, dpi=170, pad=0.02)
 
@@ -655,48 +678,6 @@ def _mos_of(r):
     if v in (None, "", "-"):
         return None
     return _n(str(v).replace(",", ""))
-
-
-def _factors(r, a, data):
-    """Screening verdicts: development potential, demand, competition, growth."""
-    out = []
-    conv = _n(a.get("net_saleable_pct"))
-    if conv is not None:
-        v, t = (("STRONG", "v-strong") if conv >= 60 else
-                ("MODERATE", "v-mod") if conv >= 40 else ("CONSTRAINED", "v-risk"))
-        fl = next((d for d in (a.get("netout_detail") or [])
-                   if d.get("key") == "flood"), {})
-        note = ("floodplain drives efficiency" if (_n(fl.get("acres")) or 0) > 0
-                else f"{conv:,.1f}% conversion")
-        out.append({"label": "Development potential", "verdict": v, "tone": t,
-                    "note": note})
-
-    cb = data.get("cbas") or {}
-    starts = _n(cb.get("ring_annual_starts")) or _n(
-        (cb.get("aggregate") or {}).get("annual_starts"))
-    if starts is not None:
-        v, t = (("STRONG", "v-strong") if starts >= 800 else
-                ("MODERATE", "v-mod") if starts >= 250 else ("THIN", "v-risk"))
-        out.append({"label": "Market demand", "verdict": v, "tone": t,
-                    "note": f"{starts:,.0f} annual starts"})
-
-    mos = _mos_of(r)
-    if mos is not None:
-        v, t = (("LOW", "v-strong") if mos < 12 else
-                ("MODERATE", "v-mod") if mos < 20 else ("MOD-HIGH", "v-risk"))
-        out.append({"label": "Competitive risk", "verdict": v, "tone": t,
-                    "note": f"{mos:,.1f} mos. lot supply"})
-
-    sd = r.get("schools") or {}
-    g = (sd.get("growth") or [{}])[0]
-    if g.get("value"):
-        p = _n(str(g["value"]).strip("+%")) or 0
-        v, t = (("STRONG", "v-strong") if p >= 15 else
-                ("STEADY", "v-mod") if p >= 4 else ("FLAT", "v-risk"))
-        name = str(sd.get("district") or "").title().replace(" Isd", " ISD")
-        out.append({"label": "Growth / schools", "verdict": v, "tone": t,
-                    "note": f"{name} {g['value']} / 5 yr".strip()})
-    return out
 
 
 def _inline_name(name):
@@ -1033,7 +1014,6 @@ def build_context(proj, analysis, data=None, elevation=None):
         }
 
     r["next_steps"] = NEXT_STEPS
-    r["diligence"] = NEXT_STEPS[:4]
 
     # Each section is mapped in isolation. One upstream payload shaped
     # differently than expected should cost its own page, not the whole
@@ -1065,7 +1045,6 @@ def build_context(proj, analysis, data=None, elevation=None):
     # single risk -- schools, demographics, access and the market read were all
     # sitting there unused.
     r["thesis"] = _thesis(r, a, data)
-    r["factors"] = _factors(r, a, data)
     r["why_works"] = _positives(r, a, data)
     r["what_breaks"] = _risks(r, a, data)
     r["dev_read"] = _site_read(r, a)
@@ -1404,11 +1383,12 @@ def _map_schools(r, sd):
     if not payloads:
         return
 
-    blocks, campuses = [], []
+    blocks, per_district = [], []
     for p in payloads:
         blk = _district_block(p)
+        mine = []
         for c in (p.get("schools") or []):
-            campuses.append({
+            mine.append({
                 "name": str(c.get("name") or "-")[:28],
                 "district": blk["district"].title().replace(" Isd", " ISD"),
                 "tea": str(c.get("tea_rating") or "Not rated")[:12],
@@ -1417,26 +1397,28 @@ def _map_schools(r, sd):
                 "distance": miles(c.get("distance_mi"), c.get("direction")),
                 "_d": _n(c.get("distance_mi")) or 999.0,
             })
+        mine.sort(key=lambda c: c["_d"])
+        per_district.append((blk, mine))
         if (_substantial(blk["enrollment"], blk["school_count"], blk["teachers"],
                          blk["ratio"], blk["rating"], need=2) or blk["growth"]):
             blocks.append(blk)
+
+    # Take the nearest few from EACH district before merging. A plain distance
+    # sort filled all ten rows with the nearer district, so the second one
+    # vanished from a table that names it in its own column.
+    per = 6 if len(per_district) > 1 else 10
+    campuses = [c for _, mine in per_district for c in mine[:per]]
+    campuses.sort(key=lambda c: c["_d"])
     if not blocks and not campuses:
         return
-
     blocks.sort(key=lambda b: -b["_enrol"])
-    campuses.sort(key=lambda c: c["_d"])
-    primary = payloads[0]
-    if blocks:
-        primary = next((p for p in payloads
-                        if str(p.get("name") or "").upper() == blocks[0]["district"]),
-                       payloads[0])
-
     out = dict(blocks[0]) if blocks else {}
     out.update({
         "others": blocks[1:],
         "multi": len(blocks) > 1,
-        "trend_chart": render_enrollment_chart(primary.get("enrollment_trend")),
-        "campuses": campuses[:10],
+        "trend_chart": render_enrollment_chart(
+            [(str(p.get("name") or ""), p.get("enrollment_trend")) for p in payloads]),
+        "campuses": campuses[:12],
     })
     r["schools"] = out
 
