@@ -139,7 +139,23 @@
   .pair:last-child { border-bottom: 0; }
   .pair .p-l { color: #4C6172; } .pair .p-v { font-weight: 700; color: #13344E; }
 
-  .page-break { break-before: page; }
+  /* Sections FLOW.
+     Forcing a page before every section meant any section that overran by an
+     inch pushed its tail onto a fresh sheet, and the next section then forced
+     another break -- so the tail page sat 16-25% full. Three rounds of
+     trimming to fit did not hold, because the budget is an estimate of
+     WeasyPrint's box model rather than a measurement of it.
+     Flowing removes the failure mode entirely: an overrun costs an inch of the
+     next page instead of a whole one. Cards and rows still never split, and a
+     heading is glued to what follows it, so nothing lands awkwardly.
+     Only the cover and the executive page get a real break -- those two are
+     read as pages in their own right. */
+  .page-break { break-before: auto; margin-top: 16pt; }
+  .page-break.hard { break-before: page; margin-top: 0; }
+
+  /* Never leave a section title, or a card title, stranded at a page foot. */
+  .sec-title, .sec-sub, .card-t, .eyebrow { break-after: avoid; }
+  .card, .kpis { break-before: avoid; }
 </style>
 </head>
 <body>
@@ -196,7 +212,7 @@
 
 
 {# ══════════════ 2 · EXECUTIVE VIEW ══════════════ #}
-<div class="page-break"></div>
+<div class="page-break hard"></div>
 {{ header('Executive Investment View') }}
 <div class="sec-title">{{ r.project.name_upper }}</div>
 <div class="sec-sub">{{ r.project.location }}{% if r.kpi.gross %} &nbsp;|&nbsp; {{ r.kpi.gross }} gross{% endif %}</div>
@@ -257,7 +273,7 @@
 
 {# ══════════════ 3 · SITE & DEVELOPMENT POTENTIAL ══════════════ #}
 {% if r.bridge %}
-<div class="page-break"></div>
+<div class="page-break hard"></div>
 {{ header('Site & Development Potential') }}
 <div class="sec-title">1. Site &amp; Development Potential</div>
 <div class="sec-sub">Physical constraints, developable efficiency and preliminary lot yield</div>

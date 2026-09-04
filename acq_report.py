@@ -1114,10 +1114,15 @@ def _map_market(r, cb):
     if ctx.get("quarterly_chart"):
         used += _image_pt(6.9, 1.45)   # a shorter chart buys three table rows
     used += CARD_CHROME_PT + 3 * READ_LINE_PT          # the market read
+    # With sections flowing, a table that runs past the page foot costs an inch
+    # of the next one rather than a whole sheet, so the budget is a floor for
+    # readability rather than a hard ceiling. Depth matters more than tidiness
+    # here: a six-row builder table says little about a 36-builder market.
     per_table = max(0.0, (PAGE_PT - used) / 2.0)
-    n_rows = max(3, int((per_table - TABLE_CHROME_PT) // TABLE_ROW_PT))
+    n_rows = int((per_table - TABLE_CHROME_PT) // TABLE_ROW_PT)
+    n_rows = max(6, min(9, n_rows))
     ctx["lot_bands"] = sorted(bands, key=lambda x: -x["_sort"])[:n_rows]
-    ctx["_row_budget"] = n_rows
+    ctx["_row_budget"] = max(8, n_rows)
 
     blds = []
     for b in (cb.get("builders") or []):
@@ -1204,7 +1209,8 @@ def _map_comps(r, cb, comp_map=None):
     used = SECTION_CHROME_PT + KPI_ROW_PT + CARD_CHROME_PT + READ_LINE_PT * 2
     if comp_map:
         used += _image_pt(7.4, 3.6)
-    n_rows = _rows_that_fit(used, 12, min_rows=6)
+    # The competitive set is the point of this page; show it properly.
+    n_rows = max(12, _rows_that_fit(used, 14, min_rows=12))
 
     rows = []
     for c in live[:n_rows]:
@@ -1278,7 +1284,7 @@ def _map_schools(r, sd):
     score = _n(tea.get("overall_score"))
     campuses = []
     for c in sorted((sd.get("schools") or []),
-                    key=lambda x: _n(x.get("distance_mi")) or 999.0)[:8]:
+                    key=lambda x: _n(x.get("distance_mi")) or 999.0)[:10]:
         campuses.append({
             "name": str(c.get("name") or "-")[:30],
             "tea": str(c.get("tea_rating") or "Not rated")[:12],
@@ -1379,7 +1385,7 @@ def _map_access(r, roads, am, roads_map=None):
         used = SECTION_CHROME_PT + KPI_ROW_PT + CARD_CHROME_PT + 3 * READ_LINE_PT
         if roads_map:
             used += _image_pt(7.4, 3.4)
-        rows = sorted(planned, key=yr)[:_rows_that_fit(used, 10, min_rows=4)]
+        rows = sorted(planned, key=yr)[:max(8, _rows_that_fit(used, 10, min_rows=8))]
         for p in rows:
             frm = _first(p, "from", default="") or ""
             to = _first(p, "to", default="") or ""
@@ -1435,7 +1441,7 @@ def _map_amenities(r, am):
             # NOT "items": in Jinja, `group.items` resolves to dict.items --
             # the bound method -- before it falls back to the key, and the
             # template then tries to iterate a builtin_function_or_method.
-            groups.append({"title": title, "places": items[:5]})
+            groups.append({"title": title, "places": items[:6]})
     nearest = []
     for label, key in (("Nearest fuel", "fuel"), ("Nearest pharmacy", "pharmacies"),
                        ("Nearest grocery", "grocery_stores"),
@@ -1562,7 +1568,7 @@ def _map_news(r, nw):
             "date": (when.strftime("%b %Y") if when else ""),
             "why": why,
         })
-        if len(r["news"]) >= 5:
+        if len(r["news"]) >= 6:
             break
 
 
