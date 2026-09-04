@@ -396,6 +396,76 @@ def render_competitor_map(center, communities, radius_mi=None, width_in=7.4):
     return _fig_to_uri(fig, dpi=170, pad=0.0)
 
 
+def render_roads_map(center, projects, site_geom=None, radius_mi=None, width_in=7.4):
+    """Programmed roadway work around the site, coloured by how soon it lets.
+
+    The table gives the roadway names; the map is what shows whether the
+    investment actually surrounds this site or sits on the far side of the
+    county. Projects with no let year are drawn faintly rather than dropped --
+    unfunded capacity work is still context.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import datetime as _dt
+
+    lines = []
+    for p in (projects or []):
+        g = p.get("geometry") or {}
+        if g.get("type") != "LineString" or not g.get("coordinates"):
+            continue
+        lines.append((p, [c for c in g["coordinates"] if len(c) >= 2]))
+    if not lines or not center or not center.get("lat"):
+        return None
+    clon, clat = float(center["lon"]), float(center["lat"])
+
+    xs = [c[0] for _, cs in lines for c in cs] + [clon]
+    ys = [c[1] for _, cs in lines for c in cs] + [clat]
+    bounds = _padded_bounds((min(xs), min(ys), max(xs), max(ys)), 0.05)
+    figsize = _geo_figsize(bounds, target_w=width_in, min_h=3.0, max_h=4.4)
+    fig, ax = plt.subplots(figsize=figsize, dpi=170)
+    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    ax.set_position([0, 0, 1, 1])
+    ax.set_facecolor("#EEF1F4")
+    ax.set_aspect("equal")
+    bounds = _fit_bounds_to_figure(ax, bounds, figsize)
+    _esri_basemap(ax, bounds, "topo")
+
+    this_year = _dt.date.today().year
+    seen = {}
+    for p, cs in lines:
+        yr = _n(p.get("let_year"))
+        if yr is None:
+            colour, lw, alpha, lab = GREY, 1.1, 0.55, "Unscheduled"
+        elif yr <= this_year + 4:
+            colour, lw, alpha, lab = ORANGE, 2.4, 0.95, "Lets within 4 years"
+        else:
+            colour, lw, alpha, lab = BLUE, 1.7, 0.8, "Later horizon"
+        ax.plot([c[0] for c in cs], [c[1] for c in cs], color=colour,
+                linewidth=lw, alpha=alpha, solid_capstyle="round", zorder=5)
+        seen[lab] = colour
+
+    if site_geom is not None:
+        _draw_geom(ax, site_geom, face=ORANGE, edge=ORANGE, alpha=0.35, lw=1.4, z=8)
+    ax.scatter([clon], [clat], s=150, marker="*", c=ORANGE, edgecolors="#FFFFFF",
+               linewidths=1.0, zorder=9)
+    ax.annotate("SITE", (clon, clat), textcoords="offset points", xytext=(0, -13),
+                ha="center", fontsize=7, fontweight="bold", color="#FFFFFF", zorder=10,
+                bbox=dict(boxstyle="round,pad=0.22", facecolor=NAVY_DEEP, edgecolor="none"))
+
+    _strip_axes(ax)
+    _north_arrow(ax)
+    _scale_bar(ax, bounds)
+    if seen:
+        from matplotlib.lines import Line2D
+        ax.legend(handles=[Line2D([], [], color=c, lw=2.4, label=l)
+                           for l, c in seen.items()],
+                  loc="lower right", fontsize=6.8, frameon=True,
+                  facecolor="#FFFFFFEE", edgecolor=GREY_LINE,
+                  borderpad=0.5).set_zorder(63)
+    return _fig_to_uri(fig, dpi=170, pad=0.0)
+
+
 # ---------------------------------------------------------------------------
 # Formatting — one place, so "1,064.7 ac" and "$326,881" look the same
 # everywhere and a missing value never prints as None, NaN or undefined.
@@ -919,7 +989,8 @@ def build_context(proj, analysis, data=None, elevation=None):
         ("competition", _map_comps, (data.get("cbas"), data.get("comp_map"))),
         ("schools", _map_schools, (data.get("schools"),)),
         ("demographics", _map_demographics, (data.get("market"),)),
-        ("access", _map_access, (data.get("roads"), data.get("amenities"))),
+        ("access", _map_access, (data.get("roads"), data.get("amenities"),
+                                 data.get("roads_map"))),
         ("amenities", _map_amenities, (data.get("amenities"),)),
         ("news", _map_news, (data.get("news"),)),
         ("macro", _map_macro, (data.get("fred"),)),
@@ -1247,7 +1318,7 @@ def _map_demographics(r, mk):
         }
 
 
-def _map_access(r, roads, am):
+def _map_access(r, roads, am, roads_map=None):
     am = am or {}
     cards = []
     hw = [h for h in (am.get("highways") or []) if _n(h.get("distance_mi")) is not None]
@@ -1277,7 +1348,12 @@ def _map_access(r, roads, am):
         def yr(p):
             return _n(_first(p, "let_year", "start_year")) or 9999
 
-        rows = sorted(planned, key=yr)[:10]
+        # Budget the sheet: three access cards, the read block, and the map
+        # when there is one. The table takes what is left.
+        used = SECTION_CHROME_PT + KPI_ROW_PT + CARD_CHROME_PT + 3 * READ_LINE_PT
+        if roads_map:
+            used += _image_pt(7.4, 3.4)
+        rows = sorted(planned, key=yr)[:_rows_that_fit(used, 10, min_rows=4)]
         for p in rows:
             frm = _first(p, "from", default="") or ""
             to = _first(p, "to", default="") or ""
@@ -1304,7 +1380,7 @@ def _map_access(r, roads, am):
         read.append("Off-site road obligations and timing should be tied directly into "
                     "phase-level development underwriting.")
     r["access"] = {"cards": cards[:4], "projects": projects, "funded_note": funded,
-                   "note": note, "read": read or None, "map": None}
+                   "note": note, "read": read or None, "map": roads_map}
 
 
 AMENITY_GROUPS = [

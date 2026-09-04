@@ -4450,6 +4450,18 @@ def _build_report_context(pid):
     except Exception as e:
         print(f"[report] competitor map failed: {e}", flush=True)
 
+    # Regional roadway map. The table names the projects; the map is what
+    # shows whether the investment surrounds this site or sits across the
+    # county.
+    try:
+        rd = data.get("roads") or {}
+        projs = (rd.get("planned") or []) + (rd.get("programmed") or [])
+        if projs and rd.get("center"):
+            data["roads_map"] = acq_report.render_roads_map(
+                rd["center"], projs, radius_mi=rd.get("radius_mi"))
+    except Exception as e:
+        print(f"[report] roads map failed: {e}", flush=True)
+
     ctx = acq_report.build_context(proj, analysis, data,
                                    (analysis.get("elevation") or None))
 
