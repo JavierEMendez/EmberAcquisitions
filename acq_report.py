@@ -1173,6 +1173,35 @@ def _map_market(r, cb):
     r["market"] = ctx
 
 
+def _lot_range(c):
+    """Lot widths as a range, not the dict the payload actually carries.
+
+    lot_type_range is {"min": .., "max": ..}; printing it produced literal
+    "{'max': 65," in the table. Values above 200 are square footage rather
+    than frontage and are left out.
+    """
+    v = c.get("lot_type_range")
+    if isinstance(v, dict):
+        lo, hi = _n(v.get("min")), _n(v.get("max"))
+        lo = lo if (lo and lo < 200) else None
+        hi = hi if (hi and hi < 200) else None
+        if lo and hi and lo != hi:
+            return f"{lo:,.0f}-{hi:,.0f}"
+        if lo or hi:
+            return f"{(lo or hi):,.0f}"
+        return "-"
+    if isinstance(v, (list, tuple, set)):
+        nums = sorted({int(x) for x in v if _n(x) and _n(x) < 200})
+        return (f"{nums[0]}-{nums[-1]}" if len(nums) > 1 else
+                (str(nums[0]) if nums else "-"))
+    ff = c.get("lot_types_ff")
+    if isinstance(ff, (list, tuple, set)):
+        nums = sorted({int(x) for x in ff if _n(x) and _n(x) < 200})
+        return (f"{nums[0]}-{nums[-1]}" if len(nums) > 1 else
+                (str(nums[0]) if nums else "-"))
+    return str(v or "-")[:12]
+
+
 def _map_comps(r, cb, comp_map=None):
     """The competitive set, with the dead entries left out.
 
@@ -1217,12 +1246,17 @@ def _map_comps(r, cb, comp_map=None):
         bl = c.get("builders")
         if isinstance(bl, (list, set, tuple)):
             bl = ", ".join(sorted(str(x) for x in bl)[:2])
+        # A community with two closings a year and a hundred finished lots
+        # computes to hundreds of months. That is arithmetic, not a market
+        # signal, and it made "highest MOS 374.2" the headline figure.
         mos = _n(c.get("months_lot_supply"))
+        if mos is not None and mos > 120:
+            mos = None
         rows.append({
             "name": str(c.get("name") or "-")[:26],
             "distance": miles(c.get("distance_mi"), c.get("direction")),
             "builders": (str(bl)[:24] if bl else "-"),
-            "widths": str(c.get("lot_type_range") or c.get("lot_types_ff") or "-")[:12],
+            "widths": _lot_range(c),
             "closings": num(c.get("annual_closings")),
             "starts": num(c.get("annual_starts")),
             "mos": (f"{mos:,.1f}" if mos is not None else "-"),
@@ -1241,7 +1275,8 @@ def _map_comps(r, cb, comp_map=None):
         v = max((_n(c.get(key)) or 0 for c in live), default=0)
         if v:
             kpis.append({"label": label, "value": num(v)})
-    mx = [m for m in (_n(c.get("months_lot_supply")) for c in live) if m is not None]
+    mx = [m for m in (_n(c.get("months_lot_supply")) for c in live)
+          if m is not None and m <= 120]
     if mx:
         kpis.append({"label": "Highest MOS", "value": f"{max(mx):,.1f}"})
 
@@ -1572,6 +1607,46 @@ def _map_news(r, nw):
             break
 
 
+def _macro_value(cur, fmt):
+    """Format a FRED reading using the series' declared unit.
+
+    The units are not decorative: TXNA and TXPOP are published in THOUSANDS,
+    so printing them raw gave "14,468" for 14.5 million jobs and "31,710" for
+    the population of Texas. TXNQGSP is in billions.
+    """
+    fmt = str(fmt or "").lower()
+    if fmt == "percent":
+        return f"{cur:,.2f}%"
+    if fmt == "dollars":
+        return f"${cur:,.0f}"
+    if fmt == "dollars_b":
+        return (f"${cur/1000:,.2f}T" if abs(cur) >= 1000 else f"${cur:,.0f}B")
+    if fmt == "thousands":
+        v = cur * 1000.0
+        return (f"{v/1e6:,.1f}M" if abs(v) >= 1e6 else f"{v:,.0f}")
+    if fmt == "count":
+        return f"{cur:,.0f}"
+    return f"{cur:,.1f}"          # index and anything unrecognised
+
+
+def _macro_label(label):
+    """Shorten on a word boundary. Cutting at a fixed width produced
+    "TEXAS HOME PRICE INDEX (FH" and "HOUSTON MSA HOME PRICE IND"."""
+    txt = re.sub(r"\s*\([^)]*\)", "", str(label or "")).strip()
+    txt = (txt.replace("Texas ", "TX ").replace("Houston MSA ", "Houston ")
+              .replace("per capita personal income", "per-capita income")
+              .replace("total private permits", "private permits")
+              .replace("non-farm employment", "non-farm jobs")
+              .replace("resident population", "population")
+              .replace("median household income", "median HH income")
+              .replace("leading economic index", "leading econ. index")
+              .replace("US Treasury yield", "Treasury yield"))
+    if len(txt) > 28:
+        cut = txt[:28].rsplit(" ", 1)[0]
+        txt = cut or txt[:28]
+    return txt.upper()
+
+
 def _map_macro(r, fr):
     out = []
     for i in ((fr or {}).get("indicators") or []):
@@ -1579,21 +1654,13 @@ def _map_macro(r, fr):
         cur = _n(d.get("current"))
         if d.get("error") or cur is None:
             continue
-        fmt = str(i.get("format") or "").lower()
-        if "dollar" in fmt or "usd" in fmt or "$" in fmt:
-            val = money(cur)
-        elif "percent" in fmt or "pct" in fmt or "rate" in fmt:
-            val = pct(cur, dp=2)
-        elif abs(cur) >= 1_000_000:
-            val = f"{cur / 1e6:,.1f}M"
-        else:
-            val = f"{cur:,.1f}" if abs(cur) < 1000 else num(cur)
         note = []
         if _n(d.get("yoy_pct")) is not None:
             note.append(f"YoY {_n(d['yoy_pct']):+,.1f}%")
         if _n(d.get("five_year_total_pct")) is not None:
             note.append(f"5Y {_n(d['five_year_total_pct']):+,.1f}%")
-        out.append({"label": str(i.get("label") or i.get("series_id") or "").upper()[:26],
-                    "value": val, "note": "   ".join(note)})
+        out.append({"label": _macro_label(i.get("label") or i.get("series_id")),
+                    "value": _macro_value(cur, i.get("format")),
+                    "note": "   ".join(note)})
     if out:
         r["macro"] = out[:12]
