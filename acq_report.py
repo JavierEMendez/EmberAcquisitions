@@ -555,66 +555,53 @@ def render_quarter_chart(quarters, width_in=6.9):
 
 
 def render_enrollment_chart(trend, width_in=6.9):
-    """District enrollment history — the migration indicator."""
+    """District enrolment history, with the figure called out every five years.
+
+    The app's own chart labels 1990, 1995, 2000 ... and the latest year; the
+    PDF was labelling only the final point, so the reader could see a rising
+    line but not what it rose from. The callouts are the migration story.
+    """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     pts = [(p.get("year"), _n(p.get("enrollment"))) for p in (trend or [])]
-    pts = [(y, e) for y, e in pts if y and e]
+    pts = sorted([(int(y), e) for y, e in pts if y and e])
     if len(pts) < 3:
         return None
     xs = [p[0] for p in pts]
     ys = [p[1] for p in pts]
-    fig, ax = plt.subplots(figsize=(width_in, 1.5), dpi=170)
+    fig, ax = plt.subplots(figsize=(width_in, 1.7), dpi=170)
     fig.patch.set_facecolor("white")
     ax.fill_between(xs, ys, color=ORANGE, alpha=0.13)
-    ax.plot(xs, ys, color=ORANGE, linewidth=1.7)
-    ax.scatter([xs[-1]], [ys[-1]], s=22, color=ORANGE, zorder=5)
-    ax.annotate(f"{ys[-1]:,.0f}", (xs[-1], ys[-1]), textcoords="offset points",
-                xytext=(-4, 7), ha="right", fontsize=7.5, fontweight="bold",
-                color=ORANGE)
-    ax.tick_params(labelsize=7, colors=GREY)
+    ax.plot(xs, ys, color=ORANGE, linewidth=1.6, zorder=3)
+    ax.scatter(xs, ys, s=5, color=NAVY, zorder=4)
+
+    # Label the first year, the last, and every fifth in between -- but only
+    # when there is room, so a long series does not turn into a wall of text.
+    first, last = xs[0], xs[-1]
+    marks = [i for i, y in enumerate(xs)
+             if y == first or y == last or (y % 5 == 0 and last - y >= 3)]
+    if len(marks) > 9:
+        marks = [i for i in marks if xs[i] % 10 == 0 or xs[i] in (first, last)]
+    for i in marks:
+        end = xs[i] in (first, last)
+        ax.annotate(f"{ys[i]:,.0f}", (xs[i], ys[i]), textcoords="offset points",
+                    xytext=(0, 7), ha="center", fontsize=6.6,
+                    fontweight="bold" if end else "normal",
+                    color=ORANGE if end else NAVY, zorder=6)
+    ax.scatter([xs[-1]], [ys[-1]], s=26, color=ORANGE, zorder=7)
+
+    ax.set_ylim(min(ys) * 0.88, max(ys) * 1.16)
+    from matplotlib.ticker import FuncFormatter
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.0f}"))
+    ax.tick_params(labelsize=6.8, colors=GREY)
     ax.grid(axis="y", linestyle=":", color=GREY_LINE, linewidth=0.6)
     ax.set_axisbelow(True)
-    for s in ("top", "right", "left"):
-        ax.spines[s].set_visible(False)
+    for sp in ("top", "right", "left"):
+        ax.spines[sp].set_visible(False)
     ax.spines["bottom"].set_color(GREY_LINE)
     fig.tight_layout(pad=0.4)
     return _fig_to_uri(fig, dpi=170, pad=0.02)
-
-
-# ---------------------------------------------------------------------------
-# Narrative — deterministic rules, not free-form prose. Every sentence is
-# anchored to a number that appears elsewhere in the report, so nothing here
-# can assert something the rest of the document does not show.
-# ---------------------------------------------------------------------------
-def _thesis(ctx, a, cbas, schools, county):
-    bits = []
-    gross = _n(a.get("gross_acres")) or 0
-    conv = _n(a.get("net_saleable_pct"))
-    dist = (schools or {}).get("district_name") or ""
-    scale = ("Large-scale" if gross >= 500 else
-             "Mid-scale" if gross >= 150 else "Infill-scale")
-    where = dist or (county or "the submarket")
-    bits.append(f"{scale} residential opportunity in the {where} corridor")
-    starts = _n((cbas or {}).get("ring_annual_starts"))
-    if starts:
-        bits[-1] += f" with {starts:,.0f} annual starts in the competitive ring"
-    bits[-1] += "."
-    if conv is not None:
-        tone = ("Development efficiency is the central site issue"
-                if conv < 55 else "Development efficiency is favourable")
-        bits.append(f"{tone}: gross-to-saleable conversion is {conv:,.1f}%.")
-    mos = _n((cbas or {}).get("months_lot_supply"))
-    fut = _n(((cbas or {}).get("aggregate") or {}).get("futures"))
-    if mos or fut:
-        s = "Supply warrants caution"
-        if mos:
-            s += f": {mos:,.1f} months of lot supply"
-        if fut:
-            s += f"{' and' if mos else ':'} {fut:,.0f} future lots in the ring"
-        bits.append(s + ".")
-    return " ".join(bits)
 
 
 def _factors(a, cbas):

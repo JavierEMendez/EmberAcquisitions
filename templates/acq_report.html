@@ -161,10 +161,18 @@
 
   /* Never leave a section title, or a card title, stranded at a page foot. */
   .sec-title, .sec-sub, .card-t, .eyebrow { break-after: avoid; }
+  /* ... and never leave the running header behind either. Wrapping the head
+     of a section makes it one indivisible block that carries its title with
+     it, so a section that cannot start on this page moves entirely. */
+  .sec-head { break-inside: avoid; break-after: avoid; }
 </style>
 </head>
 <body>
 
+{# The running header, section title and subtitle are one unit. Rendered as
+   separate blocks, WeasyPrint left the header alone at the top of a page and
+   moved the title to the next -- page 5 of the Millican report was blank
+   except for "Nearby Competing Communities" in the running head. #}
 {% macro header(section) %}
 <div class="rh">
   <div class="brand">
@@ -218,9 +226,11 @@
 
 {# ══════════════ 2 · EXECUTIVE VIEW ══════════════ #}
 <div class="page-break hard"></div>
+<div class="sec-head">
 {{ header('Executive Investment View') }}
 <div class="sec-title">{{ r.project.name_upper }}</div>
 <div class="sec-sub">{{ r.project.location }}{% if r.kpi.gross %} &nbsp;|&nbsp; {{ r.kpi.gross }} gross{% endif %}</div>
+</div>
 
 <div class="kpis">
   {{ kpi('Gross acreage', r.kpi.gross) }}
@@ -279,9 +289,11 @@
 {# ══════════════ 3 · SITE & DEVELOPMENT POTENTIAL ══════════════ #}
 {% if r.bridge %}
 <div class="page-break hard"></div>
+<div class="sec-head">
 {{ header('Site & Development Potential') }}
 <div class="sec-title">1. Site &amp; Development Potential</div>
 <div class="sec-sub">Physical constraints, developable efficiency and preliminary lot yield</div>
+</div>
 
 <div class="card">
   <div class="card-t">Gross-to-saleable bridge</div>
@@ -363,9 +375,11 @@
 {# ══════════════ 4 · MARKET DEMAND & SUPPLY ══════════════ #}
 {% if r.market %}
 <div class="page-break"></div>
+<div class="sec-head">
 {{ header('Market Demand & Supply') }}
 <div class="sec-title">2. Market Demand &amp; Supply</div>
 <div class="sec-sub">{{ r.market.subtitle }}</div>
+</div>
 
 {% if r.market.context %}
 <div style="font-size:7.6pt;color:#93A0AC;margin:-6pt 0 10pt">{{ r.market.context }}</div>
@@ -433,9 +447,11 @@
 {# ══════════════ 5 · NEARBY COMPETING COMMUNITIES ══════════════ #}
 {% if r.comps %}
 <div class="page-break"></div>
+<div class="sec-head">
 {{ header('Nearby Competing Communities') }}
 <div class="sec-title">3. Nearby Competing Communities</div>
 <div class="sec-sub">Active communities nearest the project, with velocity, lot supply, pipeline and buildout indicators</div>
+</div>
 
 {% if r.comps.map %}
 <div class="card" style="padding:7pt"><img class="map" src="{{ r.comps.map }}" alt="Competitive map"></div>
@@ -469,9 +485,11 @@
 {# ══════════════ 6 · SCHOOLS & GROWTH ══════════════ #}
 {% if r.schools %}
 <div class="page-break"></div>
+<div class="sec-head">
 {{ header('Schools & Growth Corridor') }}
 <div class="sec-title">4. Schools &amp; Growth Corridor</div>
 <div class="sec-sub">School-district trajectory, campus proximity and county household growth</div>
+</div>
 
 {# A tract on a district line sits in two. The largest by enrolment leads;
    any others follow as their own pair of rows. #}
@@ -545,9 +563,11 @@
 {# ══════════════ 7 · ACCESS & INFRASTRUCTURE ══════════════ #}
 {% if r.access %}
 <div class="page-break"></div>
+<div class="sec-head">
 {{ header('Access & Infrastructure') }}
 <div class="sec-title">5. Access &amp; Infrastructure</div>
 <div class="sec-sub">Regional connectivity, roadway capacity investment and corridor positioning</div>
+</div>
 
 <div class="kpis">
   {% for c in r.access.cards %}{{ kpi(c.label, c.value, note=c.note) }}{% endfor %}
@@ -584,9 +604,11 @@
 {# ══════════════ 8 · AMENITIES & MARKET INTELLIGENCE ══════════════ #}
 {% if r.amenities or r.news %}
 <div class="page-break"></div>
+<div class="sec-head">
 {{ header('Amenities & Market Intelligence') }}
 <div class="sec-title">6. Amenities &amp; Market Intelligence</div>
 <div class="sec-sub">Daily-needs proximity, healthcare access and economic-development signals</div>
+</div>
 
 {% if r.amenities %}
 {% if r.amenities.nearest %}
@@ -636,9 +658,11 @@
 {# ══════════════ 9 · MACRO & IC CHECKLIST ══════════════ #}
 {% if r.macro or r.why_works or r.next_steps %}
 <div class="page-break"></div>
+<div class="sec-head">
 {{ header('Macro Context & IC Checklist') }}
 <div class="sec-title">7. Macro Context &amp; Investment Committee Checklist</div>
 <div class="sec-sub">Economic backdrop, synthesized risks and diligence questions before pricing land</div>
+</div>
 
 {% if r.macro %}
 <div class="card">
