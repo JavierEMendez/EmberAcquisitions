@@ -625,7 +625,7 @@ def _factors(a, cbas):
                 ("MODERATE", "v-mod") if conv >= 40 else ("CONSTRAINED", "v-risk"))
         flood = next((d for d in (a.get("netout_detail") or [])
                       if d.get("key") == "flood"), {})
-        note = (f"floodplain drives efficiency" if (_n(flood.get("acres")) or 0) > 0
+        note = ("floodplain drives efficiency" if (_n(flood.get("acres")) or 0) > 0
                 else f"{conv:,.1f}% conversion")
         out.append({"label": "Development potential", "verdict": v, "tone": t, "note": note})
     starts = _n((cbas or {}).get("ring_annual_starts"))
@@ -1017,6 +1017,23 @@ def build_context(proj, analysis, data=None, elevation=None):
 # Section mappers. Each is a no-op when its payload is absent, so the template
 # omits that page rather than printing an empty shell.
 # ---------------------------------------------------------------------------
+def _substantial(*values, need=3):
+    """True when enough of these are real values rather than placeholders.
+
+    A section whose service answered with a shell still rendered a full page:
+    six of eight market metrics as em-dashes, no tables and no read, or a
+    schools card carrying nothing but the district name. In a document going
+    to a committee an empty page reads as "there is nothing here" rather than
+    "the source had nothing to give", so a section has to earn its page.
+    """
+    real = 0
+    for v in values:
+        if v in (None, "", "-", "—", 0, "0"):
+            continue
+        real += 1
+    return real >= need
+
+
 def _map_market(r, cb):
     if not cb:
         return
@@ -1144,6 +1161,10 @@ def _map_market(r, cb):
                     f"{top_band['lots']} lots, which is where the preliminary mix "
                     "should concentrate.")
     ctx["read"] = read or None
+    if not (_substantial(ctx["starts"], ctx["closings"], ctx["vdl"], ctx["mos"],
+                         ctx["uc"], ctx["fv"], ctx["future"], need=3)
+            or ctx["lot_bands"] or ctx["builders"]):
+        return                       # a page of dashes helps nobody
     r["market"] = ctx
 
 
@@ -1265,6 +1286,11 @@ def _map_schools(r, sd):
             "enrollment": num(c.get("enrollment")),
             "distance": miles(c.get("distance_mi"), c.get("direction")),
         })
+    if not (_substantial(sd.get("enrollment"), sd.get("schools_count"),
+                         sd.get("teachers_fte"), sd.get("student_teacher_ratio"),
+                         rating, need=2)
+            or campuses or growth):
+        return
     r["schools"] = {
         "district": str(sd.get("name") or "School district").upper(),
         "rating": (f"{rating} / {score:,.0f}" if rating and score is not None
