@@ -109,8 +109,13 @@ print("acquisitions self-check\n")
 import acq_routes  # noqa: E402
 import acq_gis     # noqa: E402
 import acq_parcels  # noqa: E402
+import acq_report  # noqa: E402
 
-for mod in (acq_routes, acq_gis, acq_parcels):
+# acq_report was missing from this list, which is exactly how a report that
+# called a function I had deleted reached production: nothing here looked at
+# the module, so "name '_thesis' is not defined" only surfaced when someone
+# pressed the button.
+for mod in (acq_routes, acq_gis, acq_parcels, acq_report):
     name = mod.__name__
     tree = ast.parse(io.open(name + ".py", encoding="utf-8").read())
     unresolved = sorted(n for n in _loaded_names(tree) - _bound_names(tree)

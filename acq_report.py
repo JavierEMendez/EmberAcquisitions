@@ -604,29 +604,98 @@ def render_enrollment_chart(trend, width_in=6.9):
     return _fig_to_uri(fig, dpi=170, pad=0.02)
 
 
-def _factors(a, cbas):
+def _thesis(r, a, data):
+    """The two or three sentences an executive reads first.
+
+    Every clause rests on a figure printed elsewhere in the document -- scale,
+    conversion, ring velocity, supply -- so the summary cannot claim something
+    the report does not show.
+    """
+    bits = []
+    gross = _n(a.get("gross_acres")) or 0
+    scale = ("Large-scale" if gross >= 500 else
+             "Mid-scale" if gross >= 150 else "Infill-scale")
+    where = (r.get("schools", {}) or {}).get("district") or ""
+    where = where.title().replace(" Isd", " ISD") if where else ""
+    where = where or (r.get("project", {}).get("location") or "the submarket")
+    opening = f"{scale} residential opportunity in the {where} corridor"
+    cb = data.get("cbas") or {}
+    starts = _n(cb.get("ring_annual_starts")) or _n(
+        (cb.get("aggregate") or {}).get("annual_starts"))
+    if starts:
+        opening += f", where the competitive ring runs {starts:,.0f} starts a year"
+    bits.append(opening + ".")
+
+    conv = _n(a.get("net_saleable_pct"))
+    if conv is not None:
+        lead = ("The central site issue is development efficiency"
+                if conv < 55 else "Development efficiency is favourable")
+        fl = next((d for d in (a.get("netout_detail") or [])
+                   if d.get("key") == "flood"), {})
+        fl_ac = _n(fl.get("acres")) or 0
+        why = (f", driven by {fl_ac:,.0f} acres of floodplain"
+               if gross and fl_ac / gross > 0.15 else "")
+        bits.append(f"{lead}{why}: gross-to-saleable conversion is {conv:,.1f}%.")
+
+    mos = _mos_of(r)
+    fut = _n((cb.get("aggregate") or {}).get("futures"))
+    if mos is not None or fut:
+        line = "Supply warrants caution"
+        if mos is not None:
+            line += f": {mos:,.1f} months of lot supply"
+        if fut:
+            line += f"{' and' if mos is not None else ':'} {fut:,.0f} future lots in the ring"
+        bits.append(line + ".")
+    return " ".join(bits)
+
+
+def _mos_of(r):
+    """Months of lot supply as a number, back off the formatted market card."""
+    v = (r.get("market") or {}).get("mos")
+    if v in (None, "", "-"):
+        return None
+    return _n(str(v).replace(",", ""))
+
+
+def _factors(r, a, data):
+    """Screening verdicts: development potential, demand, competition, growth."""
     out = []
     conv = _n(a.get("net_saleable_pct"))
     if conv is not None:
         v, t = (("STRONG", "v-strong") if conv >= 60 else
                 ("MODERATE", "v-mod") if conv >= 40 else ("CONSTRAINED", "v-risk"))
-        flood = next((d for d in (a.get("netout_detail") or [])
-                      if d.get("key") == "flood"), {})
-        note = ("floodplain drives efficiency" if (_n(flood.get("acres")) or 0) > 0
+        fl = next((d for d in (a.get("netout_detail") or [])
+                   if d.get("key") == "flood"), {})
+        note = ("floodplain drives efficiency" if (_n(fl.get("acres")) or 0) > 0
                 else f"{conv:,.1f}% conversion")
-        out.append({"label": "Development potential", "verdict": v, "tone": t, "note": note})
-    starts = _n((cbas or {}).get("ring_annual_starts"))
+        out.append({"label": "Development potential", "verdict": v, "tone": t,
+                    "note": note})
+
+    cb = data.get("cbas") or {}
+    starts = _n(cb.get("ring_annual_starts")) or _n(
+        (cb.get("aggregate") or {}).get("annual_starts"))
     if starts is not None:
         v, t = (("STRONG", "v-strong") if starts >= 800 else
                 ("MODERATE", "v-mod") if starts >= 250 else ("THIN", "v-risk"))
         out.append({"label": "Market demand", "verdict": v, "tone": t,
                     "note": f"{starts:,.0f} annual starts"})
-    mos = _n((cbas or {}).get("months_lot_supply"))
+
+    mos = _mos_of(r)
     if mos is not None:
         v, t = (("LOW", "v-strong") if mos < 12 else
                 ("MODERATE", "v-mod") if mos < 20 else ("MOD-HIGH", "v-risk"))
         out.append({"label": "Competitive risk", "verdict": v, "tone": t,
                     "note": f"{mos:,.1f} mos. lot supply"})
+
+    sd = r.get("schools") or {}
+    g = (sd.get("growth") or [{}])[0]
+    if g.get("value"):
+        p = _n(str(g["value"]).strip("+%")) or 0
+        v, t = (("STRONG", "v-strong") if p >= 15 else
+                ("STEADY", "v-mod") if p >= 4 else ("FLAT", "v-risk"))
+        name = str(sd.get("district") or "").title().replace(" Isd", " ISD")
+        out.append({"label": "Growth / schools", "verdict": v, "tone": t,
+                    "note": f"{name} {g['value']} / 5 yr".strip()})
     return out
 
 
@@ -655,11 +724,15 @@ def _positives(r, a, data):
     in the document. Nothing is asserted that the report does not also show.
     """
     out = []
-    sd = data.get("schools") or {}
-    win = (sd.get("growth") or {}).get("windows") or {}
-    g5 = _n((win.get("5_year") or {}).get("total_pct"))
+    # Read the MAPPED schools block, not the raw payload: since a tract can
+    # straddle a district line that payload is a list of districts, and
+    # calling .get on it raised AttributeError and took the whole report down.
+    sch = r.get("schools") or {}
+    g5txt = next((g.get("value") for g in (sch.get("growth") or [])
+                  if "5" in str(g.get("label", ""))), None)
+    g5 = _n(str(g5txt).strip("+%")) if g5txt else None
     if g5 is not None and g5 > 8:
-        out.append(f"{_inline_name(r.get('schools', {}).get('district'))} enrolment is "
+        out.append(f"{_inline_name(sch.get('district'))} enrolment is "
                    f"up {g5:,.1f}% over five years, a direct read on household formation.")
 
     mk = r.get("market") or {}
@@ -959,9 +1032,6 @@ def build_context(proj, analysis, data=None, elevation=None):
             } for p in (y.get("breakdown") or [])],
         }
 
-    r["thesis"] = _thesis(r, a, data.get("cbas"), data.get("schools"),
-                          counties[0] if counties else None)
-    r["factors"] = _factors(a, data.get("cbas"))
     r["next_steps"] = NEXT_STEPS
     r["diligence"] = NEXT_STEPS[:4]
 
@@ -994,6 +1064,8 @@ def build_context(proj, analysis, data=None, elevation=None):
     # it could only see the raw analysis and produced a single positive and a
     # single risk -- schools, demographics, access and the market read were all
     # sitting there unused.
+    r["thesis"] = _thesis(r, a, data)
+    r["factors"] = _factors(r, a, data)
     r["why_works"] = _positives(r, a, data)
     r["what_breaks"] = _risks(r, a, data)
     r["dev_read"] = _site_read(r, a)
