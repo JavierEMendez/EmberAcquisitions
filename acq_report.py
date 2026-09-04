@@ -342,7 +342,7 @@ def render_competitor_map(center, communities, radius_mi=None, width_in=7.4):
     else:
         bounds = _padded_bounds((min(xs), min(ys), max(xs), max(ys)), 0.14)
 
-    figsize = _geo_figsize(bounds, target_w=width_in, min_h=3.2, max_h=4.6)
+    figsize = _geo_figsize(bounds, target_w=width_in, min_h=2.8, max_h=3.7)
     fig, ax = plt.subplots(figsize=figsize, dpi=170)
     fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
     ax.set_position([0, 0, 1, 1])
@@ -1237,7 +1237,7 @@ def _map_comps(r, cb, comp_map=None):
     # page.
     used = SECTION_CHROME_PT + KPI_ROW_PT + CARD_CHROME_PT + READ_LINE_PT * 2
     if comp_map:
-        used += _image_pt(7.4, 3.6)
+        used += _image_pt(7.4, 3.2)
     # The competitive set is the point of this page; show it properly.
     n_rows = max(12, _rows_that_fit(used, 14, min_rows=12))
 
@@ -1301,19 +1301,11 @@ def _map_comps(r, cb, comp_map=None):
     }
 
 
-def _map_schools(r, sd):
-    """Field names here are the district endpoint's, not invented ones.
-
-    The first attempt guessed district_name / school_count / schools_nearby and
-    got an empty section: the payload calls them name, schools_count and
-    schools, and buries the growth windows under growth["windows"] keyed
-    5_year rather than 5yr.
-    """
-    if not sd or sd.get("error"):
-        return
+def _district_block(sd):
+    """One district's headline figures."""
     win = (sd.get("growth") or {}).get("windows") or {}
     growth = []
-    for key, label in (("5_year", "Enrollment / 5 yr"), ("10_year", "10-year"),
+    for key, label in (("5_year", "Enrolment / 5 yr"), ("10_year", "10-year"),
                        ("20_year", "20-year"), ("all_time", "All-time")):
         blk = win.get(key) or {}
         p = _n(blk.get("total_pct"))
@@ -1324,22 +1316,7 @@ def _map_schools(r, sd):
     tea = sd.get("tea") or {}
     rating = tea.get("overall_rating")
     score = _n(tea.get("overall_score"))
-    campuses = []
-    for c in sorted((sd.get("schools") or []),
-                    key=lambda x: _n(x.get("distance_mi")) or 999.0)[:10]:
-        campuses.append({
-            "name": str(c.get("name") or "-")[:30],
-            "tea": str(c.get("tea_rating") or "Not rated")[:12],
-            "level": str(c.get("level") or "-")[:20],
-            "enrollment": num(c.get("enrollment")),
-            "distance": miles(c.get("distance_mi"), c.get("direction")),
-        })
-    if not (_substantial(sd.get("enrollment"), sd.get("schools_count"),
-                         sd.get("teachers_fte"), sd.get("student_teacher_ratio"),
-                         rating, need=2)
-            or campuses or growth):
-        return
-    r["schools"] = {
+    return {
         "district": str(sd.get("name") or "School district").upper(),
         "rating": (f"{rating} / {score:,.0f}" if rating and score is not None
                    else (str(rating) if rating else "-")),
@@ -1350,9 +1327,59 @@ def _map_schools(r, sd):
         "teachers": num(sd.get("teachers_fte")),
         "ratio": (f"{_n(sd.get('student_teacher_ratio')):,.1f} : 1"
                   if _n(sd.get("student_teacher_ratio")) is not None else "-"),
-        "trend_chart": render_enrollment_chart(sd.get("enrollment_trend")),
-        "campuses": campuses,
+        "_enrol": _n(sd.get("enrollment")) or 0,
     }
+
+
+def _map_schools(r, sd):
+    """Every district the tract touches, not just the first.
+
+    A tract on a district line sits in two; the app's own schools card shows
+    both, and taking the first made the export disagree with the screen. The
+    largest district by enrolment leads and carries the trend chart; the
+    others follow as their own cards, and the campus table merges all of them
+    by distance with a district column so a reader can tell them apart.
+    """
+    payloads = sd if isinstance(sd, list) else ([sd] if sd else [])
+    payloads = [p for p in payloads if isinstance(p, dict) and not p.get("error")]
+    if not payloads:
+        return
+
+    blocks, campuses = [], []
+    for p in payloads:
+        blk = _district_block(p)
+        for c in (p.get("schools") or []):
+            campuses.append({
+                "name": str(c.get("name") or "-")[:28],
+                "district": blk["district"].title().replace(" Isd", " ISD"),
+                "tea": str(c.get("tea_rating") or "Not rated")[:12],
+                "level": str(c.get("level") or "-")[:18],
+                "enrollment": num(c.get("enrollment")),
+                "distance": miles(c.get("distance_mi"), c.get("direction")),
+                "_d": _n(c.get("distance_mi")) or 999.0,
+            })
+        if (_substantial(blk["enrollment"], blk["school_count"], blk["teachers"],
+                         blk["ratio"], blk["rating"], need=2) or blk["growth"]):
+            blocks.append(blk)
+    if not blocks and not campuses:
+        return
+
+    blocks.sort(key=lambda b: -b["_enrol"])
+    campuses.sort(key=lambda c: c["_d"])
+    primary = payloads[0]
+    if blocks:
+        primary = next((p for p in payloads
+                        if str(p.get("name") or "").upper() == blocks[0]["district"]),
+                       payloads[0])
+
+    out = dict(blocks[0]) if blocks else {}
+    out.update({
+        "others": blocks[1:],
+        "multi": len(blocks) > 1,
+        "trend_chart": render_enrollment_chart(primary.get("enrollment_trend")),
+        "campuses": campuses[:10],
+    })
+    r["schools"] = out
 
 
 ACS = [

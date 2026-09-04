@@ -454,30 +454,18 @@ function _readNetouts() {
 // The summary report is built from the cached analysis, so it only becomes
 // available once one has run. Enabling it before that just produces a 400.
 function _syncSummaryBtn(hasAnalysis) {
-  for (const id of ['btn-summary-pdf', 'btn-exec-pdf']) {
-    const el = document.getElementById(id);
-    if (el) el.disabled = !hasAnalysis;
-  }
-  const b = document.getElementById('btn-summary-pdf');
+  const b = document.getElementById('btn-exec-pdf');
   if (!b) return;
   b.disabled = !hasAnalysis;
   b.title = hasAnalysis
     ? 'Ten-page report: executive summary, constraint map, yield, topography, submarket and tract roster'
     : 'Run the acquisition analysis first — the report is built from it';
 }
-document.getElementById('btn-summary-pdf')?.addEventListener('click', () => {
-  window.open(`/api/acq/projects/${encodeURIComponent(PROJECT_ID)}/pdf`, '_blank');
-});
 
 // Executive summary. Fetched rather than window.open'd so the button can show
 // a real progress state -- the report draws a satellite map and several charts
 // and takes a few seconds -- and so a failure surfaces as a readable message
 // instead of a browser tab containing raw JSON.
-(() => {
-  const a = document.getElementById('lnk-report-debug');
-  if (a) a.href = `/acquisitions/project/${encodeURIComponent(PROJECT_ID)}/report`;
-})();
-
 document.getElementById('btn-exec-pdf')?.addEventListener('click', async (ev) => {
   const btn = ev.currentTarget;
   const label = btn.textContent;

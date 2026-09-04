@@ -473,6 +473,8 @@
 <div class="sec-title">4. Schools &amp; Growth Corridor</div>
 <div class="sec-sub">School-district trajectory, campus proximity and county household growth</div>
 
+{# A tract on a district line sits in two. The largest by enrolment leads;
+   any others follow as their own pair of rows. #}
 <div class="kpis">
   {{ kpi(r.schools.district, r.schools.rating, note=r.schools.rating_note, hot=True) }}
   {% for g in r.schools.growth %}{{ kpi(g.label, g.value, small=True) }}{% endfor %}
@@ -483,6 +485,23 @@
   {{ kpi('Teachers (FTE)', r.schools.teachers) }}
   {{ kpi('Student : teacher', r.schools.ratio) }}
 </div>
+{% for d in r.schools.others %}
+<div class="kpis">
+  {{ kpi(d.district, d.rating, note=d.rating_note, hot=True) }}
+  {% for g in d.growth %}{{ kpi(g.label, g.value, small=True) }}{% endfor %}
+</div>
+<div class="kpis">
+  {{ kpi('Enrollment', d.enrollment) }}
+  {{ kpi('Schools', d.school_count) }}
+  {{ kpi('Teachers (FTE)', d.teachers) }}
+  {{ kpi('Student : teacher', d.ratio) }}
+</div>
+{% endfor %}
+{% if r.schools.multi %}
+<div style="font-size:7.4pt;color:#93A0AC;font-style:italic;margin:-4pt 0 9pt">
+  The project straddles more than one district; boundaries should be confirmed
+  parcel by parcel before they are relied on for pricing.</div>
+{% endif %}
 
 {% if r.schools.trend_chart %}
 <div class="card">
@@ -495,10 +514,12 @@
 <div class="card flush">
   <div class="card-t" style="padding:12pt 13pt 9pt;margin:0">Nearby campuses — sorted by distance</div>
   <table>
-    <thead><tr><th>Campus</th><th>TEA</th><th>Level</th>
+    <thead><tr><th>Campus</th>{% if r.schools.multi %}<th>District</th>{% endif %}
+      <th>TEA</th><th>Level</th>
       <th class="num">Enrollment</th><th class="num">Distance</th></tr></thead>
     <tbody>{% for c in r.schools.campuses %}
-      <tr><td>{{ c.name }}</td><td>{{ c.tea }}</td><td>{{ c.level }}</td>
+      <tr><td>{{ c.name }}</td>{% if r.schools.multi %}<td>{{ c.district }}</td>{% endif %}
+        <td>{{ c.tea }}</td><td>{{ c.level }}</td>
         <td class="num">{{ c.enrollment }}</td><td class="num">{{ c.distance }}</td></tr>
     {% endfor %}</tbody>
   </table>

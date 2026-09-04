@@ -4412,9 +4412,12 @@ def _build_report_context(pid):
         sm = sm[0] if isinstance(sm, tuple) else sm
         sm = sm.get_json() if hasattr(sm, "get_json") else sm
         centroid = (sm or {}).get("centroid")
-        districts = (sm or {}).get("school_districts") or []
-        if districts and centroid:
-            d0 = districts[0]
+        districts = ((sm or {}).get("school_districts") or []) if centroid else []
+        # A tract can straddle a district line, and the app's own schools card
+        # shows every district it touches. Taking districts[0] silently threw
+        # the others away, so the export disagreed with the screen.
+        got = []
+        for d0 in districts[:3]:
             # test_request_context starts with an EMPTY session, so
             # @_login_required on the district endpoint rejected the call and
             # the schools section vanished from every report without ever
@@ -4429,13 +4432,16 @@ def _build_report_context(pid):
                 sd = sd[0] if isinstance(sd, tuple) else sd
                 sd = sd.get_json() if hasattr(sd, "get_json") else sd
             if isinstance(sd, dict) and not sd.get("error"):
-                data["schools"] = sd
+                got.append(sd)
             else:
-                print(f"[report] school profile refused: "
-                      f"{str(sd)[:160] if sd else 'empty'}", flush=True)
-        else:
+                print(f"[report] school profile refused for "
+                      f"{d0.get('name')}: {str(sd)[:120] if sd else 'empty'}",
+                      flush=True)
+        if got:
+            data["schools"] = got
+        elif not districts:
             print(f"[report] no school district resolved "
-                  f"(districts={len(districts)}, centroid={bool(centroid)})", flush=True)
+                  f"(centroid={bool(centroid)})", flush=True)
     except Exception as e:
         print(f"[report] schools lookup failed: {e}", flush=True)
 
