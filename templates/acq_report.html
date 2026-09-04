@@ -52,8 +52,14 @@
   .eyebrow { font-size: 8pt; font-weight: 700; letter-spacing: .12em;
              text-transform: uppercase; color: #F25929; margin-bottom: 6pt; }
 
+  /* A card is a container, not an atom. Making the whole card unbreakable
+     meant a tall one -- the gross-to-saleable bridge, an amenity group --
+     could not start in the space left after its own section heading, so it
+     jumped to the next sheet and left the heading stranded on a page 8% full.
+     The atoms are the rows inside it, and those are protected individually
+     below. */
   .card { background: #FFFFFF; border: 1px solid #E6E9EC; border-radius: 8pt;
-          padding: 10pt 12pt; margin-bottom: 9pt; break-inside: avoid; }
+          padding: 10pt 12pt; margin-bottom: 9pt; break-inside: auto; }
   /* A card holding a table must be allowed to FLOW. With break-inside:avoid
      the whole table jumps to the next sheet the moment it does not fit,
      leaving the page it came from half empty and starting the next one with a
@@ -155,7 +161,6 @@
 
   /* Never leave a section title, or a card title, stranded at a page foot. */
   .sec-title, .sec-sub, .card-t, .eyebrow { break-after: avoid; }
-  .card, .kpis { break-before: avoid; }
 </style>
 </head>
 <body>

@@ -1249,8 +1249,13 @@ def _map_comps(r, cb, comp_map=None):
         # A community with two closings a year and a hundred finished lots
         # computes to hundreds of months. That is arithmetic, not a market
         # signal, and it made "highest MOS 374.2" the headline figure.
+        # Months of supply divides finished lots by monthly closings, so a
+        # community selling seven homes a year produces 41 months and one
+        # selling two produces hundreds. Below roughly one sale a month the
+        # figure is an artefact of a small denominator rather than a read on
+        # supply, so it is left blank instead of printed.
         mos = _n(c.get("months_lot_supply"))
-        if mos is not None and mos > 120:
+        if mos is not None and ((_n(c.get("annual_closings")) or 0) < 12 or mos > 120):
             mos = None
         rows.append({
             "name": str(c.get("name") or "-")[:26],
@@ -1275,8 +1280,10 @@ def _map_comps(r, cb, comp_map=None):
         v = max((_n(c.get(key)) or 0 for c in live), default=0)
         if v:
             kpis.append({"label": label, "value": num(v)})
-    mx = [m for m in (_n(c.get("months_lot_supply")) for c in live)
-          if m is not None and m <= 120]
+    mx = [_n(c.get("months_lot_supply")) for c in live
+          if _n(c.get("months_lot_supply")) is not None
+          and (_n(c.get("annual_closings")) or 0) >= 12
+          and _n(c.get("months_lot_supply")) <= 120]
     if mx:
         kpis.append({"label": "Highest MOS", "value": f"{max(mx):,.1f}"})
 
@@ -1620,7 +1627,15 @@ def _macro_value(cur, fmt):
     if fmt == "dollars":
         return f"${cur:,.0f}"
     if fmt == "dollars_b":
-        return (f"${cur/1000:,.2f}T" if abs(cur) >= 1000 else f"${cur:,.0f}B")
+        # The series is labelled "$B" but FRED publishes TXNQGSP in MILLIONS
+        # of dollars, so dividing by a thousand printed Texas GDP as
+        # "$3,034.82T". Choose the unit from the magnitude instead of trusting
+        # the label, which is the thing that was wrong.
+        if abs(cur) >= 1e6:
+            return f"${cur/1e6:,.2f}T"
+        if abs(cur) >= 1e3:
+            return f"${cur/1e3:,.0f}B"
+        return f"${cur:,.0f}M"
     if fmt == "thousands":
         v = cur * 1000.0
         return (f"{v/1e6:,.1f}M" if abs(v) >= 1e6 else f"{v:,.0f}")
